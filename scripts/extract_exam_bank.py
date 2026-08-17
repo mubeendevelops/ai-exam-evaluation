@@ -6,6 +6,12 @@ Parses exam_bank.docx into a structured JSON file (questions, reference
 answers, embedded tables, and embedded diagram images) ready for
 load_exam_bank.py to push into Postgres + MinIO.
 
+Why via pandoc's JSON AST rather than python-docx: pandoc already resolves
+OOXML equations (OMML) into LaTeX and normalizes tables into a clean
+row/column structure, which is exactly the shape content_assets.structured_data
+and the answer text need. Parsing raw document.xml would mean re-implementing
+that OMML->LaTeX conversion by hand.
+
 Usage:
     python3 extract_exam_bank.py exam_bank.docx --outdir ./extracted
 """
@@ -101,52 +107,34 @@ def find_images_in_block(block):
 
 
 def table_block_to_dict(block):
-    """Handle both pandoc Table AST formats:
-    - Pandoc >= 2.17 (api 1.23): [Attr, Caption, [ColSpec], TableHead, [TableBody], TableFoot]
-    - Pandoc < 2.17 (old format): [caption, [Alignment], [width], headers_cells, rows]
+    """Pandoc Table AST (api 1.23):
+    [Attr, Caption, [ColSpec], TableHead, [TableBody], TableFoot]
+    TableHead/TableFoot = [Attr, [Row]]; TableBody = [Attr, RowHeadCols, [Row], [Row]]
+    Row = [Attr, [Cell]]; Cell = [Attr, Alignment, RowSpan, ColSpan, [Block]]
     """
-    parts = block["c"]
+    _, _, _, table_head, table_bodies, _ = block["c"]
 
-    if len(parts) == 6:
-        # New format (pandoc >= 2.17)
-        _, _, _, table_head, table_bodies, _ = parts
+    def row_to_texts(row):
+        _, cells = row
+        texts = []
+        for cell in cells:
+            _, _, _, _, cell_blocks = cell
+            cell_text = " ".join(block_to_text(b) for b in cell_blocks if block_to_text(b))
+            texts.append(cell_text.strip())
+        return texts
 
-        def row_to_texts(row):
-            _, cells = row
-            texts = []
-            for cell in cells:
-                _, _, _, _, cell_blocks = cell
-                cell_text = " ".join(block_to_text(b) for b in cell_blocks if block_to_text(b))
-                texts.append(cell_text.strip())
-            return texts
+    headers = []
+    _, head_rows = table_head
+    if head_rows:
+        headers = row_to_texts(head_rows[0])
 
-        headers = []
-        _, head_rows = table_head
-        if head_rows:
-            headers = row_to_texts(head_rows[0])
-
-        rows = []
-        for body in table_bodies:
-            _, _, intermediate_head_rows, body_rows = body
-            for r in intermediate_head_rows:
-                rows.append(row_to_texts(r))
-            for r in body_rows:
-                rows.append(row_to_texts(r))
-
-    else:
-        # Old format (pandoc < 2.17): [caption, [Alignment], [width], header_cells, rows]
-        _, _, _, header_cells, body_rows = parts
-
-        def cells_to_texts(cells):
-            """Old format cells are just lists of blocks (no Attr wrapper)."""
-            texts = []
-            for cell in cells:
-                cell_text = " ".join(block_to_text(b) for b in cell if block_to_text(b))
-                texts.append(cell_text.strip())
-            return texts
-
-        headers = cells_to_texts(header_cells) if header_cells else []
-        rows = [cells_to_texts(row) for row in body_rows]
+    rows = []
+    for body in table_bodies:
+        _, _, intermediate_head_rows, body_rows = body
+        for r in intermediate_head_rows:
+            rows.append(row_to_texts(r))
+        for r in body_rows:
+            rows.append(row_to_texts(r))
 
     return {"headers": headers, "rows": rows}
 

@@ -29,9 +29,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-import db as db_mod       # noqa: E402
-import storage             # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from core import db as db_mod   # noqa: E402
+from core import storage        # noqa: E402
 
 NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "examplatform.local")
 
