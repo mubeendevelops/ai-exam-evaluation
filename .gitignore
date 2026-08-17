@@ -1,0 +1,77 @@
+# ──────────────────────────────────────────────
+# Python
+# ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Distribution / packaging
+*.egg-info/
+*.egg
+dist/
+build/
+wheels/
+
+# ──────────────────────────────────────────────
+# Secrets & environment
+# ──────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ──────────────────────────────────────────────
+# Extracted / generated data
+# ──────────────────────────────────────────────
+# Output of extract_exam_bank.py (JSON + images).
+# Re-generate locally with: python3 scripts/extract_exam_bank.py exam\ bank.docx --outdir ./extracted
+extracted/
+
+# Source binary — too large for Git, keep in shared drive / object storage
+exam bank.docx
+
+# ──────────────────────────────────────────────
+# IDE / editor
+# ──────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ──────────────────────────────────────────────
+# OS junk
+# ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ──────────────────────────────────────────────
+# Docker (local data volumes, not config)
+# ──────────────────────────────────────────────
+docker-data/
+minio-data/
+
+# ──────────────────────────────────────────────
+# Misc
+# ──────────────────────────────────────────────
+*.log
+*.bak
+
+# ──────────────────────────────────────────────
+# Documentation, research, design
+# ──────────────────────────────────────────────
+# All markdown and PDF files in these directories are
+# research artifacts, not code. They should not be in
+# the Python package index, nor are they artifacts
+# expected to be present when running the server/UI.
+
+/docs/*
+/research/*
+readme files/
