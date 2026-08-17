@@ -15,7 +15,7 @@ JSON upserts instead of duplicating rows or re-uploading the same image to
 MinIO twice.
 
 Usage:
-    export PGHOST=localhost PGDATABASE=exam_platform PGUSER=postgres PGPASSWORD=...
+    export PGHOST=localhost PGDATABASE=ai_evaluation PGUSER=postgres PGPASSWORD=...
     python3 scripts/load_exam_bank.py extracted/exam_bank.json --status draft
     # --storage defaults to "dummy": no MinIO needed, blob_url is a placeholder.
     # Switch to real uploads later with --storage minio (needs boto3 + MINIO_* env vars).

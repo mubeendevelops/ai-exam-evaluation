@@ -1,47 +1,30 @@
 """
-core/llm.py — thin, provider-agnostic wrapper for the generative-text jobs
-this platform needs (question rewording now; likely paper-section drafting
-and the Task-1 answer→question experiment later).
+core/llm.py — LLM wrapper for generative-text jobs (question rewording now;
+likely paper-section drafting and answer evaluation later).
 
-Choose a provider with the LLM_PROVIDER env var. Default is "ollama" —
-fully free, runs locally, no signup, no API key, and keeps student/exam
-data off any third-party server, which matters for this kind of platform.
+Uses Groq's API (free tier, no credit card required).
+Sign up at console.groq.com, create a key. As of mid-2026: ~14,400
+requests/day, 30 req/min — plenty for dev/testing.
 
-  LLM_PROVIDER=ollama    (default) — free, local, no signup. Install
-      Ollama (https://ollama.com), run `ollama pull llama3.1`, then
-      `ollama serve`. No env vars required beyond LLM_PROVIDER itself.
-      OLLAMA_HOST (default http://localhost:11434) / OLLAMA_MODEL
-      (default llama3.1) to override.
+Needs GROQ_API_KEY env var. GROQ_MODEL (default llama-3.3-70b-versatile)
+to override.
 
-  LLM_PROVIDER=groq      — free tier, cloud, no credit card required.
-      Sign up at console.groq.com, create a key. As of mid-2026: ~14,400
-      requests/day, 30 req/min, shared across all models — plenty for
-      dev/testing, tight for real concurrent production traffic.
-      Needs GROQ_API_KEY. GROQ_MODEL (default llama-3.3-70b-versatile)
-      to override.
-
-  LLM_PROVIDER=gemini    — free tier, cloud, no credit card required.
-      Get a key at aistudio.google.com. As of mid-2026: ~1,500
-      requests/day on Flash models, generous per-minute token budget.
-      Note: free-tier prompts may be used by Google to improve their
-      products — keep that in mind for real student answer text later.
-      Needs GEMINI_API_KEY. GEMINI_MODEL (default gemini-2.5-flash)
-      to override.
-
-All three are called via plain HTTPS (stdlib urllib) — no extra
-dependencies required for any of them.
+Called via plain HTTPS (stdlib urllib) — no extra dependencies required.
 """
 import json
 import os
 import urllib.error
 import urllib.request
 
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
 
 def _post_json(url: str, payload: dict, headers: dict | None = None, timeout: int = 60) -> dict:
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")
-    # Cloudflare (fronting Groq's and others' APIs) blocks urllib's default
+    # Cloudflare (fronting Groq's API) blocks urllib's default
     # "Python-urllib/x.y" User-Agent outright (HTTP 403, Cloudflare error
     # code 1010 — a bot-signature block, unrelated to the API key or
     # request body). A normal-looking User-Agent avoids it.
@@ -56,44 +39,16 @@ def _post_json(url: str, payload: dict, headers: dict | None = None, timeout: in
         raise RuntimeError(f"{url} returned HTTP {e.code}: {body}") from e
 
 
-def _call_ollama(prompt: str) -> str:
-    host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-    model = os.environ.get("OLLAMA_MODEL", "llama3.1")
-    result = _post_json(f"{host}/api/generate", {"model": model, "prompt": prompt, "stream": False})
-    return result["response"].strip()
-
-
-def _call_groq(prompt: str) -> str:
+def _generate(prompt: str) -> str:
+    """Send a prompt to Groq and return the response text."""
     api_key = os.environ["GROQ_API_KEY"]
-    model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+    model = os.environ.get("GROQ_MODEL", DEFAULT_MODEL)
     result = _post_json(
-        "https://api.groq.com/openai/v1/chat/completions",
+        GROQ_API_URL,
         {"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 500},
         headers={"Authorization": f"Bearer {api_key}"},
     )
     return result["choices"][0]["message"]["content"].strip()
-
-
-def _call_gemini(prompt: str) -> str:
-    api_key = os.environ["GEMINI_API_KEY"]
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-    result = _post_json(url, {"contents": [{"parts": [{"text": prompt}]}]})
-    return result["candidates"][0]["content"]["parts"][0]["text"].strip()
-
-
-_PROVIDERS = {
-    "ollama": _call_ollama,
-    "groq": _call_groq,
-    "gemini": _call_gemini,
-}
-
-
-def _generate(prompt: str) -> str:
-    provider = os.environ.get("LLM_PROVIDER", "ollama")
-    if provider not in _PROVIDERS:
-        raise ValueError(f"Unknown LLM_PROVIDER {provider!r} — choose one of {sorted(_PROVIDERS)}")
-    return _PROVIDERS[provider](prompt)
 
 
 def reword_question_text(question_text: str, instruction: str | None = None,
