@@ -6,18 +6,19 @@ Uses Groq's API (free tier, no credit card required).
 Sign up at console.groq.com, create a key. As of mid-2026: ~14,400
 requests/day, 30 req/min — plenty for dev/testing.
 
-Needs GROQ_API_KEY env var. GROQ_MODEL (default llama-3.3-70b-versatile)
+Needs GROQ_API_KEY env var. GROQ_MODEL (default qwen/qwen3.6-27b)
 to override.
 
 Called via plain HTTPS (stdlib urllib) — no extra dependencies required.
 """
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "qwen/qwen3.6-27b"
 
 
 def _post_json(url: str, payload: dict, headers: dict | None = None, timeout: int = 60) -> dict:
@@ -45,10 +46,18 @@ def _generate(prompt: str) -> str:
     model = os.environ.get("GROQ_MODEL", DEFAULT_MODEL)
     result = _post_json(
         GROQ_API_URL,
-        {"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 500},
+        {"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 4096},
         headers={"Authorization": f"Bearer {api_key}"},
     )
-    return result["choices"][0]["message"]["content"].strip()
+    text = result["choices"][0]["message"]["content"]
+    # Some Groq models (e.g. QwQ, DeepSeek-R1) return <think>...</think>
+    # reasoning blocks before the actual answer. Strip them so only the
+    # final answer reaches the caller.
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    # Fallback: strip an unclosed <think> block if the response was still
+    # truncated (anything from <think> to end of string).
+    text = re.sub(r"<think>.*$", "", text, flags=re.DOTALL)
+    return text.strip()
 
 
 def reword_question_text(question_text: str, instruction: str | None = None,

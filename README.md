@@ -90,6 +90,7 @@ psql -f migrations/001_answer_schema.sql
 psql -f migrations/002_question_schema.sql
 psql -f migrations/003_multi_tenancy.sql
 psql -f migrations/004_add_question_text.sql
+psql -f migrations/005_question_tree_and_ai_flag.sql
 ```
 
 ### Loading the Question Bank
