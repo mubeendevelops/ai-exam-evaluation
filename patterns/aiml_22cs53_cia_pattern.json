@@ -1,0 +1,67 @@
+{
+  "name": "AIML 22CS53 \u2014 CIA Standard Pattern (DSCE)",
+  "description": "4-section CIA pattern used by DSCE for AIML 22CS53: Q1+Q2 mandatory, Q3/Q4, Q5/Q6, Q7/Q8 each either-or. Derived from CIA2 and CIA3 reference papers.",
+  "course_code": "22CS53",
+  "sections": [
+    {
+      "section_label": "Part A \u2014 Compulsory",
+      "section_order": 1,
+      "is_mandatory": true,
+      "slots": [
+        {"slot_label": "Q1", "slot_order": 1, "marks": 10, "style": "long"},
+        {
+          "slot_label": "Q2", "slot_order": 2, "marks": 10, "style": "long",
+          "sub_parts": [
+            {"slot_label": "Q2a", "slot_order": 1, "marks": 3, "style": "long"},
+            {"slot_label": "Q2b", "slot_order": 2, "marks": 7, "style": "long"}
+          ]
+        }
+      ]
+    },
+    {
+      "section_label": "Part B \u2014 Either/Or",
+      "section_order": 2,
+      "is_mandatory": false,
+      "slots": [
+        {"slot_label": "Q3", "slot_order": 1, "marks": 10, "style": "long"},
+        {"slot_label": "Q4", "slot_order": 2, "marks": 10, "style": "long"}
+      ]
+    },
+    {
+      "section_label": "Part C \u2014 Either/Or",
+      "section_order": 3,
+      "is_mandatory": false,
+      "slots": [
+        {"slot_label": "Q5", "slot_order": 1, "marks": 10, "style": "long"},
+        {
+          "slot_label": "Q6", "slot_order": 2, "marks": 10, "style": "long",
+          "sub_parts": [
+            {"slot_label": "Q6a", "slot_order": 1, "marks": 6, "style": "long"},
+            {"slot_label": "Q6b", "slot_order": 2, "marks": 4, "style": "long"}
+          ]
+        }
+      ]
+    },
+    {
+      "section_label": "Part D \u2014 Either/Or",
+      "section_order": 4,
+      "is_mandatory": false,
+      "slots": [
+        {
+          "slot_label": "Q7", "slot_order": 1, "marks": 10, "style": "long",
+          "sub_parts": [
+            {"slot_label": "Q7a", "slot_order": 1, "marks": 5, "style": "long"},
+            {"slot_label": "Q7b", "slot_order": 2, "marks": 5, "style": "long"}
+          ]
+        },
+        {
+          "slot_label": "Q8", "slot_order": 2, "marks": 10, "style": "long",
+          "sub_parts": [
+            {"slot_label": "Q8a", "slot_order": 1, "marks": 5, "style": "long"},
+            {"slot_label": "Q8b", "slot_order": 2, "marks": 5, "style": "long"}
+          ]
+        }
+      ]
+    }
+  ]
+}
