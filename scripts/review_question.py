@@ -66,6 +66,17 @@ ACTION_TO_STATUS = {"confirm": "confirmed", "reject": "rejected"}
 ACTION_TO_REVIEW_ACTION = {"confirm": "confirmed", "reject": "rejected"}
 
 
+def list_reviewers(cur) -> list[dict]:
+    """Lookup helper — there is no reviewer-management UI/API yet, so this
+    is how a caller finds a valid --reviewer-id without hand-writing SQL."""
+    cur.execute("SELECT reviewer_id, name, role, email, college_id FROM reviewers ORDER BY name")
+    rows = cur.fetchall()
+    return [
+        {"reviewer_id": r[0], "name": r[1], "role": r[2], "email": r[3], "college_id": r[4]}
+        for r in rows
+    ]
+
+
 def list_draft_questions(cur, limit: int = 20) -> list[dict]:
     """Oldest-first review queue. Joins in the source paragraph's content
     (when source_type='paragraph') so the queue is scannable without a
@@ -222,6 +233,9 @@ def main():
                         help="show one question in full, with its source paragraph")
     group.add_argument("--review", metavar="QUESTION_ID",
                         help="confirm or reject one question (requires --reviewer-id and --action)")
+    group.add_argument("--list-reviewers", action="store_true",
+                        help="list existing reviewers, to find a --reviewer-id to use "
+                             "(no signup flow exists yet — see seed_example_reviewers.sql)")
 
     ap.add_argument("--limit", type=int, default=20, help="max rows for --list (default: 20)")
     ap.add_argument("--reviewer-id", default=None, help="required with --review")
@@ -240,6 +254,14 @@ def main():
         with conn.cursor() as cur:
             if args.list:
                 _print_list(list_draft_questions(cur, limit=args.limit))
+            elif args.list_reviewers:
+                rows = list_reviewers(cur)
+                if not rows:
+                    print("No reviewers found — see scripts/seed_example_reviewers.sql.")
+                else:
+                    for r in rows:
+                        scope = "global" if r["college_id"] is None else str(r["college_id"])[:8]
+                        print(f"[{r['reviewer_id']}] {r['name']} ({r['role']}, {scope}) — {r['email']}")
             elif args.show:
                 _print_detail(show_question(cur, args.show))
             else:
