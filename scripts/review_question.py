@@ -8,32 +8,30 @@ question-creation path in this codebase already relies on
 status='draft' and stop there — this is the missing other half).
 
 BEHAVIOUR:
-  draft --[confirm]--> confirmed
-  draft --[reject]  --> rejected
-  Anything else (already confirmed/rejected/live/superseded) is refused —
-  a review action only ever fires once per question, from 'draft'. Re-
-  reviewing an already-decided question is not supported here; that would
-  need its own explicit "re-open" operation, which isn't asked for.
+  Two-gate publish model:
+    draft --[confirm]--> confirmed   (quality gate: reviewer approves content)
+    draft --[reject]  --> rejected
+    confirmed --[promote]--> live    (publish gate: coordinator makes it answerable)
 
-  Every review action is recorded twice, mirroring how
-  scripts/reword_question.py and the answer-review flow both keep an
-  audit trail:
+  A review action (--review) only fires from 'draft'. Re-reviewing an
+  already-decided question is not supported — that would need its own
+  explicit "re-open" operation.
+
+  A promote action (--promote) only fires from 'confirmed'. It records the
+  transition in question_status_history (for audit) but does NOT write a
+  question_reviews row — promotion is an operational publish decision, not
+  a content review.
+
+  Both actions require a valid --reviewer-id for audit traceability.
+
+  Every review action (--review) is recorded in two places:
     - question_reviews:        who reviewed it, what they decided, any comment
-    - question_status_history: the draft -> confirmed/rejected transition
+    - question_status_history: the status transition
 
   question_reviews / question_status_history / questions are all
   shared/global Question-schema tables (migration 003 explicitly excludes
   them from RLS/tenancy) — any reviewer, college-scoped or platform-level,
   can act on the shared bank. No college_id handling needed here.
-
-OPEN QUESTION (not resolved by this script — flagging rather than
-assuming): 'confirmed' and 'live' are separate statuses in question_status.
-Nothing in the current codebase promotes confirmed -> live, and
-trg_answers_question_must_be_live means a question can't be answered until
-it reaches 'live'. Whether that's a separate manual publish step, happens
-automatically alongside paper generation, or needs its own script is a
-call for whoever owns that part of the pipeline — this script stops at
-'confirmed', matching the literal ask ("remove the draft tag").
 
 Written as plain functions so a future API/UI can call them directly
 without shelling out (same convention as reword_question.py /
@@ -49,10 +47,14 @@ Usage:
     # Read one question in full, with its source paragraph for context:
     python3 scripts/review_question.py --show <question_id>
 
-    # Decide:
+    # Confirm or reject a draft:
     python3 scripts/review_question.py --review <question_id> --reviewer-id <uuid> --action confirm
     python3 scripts/review_question.py --review <question_id> --reviewer-id <uuid> --action reject --comment "factually wrong"
     python3 scripts/review_question.py --review <question_id> --reviewer-id <uuid> --action confirm --dry-run
+
+    # Publish a confirmed question (confirmed -> live):
+    python3 scripts/review_question.py --promote <question_id> --reviewer-id <uuid>
+    python3 scripts/review_question.py --promote <question_id> --reviewer-id <uuid> --dry-run
 """
 import argparse
 import sys
@@ -145,7 +147,11 @@ def show_question(cur, question_id: str) -> dict:
 def review_question(cur, question_id: str, reviewer_id: str, action: str,
                      comment: str | None = None) -> dict:
     """Runs the full review operation against an open cursor. Caller owns
-    the transaction — commit/rollback is the caller's responsibility."""
+    the transaction — commit/rollback is the caller's responsibility.
+
+    Quality gate: draft -> confirmed (or rejected). Records both a
+    question_reviews row and a question_status_history row.
+    """
     if action not in ACTION_TO_STATUS:
         raise ValueError(f"action must be one of {list(ACTION_TO_STATUS)}, got {action!r}")
 
@@ -194,6 +200,53 @@ def review_question(cur, question_id: str, reviewer_id: str, action: str,
     }
 
 
+def promote_question(cur, question_id: str, reviewer_id: str) -> dict:
+    """Publish gate: confirmed -> live. Caller owns the transaction.
+
+    Promotion is a separate operational decision from content review — it
+    controls when a question becomes answerable by students (required by
+    trg_answers_question_must_be_live). It is NOT recorded in
+    question_reviews (that table tracks content quality decisions only);
+    it IS recorded in question_status_history for a full audit trail.
+
+    Requires a valid reviewer_id so every status change is attributable.
+    """
+    cur.execute("SELECT status FROM questions WHERE question_id = %s", (question_id,))
+    row = cur.fetchone()
+    if row is None:
+        raise ValueError(f"question_id {question_id} not found")
+    current_status = row[0]
+    if current_status != "confirmed":
+        raise ValueError(
+            f"question {question_id} has status={current_status!r}, expected 'confirmed' — "
+            f"only confirmed questions can be promoted to live "
+            f"(draft questions must be reviewed first)"
+        )
+
+    cur.execute("SELECT reviewer_id FROM reviewers WHERE reviewer_id = %s", (reviewer_id,))
+    if cur.fetchone() is None:
+        raise ValueError(f"reviewer_id {reviewer_id} not found in reviewers")
+
+    history_id = str(uuid.uuid4())
+
+    cur.execute("""
+        UPDATE questions SET status = 'live' WHERE question_id = %s
+    """, (question_id,))
+
+    cur.execute("""
+        INSERT INTO question_status_history
+            (history_id, question_id, old_status, new_status, changed_by, changed_at)
+        VALUES (%s, %s, %s, %s, %s, now())
+    """, (history_id, question_id, current_status, "live", reviewer_id))
+
+    return {
+        "question_id": question_id,
+        "old_status": current_status,
+        "new_status": "live",
+        "reviewer_id": reviewer_id,
+    }
+
+
 def _print_list(rows: list[dict]) -> None:
     if not rows:
         print("No draft questions pending review.")
@@ -232,22 +285,30 @@ def main():
     group.add_argument("--show", metavar="QUESTION_ID",
                         help="show one question in full, with its source paragraph")
     group.add_argument("--review", metavar="QUESTION_ID",
-                        help="confirm or reject one question (requires --reviewer-id and --action)")
+                        help="confirm or reject one draft question "
+                             "(requires --reviewer-id and --action)")
+    group.add_argument("--promote", metavar="QUESTION_ID",
+                        help="publish a confirmed question: confirmed -> live "
+                             "(requires --reviewer-id; no --action needed)")
     group.add_argument("--list-reviewers", action="store_true",
                         help="list existing reviewers, to find a --reviewer-id to use "
                              "(no signup flow exists yet — see seed_example_reviewers.sql)")
 
     ap.add_argument("--limit", type=int, default=20, help="max rows for --list (default: 20)")
-    ap.add_argument("--reviewer-id", default=None, help="required with --review")
+    ap.add_argument("--reviewer-id", default=None,
+                     help="required with --review and --promote")
     ap.add_argument("--action", choices=["confirm", "reject"], default=None,
                      help="required with --review")
-    ap.add_argument("--comment", default=None, help="optional reviewer comment")
+    ap.add_argument("--comment", default=None, help="optional reviewer comment (--review only)")
     ap.add_argument("--dry-run", action="store_true",
-                     help="print the result, roll back instead of committing (--review only)")
+                     help="print the result, roll back instead of committing "
+                          "(--review and --promote)")
     args = ap.parse_args()
 
     if args.review and (not args.reviewer_id or not args.action):
         ap.error("--review requires both --reviewer-id and --action")
+    if args.promote and not args.reviewer_id:
+        ap.error("--promote requires --reviewer-id")
 
     conn = db_mod.get_connection()
     try:
@@ -264,7 +325,7 @@ def main():
                         print(f"[{r['reviewer_id']}] {r['name']} ({r['role']}, {scope}) — {r['email']}")
             elif args.show:
                 _print_detail(show_question(cur, args.show))
-            else:
+            elif args.review:
                 result = review_question(
                     cur, args.review, args.reviewer_id, args.action, comment=args.comment
                 )
@@ -277,6 +338,17 @@ def main():
                 else:
                     conn.commit()
                     print("Committed.")
+            else:  # --promote
+                result = promote_question(cur, args.promote, args.reviewer_id)
+                print(f"Question {result['question_id']}: "
+                      f"{result['old_status']} -> {result['new_status']} "
+                      f"(promoted by reviewer {result['reviewer_id']})")
+                if args.dry_run:
+                    conn.rollback()
+                    print("[dry-run] rolled back, no changes persisted.")
+                else:
+                    conn.commit()
+                    print("Committed. Question is now live and answerable by students.")
     finally:
         conn.close()
 

@@ -3,3 +3,7 @@ psycopg2-binary>=2.9
 # Only needed if you run with --storage minio. Not required for the
 # default --storage dummy mode (no object storage, no MinIO).
 # boto3>=1.34
+
+# Only needed for --method embeddings in evaluate_answer.py /
+# evaluate_pending.py. Not required for --method llm or --stub.
+sentence-transformers>=2.2

@@ -46,8 +46,9 @@ def _post_json(url: str, payload: dict, headers: dict | None = None, timeout: in
         raise RuntimeError(f"{url} returned HTTP {e.code}: {body}") from e
 
 
-def _generate(prompt: str) -> str:
-    """Send a prompt to Groq and return the response text."""
+def _generate(prompt: str, return_metrics: bool = False):
+    """Send a prompt to Groq and return the response text.
+    If return_metrics is True, returns a tuple of (text, usage_dict)."""
     api_key = os.environ["GROQ_API_KEY"]
     model = os.environ.get("GROQ_MODEL", DEFAULT_MODEL)
     result = _post_json(
@@ -58,12 +59,15 @@ def _generate(prompt: str) -> str:
     text = result["choices"][0]["message"]["content"]
     # Some Groq models (e.g. QwQ, DeepSeek-R1) return <think>...</think>
     # reasoning blocks before the actual answer. Strip them so only the
-    # final answer reaches the caller.
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    # final intended output remains.
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     # Fallback: strip an unclosed <think> block if the response was still
     # truncated (anything from <think> to end of string).
-    text = re.sub(r"<think>.*$", "", text, flags=re.DOTALL)
-    return text.strip()
+    cleaned = re.sub(r"<think>.*$", "", cleaned, flags=re.DOTALL).strip()
+    
+    if return_metrics:
+        return cleaned, result.get("usage", {})
+    return cleaned
 
 
 def reword_question_text(question_text: str, instruction: str | None = None,
