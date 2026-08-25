@@ -17,8 +17,8 @@ MinIO twice.
 Usage:
     export PGHOST=localhost PGDATABASE=ai_evaluation PGUSER=postgres PGPASSWORD=...
     python3 scripts/load_exam_bank.py extracted/exam_bank.json --status draft
-    # --storage defaults to "dummy": no MinIO needed, blob_url is a placeholder.
-    # Switch to real uploads later with --storage minio (needs boto3 + MINIO_* env vars).
+    # --storage defaults to "minio": diagrams are uploaded to MinIO (needs boto3 + MINIO_* env vars).
+    # Use --storage dummy to skip uploads and use deterministic placeholder blob_urls instead.
 
     python3 scripts/load_exam_bank.py extracted/exam_bank.json --dry-run   # no DB calls at all, just prints the plan
 """
@@ -178,7 +178,7 @@ def upload_pending_diagrams(plan: list[dict], cur=None, dry_run: bool = False, s
 
             cur.execute("SELECT blob_url FROM content_assets WHERE asset_id = %s", (asset["asset_id"],))
             existing = cur.fetchone()
-            if existing:
+            if existing and not (storage_mode == "minio" and existing[0] and existing[0].startswith("dummy-storage/")):
                 asset["blob_url"] = existing[0]
                 print(f"  asset {asset['asset_id']} already uploaded, reusing {asset['blob_url']}")
                 continue
@@ -259,10 +259,10 @@ def main():
     ap.add_argument("json_path", type=Path)
     ap.add_argument("--status", default="draft", choices=["draft", "confirmed", "rejected", "live", "superseded"],
                      help="status to import questions with (default: draft, pending human review)")
-    ap.add_argument("--storage", default="dummy", choices=["dummy", "minio"],
-                     help="'dummy' (default): no object storage needed, blob_url is a deterministic "
-                          "placeholder. 'minio': actually upload diagrams to MinIO (needs boto3 + "
-                          "MINIO_* env vars).")
+    ap.add_argument("--storage", default="minio", choices=["dummy", "minio"],
+                     help="'minio' (default): upload diagrams to MinIO (needs boto3 + MINIO_* env "
+                          "vars). 'dummy': no object storage needed, blob_url is a deterministic "
+                          "placeholder.")
     ap.add_argument("--dry-run", action="store_true", help="print the plan, touch neither DB nor MinIO")
     args = ap.parse_args()
 
