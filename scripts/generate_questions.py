@@ -160,31 +160,29 @@ def main():
                     help="skip the real LLM call (for testing without an API key)")
     args = ap.parse_args()
 
-    conn = db_mod.get_connection()
     try:
-        with conn.cursor() as cur:
+        with db_mod.transaction(dry_run=args.dry_run) as cur:
             results = generate_questions(
                 cur, args.paragraph_id,
                 count=args.count, style=args.style, intent_hint=args.intent_hint,
                 stub_llm=args.stub_llm,
             )
 
-            print(f"Generated {len(results)} draft question(s) from paragraph "
-                  f"{args.paragraph_id}:\n")
-            for r in results:
-                print(f"  [{r['question_id']}] ({r['style']}, {r['marks_max']} marks, "
-                      f"status={r['status']})")
-                print(f"    {r['content']!r}")
+        print(f"Generated {len(results)} draft question(s) from paragraph "
+              f"{args.paragraph_id}:\n")
+        for r in results:
+            print(f"  [{r['question_id']}] ({r['style']}, {r['marks_max']} marks, "
+                  f"status={r['status']})")
+            print(f"    {r['content']!r}")
 
-            if args.dry_run:
-                conn.rollback()
-                print("\n[dry-run] rolled back, no changes persisted.")
-            else:
-                conn.commit()
-                print("\nCommitted. All questions are status='draft' — "
-                      "pending review before going live.")
-    finally:
-        conn.close()
+        if args.dry_run:
+            print("\n[dry-run] rolled back, no changes persisted.")
+        else:
+            print("\nCommitted. All questions are status='draft' — "
+                  "pending review before going live.")
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -121,27 +121,21 @@ def main():
 
     graph = json.loads(args.json_path.read_text())
 
-    conn = db_mod.get_connection()
     try:
-        with conn.cursor() as cur:
+        with db_mod.transaction(dry_run=args.dry_run) as cur:
             asset_id = load_reference_diagram(
                 cur, graph, question_id=args.question_id, variant_id=args.variant_id
             )
             print(f"Loaded reference diagram -> asset_id={asset_id} "
                   f"({len(graph['nodes'])} nodes, {len(graph.get('edges', []))} edges)")
 
-            if args.dry_run:
-                conn.rollback()
-                print("[dry-run] rolled back, no changes persisted.")
-            else:
-                conn.commit()
-                print("Committed.")
+        if args.dry_run:
+            print("[dry-run] rolled back, no changes persisted.")
+        else:
+            print("Committed.")
     except ValueError as e:
-        conn.rollback()
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
-    finally:
-        conn.close()
 
 
 if __name__ == "__main__":

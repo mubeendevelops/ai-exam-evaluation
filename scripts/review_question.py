@@ -310,9 +310,8 @@ def main():
     if args.promote and not args.reviewer_id:
         ap.error("--promote requires --reviewer-id")
 
-    conn = db_mod.get_connection()
     try:
-        with conn.cursor() as cur:
+        with db_mod.transaction(dry_run=args.dry_run) as cur:
             if args.list:
                 _print_list(list_draft_questions(cur, limit=args.limit))
             elif args.list_reviewers:
@@ -332,25 +331,17 @@ def main():
                 print(f"Question {result['question_id']}: "
                       f"{result['old_status']} -> {result['new_status']} "
                       f"(reviewer {result['reviewer_id']})")
-                if args.dry_run:
-                    conn.rollback()
-                    print("[dry-run] rolled back, no changes persisted.")
-                else:
-                    conn.commit()
-                    print("Committed.")
+                print("[dry-run] rolled back, no changes persisted." if args.dry_run else "Committed.")
             else:  # --promote
                 result = promote_question(cur, args.promote, args.reviewer_id)
                 print(f"Question {result['question_id']}: "
                       f"{result['old_status']} -> {result['new_status']} "
                       f"(promoted by reviewer {result['reviewer_id']})")
-                if args.dry_run:
-                    conn.rollback()
-                    print("[dry-run] rolled back, no changes persisted.")
-                else:
-                    conn.commit()
-                    print("Committed. Question is now live and answerable by students.")
-    finally:
-        conn.close()
+                print("[dry-run] rolled back, no changes persisted." if args.dry_run
+                      else "Committed. Question is now live and answerable by students.")
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

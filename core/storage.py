@@ -41,6 +41,10 @@ def dummy_upload(local_path: str, key_prefix: str, asset_id: str) -> str:
 
 
 def get_client():
+    """Builds a fresh boto3 S3 client pointed at MinIO, from MINIO_* env
+    vars. No caching/pooling — a new client per call, same stateless-factory
+    shape as core/db.py::get_connection(). Requires boto3 (only imported
+    here, not at module load, so dummy mode works without it installed)."""
     import boto3
     from botocore.client import Config
 
@@ -57,7 +61,8 @@ def get_client():
     )
 
 
-def ensure_bucket(client, bucket: str):
+def ensure_bucket(client, bucket: str) -> None:
+    """Creates `bucket` on the given S3 client if it doesn't already exist."""
     existing = [b["Name"] for b in client.list_buckets().get("Buckets", [])]
     if bucket not in existing:
         client.create_bucket(Bucket=bucket)

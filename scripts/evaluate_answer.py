@@ -32,14 +32,13 @@ Usage:
     python3 scripts/evaluate_answer.py <answer_id> <variant_id> --method embeddings --stub
 """
 import argparse
-import json
 import sys
-import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core import db as db_mod      # noqa: E402
-from core import evaluator         # noqa: E402
+from core import db as db_mod              # noqa: E402
+from core import evaluator                 # noqa: E402
+from core import answer_evaluation         # noqa: E402
 
 METHODS = {"embeddings": evaluator.score_with_embeddings,
            "llm": evaluator.score_with_llm}
@@ -96,36 +95,17 @@ def evaluate_answer(cur, answer_id: str, variant_id: str,
     else:
         result = METHODS[method](student_text, reference_text, marks_max)
 
-    # Flip previous evaluation_results for this answer to is_current=False
-    cur.execute("""
-        UPDATE evaluation_results SET is_current = FALSE
-        WHERE answer_id = %s AND is_current = TRUE
-    """, (answer_id,))
+    evaluation_id = answer_evaluation.record_evaluation(
+        cur,
+        answer_id=answer_id,
+        reference_answer_variant_id=variant_id,
+        evaluator_model=result["model"],
+        score=result["score"],
+        explanation=result["explanation"],
+        metrics=result.get("metrics"),
+    )
 
-    # Insert new evaluation result
-    evaluation_id = str(uuid.uuid4())
-    cur.execute("""
-        INSERT INTO evaluation_results (
-            evaluation_id, answer_id, reference_answer_variant_id,
-            evaluator_type, evaluator_model, score, explanation,
-            is_current, evaluated_at, metrics
-        )
-        VALUES (%s, %s, %s, 'ai', %s, %s, %s, TRUE, now(), %s)
-    """, (
-        evaluation_id, answer_id, variant_id,
-        result["model"], result["score"], result["explanation"],
-        json.dumps(result["metrics"]) if "metrics" in result else None
-    ))
-
-    # Transition answer status: pending_evaluation → ai_scored
-    if answer_status == "pending_evaluation":
-        cur.execute("UPDATE answers SET status = 'ai_scored' WHERE answer_id = %s",
-                    (answer_id,))
-        cur.execute("""
-            INSERT INTO answer_status_history
-                (history_id, answer_id, old_status, new_status, changed_by, changed_at)
-            VALUES (%s, %s, 'pending_evaluation', 'ai_scored', NULL, now())
-        """, (str(uuid.uuid4()), answer_id))
+    status_changed = answer_evaluation.transition_to_ai_scored(cur, answer_id, answer_status)
 
     return {
         "answer_id": answer_id,
@@ -137,7 +117,7 @@ def evaluate_answer(cur, answer_id: str, variant_id: str,
         "marks_max": marks_max,
         "explanation": result["explanation"],
         "metrics": result.get("metrics", {}),
-        "status_changed": answer_status == "pending_evaluation",
+        "status_changed": status_changed,
     }
 
 
@@ -156,9 +136,8 @@ def main():
                     help="deterministic fake score (no model/API needed)")
     args = ap.parse_args()
 
-    conn = db_mod.get_connection()
     try:
-        with conn.cursor() as cur:
+        with db_mod.transaction(dry_run=args.dry_run) as cur:
             cur.execute("SET LOCAL app.is_platform_admin = 'true'")
             result = evaluate_answer(
                 cur, args.answer_id, args.variant_id,
@@ -169,29 +148,24 @@ def main():
               f"{result['score']}/{result['marks_max']} "
               f"(method={result['method']}, model={result['model']})")
         print(f"  {result['explanation']}")
-        
+
         metrics = result.get('metrics', {})
         metrics_str = ", ".join(f"{k}={v}" for k, v in metrics.items() if k != "usage")
         if "usage" in metrics:
             metrics_str += f", usage={metrics['usage']}"
         if metrics_str:
             print(f"  Metrics: {metrics_str}")
-            
+
         if result["status_changed"]:
             print("  Status: pending_evaluation → ai_scored")
 
         if args.dry_run:
-            conn.rollback()
             print("\n[dry-run] rolled back, no changes persisted.")
         else:
-            conn.commit()
             print("\nCommitted.")
     except ValueError as e:
-        conn.rollback()
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
-    finally:
-        conn.close()
 
 
 if __name__ == "__main__":

@@ -5,9 +5,9 @@ answer_block against a reference diagram (a content_assets row).
 
 BEHAVIOUR (mirrors scripts/evaluate_answer.py, adapted for diagrams):
   1. Fetches the answer_block's blob_url (block_type must be 'diagram').
-  2. Extracts its structure via core/diagram_extractor — real extraction is
-     NOT implemented yet (no engine selected, plan.md §4.3), so
-     --stub-extraction is required until that decision is made.
+  2. Extracts its structure via core/diagram_extractor — real extraction IS
+     implemented (PaddleOCR, see that module's docstring); --stub-extraction
+     is only needed for dummy-storage test data with no real image behind it.
   3. Fetches the reference asset's structured_data (content_assets,
      asset_type='diagram').
   4. Loads glossary_terms (optionally scoped by --topic-id, plus global
@@ -43,13 +43,13 @@ Usage:
 import argparse
 import json
 import sys
-import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import db as db_mod          # noqa: E402
 from core import diagram_extractor     # noqa: E402
 from core import diagram_evaluator     # noqa: E402
+from core import answer_evaluation     # noqa: E402
 
 
 def _load_glossary(cur, topic_id: str | None = None) -> list[dict]:
@@ -129,35 +129,20 @@ def evaluate_diagram_answer(cur, answer_block_id: str, reference_asset_id: str,
         glossary = _load_glossary(cur, topic_id=topic_id)
         result = diagram_evaluator.compare_diagrams(extracted, reference_graph, glossary, marks_max)
 
-    # Flip previous evaluation_results for this answer to is_current=False
-    cur.execute("""
-        UPDATE evaluation_results SET is_current = FALSE
-        WHERE answer_id = %s AND is_current = TRUE
-    """, (answer_id,))
+    evaluation_id = answer_evaluation.record_evaluation(
+        cur,
+        answer_id=answer_id,
+        reference_asset_id=reference_asset_id,
+        evaluator_model=result["model"]["matching_method"],
+        score=result["similarity_score"],
+        explanation=(
+            f"Diagram comparison: {len(result.get('missing_information', []))} missing item(s), "
+            f"{len(result.get('anomalies', []))} anomaly/anomalies."
+        ),
+        metrics=result,
+    )
 
-    evaluation_id = str(uuid.uuid4())
-    cur.execute("""
-        INSERT INTO evaluation_results (
-            evaluation_id, answer_id, reference_answer_variant_id, reference_asset_id,
-            evaluator_type, evaluator_model, score, explanation,
-            is_current, evaluated_at, metrics
-        )
-        VALUES (%s, %s, NULL, %s, 'ai', %s, %s, %s, TRUE, now(), %s)
-    """, (
-        evaluation_id, answer_id, reference_asset_id,
-        result["model"]["matching_method"], result["similarity_score"],
-        f"Diagram comparison: {len(result.get('missing_information', []))} missing item(s), "
-        f"{len(result.get('anomalies', []))} anomaly/anomalies.",
-        json.dumps(result),
-    ))
-
-    if answer_status == "pending_evaluation":
-        cur.execute("UPDATE answers SET status = 'ai_scored' WHERE answer_id = %s", (answer_id,))
-        cur.execute("""
-            INSERT INTO answer_status_history
-                (history_id, answer_id, old_status, new_status, changed_by, changed_at)
-            VALUES (%s, %s, 'pending_evaluation', 'ai_scored', NULL, now())
-        """, (str(uuid.uuid4()), answer_id))
+    status_changed = answer_evaluation.transition_to_ai_scored(cur, answer_id, answer_status)
 
     return {
         "answer_id": answer_id,
@@ -166,13 +151,24 @@ def evaluate_diagram_answer(cur, answer_block_id: str, reference_asset_id: str,
         "score": result["similarity_score"],
         "marks_max": marks_max,
         "result": result,
-        "status_changed": answer_status == "pending_evaluation",
+        "status_changed": status_changed,
     }
+
+
+def _is_noise_token(label: str) -> bool:
+    """Display-only heuristic: is this anomaly token worth its own line, or
+    is it the kind of single symbol/digit (arrow glyphs, ruled-line strokes,
+    stray digits) that floods the terminal without telling a reader
+    anything? Used only to decide how _print_summary groups the "Unexpected
+    content" list — evaluation_results.metrics always stores the full,
+    ungrouped anomalies list regardless of what's printed here."""
+    stripped = label.strip()
+    return len(stripped) <= 2 or not any(c.isalpha() for c in stripped)
 
 
 def _print_summary(result: dict) -> None:
     """Compact, human-readable rendering of the comparison — the full
-    structured object (plan.md §5) is always stored in
+    structured object (plan.md §5) is always stored, untouched, in
     evaluation_results.metrics regardless of what's printed here; this is
     just a terminal-friendly view of it. Use --verbose for the raw JSON."""
     r = result["result"]
@@ -180,31 +176,45 @@ def _print_summary(result: dict) -> None:
     nodes = r.get("node_validation", [])
     matched = [n for n in nodes if n["status"] == "matched"]
     missing = [n for n in nodes if n["status"] != "matched"]
-    print(f"\nLabels: {len(matched)}/{len(nodes)} matched")
+    label_width = max((len(n["reference_label"]) for n in nodes), default=0)
+
+    print(f"\nLabels ({len(matched)}/{len(nodes)} matched)")
     for n in matched:
-        print(f"  ✓ {n['reference_label']!r}  ← read as {n['matched_label']!r} "
-              f"(similarity {n['similarity']})")
+        pct = f"{round(n['similarity'] * 100)}%"
+        print(f"  ✓ {n['reference_label']:<{label_width}}  read as {n['matched_label']!r:<22} {pct}")
     for n in missing:
-        print(f"  ✗ {n['reference_label']!r}  not found")
+        print(f"  ✗ {n['reference_label']:<{label_width}}  not found")
 
     edges = r.get("edge_comparison", [])
     matched_edges = [e for e in edges if e["status"] in ("matched", "direction_reversed")]
     if edges:
-        note = ("  (edge/arrow detection is not implemented yet — this is "
-                 "not a real signal, see CLAUDE_CONTEXT.md §11)" if not matched_edges else "")
-        print(f"\nConnections: {len(matched_edges)}/{len(edges)} matched{note}")
+        print(f"\nConnections ({len(matched_edges)}/{len(edges)} matched)")
+        if not matched_edges:
+            print("  edge detection isn't implemented yet — this count isn't a real "
+                  "signal (see CLAUDE_CONTEXT.md §11)")
 
     anomalies = r.get("anomalies", [])
     if anomalies:
-        print(f"\nUnexpected content ({len(anomalies)}):")
+        readable, noise = [], []
         for a in anomalies:
+            token = a.split("'")[1] if "'" in a else a
+            (noise if _is_noise_token(token) else readable).append(a)
+
+        print(f"\nUnexpected content ({len(anomalies)})")
+        for a in readable:
             print(f"  - {a}")
+        if noise:
+            tokens = ", ".join(repr(a.split("'")[1]) for a in noise)
+            print(f"  - {len(noise)} short/symbol read(s), likely arrows or stray "
+                  f"strokes: {tokens}")
 
     glossary = r.get("glossary_matches", [])
     if glossary:
-        print(f"\nGlossary corrections applied ({len(glossary)}):")
+        extracted_width = max(len(repr(g["extracted_label"])) for g in glossary)
+        print(f"\nGlossary corrections ({len(glossary)})")
         for g in glossary:
-            print(f"  {g['extracted_label']!r} → {g['canonical_term']} ({g['match_type']})")
+            print(f"  {g['extracted_label']!r:<{extracted_width}} -> "
+                  f"{g['canonical_term']} ({g['match_type']})")
 
 
 def main():
@@ -227,9 +237,8 @@ def main():
                     help="print the full stored JSON instead of the compact summary")
     args = ap.parse_args()
 
-    conn = db_mod.get_connection()
     try:
-        with conn.cursor() as cur:
+        with db_mod.transaction(dry_run=args.dry_run) as cur:
             cur.execute("SET LOCAL app.is_platform_admin = 'true'")
             result = evaluate_diagram_answer(
                 cur, args.answer_block_id, args.reference_asset_id,
@@ -237,7 +246,8 @@ def main():
                 topic_id=args.topic_id,
             )
 
-        print(f"Answer {result['answer_id']}: {result['score']}/{result['marks_max']}")
+        header = f"Score: {result['score']} / {result['marks_max']}   (answer {result['answer_id']})"
+        print(f"\n{header}\n{'=' * len(header)}")
         if args.verbose:
             print(json.dumps(result["result"], indent=2))
         else:
@@ -246,18 +256,14 @@ def main():
         if result["status_changed"]:
             print("\nStatus: pending_evaluation -> ai_scored")
 
+        print()
         if args.dry_run:
-            conn.rollback()
-            print("\n[dry-run] rolled back, no changes persisted.")
+            print("[dry-run] rolled back, no changes persisted.")
         else:
-            conn.commit()
-            print("\nCommitted.")
+            print("Committed.")
     except (ValueError, NotImplementedError) as e:
-        conn.rollback()
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
-    finally:
-        conn.close()
 
 
 if __name__ == "__main__":

@@ -20,12 +20,11 @@ Usage
 
 import argparse
 import sys
-import os
+from pathlib import Path
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, _REPO_ROOT)
-
-from core.db import get_connection  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from core import db as db_mod        # noqa: E402
+from core import pattern_tree        # noqa: E402
 
 
 _SQL_LIST = """
@@ -36,17 +35,6 @@ _SQL_LIST = """
 
 _SQL_PATTERN_BY_NAME = """
     SELECT pattern_id FROM paper_patterns WHERE name = %(name)s;
-"""
-
-_SQL_TREE = """
-    SELECT
-        ps.section_order, ps.section_label, ps.is_mandatory,
-        psl.slot_id, psl.slot_label, psl.slot_order, psl.marks, psl.style,
-        psl.parent_slot_id
-    FROM   pattern_sections ps
-    JOIN   pattern_slots    psl ON psl.section_id = ps.section_id
-    WHERE  ps.pattern_id = %(pattern_id)s
-    ORDER  BY ps.section_order, psl.parent_slot_id NULLS FIRST, psl.slot_order;
 """
 
 _SQL_PATTERN_META = """
@@ -81,8 +69,7 @@ def print_tree(conn, pattern_id: str) -> None:
             sys.exit(1)
         name, description, course_code, total_marks, is_active, created_by = meta
 
-        cur.execute(_SQL_TREE, {"pattern_id": pattern_id})
-        rows = cur.fetchall()
+        rows = pattern_tree.fetch_tree_rows(cur, pattern_id)
 
     owner = "system template" if created_by is None else f"teacher ({created_by})"
     print(f"\n{name}")
@@ -94,32 +81,8 @@ def print_tree(conn, pattern_id: str) -> None:
         print(f"  description : {description}")
     print()
 
-    by_section: dict[int, dict] = {}
-    slots_by_id: dict[str, dict] = {}
-
-    for (sec_order, sec_label, is_mandatory, slot_id, slot_label,
-         slot_order, marks, style, parent_id) in rows:
-        by_section.setdefault(sec_order, {
-            "label": sec_label, "mandatory": is_mandatory, "top_slots": []
-        })
-        slot_rec = {
-            "id": str(slot_id), "label": slot_label, "order": slot_order,
-            "marks": marks, "style": style, "children": [],
-        }
-        slots_by_id[str(slot_id)] = slot_rec
-        if parent_id is None:
-            by_section[sec_order]["top_slots"].append(slot_rec)
-        else:
-            slots_by_id[str(parent_id)]["children"].append(slot_rec)
-
-    for sec_order in sorted(by_section):
-        sec = by_section[sec_order]
-        tag = "mandatory" if sec["mandatory"] else "optional (choose_count set at generation)"
-        print(f"  Section {sec_order}: {sec['label']}  [{tag}]")
-        for slot in sec["top_slots"]:
-            print(f"    {slot['label']:<6} {slot['marks']:>5}M  ({slot['style']})")
-            for child in slot["children"]:
-                print(f"      {child['label']:<6} {child['marks']:>5}M  ({child['style']})")
+    by_section = pattern_tree.build_section_tree(rows)
+    pattern_tree.render_tree(by_section, optional_tag="optional (choose_count set at generation)")
     print()
 
 
@@ -132,7 +95,7 @@ def main() -> None:
     group.add_argument("--name", metavar="NAME", help="Show tree for this exact pattern name.")
     args = parser.parse_args()
 
-    conn = get_connection()
+    conn = db_mod.get_connection()
     try:
         if args.list:
             list_patterns(conn)

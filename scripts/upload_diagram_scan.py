@@ -54,9 +54,8 @@ def main():
     )
     print(f"Uploaded {args.image_path} -> {blob_url}")
 
-    conn = db_mod.get_connection()
     try:
-        with conn.cursor() as cur:
+        with db_mod.transaction() as cur:
             cur.execute("SET LOCAL app.is_platform_admin = 'true'")
 
             cur.execute("SELECT answer_id FROM answers WHERE answer_id = %s", (args.answer_id,))
@@ -78,15 +77,11 @@ def main():
             cur.execute("UPDATE answers SET status = 'pending_evaluation' WHERE answer_id = %s",
                         (args.answer_id,))
 
-        conn.commit()
         print(f"Created answer_block {block_id} (answer set back to pending_evaluation)")
         print(f"\nNow run:\n  python3 scripts/evaluate_diagram_answer.py {block_id} <reference_asset_id>")
     except ValueError as e:
-        conn.rollback()
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
-    finally:
-        conn.close()
 
 
 if __name__ == "__main__":

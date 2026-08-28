@@ -174,9 +174,8 @@ def main():
                     help="skip the real LLM call (for testing without an API key)")
     args = ap.parse_args()
 
-    conn = db_mod.get_connection()
     try:
-        with conn.cursor() as cur:
+        with db_mod.transaction(dry_run=args.dry_run) as cur:
             result = reword_question(
                 cur, args.question_id,
                 instruction=args.instruction,
@@ -193,14 +192,13 @@ def main():
             if args.show_tree:
                 show_tree(cur, args.question_id)
 
-            if args.dry_run:
-                conn.rollback()
-                print("\n[dry-run] rolled back, no changes persisted.")
-            else:
-                conn.commit()
-                print("\nCommitted.")
-    finally:
-        conn.close()
+        if args.dry_run:
+            print("\n[dry-run] rolled back, no changes persisted.")
+        else:
+            print("\nCommitted.")
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -80,13 +80,12 @@ which is decided at paper-generation time, not pattern-definition time.
 import argparse
 import json
 import sys
-import os
 import uuid
+from pathlib import Path
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, _REPO_ROOT)
-
-from core.db import get_connection  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from core import db as db_mod              # noqa: E402
+from core import pattern_tree              # noqa: E402
 
 
 # Fixed namespace for this project's deterministic UUID5 generation.
@@ -272,6 +271,10 @@ def _load_slot(cur, section_id: uuid.UUID, section_key: str, slot: dict,
 
 
 def load_pattern(conn, pattern: dict, created_by: str | None) -> uuid.UUID:
+    """Upserts one pattern (and its sections/slots) into paper_patterns /
+    pattern_sections / pattern_slots. Caller owns the transaction — commit/
+    rollback is the caller's responsibility. Returns the pattern's
+    (deterministic, uuid5-derived) pattern_id."""
     pattern_key = f"pattern:{pattern['name']}"
     pattern_id = _det_uuid(pattern_key)
     total_marks = _compute_total_marks(pattern)
@@ -308,50 +311,14 @@ def load_pattern(conn, pattern: dict, created_by: str | None) -> uuid.UUID:
 # Tree display (post-load confirmation)
 # ---------------------------------------------------------------------------
 
-_SQL_TREE = """
-    SELECT
-        ps.section_order, ps.section_label, ps.is_mandatory,
-        psl.slot_id, psl.slot_label, psl.slot_order, psl.marks, psl.style,
-        psl.parent_slot_id
-    FROM   pattern_sections ps
-    JOIN   pattern_slots    psl ON psl.section_id = ps.section_id
-    WHERE  ps.pattern_id = %(pattern_id)s
-    ORDER  BY ps.section_order, psl.parent_slot_id NULLS FIRST, psl.slot_order;
-"""
-
-
 def print_tree(conn, pattern_id: uuid.UUID) -> None:
     with conn.cursor() as cur:
-        cur.execute(_SQL_TREE, {"pattern_id": str(pattern_id)})
-        rows = cur.fetchall()
+        rows = pattern_tree.fetch_tree_rows(cur, pattern_id)
 
-    by_section: dict[int, dict] = {}
-    slots_by_id: dict[str, dict] = {}
-
-    for (sec_order, sec_label, is_mandatory, slot_id, slot_label,
-         slot_order, marks, style, parent_id) in rows:
-        by_section.setdefault(sec_order, {
-            "label": sec_label, "mandatory": is_mandatory, "top_slots": []
-        })
-        slot_rec = {
-            "id": str(slot_id), "label": slot_label, "order": slot_order,
-            "marks": marks, "style": style, "children": [],
-        }
-        slots_by_id[str(slot_id)] = slot_rec
-        if parent_id is None:
-            by_section[sec_order]["top_slots"].append(slot_rec)
-        else:
-            slots_by_id[str(parent_id)]["children"].append(slot_rec)
+    by_section = pattern_tree.build_section_tree(rows)
 
     print(f"\nPattern tree ({pattern_id}):\n")
-    for sec_order in sorted(by_section):
-        sec = by_section[sec_order]
-        tag = "mandatory" if sec["mandatory"] else "optional"
-        print(f"  Section {sec_order}: {sec['label']}  [{tag}]")
-        for slot in sec["top_slots"]:
-            print(f"    {slot['label']:<6} {slot['marks']:>5}M  ({slot['style']})")
-            for child in slot["children"]:
-                print(f"      {child['label']:<6} {child['marks']:>5}M  ({child['style']})")
+    pattern_tree.render_tree(by_section)
     print()
 
 
@@ -378,7 +345,7 @@ def main() -> None:
 
     _validate_pattern(pattern, force=args.force)
 
-    conn = get_connection()
+    conn = db_mod.get_connection()
     try:
         pattern_id = load_pattern(conn, pattern, created_by=args.created_by)
 

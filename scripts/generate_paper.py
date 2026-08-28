@@ -131,9 +131,8 @@ def main():
                     help="roll back instead of committing — inspect without persisting")
     args = ap.parse_args()
 
-    conn = db_mod.get_connection()
     try:
-        with conn.cursor() as cur:
+        with db_mod.transaction(dry_run=args.dry_run) as cur:
             result = generate_paper(
                 cur,
                 pattern_id=args.pattern_id,
@@ -153,21 +152,16 @@ def main():
             print(f"Paper JSON written to {args.output}")
 
         if args.dry_run:
-            conn.rollback()
             print(f"[dry-run] rolled back. Paper would be: {result['paper_id']}")
         else:
-            conn.commit()
             print(f"Generated paper '{result['name']}' → {result['paper_id']}")
             print(f"  Filled {result['total_filled']}/{result['total_slots']} slots.")
             if result["warnings"]:
                 print(f"  ⚠ {len(result['warnings'])} warning(s) — run with --show for details.")
 
     except ValueError as e:
-        conn.rollback()
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
-    finally:
-        conn.close()
 
 
 if __name__ == "__main__":

@@ -43,10 +43,9 @@ def _find_pending(cur, limit: int | None = None) -> list[dict]:
             AND rav.is_current = TRUE
         WHERE  a.status = 'pending_evaluation'
         ORDER  BY a.submitted_at ASC
+        LIMIT %s
     """
-    if limit:
-        sql += f" LIMIT {int(limit)}"
-    cur.execute(sql)
+    cur.execute(sql, (limit,))
     return [
         {"answer_id": str(r[0]), "question_id": str(r[1]),
          "variant_id": str(r[2]) if r[2] else None}

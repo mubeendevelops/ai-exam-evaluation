@@ -228,7 +228,10 @@ def compare_diagrams(extracted: dict, reference: dict, glossary_terms: list[dict
     ext_edges = extracted.get("edges", [])
 
     ext_nodes, glossary_matches = _canonicalize_nodes(ext_nodes_raw, glossary_terms)
-    ref_nodes, _ref_glossary_matches = _canonicalize_nodes(ref_nodes_raw, glossary_terms)
+    # Reference labels are hand-authored (load_reference_diagram.py), not OCR
+    # output, so their glossary-match log has no OCR noise to report on —
+    # only the extracted side's glossary_matches goes into the metadata (b).
+    ref_nodes, _ = _canonicalize_nodes(ref_nodes_raw, glossary_terms)
 
     match_result = _match_nodes(ref_nodes, ext_nodes)
     pairs = match_result["pairs"]
