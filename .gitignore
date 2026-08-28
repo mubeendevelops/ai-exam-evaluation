@@ -75,3 +75,5 @@ minio-data/
 /docs/*
 /research/*
 readme files/
+CLAUDE_CONTEXT.md
+plan.md

@@ -287,3 +287,291 @@ single-tenant, not something this script should guess at.
   `app.is_platform_admin = 'true'`, or as a separate reporting role with
   `BYPASSRLS` — not addressed here since it's a reporting/analytics-layer
   concern, not a schema one.
+
+# Add question text column — migration notes
+
+File: `004_add_question_text.sql`
+**Prerequisite:** `001`, `002`, `003` already applied.
+
+## What this does
+
+Adds a `content` column to the `questions` table. The original schema had
+`source_type` and `source_id` pointing at where a question was generated from,
+but no column storing the question's actual text. This is critical for:
+- **Manual questions** (source_type = 'manual'): have no source to regenerate
+  from, so the text must be stored directly.
+- **Sourced questions** (source_type = 'sentence'/'paragraph'/etc.): while
+  regenerable from source + template, storing the actual text avoids
+  regeneration overhead and captures any human edits.
+
+## Guarded NOT NULL enforcement
+
+The column starts nullable. When existing rows are backfilled with content,
+re-run this migration or manually run `ALTER TABLE questions ALTER COLUMN
+content SET NOT NULL` to make the column mandatory.
+
+---
+
+# Question tree and AI generation flag — migration notes
+
+File: `005_question_tree_and_ai_flag.sql`
+**Prerequisite:** `001`, `002`, `003`, `004` already applied.
+
+## What this adds
+
+**`is_ai_generated` (boolean, nullable)** — flags whether a question was
+created by an AI system or by a human. Unlike `source_type` (which says WHERE
+a question came from), this says WHO created it. Example: a question with
+`source_type='paragraph'` and `is_ai_generated=true` means "AI rewrote/
+generated this from a paragraph source." NULL = unknown (legacy questions
+loaded before this column existed).
+
+**`parent_question_id` (self-referential FK, nullable)** — tracks the
+derivation tree: which question a reworded/variant question branches from.
+Different from `supersedes_question_id`:
+- **`supersedes_question_id`** = strict replacement (original retires, status
+  flips to 'superseded')
+- **`parent_question_id`** = creative variation (original stays active and
+  usable; enables rewording, difficulty variants, style changes)
+
+Multiple children can share the same parent, forming a real derivation tree.
+
+## The `question_tree` view
+
+A convenience view that exposes the full tree structure via a recursive CTE:
+
+```sql
+SELECT * FROM question_tree WHERE root_question_id = '<uuid>';
+```
+
+Returns: `question_id`, `parent_question_id`, content, marks, status, depth,
+`path` (array of ancestor UUIDs), `root_question_id`.
+
+---
+
+# Paper pattern schema — migration notes
+
+File: `006_paper_pattern_schema.sql`
+**Prerequisite:** `001`, `002`, `003`, `004`, `005` already applied.
+
+## What this adds
+
+Three linked tables defining reusable exam paper templates:
+
+- **`paper_patterns`** — top-level template record (name, total_marks,
+  course_code, created_by, is_active)
+- **`pattern_sections`** — ordered groups of question slots
+  (section_label, is_mandatory, section_order)
+- **`pattern_slots`** — individual question positions
+  (slot_label, marks, style, slot_order, parent_slot_id for sub-parts)
+
+## Key design decisions
+
+1. **Shared across all colleges** — no `college_id` on any table. Patterns are
+   platform-wide resources, like questions.
+
+2. **`choose_count` lives on generated papers, not patterns** — the pattern
+   only records whether a section is mandatory/optional. At generation time,
+   you decide "answer 1 of 2" vs "answer 2 of 3" — same pattern, different
+   papers.
+
+3. **`created_by` nullable** — NULL means system-owned template; non-NULL
+   means teacher-owned.
+
+4. **Sub-questions modeled via self-reference** — Q2a, Q2b are child slots
+   with `parent_slot_id` pointing to Q2. Marks soft-invariant: parent marks
+   should equal sum of children's (validated by loader script, not a trigger).
+
+5. **Top-level and child slot ordering are independent** — Q2a and Q2b both
+   start with order=1 within their parent. Partial unique indexes enforce
+   this correctly.
+
+---
+
+# Generated papers schema — migration notes
+
+File: `008_generated_papers.sql`
+**Prerequisite:** `001` through `007` already applied.
+
+## What this adds
+
+Three tables linking paper patterns to actual questions:
+
+- **`generated_papers`** — concrete exam paper created from a pattern
+  (name, status, pattern_id, generated_by)
+- **`paper_sections`** — per-section metadata, including the `choose_count`
+  decided at generation time
+- **`paper_questions`** — the actual question→slot assignments
+
+## Key design decisions
+
+1. **Shared across all colleges** — no `college_id`, no RLS. Same scope as
+   patterns and questions.
+
+2. **`choose_count` is concrete here** — recorded per paper, per section.
+   Same pattern can be used multiple ways.
+
+3. **Only 'live' questions allowed** — enforced by trigger
+   `trg_paper_question_must_be_live`, mirroring the `answers` table's
+   question-status check.
+
+4. **No duplicate questions per paper** — UNIQUE(paper_id, question_id)
+   enforced by trigger (cross-section constraint).
+
+5. **One slot filled per paper section** — UNIQUE(paper_section_id, slot_id).
+
+6. **Status flow: draft → finalized** — draft papers can be edited; finalized
+   papers are locked. Actual status transitions handled at the script layer.
+
+---
+
+# Evaluation model tracking — migration notes
+
+File: `009_evaluation_model_column.sql`
+**Prerequisite:** `001` through `008` already applied.
+
+## What this adds
+
+A single column: `evaluator_model TEXT` on `evaluation_results`.
+
+## Why it exists
+
+`evaluator_type` distinguishes only 'ai' from 'sme'. Task 3 introduced two
+distinct AI methods:
+- Sentence-transformer embeddings (e.g., 'all-MiniLM-L6-v2')
+- LLM prompt-based scoring (e.g., 'qwen/qwen3.6-27b')
+
+Both are `evaluator_type='ai'`, but they're fundamentally different. This
+column records which model/method produced each score, enabling:
+- Model comparison (embeddings vs. LLM)
+- Auditability ("which version scored this?")
+- Experimentation ("try model X vs. Y on the same answer set")
+
+NULL for legacy rows or SME scores (no model involved).
+
+---
+
+# Evaluation metrics — migration notes
+
+File: `010_evaluation_metrics_column.sql`
+**Prerequisite:** `001` through `009` already applied.
+
+## What this adds
+
+A single column: `metrics JSONB` on `evaluation_results`.
+
+## Why it exists
+
+To compare evaluation models, we capture performance metrics: latency, token
+usage, cost. The JSONB column is flexible — different evaluators can log
+different metrics.
+
+Example:
+
+```json
+{
+  "latency_ms": 1500,
+  "prompt_tokens": 300,
+  "completion_tokens": 150,
+  "cost_usd": 0.0045
+}
+```
+
+---
+
+# Glossary terms for diagram evaluation — migration notes
+
+File: `011_glossary_terms.sql`
+**Prerequisite:** `001` through `010` already applied.
+
+## What this adds
+
+A `glossary_terms` table storing canonical vocabulary for diagram-label
+normalization. Distinct from the `keywords` table in 002:
+
+| Term | Keywords | Glossary |
+|------|----------|----------|
+| **Purpose** | Tag a question's relevance to concepts | Normalize noisy OCR output for diagram matching |
+| **Structure** | (question_id, keyword_id, weight) | (term_id, canonical_term, aliases) |
+| **Scope** | Per-question relevance | Global or topic-scoped vocabulary |
+
+## How it's used
+
+When comparing a student's handwritten diagram against a reference diagram:
+1. Extract labels from both via OCR
+2. Normalize extracted labels against glossary aliases (case-insensitive,
+   fuzzy matching)
+3. Compare the normalized labels
+4. Report matches/mismatches
+
+Example entry:
+
+```
+canonical_term: "Central Processing Unit"
+aliases: ["CPU", "processor", "central processor"]
+topic_id: NULL  (applies globally)
+```
+
+---
+
+# Diagram evaluation support — migration notes
+
+File: `012_diagram_evaluation.sql`
+**Prerequisite:** `001` through `011` already applied.
+
+## What this changes
+
+`evaluation_results` (originally for text-answer scoring) becomes polymorphic:
+now handles BOTH text answers and diagram answers.
+
+### Before
+
+Every `evaluation_results` row scored a text answer against a
+`reference_answer_variant`:
+```
+evaluation_results.reference_answer_variant_id → reference_answer_variants.variant_id
+```
+
+### After
+
+Exactly one of these columns is set per row:
+- **`reference_answer_variant_id`** (set for text answers) — unchanged from 001
+- **`reference_asset_id`** (new, set for diagram answers) — points to the
+  reference diagram in `content_assets`
+
+A CHECK constraint enforces mutual exclusion: never both, never neither.
+
+### Cross-schema integrity
+
+The trigger `fn_check_evaluation_reference_matches_answer_question` (replaces
+the original 001-era trigger) now validates both paths:
+
+- If `reference_answer_variant_id` is set: the variant's `question_id` must
+  match the answer's `question_id` (unchanged from 001).
+- If `reference_asset_id` is set: the asset must be linked to the same
+  question via `question_asset_links(role='question_source')`.
+
+### Structured diagram comparison
+
+The full comparison logic (node validation, edge comparison, glossary matches,
+anomalies) is NOT given new columns — it lands in the existing `metrics JSONB`
+column (from 010), following the pattern of "structured extra detail."
+
+---
+
+## Index and file map
+
+| Migration | What it adds |
+|-----------|-------------|
+| 001 | Answer schema (stub questions/variants, evaluation_results, answer reviews & status tracking, reviews) |
+| 002 | Question schema (questions, reference_answer_variants, keywords, topics, paragraphs, sentences, content_assets, question_asset_links, question_reviews, topic_links) |
+| 003 | Multi-tenancy (colleges, RLS policies, college_id on answer-schema tables) |
+| 004 | `questions.content` TEXT column |
+| 005 | `questions.is_ai_generated` BOOLEAN + `questions.parent_question_id` + `question_tree` view |
+| 006 | Paper patterns (`paper_patterns`, `pattern_sections`, `pattern_slots` tables) |
+| 007 | *Missing from git* — next migration would be 007 if it existed |
+| 008 | Generated papers (`generated_papers`, `paper_sections`, `paper_questions` tables) |
+| 009 | `evaluation_results.evaluator_model` TEXT column |
+| 010 | `evaluation_results.metrics` JSONB column |
+| 011 | Glossary terms (`glossary_terms` table) |
+| 012 | Diagram evaluation support (make `evaluation_results` polymorphic over `reference_answer_variant_id` / `reference_asset_id`) |

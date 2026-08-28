@@ -1,0 +1,22 @@
+{
+  "nodes": [
+    {"node_id": "n1", "label": "CPU"},
+    {"node_id": "n2", "label": "Memory"},
+    {"node_id": "n3", "label": "Input & Output"},
+    {"node_id": "n4", "label": "Control Bus"},
+    {"node_id": "n5", "label": "Address Bus"},
+    {"node_id": "n6", "label": "Data Bus"},
+    {"node_id": "n7", "label": "System Bus"}
+  ],
+  "edges": [
+    {"edge_id": "e1", "from_node": "n1", "to_node": "n4", "label": null},
+    {"edge_id": "e2", "from_node": "n1", "to_node": "n5", "label": null},
+    {"edge_id": "e3", "from_node": "n1", "to_node": "n6", "label": null},
+    {"edge_id": "e4", "from_node": "n2", "to_node": "n4", "label": null},
+    {"edge_id": "e5", "from_node": "n2", "to_node": "n5", "label": null},
+    {"edge_id": "e6", "from_node": "n2", "to_node": "n6", "label": null},
+    {"edge_id": "e7", "from_node": "n3", "to_node": "n4", "label": null},
+    {"edge_id": "e8", "from_node": "n3", "to_node": "n5", "label": null},
+    {"edge_id": "e9", "from_node": "n3", "to_node": "n6", "label": null}
+  ]
+}

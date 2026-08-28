@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    {"node_id": "n1", "label": "CPU"},
+    {"node_id": "n2", "label": "Memory"},
+    {"node_id": "n3", "label": "Bus"}
+  ],
+  "edges": [
+    {"edge_id": "e1", "from_node": "n1", "to_node": "n3", "label": null},
+    {"edge_id": "e2", "from_node": "n3", "to_node": "n2", "label": null}
+  ]
+}

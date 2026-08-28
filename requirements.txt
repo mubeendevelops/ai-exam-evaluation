@@ -1,9 +1,45 @@
 psycopg2-binary>=2.9
 
-# Only needed if you run with --storage minio. Not required for the
-# default --storage dummy mode (no object storage, no MinIO).
+# Only needed if you run with --storage minio, OR for real (non-stub)
+# diagram extraction (scripts/evaluate_diagram_answer.py fetches the scan
+# from real storage — see core/storage.py::get_object_bytes). Not required
+# for --storage dummy / --stub-extraction.
 # boto3>=1.34
 
 # Only needed for --method embeddings in evaluate_answer.py /
-# evaluate_pending.py. Not required for --method llm or --stub.
+# evaluate_pending.py, and for node-label matching in
+# core/diagram_evaluator.py (Task 4). Not required for --method llm or --stub.
 sentence-transformers>=2.2
+
+# Only needed for real (non-stub) handwritten-label extraction in
+# core/diagram_extractor.py (Task 4): easyocr's CRAFT detector finds
+# candidate label regions (a plain-OpenCV heuristic detector was tried
+# first and failed on real photos of handwriting on ruled paper — see the
+# module docstring), transformers+torch run TrOCR
+# (microsoft/trocr-small-handwritten) to read each one. Not required for
+# --stub-extraction / --stub.
+#
+# transformers is PINNED, not >=: newer releases (5.x, as of this writing)
+# broke TrOCR's tokenizer loading and model.compute_transition_scores() in
+# testing — see core/diagram_extractor.py's confidence-computation comment.
+# 4.46.3 is confirmed working end-to-end against a real MinIO-hosted image.
+# protobuf is pinned up because an older system-level protobuf package can
+# shadow pip's and break sentencepiece's tokenizer conversion
+# (ImportError: cannot import name 'builder' from google.protobuf.internal).
+# IMPORTANT — torch/torchvision MUST be installed together from the same
+# CPU wheel index, BEFORE this file:
+#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#     pip install -r requirements.txt
+# Running `pip install -r requirements.txt` alone, with torch already
+# present but torchvision missing, makes pip fetch torchvision from PyPI's
+# default index — which resolves to a CUDA build that does NOT match a
+# `+cpu` torch already installed, and fails at import time with
+# "RuntimeError: operator torchvision::nms does not exist". Not a
+# hypothetical: this happened running this exact file (see git history /
+# conversation log for 2026-08-27).
+easyocr>=1.7
+transformers==4.46.3
+torch>=2.0
+torchvision>=0.15
+sentencepiece>=0.1.99
+protobuf>=4.25

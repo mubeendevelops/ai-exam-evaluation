@@ -90,3 +90,14 @@ def presigned_get_url(bucket_and_key: str, expires_in: int = 3600) -> str:
         Params={"Bucket": bucket, "Key": key},
         ExpiresIn=expires_in,
     )
+
+
+def get_object_bytes(bucket_and_key: str) -> bytes:
+    """Downloads a stored 'bucket/key' reference's raw bytes directly (no
+    presigned URL, no HTTP round-trip through a browser) — for server-side
+    processing that needs the file's content, e.g. running OCR/extraction
+    over a scanned image. Real-storage mode only; a "dummy-storage/..."
+    value has no object behind it to download."""
+    client = get_client()
+    bucket, key = bucket_and_key.split("/", 1)
+    return client.get_object(Bucket=bucket, Key=key)["Body"].read()
