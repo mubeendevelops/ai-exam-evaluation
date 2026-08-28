@@ -32,10 +32,25 @@ sentence-transformers>=2.2
 paddleocr>=3.0
 paddlepaddle>=3.0
 
-# core/diagram_extractor.py imports these directly (PIL.Image for the
-# fetched scan, numpy to feed PaddleOCR's detector/recognizer arrays) — both
-# currently arrive transitively via paddleocr/sentence-transformers, but a
-# direct import should have a direct pin rather than relying on another
-# package's dependency graph to keep providing it.
+# Second engine in the multi-engine "fallback OCR" framework
+# (core/ocr_fallback.py, core/ocr_engines/) — PaddleOCR is no longer the
+# pipeline's only OCR option; every registered engine reads each label
+# region and the best-confidence read wins per region (see
+# core/ocr_fallback.py's module docstring). pytesseract is a thin wrapper
+# that shells out to the `tesseract` binary, which is NOT a pip package —
+# install it separately via your OS package manager, e.g.
+# `sudo apt-get install -y tesseract-ocr` (Debian/Ubuntu) or
+# `brew install tesseract` (macOS). Without the binary,
+# core/ocr_engines/tesseract_engine.py raises a clear RuntimeError and
+# core/ocr_fallback.py skips it, falling back to whichever other engines
+# ARE available — not required for --stub-extraction / --stub.
+pytesseract>=0.3
+
+# core/diagram_extractor.py and core/ocr_engines/ import these directly
+# (PIL.Image for the fetched scan / engine crops, numpy to feed PaddleOCR's
+# detector/recognizer arrays) — both currently arrive transitively via
+# paddleocr/sentence-transformers, but a direct import should have a direct
+# pin rather than relying on another package's dependency graph to keep
+# providing it.
 Pillow>=10.0
 numpy>=1.24

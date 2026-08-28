@@ -13,6 +13,9 @@ venv/
 env/
 ENV/
 
+# Local DB dumps/backups (pg_dump before destructive resets, etc.)
+db_backups/
+
 # Distribution / packaging
 *.egg-info/
 *.egg

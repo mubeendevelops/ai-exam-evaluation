@@ -4,14 +4,33 @@ the structured graph shape used throughout Task 4 (plan.md §3):
 
     {"schema_version": 1,
      "nodes": [{"node_id": str, "label": str, "bbox": [x, y, w, h] | None,
-                "confidence": float | None}, ...],
+                "confidence": float | None,
+                "ocr_engine": str | None}, ...],
      "edges": [{"edge_id": str, "from_node": str, "to_node": str,
                 "label": str | None, "confidence": float | None}, ...]}
 
-STATUS: real HANDWRITTEN LABEL extraction is implemented via PaddleOCR
-(local, free, no API key, no student data leaves the server) — its
-DB-based text detector (PP-OCRv5) locates candidate label regions, and its
-recognition module (also PP-OCRv5) reads each cropped region.
+"ocr_engine" names which OCR engine plugin's read won for that node (e.g.
+"paddleocr" or "tesseract") — new since the fallback-OCR framework
+(core/ocr_fallback.py); absent/None on stub_extract()'s fake nodes.
+
+STATUS: real HANDWRITTEN LABEL extraction is implemented via a
+multi-engine "fallback OCR" framework (core/ocr_fallback.py): PaddleOCR's
+DB-based text detector (PP-OCRv5) locates candidate label regions, then
+EVERY registered OCR engine plugin (core/ocr_engines/ — currently PaddleOCR
+and Tesseract) reads each cropped region, and the highest-confidence read
+wins per region. See core/ocr_fallback.py's module docstring for why
+("boosting"-style ensemble: no single engine is best on every handwriting
+style) and scripts/benchmark_ocr_engines.py for the accuracy data used to
+validate/tune that heuristic.
+
+MIGRATION HISTORY (2026-08-28, later same day): PaddleOCR's own
+detection/recognition calls were moved out of this module and into
+core/ocr_engines/paddleocr_engine.py so they could be plugged into
+core/ocr_fallback.py's engine roster alongside Tesseract
+(core/ocr_engines/tesseract_engine.py) — this module now only orchestrates
+region-cropping and delegates recognition to that framework. No behavior
+changed for PaddleOCR itself (same models, same thresholds); the change is
+that a second engine's read is now considered and can win per region.
 
 MIGRATION HISTORY (2026-08-28): this module previously used EasyOCR's CRAFT
 detector for detection and Microsoft's TrOCR for recognition. That
@@ -65,104 +84,28 @@ it and raises a clear error instead of silently returning nothing.
 """
 from __future__ import annotations
 
-import contextlib
 import io
-import os
 
 SCHEMA_VERSION = 1
 
-# PP-OCRv5 detection: a DB-based (Differentiable Binarization) text
-# detector, the same family EasyOCR's CRAFT detector belongs to (a trained
-# model, not a threshold/morphology heuristic — see module docstring for
-# why that distinction matters on real ruled-paper photos). "_server_"
-# (larger, more accurate) rather than "_mobile_" (smaller/faster), matching
-# this codebase's existing preference for accuracy over latency in this
-# pipeline (the old TrOCR-based code had the same preference — its own TODO
-# was to move from the *small*-handwritten checkpoint up to *base*-handwritten
-# for exactly this reason). Override with PADDLEOCR_DET_MODEL.
-_DET_MODEL_NAME = os.environ.get("PADDLEOCR_DET_MODEL", "PP-OCRv5_server_det")
-
-# PP-OCRv5 recognition — the "handwriting-tuned" checkpoint asked for:
-# unlike PP-OCRv4 (tuned mainly for printed/scene text, same role TrOCR's
-# *printed* checkpoint would have played), PP-OCRv5's training data
-# explicitly broadens coverage to include handwritten text, which is this
-# whole pipeline's actual input (see module docstring — this is a
-# handwritten/scanned diagram label pipeline end to end, there is no
-# "printed" code path to preserve here). The "en_..._mobile_" variant (not
-# the multilingual "_server_" default) is used specifically because, when
-# compared side by side during migration testing, the
-# multilingual model misread diagram scribbles/arrows as CJK characters
-# ("个", "不") on real handwritten input, while the English-constrained
-# model's character set naturally rules that out and scored equal-or-better
-# on every real label. Override with PADDLEOCR_REC_MODEL if the exam
-# content's language isn't English (see the model list in
-# paddlex.modules.text_recognition.model_list for other language options).
-_REC_MODEL_NAME = os.environ.get("PADDLEOCR_REC_MODEL", "en_PP-OCRv5_mobile_rec")
-
 REGION_CROP_PADDING_PX = 6
 
-# Detection thresholds — lowered from PaddleOCR's own defaults (thresh=0.3,
-# box_thresh=0.6, unclip_ratio=1.5) for the same reason the old EasyOCR
-# thresholds were lowered from ITS defaults: hand-drawn labels are
-# lower-contrast and less uniform than the printed/scene text these
-# detectors are tuned for by default. unclip_ratio is raised so boxes are
-# expanded a bit more generously around the detected text core, since
-# handwritten strokes vary more in size than printed glyphs.
-DETECT_THRESH = 0.2
-DETECT_BOX_THRESH = 0.3
-DETECT_UNCLIP_RATIO = 2.0
-
-# Disables oneDNN/MKL-DNN acceleration for both models. Required, not
-# optional, on this deployment's paddlepaddle build (3.3.1, CPU): with
-# oneDNN enabled, PP-OCRv5_server_det's inference raises
-# `NotImplementedError: (Unimplemented) ConvertPirAttribute2RuntimeAttribute
-# not support [pir::ArrayAttribute<pir::DoubleAttribute>]` from paddle's PIR
-# executor — a paddlepaddle/oneDNN op-support gap, not a model or code bug.
-# Disabling oneDNN avoids the unsupported code path entirely, at a modest
-# CPU inference speed cost. Revisit if a paddlepaddle upgrade fixes the
-# underlying op support.
-_ENABLE_MKLDNN = False
-
-_text_detector = None
-_text_recognizer = None
+_fallback_ocr = None
 
 
-# Skips paddlex's "Checking connectivity to the model hosters, this may
-# take a while" probe on every single call — paddlex's own message names
-# this exact env var as the documented way to bypass it. Set once at import
-# time (not per-call) since it's a load-time behavior, not something that
-# should flip mid-process.
-os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-
-
-@contextlib.contextmanager
-def _quiet_paddle():
-    """Suppresses PaddleOCR/paddlex/paddle's own chatter during model
-    construction and inference — "Using official model...", "Model files
-    already exist. Using cached files...", per-file download progress bars,
-    plus a harmless UserWarning paddle emits on CPU builds without ccache
-    installed. Some of this comes through Python's logging module (a
-    library-configured handler can hold a direct reference to the original
-    stdout, so redirecting sys.stdout alone doesn't catch it — hence
-    disabling logging output directly here), some through plain print().
-    Scoped narrowly to each model-construction/predict() call (the same
-    "don't blanket-hide warnings globally" approach the old EasyOCR code
-    used for its own harmless warning), not applied globally — real errors
-    still raise and their tracebacks still print, since this only silences
-    logging/stdout, not exceptions or stderr.
-
-    This exists purely to keep scripts/evaluate_diagram_answer.py's output
-    readable; it has no effect on what gets extracted or stored."""
-    import logging
-    import warnings
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=UserWarning, message="No ccache found")
-        logging.disable(logging.CRITICAL)
-        try:
-            with contextlib.redirect_stdout(io.StringIO()):
-                yield
-        finally:
-            logging.disable(logging.NOTSET)
+def _get_fallback_ocr():
+    """Lazy-loaded FallbackOCR instance (core/ocr_fallback.py) — holds the
+    registered engine plugins (core/ocr_engines/) and does the actual
+    detect/recognize work. Lazy for the same reason the old direct
+    PaddleOCR calls were lazy: constructing engines is cheap, but importing
+    paddleocr/pytesseract and loading their models is not, so it shouldn't
+    happen at module import time (e.g. --stub-extraction runs never need
+    to pay this cost)."""
+    global _fallback_ocr
+    if _fallback_ocr is None:
+        from core.ocr_fallback import FallbackOCR
+        _fallback_ocr = FallbackOCR()
+    return _fallback_ocr
 
 
 def stub_extract(blob_url: str) -> dict:
@@ -201,97 +144,16 @@ def _load_image(blob_url: str):
     return Image.open(io.BytesIO(data)).convert("RGB")
 
 
-def _get_text_detector():
-    """Lazy-loaded PaddleOCR text-detection module (detection only —
-    recognition is _get_text_recognizer's job, see _recognize_text)."""
-    global _text_detector
-    if _text_detector is None:
-        from paddleocr import TextDetection
-        with _quiet_paddle():
-            _text_detector = TextDetection(
-                model_name=_DET_MODEL_NAME,
-                enable_mkldnn=_ENABLE_MKLDNN,
-                thresh=DETECT_THRESH,
-                box_thresh=DETECT_BOX_THRESH,
-                unclip_ratio=DETECT_UNCLIP_RATIO,
-            )
-    return _text_detector
-
-
-def _get_text_recognizer():
-    """Lazy-loaded PaddleOCR text-recognition module."""
-    global _text_recognizer
-    if _text_recognizer is None:
-        from paddleocr import TextRecognition
-        with _quiet_paddle():
-            _text_recognizer = TextRecognition(
-                model_name=_REC_MODEL_NAME,
-                enable_mkldnn=_ENABLE_MKLDNN,
-            )
-    return _text_recognizer
-
-
-def _detect_text_regions(image) -> list[tuple[int, int, int, int]]:
-    """Finds candidate label bounding boxes via PaddleOCR's DB-based text
-    detector (detection only — recognition is _recognize_text's job).
-    Returns (x, y, w, h) boxes, top-to-bottom then left-to-right.
-
-    PaddleOCR's detector reports arbitrary quadrilaterals (`dt_polys`) —
-    these are reduced to their axis-aligned bounding box for simplicity,
-    the same approach the old EasyOCR-based code used for its rotated/skewed
-    ("free_list") regions, since the recognizer expects a rectangular crop
-    and does not need perspective correction for a mild skew."""
-    import numpy as np
-
-    detector = _get_text_detector()
-    arr = np.array(image)  # RGB, as PaddleOCR expects
-
-    with _quiet_paddle():
-        results = list(detector.predict(arr))
-    if not results:
-        return []
-    polys = dict(results[0]).get("dt_polys", [])
-
-    boxes = []
-    for poly in polys:
-        xs = [int(pt[0]) for pt in poly]
-        ys = [int(pt[1]) for pt in poly]
-        x0, y0 = min(xs), min(ys)
-        boxes.append((x0, y0, max(xs) - x0, max(ys) - y0))
-
-    boxes.sort(key=lambda b: (b[1], b[0]))
-    return boxes
-
-
-def _recognize_text(crop) -> tuple[str, float | None]:
-    """Runs one cropped region through PaddleOCR's recognizer. Returns
-    (text, confidence); confidence is PaddleOCR's own `rec_score` for the
-    predicted sequence — not calibrated, but usable as a relative signal for
-    low-confidence routing, the same role answer_blocks.confidence_score
-    already plays for text OCR (and the same role the old code's
-    manually-computed TrOCR confidence played)."""
-    import numpy as np
-
-    recognizer = _get_text_recognizer()
-    with _quiet_paddle():
-        results = list(recognizer.predict(np.array(crop)))
-    if not results:
-        return "", None
-
-    result = dict(results[0])
-    text = (result.get("rec_text") or "").strip()
-    score = result.get("rec_score")
-    confidence = round(float(score), 4) if score is not None else None
-    return text, confidence
-
-
 def extract_diagram_structure(blob_url: str) -> dict:
-    """Real image -> graph extraction: detects candidate label regions,
-    reads each with PaddleOCR's recognizer, returns them as nodes. edges is
-    always empty — see the module docstring; edge/arrow detection is a
-    separate, not-yet-built piece."""
+    """Real image -> graph extraction: detects candidate label regions
+    (core/ocr_fallback.py's primary engine), then reads each region across
+    every registered OCR engine plugin and keeps the best-confidence read
+    (see core/ocr_fallback.py's module docstring), returning them as nodes.
+    edges is always empty — see the module docstring; edge/arrow detection
+    is a separate, not-yet-built piece."""
     image = _load_image(blob_url)
-    boxes = _detect_text_regions(image)
+    ocr = _get_fallback_ocr()
+    boxes = ocr.detect_regions(image)
 
     nodes = []
     for i, (x, y, w, h) in enumerate(boxes):
@@ -301,15 +163,16 @@ def extract_diagram_structure(blob_url: str) -> dict:
         bottom = min(image.height, y + h + REGION_CROP_PADDING_PX)
         crop = image.crop((left, top, right, bottom))
 
-        text, confidence = _recognize_text(crop)
-        if not text:
-            continue  # detected region, but recognizer read nothing usable — drop it
+        result = ocr.recognize(crop)
+        if not result.text:
+            continue  # detected region, but no engine read anything usable — drop it
 
         nodes.append({
             "node_id": f"n{i + 1}",
-            "label": text,
+            "label": result.text,
             "bbox": [x, y, w, h],
-            "confidence": confidence,
+            "confidence": result.confidence,
+            "ocr_engine": result.engine,
         })
 
     return {
