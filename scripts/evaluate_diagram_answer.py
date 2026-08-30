@@ -190,8 +190,10 @@ def _print_summary(result: dict) -> None:
     if edges:
         print(f"\nConnections ({len(matched_edges)}/{len(edges)} matched)")
         if not matched_edges:
-            print("  edge detection isn't implemented yet — this count isn't a real "
-                  "signal (see CLAUDE_CONTEXT.md §11)")
+            print("  edge detection (core/diagram_shapes.py) found no matching connectors "
+                  "for this diagram — validated only against box+straight-arrow diagrams "
+                  "so far, treat a zero count as 'not reliably detected', not 'confirmed "
+                  "absent' (see that module's docstring)")
 
     anomalies = r.get("anomalies", [])
     if anomalies:

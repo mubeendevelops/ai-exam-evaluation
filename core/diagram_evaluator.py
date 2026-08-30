@@ -41,6 +41,34 @@ NODE_MATCH_THRESHOLD = 0.6
 # matching on its raw text.
 GLOSSARY_FUZZY_THRESHOLD = 0.75
 
+# A ratio-based threshold unfairly penalizes short acronyms: a single
+# character OCR misread on a 3-letter word (e.g. "CPU" -> "CPV", a real
+# read at 0.98 engine confidence — this is not noise, see
+# core/diagram_extractor.py) already drops the SequenceMatcher ratio to
+# 0.667, below GLOSSARY_FUZZY_THRESHOLD. For short strings, an absolute
+# edit-distance check catches this without loosening the ratio threshold
+# globally (which would start accepting genuinely-different longer words).
+SHORT_LABEL_MAX_LEN = 6
+SHORT_LABEL_MAX_EDITS = 1
+
+
+def _edit_distance(a: str, b: str) -> int:
+    """Plain Levenshtein distance, stdlib-only (no extra dependency for
+    what's only used on short strings, at most a few times per node)."""
+    if a == b:
+        return 0
+    prev_row = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        cur_row = [i] + [0] * len(b)
+        for j, cb in enumerate(b, start=1):
+            cur_row[j] = min(
+                cur_row[j - 1] + 1,
+                prev_row[j] + 1,
+                prev_row[j - 1] + (ca != cb),
+            )
+        prev_row = cur_row
+    return prev_row[-1]
+
 
 def _get_embedding_model():
     global _embedding_model
@@ -74,6 +102,14 @@ def match_glossary(label: str, glossary_terms: list[dict]) -> dict | None:
                     "canonical_term": term["canonical_term"],
                     "match_type": "exact",
                 }
+            if (max(len(label_norm), len(candidate_norm)) <= SHORT_LABEL_MAX_LEN
+                    and _edit_distance(label_norm, candidate_norm) <= SHORT_LABEL_MAX_EDITS):
+                return {
+                    "term_id": term["term_id"],
+                    "canonical_term": term["canonical_term"],
+                    "match_type": "fuzzy",
+                }
+
             ratio = difflib.SequenceMatcher(None, label_norm, candidate_norm).ratio()
             if ratio > best_ratio:
                 best_ratio = ratio
