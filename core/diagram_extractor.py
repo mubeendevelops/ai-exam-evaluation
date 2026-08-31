@@ -9,7 +9,15 @@ the structured graph shape used throughout Task 4 (plan.md §3):
                 "shape_bbox": [x, y, w, h], "shape_type": str | None}, ...],
      "edges": [{"edge_id": str, "from_node": str, "to_node": str,
                 "label": str | None, "direction": str, "confidence": float | None,
+                "detector": str, "curviness": float | None,
                 "needs_review": bool}, ...]}
+
+"detector" names which of core/diagram_shapes.py's two connector passes
+found the edge — "hough" (straight segments) or "contour" (connected-ink,
+any shape, added 2026-08-31 with curved-connector support) — and
+"curviness" is the contour pass's path-length/chord ratio (None for a Hough
+edge). Provenance only, exactly like a node's "ocr_engine": nothing in
+core/diagram_evaluator.py scores on either.
 
 "ocr_engine" names which OCR engine plugin's read won for that node (e.g.
 "paddleocr" or "tesseract") — new since the fallback-OCR framework
@@ -17,9 +25,10 @@ the structured graph shape used throughout Task 4 (plan.md §3):
 
 "shape_bbox"/"shape_type" and node/edge geometry all come from
 core/diagram_shapes.py (OpenCV contour + line/arrow detection) — see that
-module's docstring for what diagram content this was validated against
-(box+straight-arrow diagrams, confirmed against this repo's real images)
-and its known limitations before trusting edge output for scoring.
+module's MEASURED SCOPE section for the per-family numbers this is now
+benchmarked on, and for what remains genuinely weak (ruled-paper photos,
+and shape classification on that path) before trusting edge output for
+scoring.
 
 STATUS: real HANDWRITTEN LABEL extraction is implemented via a
 multi-engine "fallback OCR" framework (core/ocr_fallback.py): PaddleOCR's
@@ -86,10 +95,14 @@ existing precedent (PaddleOCR was likewise built in-repo rather than
 consumed as an external service, per this module's own migration history
 above) rather than treating it as an external service to select later.
 
-Edge detection is meaningfully less mature than label OCR: it has been
-validated only against this repo's two real images
+Edge detection is meaningfully less mature than label OCR. It was for a
+long time validated only against this repo's two real images
 (media/diagrams/buses.webp, media/diagrams/hand_drawn_buses_image.jpeg),
-both a single diagram family (box diagrams, straight arrows). See
+both a single diagram family (box diagrams, straight arrows); since
+2026-08-31 it is also scored per family against the labeled synthetic set
+in media/diagram_benchmark/, which is what closed the curved-connector and
+decision-diamond gaps. Neither measurement covers a real curved or
+ruled-paper diagram. See
 core/diagram_shapes.py's module docstring for known failure modes (a box
 whose outline is interrupted by an internal divider can under-size its
 mask; arrow-direction detection is unreliable when a line touches a box
@@ -298,7 +311,7 @@ def _drop_nodes_inside_siblings(nodes: list[dict]) -> list[dict]:
     return kept
 
 
-def extract_diagram_structure(blob_url: str) -> dict:
+def extract_diagram_structure(source) -> dict:
     """Real image -> graph extraction. Nodes: detects candidate label
     regions (core/ocr_fallback.py's primary engine), reads each region
     across every registered OCR engine plugin and keeps the best-confidence
@@ -307,10 +320,24 @@ def extract_diagram_structure(blob_url: str) -> dict:
     Edges: detected separately via core/diagram_shapes.detect_edges, using
     the paired shapes to mask node regions out before line/arrow detection.
     See core/diagram_shapes.py's module docstring for what this has been
-    validated against and its known limitations."""
+    validated against and its known limitations.
+
+    `source` may be either:
+      - a str, which is ALWAYS a stored blob_url in this repo's stable
+        "bucket/key" form and is fetched via _load_image() — the
+        str-means-blob_url convention shared with
+        core/table_extractor.extract_table_structure() and
+        core/plugins/text_extraction.py's extract(); or
+      - an already-open PIL Image, for a caller holding pixels that were
+        never in object storage. That is what
+        scripts/benchmark_diagram_extraction.py runs the local
+        media/diagram_benchmark/ fixtures through: a benchmark set that had
+        to be uploaded to MinIO before it could be measured would not get
+        run, and a validation harness nobody runs validates nothing.
+    """
     from core import diagram_shapes
 
-    image = _load_image(blob_url)
+    image = _load_image(source) if isinstance(source, str) else source
     ocr = _get_fallback_ocr()
     boxes = ocr.detect_regions(image)
 
@@ -382,10 +409,15 @@ def extract_diagram_structure(blob_url: str) -> dict:
             f"trusted as-detected."
         )
     warnings.append(
-        "Edge detection (core/diagram_shapes.py) has only been validated "
-        "against box+straight-arrow diagrams — treat results on other "
-        "diagram families as unverified. A missing edge should be read as "
-        "'not reliably detected', not 'confirmed absent'."
+        "Edge detection (core/diagram_shapes.py) is measured per diagram "
+        "family on a SYNTHETIC labeled set (media/diagram_benchmark/, scored "
+        "by scripts/benchmark_diagram_extraction.py) — boxes, diamonds, "
+        "ellipses, curved connectors and mixed flowcharts all score 1.000 "
+        "edge F1 there, but those fixtures are rendered, not scanned. On a "
+        "photo of ruled notebook paper — this project's real input — "
+        "connector detection is unchanged and still weak (see that module's "
+        "MEASURED SCOPE). A missing edge should be read as 'not reliably "
+        "detected', not 'confirmed absent'."
     )
 
     return {

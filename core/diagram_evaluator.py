@@ -8,14 +8,24 @@ core/diagram_extractor.py:
      "nodes": [{"node_id", "label", ...}],
      "edges": [{"edge_id", "from_node", "to_node", "label": str | None}]}
 
-Matching is NLP-only for v1 — plain string glossary fuzzy-matching (difflib)
-to correct OCR noise, then sentence-transformer label-embedding similarity
-for node matching. No LLM involved, mirroring how Task 3
-(core/evaluator.py) shipped embeddings-based scoring before adding an LLM
-path. An LLM-based anomaly-explanation pass is a deliberately separate,
-later addition (plan.md §5 step 5 / §7 phase 2) — not implemented here.
+SCORING IS NLP-ONLY, AND STAYS THAT WAY — plain string glossary
+fuzzy-matching (difflib) to correct OCR noise, then sentence-transformer
+label-embedding similarity for node matching. No LLM decides any part of
+compare_diagrams()'s number, mirroring how Task 3 (core/evaluator.py)
+shipped embeddings-based scoring before adding an LLM path.
+
+explain_comparison() (bottom of this module, plan.md §7 phase 2) adds the
+LLM back in for ONE thing only: turning an already-computed comparison into
+a paragraph a teacher can read. It is opt-in (--explain), it is never
+consulted before the score is fixed, and it cannot move it. See the section
+header above that function for why the split is load-bearing.
 """
 from __future__ import annotations
+
+import json
+import os
+import re
+import time
 
 from core import text_match
 
@@ -343,4 +353,175 @@ def stub_compare(extracted: dict, reference: dict, marks_max: float) -> dict:
         "glossary_matches": [],
         "scores_breakdown": {"stub": True},
         "model": {"matching_method": "stub"},
+    }
+
+
+# --- LLM anomaly-explanation pass (plan.md §7 phase 2) -----------------
+#
+# EXPLANATION ONLY. Everything above this line is NLP-only and stays that
+# way: compare_diagrams() decides the score with difflib + embeddings, and
+# nothing below is allowed to change it. explain_comparison() takes an
+# ALREADY-COMPUTED comparison dict and asks the LLM to write the paragraph
+# a teacher would want next to it.
+#
+# WHY THE SPLIT IS WORTH THE EXTRA CALL: a score that an LLM can move is a
+# score that can silently change between two runs of the same input, on a
+# provider's model update nobody in this repo controls. evaluation_results
+# is an append-only ledger whose whole purpose is comparing scores across
+# time (CLAUDE_CONTEXT.md §5 rule 2), and scripts/evaluate_pending_diagrams.py
+# re-scores in bulk — determinism there is not a nicety. Prose has no such
+# requirement: two different wordings of "the student missed the System Bus"
+# are equally correct, so that is the half the LLM gets.
+#
+# This mirrors, one step further, how Task 3 shipped: core/evaluator.py
+# added score_with_llm() only after score_with_embeddings() worked. The
+# difference is that Task 3's LLM path scores and this one deliberately
+# does not.
+
+#: Max items rendered from any one list (missing information, anomalies,
+#: node rows) into the prompt. A badly-extracted scan can produce dozens of
+#: anomalies — the hand-drawn image in media/diagrams/ alone produces 9 —
+#: and pasting all of them buys nothing but tokens: the LLM is being asked
+#: for the shape of the failure, not an inventory. The count of what was
+#: elided is always stated in the prompt, so a truncated list never reads
+#: as a complete one.
+MAX_PROMPT_ITEMS = 25
+
+#: The only two values the contract accepts for "severity". Two, not a
+#: 1-5 scale: this is a routing signal (does a human need to look at this
+#: before it goes out), and a finer scale would imply a calibration nothing
+#: here has measured.
+VALID_SEVERITIES = ("minor", "major")
+
+
+def _render_list(items: list, heading: str) -> str:
+    """One prompt section, truncated to MAX_PROMPT_ITEMS with the elision
+    stated rather than silent."""
+    if not items:
+        return f"{heading}: none.\n"
+    shown = items[:MAX_PROMPT_ITEMS]
+    lines = "\n".join(f"  - {item}" for item in shown)
+    elided = len(items) - len(shown)
+    suffix = f"\n  - ... and {elided} more not listed here." if elided else ""
+    return f"{heading} ({len(items)}):\n{lines}{suffix}\n"
+
+
+def _build_explanation_prompt(comparison: dict) -> str:
+    node_rows = comparison.get("node_validation", [])
+    matched_nodes = [r for r in node_rows if r["status"] == "matched"]
+    missing_nodes = [r["reference_label"] for r in node_rows if r["status"] != "matched"]
+
+    edge_rows = comparison.get("edge_comparison", [])
+    edge_counts: dict[str, int] = {}
+    for row in edge_rows:
+        edge_counts[row["status"]] = edge_counts.get(row["status"], 0) + 1
+    edge_summary = ", ".join(f"{status}={count}" for status, count in sorted(edge_counts.items())) or "none"
+
+    breakdown = comparison.get("scores_breakdown", {})
+
+    return f"""You are helping a teacher read an automated comparison of a student's \
+hand-drawn diagram against the reference diagram. The comparison has ALREADY been \
+scored; you are NOT scoring anything. Explain what the numbers below mean, in plain \
+language a teacher can act on.
+
+Score already awarded: {comparison.get('similarity_score')} out of {comparison.get('marks_max')}.
+Labels matched: {len(matched_nodes)} of {len(node_rows)}.
+Labels not found in the student's diagram: {', '.join(missing_nodes) if missing_nodes else 'none'}.
+Connections between labels: {edge_summary}.
+Score breakdown: {breakdown}.
+
+{_render_list(comparison.get('missing_information', []), 'Missing information reported')}
+{_render_list(comparison.get('anomalies', []), 'Anomalies reported (content in the student diagram with no reference counterpart)')}
+Important context about how this comparison was produced, which your explanation \
+must respect:
+- Labels are read by OCR from a handwritten scan, so a "missing" label may have been \
+  drawn correctly but read badly. Say so where it is plausible.
+- Connector (arrow) detection is the least reliable part of this pipeline. A missing \
+  connection means "not reliably detected", NOT "the student drew no connection".
+- Short, symbol-like anomalies are usually stray marks or arrowheads misread as text, \
+  not real mistakes by the student.
+- Do NOT propose a different score, argue the score is wrong, or suggest marks be \
+  added or removed. The score is fixed.
+
+Output ONLY a JSON object with exactly these keys (no preamble, no code fences):
+{{"explanation": "<2-4 sentences for the teacher>", "severity": "<minor|major>"}}
+
+"severity" is about whether a human should review this before the result goes out: \
+"major" if the diagram is substantively missing required content, "minor" if the \
+differences look like OCR/detection noise on an otherwise reasonable answer."""
+
+
+def explain_comparison(comparison: dict, *, stub: bool = False) -> dict:
+    """Turns one compare_diagrams() result into a teacher-readable
+    explanation via the LLM. Returns
+    {"explanation": str, "severity": "minor"|"major", "model": str,
+     "metrics": {"latency_ms": int, "usage": dict}}.
+
+    DOES NOT RETURN A SCORE, and the caller
+    (core/plugins/diagram_evaluation.py) has already fixed the score before
+    calling this — see this section's header comment for why that split is
+    load-bearing rather than stylistic.
+
+    Goes through core/llm.py::_generate() (never Groq's API directly), so it
+    inherits the <think>-stripping and the Cloudflare-safe User-Agent every
+    other call site in this repo depends on (CLAUDE_CONTEXT.md §9), and
+    captures token usage via return_metrics=True for
+    evaluation_results.metrics.
+
+    Raises ValueError on malformed output — a truncated or non-JSON reply is
+    reported, not quietly turned into an empty explanation, the same posture
+    core/evaluator.score_with_llm() and core/llm.generate_questions_from_content()
+    take. The explanation pass is opt-in (--explain), so a caller that asked
+    for it should hear that it failed; the score is unaffected either way.
+    """
+    if stub:
+        return {
+            "explanation": (
+                "[STUB] Deterministic explanation: "
+                f"{len(comparison.get('missing_information', []))} missing item(s) and "
+                f"{len(comparison.get('anomalies', []))} anomaly/anomalies were reported; "
+                f"no LLM was called."
+            ),
+            "severity": "minor",
+            "model": "stub",
+            "metrics": {"stub": True, "latency_ms": 0},
+        }
+
+    from core.llm import DEFAULT_MODEL, _generate
+
+    model_name = os.environ.get("GROQ_MODEL", DEFAULT_MODEL)
+    prompt = _build_explanation_prompt(comparison)
+
+    start_t = time.perf_counter()
+    raw, usage = _generate(prompt, return_metrics=True)
+    latency_ms = int((time.perf_counter() - start_t) * 1000)
+
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip())
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"LLM did not return valid JSON: {e}\nRaw: {raw!r}") from e
+
+    if not isinstance(parsed, dict) or "explanation" not in parsed:
+        raise ValueError(f"LLM response missing 'explanation' key: {parsed!r}")
+
+    explanation = str(parsed["explanation"]).strip()
+    if not explanation:
+        raise ValueError(f"LLM returned an empty explanation: {parsed!r}")
+
+    # Normalized before the membership check (case/whitespace only) — an
+    # unexpected VALUE is a contract violation worth reporting, but "Major"
+    # instead of "major" is not.
+    severity = str(parsed.get("severity", "")).strip().lower()
+    if severity not in VALID_SEVERITIES:
+        raise ValueError(
+            f"LLM returned severity={parsed.get('severity')!r}; "
+            f"must be one of {VALID_SEVERITIES}"
+        )
+
+    return {
+        "explanation": explanation,
+        "severity": severity,
+        "model": model_name,
+        "metrics": {"latency_ms": latency_ms, "usage": usage},
     }

@@ -1,0 +1,922 @@
+{
+  "Caveat_boxes_straight.png": {
+    "style": "Caveat",
+    "family": "boxes_straight",
+    "image": "Caveat_boxes_straight.png",
+    "nodes": [
+      {
+        "label": "CPU",
+        "shape_type": "rectangle",
+        "bbox": [
+          110,
+          125,
+          300,
+          150
+        ],
+        "text_bbox": [
+          228,
+          184,
+          64,
+          32
+        ]
+      },
+      {
+        "label": "Memory",
+        "shape_type": "rectangle",
+        "bbox": [
+          670,
+          125,
+          300,
+          150
+        ],
+        "text_bbox": [
+          765,
+          182,
+          110,
+          36
+        ]
+      },
+      {
+        "label": "Cache",
+        "shape_type": "rectangle",
+        "bbox": [
+          110,
+          535,
+          300,
+          150
+        ],
+        "text_bbox": [
+          218,
+          594,
+          84,
+          31
+        ]
+      },
+      {
+        "label": "Disk",
+        "shape_type": "rectangle",
+        "bbox": [
+          670,
+          535,
+          300,
+          150
+        ],
+        "text_bbox": [
+          788,
+          594,
+          63,
+          32
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "CPU",
+        "to": "Memory",
+        "connector": "straight"
+      },
+      {
+        "from": "CPU",
+        "to": "Cache",
+        "connector": "straight"
+      },
+      {
+        "from": "Memory",
+        "to": "Disk",
+        "connector": "straight"
+      },
+      {
+        "from": "Cache",
+        "to": "Disk",
+        "connector": "straight"
+      }
+    ]
+  },
+  "Caveat_diamonds.png": {
+    "style": "Caveat",
+    "family": "diamonds",
+    "image": "Caveat_diamonds.png",
+    "nodes": [
+      {
+        "label": "Start",
+        "shape_type": "rectangle",
+        "bbox": [
+          120,
+          85,
+          280,
+          130
+        ],
+        "text_bbox": [
+          218,
+          135,
+          84,
+          30
+        ]
+      },
+      {
+        "label": "Check",
+        "shape_type": "diamond",
+        "bbox": [
+          70,
+          295,
+          380,
+          250
+        ],
+        "text_bbox": [
+          219,
+          404,
+          81,
+          31
+        ]
+      },
+      {
+        "label": "Print",
+        "shape_type": "rectangle",
+        "bbox": [
+          680,
+          355,
+          280,
+          130
+        ],
+        "text_bbox": [
+          781,
+          405,
+          78,
+          29
+        ]
+      },
+      {
+        "label": "Stop",
+        "shape_type": "rectangle",
+        "bbox": [
+          120,
+          635,
+          280,
+          130
+        ],
+        "text_bbox": [
+          227,
+          682,
+          66,
+          35
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "Start",
+        "to": "Check",
+        "connector": "straight"
+      },
+      {
+        "from": "Check",
+        "to": "Print",
+        "connector": "straight"
+      },
+      {
+        "from": "Check",
+        "to": "Stop",
+        "connector": "straight"
+      }
+    ]
+  },
+  "Caveat_ellipses.png": {
+    "style": "Caveat",
+    "family": "ellipses",
+    "image": "Caveat_ellipses.png",
+    "nodes": [
+      {
+        "label": "Water",
+        "shape_type": "ellipse",
+        "bbox": [
+          100,
+          105,
+          340,
+          190
+        ],
+        "text_bbox": [
+          225,
+          186,
+          90,
+          28
+        ]
+      },
+      {
+        "label": "Vapour",
+        "shape_type": "ellipse",
+        "bbox": [
+          660,
+          105,
+          340,
+          190
+        ],
+        "text_bbox": [
+          782,
+          182,
+          96,
+          36
+        ]
+      },
+      {
+        "label": "Cloud",
+        "shape_type": "ellipse",
+        "bbox": [
+          660,
+          515,
+          340,
+          190
+        ],
+        "text_bbox": [
+          791,
+          594,
+          77,
+          31
+        ]
+      },
+      {
+        "label": "Rain",
+        "shape_type": "ellipse",
+        "bbox": [
+          100,
+          515,
+          340,
+          190
+        ],
+        "text_bbox": [
+          237,
+          595,
+          66,
+          30
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "Water",
+        "to": "Vapour",
+        "connector": "straight"
+      },
+      {
+        "from": "Vapour",
+        "to": "Cloud",
+        "connector": "straight"
+      },
+      {
+        "from": "Cloud",
+        "to": "Rain",
+        "connector": "straight"
+      },
+      {
+        "from": "Rain",
+        "to": "Water",
+        "connector": "straight"
+      }
+    ]
+  },
+  "Caveat_curved.png": {
+    "style": "Caveat",
+    "family": "curved",
+    "image": "Caveat_curved.png",
+    "nodes": [
+      {
+        "label": "CPU",
+        "shape_type": "rectangle",
+        "bbox": [
+          110,
+          125,
+          300,
+          150
+        ],
+        "text_bbox": [
+          228,
+          184,
+          64,
+          32
+        ]
+      },
+      {
+        "label": "Memory",
+        "shape_type": "rectangle",
+        "bbox": [
+          670,
+          125,
+          300,
+          150
+        ],
+        "text_bbox": [
+          765,
+          182,
+          110,
+          36
+        ]
+      },
+      {
+        "label": "Cache",
+        "shape_type": "rectangle",
+        "bbox": [
+          110,
+          535,
+          300,
+          150
+        ],
+        "text_bbox": [
+          218,
+          594,
+          84,
+          31
+        ]
+      },
+      {
+        "label": "Disk",
+        "shape_type": "rectangle",
+        "bbox": [
+          670,
+          535,
+          300,
+          150
+        ],
+        "text_bbox": [
+          788,
+          594,
+          63,
+          32
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "CPU",
+        "to": "Memory",
+        "connector": "curved"
+      },
+      {
+        "from": "CPU",
+        "to": "Cache",
+        "connector": "curved"
+      },
+      {
+        "from": "Memory",
+        "to": "Disk",
+        "connector": "curved"
+      },
+      {
+        "from": "Cache",
+        "to": "Disk",
+        "connector": "curved"
+      }
+    ]
+  },
+  "Caveat_mixed.png": {
+    "style": "Caveat",
+    "family": "mixed",
+    "image": "Caveat_mixed.png",
+    "nodes": [
+      {
+        "label": "Start",
+        "shape_type": "rectangle",
+        "bbox": [
+          110,
+          85,
+          280,
+          130
+        ],
+        "text_bbox": [
+          208,
+          135,
+          84,
+          30
+        ]
+      },
+      {
+        "label": "Valid",
+        "shape_type": "diamond",
+        "bbox": [
+          60,
+          305,
+          380,
+          250
+        ],
+        "text_bbox": [
+          214,
+          414,
+          71,
+          31
+        ]
+      },
+      {
+        "label": "Done",
+        "shape_type": "ellipse",
+        "bbox": [
+          660,
+          340,
+          320,
+          180
+        ],
+        "text_bbox": [
+          784,
+          414,
+          71,
+          32
+        ]
+      },
+      {
+        "label": "Retry",
+        "shape_type": "rectangle",
+        "bbox": [
+          680,
+          65,
+          280,
+          130
+        ],
+        "text_bbox": [
+          780,
+          112,
+          79,
+          36
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "Start",
+        "to": "Valid",
+        "connector": "straight"
+      },
+      {
+        "from": "Valid",
+        "to": "Done",
+        "connector": "straight"
+      },
+      {
+        "from": "Valid",
+        "to": "Retry",
+        "connector": "curved"
+      },
+      {
+        "from": "Retry",
+        "to": "Start",
+        "connector": "curved"
+      }
+    ]
+  },
+  "PatrickHand_boxes_straight.png": {
+    "style": "PatrickHand",
+    "family": "boxes_straight",
+    "image": "PatrickHand_boxes_straight.png",
+    "nodes": [
+      {
+        "label": "CPU",
+        "shape_type": "rectangle",
+        "bbox": [
+          110,
+          125,
+          300,
+          150
+        ],
+        "text_bbox": [
+          228,
+          186,
+          63,
+          27
+        ]
+      },
+      {
+        "label": "Memory",
+        "shape_type": "rectangle",
+        "bbox": [
+          670,
+          125,
+          300,
+          150
+        ],
+        "text_bbox": [
+          762,
+          180,
+          115,
+          40
+        ]
+      },
+      {
+        "label": "Cache",
+        "shape_type": "rectangle",
+        "bbox": [
+          110,
+          535,
+          300,
+          150
+        ],
+        "text_bbox": [
+          217,
+          595,
+          86,
+          29
+        ]
+      },
+      {
+        "label": "Disk",
+        "shape_type": "rectangle",
+        "bbox": [
+          670,
+          535,
+          300,
+          150
+        ],
+        "text_bbox": [
+          790,
+          594,
+          60,
+          31
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "CPU",
+        "to": "Memory",
+        "connector": "straight"
+      },
+      {
+        "from": "CPU",
+        "to": "Cache",
+        "connector": "straight"
+      },
+      {
+        "from": "Memory",
+        "to": "Disk",
+        "connector": "straight"
+      },
+      {
+        "from": "Cache",
+        "to": "Disk",
+        "connector": "straight"
+      }
+    ]
+  },
+  "PatrickHand_diamonds.png": {
+    "style": "PatrickHand",
+    "family": "diamonds",
+    "image": "PatrickHand_diamonds.png",
+    "nodes": [
+      {
+        "label": "Start",
+        "shape_type": "rectangle",
+        "bbox": [
+          120,
+          85,
+          280,
+          130
+        ],
+        "text_bbox": [
+          221,
+          135,
+          78,
+          29
+        ]
+      },
+      {
+        "label": "Check",
+        "shape_type": "diamond",
+        "bbox": [
+          70,
+          295,
+          380,
+          250
+        ],
+        "text_bbox": [
+          216,
+          405,
+          87,
+          29
+        ]
+      },
+      {
+        "label": "Print",
+        "shape_type": "rectangle",
+        "bbox": [
+          680,
+          355,
+          280,
+          130
+        ],
+        "text_bbox": [
+          781,
+          405,
+          77,
+          29
+        ]
+      },
+      {
+        "label": "Stop",
+        "shape_type": "rectangle",
+        "bbox": [
+          120,
+          635,
+          280,
+          130
+        ],
+        "text_bbox": [
+          227,
+          679,
+          65,
+          42
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "Start",
+        "to": "Check",
+        "connector": "straight"
+      },
+      {
+        "from": "Check",
+        "to": "Print",
+        "connector": "straight"
+      },
+      {
+        "from": "Check",
+        "to": "Stop",
+        "connector": "straight"
+      }
+    ]
+  },
+  "PatrickHand_ellipses.png": {
+    "style": "PatrickHand",
+    "family": "ellipses",
+    "image": "PatrickHand_ellipses.png",
+    "nodes": [
+      {
+        "label": "Water",
+        "shape_type": "ellipse",
+        "bbox": [
+          100,
+          105,
+          340,
+          190
+        ],
+        "text_bbox": [
+          227,
+          185,
+          85,
+          29
+        ]
+      },
+      {
+        "label": "Vapour",
+        "shape_type": "ellipse",
+        "bbox": [
+          660,
+          105,
+          340,
+          190
+        ],
+        "text_bbox": [
+          778,
+          180,
+          103,
+          40
+        ]
+      },
+      {
+        "label": "Cloud",
+        "shape_type": "ellipse",
+        "bbox": [
+          660,
+          515,
+          340,
+          190
+        ],
+        "text_bbox": [
+          790,
+          595,
+          80,
+          29
+        ]
+      },
+      {
+        "label": "Rain",
+        "shape_type": "ellipse",
+        "bbox": [
+          100,
+          515,
+          340,
+          190
+        ],
+        "text_bbox": [
+          239,
+          596,
+          61,
+          27
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "Water",
+        "to": "Vapour",
+        "connector": "straight"
+      },
+      {
+        "from": "Vapour",
+        "to": "Cloud",
+        "connector": "straight"
+      },
+      {
+        "from": "Cloud",
+        "to": "Rain",
+        "connector": "straight"
+      },
+      {
+        "from": "Rain",
+        "to": "Water",
+        "connector": "straight"
+      }
+    ]
+  },
+  "PatrickHand_curved.png": {
+    "style": "PatrickHand",
+    "family": "curved",
+    "image": "PatrickHand_curved.png",
+    "nodes": [
+      {
+        "label": "CPU",
+        "shape_type": "rectangle",
+        "bbox": [
+          110,
+          125,
+          300,
+          150
+        ],
+        "text_bbox": [
+          228,
+          186,
+          63,
+          27
+        ]
+      },
+      {
+        "label": "Memory",
+        "shape_type": "rectangle",
+        "bbox": [
+          670,
+          125,
+          300,
+          150
+        ],
+        "text_bbox": [
+          762,
+          180,
+          115,
+          40
+        ]
+      },
+      {
+        "label": "Cache",
+        "shape_type": "rectangle",
+        "bbox": [
+          110,
+          535,
+          300,
+          150
+        ],
+        "text_bbox": [
+          217,
+          595,
+          86,
+          29
+        ]
+      },
+      {
+        "label": "Disk",
+        "shape_type": "rectangle",
+        "bbox": [
+          670,
+          535,
+          300,
+          150
+        ],
+        "text_bbox": [
+          790,
+          594,
+          60,
+          31
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "CPU",
+        "to": "Memory",
+        "connector": "curved"
+      },
+      {
+        "from": "CPU",
+        "to": "Cache",
+        "connector": "curved"
+      },
+      {
+        "from": "Memory",
+        "to": "Disk",
+        "connector": "curved"
+      },
+      {
+        "from": "Cache",
+        "to": "Disk",
+        "connector": "curved"
+      }
+    ]
+  },
+  "PatrickHand_mixed.png": {
+    "style": "PatrickHand",
+    "family": "mixed",
+    "image": "PatrickHand_mixed.png",
+    "nodes": [
+      {
+        "label": "Start",
+        "shape_type": "rectangle",
+        "bbox": [
+          110,
+          85,
+          280,
+          130
+        ],
+        "text_bbox": [
+          211,
+          135,
+          78,
+          29
+        ]
+      },
+      {
+        "label": "Valid",
+        "shape_type": "diamond",
+        "bbox": [
+          60,
+          305,
+          380,
+          250
+        ],
+        "text_bbox": [
+          213,
+          415,
+          73,
+          29
+        ]
+      },
+      {
+        "label": "Done",
+        "shape_type": "ellipse",
+        "bbox": [
+          660,
+          340,
+          320,
+          180
+        ],
+        "text_bbox": [
+          785,
+          415,
+          69,
+          29
+        ]
+      },
+      {
+        "label": "Retry",
+        "shape_type": "rectangle",
+        "bbox": [
+          680,
+          65,
+          280,
+          130
+        ],
+        "text_bbox": [
+          780,
+          109,
+          80,
+          42
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "Start",
+        "to": "Valid",
+        "connector": "straight"
+      },
+      {
+        "from": "Valid",
+        "to": "Done",
+        "connector": "straight"
+      },
+      {
+        "from": "Valid",
+        "to": "Retry",
+        "connector": "curved"
+      },
+      {
+        "from": "Retry",
+        "to": "Start",
+        "connector": "curved"
+      }
+    ]
+  }
+}

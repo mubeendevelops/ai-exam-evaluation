@@ -10,18 +10,72 @@ with its own tuning knobs, and keeping it separate means an extraction
 pipeline that only needs labels (unlikely, but e.g. a future glossary-only
 pass) doesn't have to import OpenCV-heavy code.
 
-CONFIRMED SCOPE (checked against the real diagram content in this repo —
-media/diagrams/{buses.webp,hand_drawn_buses_image.jpeg},
-reference_diagrams/*.json — before writing this): every diagram seen here is
-a rectangular block/box diagram with straight-line (possibly double-headed)
-arrow connectors — CPU/Memory/Bus style computer-architecture diagrams, not
-circuit schematics, flowcharts with decision diamonds, or mind maps. Shape
-classification below still reports "ellipse" for round shapes since that
-costs nothing extra and other subjects' diagrams (e.g. a water-cycle cycle
-diagram with oval stage labels) plausibly need it, but the whole pipeline
-has only been tuned/validated against box+straight-arrow diagrams. Treat
-non-rectangular, non-straight-line diagram families (circuits, curved
-connectors) as unvalidated until tested against a real example.
+MEASURED SCOPE (2026-08-31). This module used to say that diamonds,
+circles/ellipses and curved connectors were "unvalidated until tested
+against a real example". They have now been tested, against a labeled set
+built for the purpose — media/diagram_benchmark/ (scripts/generate_diagram_-
+benchmark.py, 5 families x 2 handwriting styles), scored by
+scripts/benchmark_diagram_extraction.py. Per-family means, before this
+change and after it:
+
+    family           edge F1          shape accuracy
+    boxes_straight   0.929 -> 1.000    1.000 -> 1.000   (the control)
+    diamonds         0.900 -> 1.000    0.750 -> 1.000
+    ellipses         0.929 -> 1.000    1.000 -> 1.000
+    curved           0.000 -> 1.000    1.000 -> 1.000
+    mixed            0.667 -> 1.000    0.750 -> 1.000
+    ALL              0.685 -> 1.000    0.900 -> 1.000
+
+Node precision/recall and label accuracy were 1.000 before and after —
+finding and reading the labels was never the gap; connectors and shape
+naming were.
+
+READ THOSE NUMBERS THE WAY THE TABLE BENCHMARK'S DOCSTRING ASKS ITS OWN TO
+BE READ. They are not a real-world accuracy figure and 1.000 does not mean
+"solved":
+  - The fixtures are RENDERED, not scanned: unbroken high-contrast ink on
+    clean white. Every hard property of a real scan — perspective, skew,
+    faint pencil, ruled paper — is absent by construction.
+  - The thresholds in _classify_shape were set FROM this set's own measured
+    extent clusters. That is fitting, not holding out. It is defensible
+    because extent's separation is geometric (1.0 / 0.785 / 0.5 are what
+    those shapes ARE, not what these renders happened to score) and the
+    thresholds sit at the midpoints of gaps ~0.2 wide, but it does mean the
+    benchmark cannot be evidence for its own thresholds.
+  - Four edges per image means one miss moves a family by 0.125. These are
+    small numbers.
+
+WHAT THE REAL IMAGES SAY, which is the part that matters most:
+  - media/diagrams/buses.webp (clean digital): 4 edges detected before,
+    5 after, none lost. A real gain, small.
+  - media/diagrams/hand_drawn_buses_image.jpeg (phone photo of RULED
+    NOTEBOOK PAPER): 10 edges before, 10 after — IDENTICAL, not one edge
+    added or removed. The contour pass contributes NOTHING here, because
+    the root cause documented below is unchanged: the page's ruled lines
+    chain every stroke on the page into one connected component, so
+    "connected ink = one connector" is false for exactly this image. The
+    end-to-end score on it (scripts/run_diagram_eval_demo.sh) is byte-for-
+    byte what it was before this change.
+
+STILL POOR, STATED RATHER THAN SHIPPED QUIETLY:
+  1. RULED-PAPER PHOTOS remain this pipeline's real input distribution and
+     its unsolved case. Neither of the two connector detectors works there;
+     the fallback in pair_shapes() (_find_box_by_lines) is what carries that
+     image, and it resolves boxes by looking for four straight walls.
+  2. Which means SHAPE CLASSIFICATION IS RECTANGLE-ONLY ON RULED PAPER. A
+     diamond or an ellipse drawn on notebook paper reaches _find_box_by_lines,
+     which can only ever return "rectangle" or None — it has no notion of a
+     sloping or curved side. The diamond/ellipse accuracy above is a
+     CONTOUR-PATH result and does not transfer to that path. Fixing it means
+     a different box-finding method, not a better classifier.
+  3. Curved-connector support is unvalidated on any REAL curved diagram.
+     This repo still contains none; the curved family is synthetic. What is
+     established is that the capability exists and that adding it did not
+     cost anything on the straight families or the real images.
+
+Nothing here scores on shape_type — core/diagram_evaluator.py compares
+labels and edges only — so a wrong shape name degrades provenance and
+review context, not marks.
 
 Two independent stages:
 
@@ -91,17 +145,32 @@ Two independent stages:
 
 2. detect_edges(gray, nodes) — masks every node's shape_bbox out of the
    image (so line detection isn't confused by box borders or letterforms,
-   per the task's own instruction), runs Canny + HoughLinesP on what's
-   left, merges near-collinear/adjacent segments into logical lines, then
-   matches each segment's two endpoints to the nearest node (within
-   REACH_PX, or after projecting up to EXTEND_PX further along the line's
-   own direction — bridges the small gap most hand/digital diagrams leave
-   between a line's visible end and the box it terminates against).
-   Segments that don't resolve to two distinct nodes are dropped, not
-   guessed.
+   per the task's own instruction), then runs TWO independent connector
+   passes over what's left and merges their results, deduplicated per node
+   pair with the more confident detection winning. Each edge records which
+   pass found it, in its "detector" field.
 
-   Arrow direction: samples dark-pixel density in a small disk at each
-   raw (pre-extension) endpoint and at the segment's midpoint. An
+   a. STRAIGHT (detector="hough"): Canny + HoughLinesP, merging
+      near-collinear/adjacent segments into logical lines. This is the
+      original pass and the one this repo's real images were validated
+      against; it is unchanged.
+   b. ANY SHAPE (detector="contour"): connected-ink contours, whose two
+      extreme points are the connector's two ends — no straightness
+      assumption, which is what makes curved connectors detectable at all.
+      See the block comment above _detect_connector_contours for why this
+      could not be done by loosening the Hough pass's merge tolerance.
+
+   Both match their endpoints to the nearest node the same way (within
+   REACH_PX, or after projecting up to EXTEND_PX further along the
+   connector's own outgoing direction — bridges the small gap most
+   hand/digital diagrams leave between a connector's visible end and the
+   box it terminates against). Ends that don't resolve to two distinct
+   nodes are dropped, not guessed.
+
+   Arrow direction (both passes): samples dark-pixel density in a small
+   disk at each raw (pre-extension) endpoint and at the connector's
+   midpoint — for a curve, the point furthest along the stroke from both
+   ends. An
    arrowhead's triangular fill reads as meaningfully denser than the
    plain-stroke midpoint; a plain line-end does not. This is a coarse
    heuristic — see the module-level ARROW_DENSITY_MARGIN docstring note
@@ -272,19 +341,87 @@ def binarize(gray: np.ndarray) -> np.ndarray:
     return binary
 
 
+# --- shape classification ----------------------------------------------
+#
+# EXTENT — the contour's own filled area divided by its bounding-box area —
+# is the primary discriminator, NOT vertex count and NOT circularity.
+#
+# Vertex count alone cannot tell a rectangle from a diamond: both
+# approxPolyDP to exactly 4 vertices (measured: 4 for every rectangle AND
+# every diamond in media/diagram_benchmark/). A diamond is a rotated
+# quadrilateral, and its rotation is precisely the information a vertex
+# count throws away.
+#
+# Circularity (4*pi*area/perimeter^2) cannot be used either, because it
+# falls with ASPECT RATIO, not with roundness: measured over the same set,
+# the 2:1 rectangles score 0.68-0.70 and the 1.8:1 ellipses 0.77-0.78 —
+# barely a tenth apart, and they would cross entirely for a square box.
+#
+# Extent separates all three cleanly, and the measured values sit on their
+# geometric ideals with wide gaps between clusters
+# (media/diagram_benchmark/, 40 shapes, both handwriting styles):
+#
+#     shape       ideal extent   measured range   n vertices
+#     rectangle       1.000       0.972 - 0.990       4
+#     ellipse         0.785       0.769 - 0.781       8
+#     diamond         0.500       0.515 - 0.519       4
+#
+# Thresholds below are set in the MIDDLE of those gaps, not at the edge of
+# an observed range, so a shakier hand than the benchmark's jitter still
+# lands in the right bucket. Vertex count is kept as a secondary guard
+# only, to stop a 3-sided or wildly irregular contour being confidently
+# called one of the three.
+
+#: At or above this extent, a contour fills its bounding box: a rectangle.
+RECT_MIN_EXTENT = 0.88
+#: Range around pi/4 (0.785) that reads as an ellipse/circle.
+ELLIPSE_EXTENT_RANGE = (0.64, 0.88)
+#: Range around 0.5 that reads as a diamond (a quadrilateral standing on a
+#: vertex — the flowchart decision shape).
+DIAMOND_EXTENT_RANGE = (0.36, 0.64)
+#: A diamond must still be roughly quadrilateral. The upper bound is loose
+#: because a hand-drawn corner can approximate to two vertices.
+DIAMOND_VERTEX_RANGE = (4, 6)
+#: An ellipse's outline approximates to more vertices than a polygon's
+#: corners — below this it is some other shape that happens to fill ~3/4 of
+#: its box.
+ELLIPSE_MIN_VERTICES = 5
+
+
 def _classify_shape(contour) -> str:
+    """Classifies one enclosing contour as
+    "rectangle" | "diamond" | "ellipse" | "polygon" | "other".
+
+    See the block comment above for why this is decided on extent. Returns
+    "polygon" for a shape that is none of the three known ones but is still
+    a plausible closed figure, and "other" for something too degenerate to
+    call — neither is an error: core/diagram_extractor.py reports shape_type
+    as provenance, and nothing in core/diagram_evaluator.py scores on it.
+    """
     peri = cv2.arcLength(contour, True)
+    if peri <= 0:
+        return "other"
+
     approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
     n = len(approx)
-    if n == 4:
-        return "rectangle"
     if n <= 3:
         return "other"
-    # Many vertices + low deviation from its own bounding circle reads as
-    # round; a rough vertex-count cutoff is enough for the box-diagram
-    # domain this has been validated against (see module docstring) without
-    # adding a circularity computation this domain doesn't need yet.
-    return "ellipse" if n > 6 else "polygon"
+
+    x, y, w, h = cv2.boundingRect(contour)
+    box_area = w * h
+    if box_area <= 0:
+        return "other"
+    extent = cv2.contourArea(contour) / box_area
+
+    if extent >= RECT_MIN_EXTENT:
+        return "rectangle"
+    if (DIAMOND_EXTENT_RANGE[0] <= extent < DIAMOND_EXTENT_RANGE[1]
+            and DIAMOND_VERTEX_RANGE[0] <= n <= DIAMOND_VERTEX_RANGE[1]):
+        return "diamond"
+    if (ELLIPSE_EXTENT_RANGE[0] <= extent < ELLIPSE_EXTENT_RANGE[1]
+            and n >= ELLIPSE_MIN_VERTICES):
+        return "ellipse"
+    return "polygon"
 
 
 def pair_shapes(gray: np.ndarray, nodes: list[dict]) -> list[dict]:
@@ -456,6 +593,172 @@ def _arrow_density(x: float, y: float, gray: np.ndarray, radius: int = ARROW_SAM
     return float((patch < 128).sum()) / patch.size
 
 
+# --- curved connectors --------------------------------------------------
+#
+# WHY A SECOND DETECTOR RATHER THAN LOOSER HOUGH SETTINGS. HoughLinesP finds
+# STRAIGHT segments; an arc is not one. It does get fragmented into a chain
+# of short chords, but _merge_segments deliberately only chains fragments
+# whose angles agree within MERGE_ANGLE_TOL_DEG (6 degrees) — which is what
+# keeps two different straight connectors that happen to touch from being
+# welded into one. Widening that tolerance far enough to reabsorb an arc
+# would break exactly the case the straight path already gets right.
+# Measured, before this pass existed: the curved family of
+# media/diagram_benchmark/ scored edge F1 = 0.000, with ZERO edges detected
+# on either style — not "some", none. It is a missing capability, not a
+# tuning gap.
+#
+# The contour pass works from the other end: on the same node-masked image,
+# whatever ink survives IS the connectors, so each connector is one
+# connected contour whose two extreme points are its two ends — no
+# straightness assumption anywhere. It runs IN ADDITION to the Hough pass,
+# not instead of it: the Hough path is what this repo's real images were
+# validated against, and detect_edges()' existing per-node-pair dedup means
+# a straight connector found by both is one edge, at the better confidence.
+
+#: A contour shorter than this (perimeter, so roughly twice the stroke's
+#: length) is a stray mark or leftover shape ink, not a connector. Kept
+#: consistent with MIN_EDGE_LENGTH_PX, which bounds the same thing for the
+#: Hough path.
+MIN_CONNECTOR_PERIMETER_PX = 2 * MIN_EDGE_LENGTH_PX
+
+#: approxPolyDP epsilon, as a fraction of the contour's perimeter. Much
+#: tighter than the 0.02 used for shape classification: there, the point is
+#: to collapse an outline to its corners; here, the polyline must still
+#: follow the arc closely enough that its extreme points are the real ends.
+CONNECTOR_APPROX_EPS_RATIO = 0.005
+
+#: Radius around an endpoint whose contour points are averaged to get the
+#: local tangent — the direction the connector is heading as it leaves its
+#: visible end, used to project toward a node the way the Hough path
+#: projects along its segment's own direction (EXTEND_PX).
+TANGENT_SAMPLE_RADIUS_PX = 25
+
+#: path length / straight-line distance between the two ends. At/below the
+#: lower bound the stroke is straight (the Hough path's business, though
+#: this pass will find it too and the dedup sorts it out); above the upper
+#: bound the contour has doubled back on itself so far that its "two ends"
+#: are not meaningfully the ends of one connector — a blob, a closed loop,
+#: or two crossing strokes fused into one contour. Both are guards, not
+#: tuning: nothing between them is rejected.
+MAX_CONNECTOR_CURVINESS = 4.0
+
+
+def _farthest_pair(points: np.ndarray) -> tuple[int, int]:
+    """Indices of the two points furthest apart. O(n^2) on the
+    approxPolyDP-reduced polyline (tens of points, not thousands), which is
+    why the approximation happens before this and not after."""
+    best = (0, 0)
+    best_d = -1.0
+    for i in range(len(points)):
+        for j in range(i + 1, len(points)):
+            d = math.hypot(points[i][0] - points[j][0], points[i][1] - points[j][1])
+            if d > best_d:
+                best_d, best = d, (i, j)
+    return best
+
+
+def _outward_tangent(contour_pts: np.ndarray, end: np.ndarray) -> tuple[float, float]:
+    """Unit vector pointing away from the stroke at `end`, computed as
+    (end - mean of the contour points near end). Uses the RAW contour rather
+    than the approximation so the tangent reflects the actual local
+    curvature; falls back to (0, 0) — i.e. no projection — if the
+    neighbourhood is degenerate, rather than inventing a direction."""
+    deltas = contour_pts - end
+    near = contour_pts[np.hypot(deltas[:, 0], deltas[:, 1]) <= TANGENT_SAMPLE_RADIUS_PX]
+    if len(near) < 2:
+        return (0.0, 0.0)
+    centre = near.mean(axis=0)
+    dx, dy = float(end[0] - centre[0]), float(end[1] - centre[1])
+    norm = math.hypot(dx, dy)
+    if norm == 0:
+        return (0.0, 0.0)
+    return (dx / norm, dy / norm)
+
+
+def _detect_connector_contours(gray: np.ndarray, masked: np.ndarray,
+                                nodes: list[dict]) -> list[dict]:
+    """Finds connectors of ANY shape as connected ink on the node-masked
+    image. Returns candidate dicts in the same form the Hough path produces,
+    for detect_edges() to merge and dedup.
+
+    Direction uses the same arrowhead-density heuristic as the straight
+    path, sampled at the two ends against the point furthest along the
+    stroke from both — the curved equivalent of "the segment's midpoint",
+    and subject to exactly the same documented unreliability
+    (ARROW_DENSITY_MARGIN).
+    """
+    binary = binarize(masked)
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    candidates = []
+    for contour in contours:
+        peri = cv2.arcLength(contour, True)
+        if peri < MIN_CONNECTOR_PERIMETER_PX:
+            continue
+
+        approx = cv2.approxPolyDP(contour, CONNECTOR_APPROX_EPS_RATIO * peri, True)
+        pts = approx.reshape(-1, 2)
+        if len(pts) < 2:
+            continue
+
+        i, j = _farthest_pair(pts)
+        p_a, p_b = pts[i], pts[j]
+        chord = math.hypot(float(p_a[0] - p_b[0]), float(p_a[1] - p_b[1]))
+        if chord < MIN_EDGE_LENGTH_PX:
+            continue
+
+        # An open stroke's contour runs out along one side and back along
+        # the other, so its perimeter is ~2x the stroke's own length.
+        curviness = (peri / 2) / chord
+        if curviness > MAX_CONNECTOR_CURVINESS:
+            continue
+
+        raw_pts = contour.reshape(-1, 2)
+        ux_a, uy_a = _outward_tangent(raw_pts, p_a)
+        ux_b, uy_b = _outward_tangent(raw_pts, p_b)
+
+        a_id = _match_endpoint(float(p_a[0]), float(p_a[1]), ux_a, uy_a, nodes)
+        b_id = _match_endpoint(float(p_b[0]), float(p_b[1]), ux_b, uy_b, nodes)
+        if a_id is None or b_id is None or a_id == b_id:
+            continue
+
+        # Furthest point from both ends — "the middle of the stroke" for a
+        # shape that has no midpoint in the straight-line sense.
+        mid = max(pts, key=lambda p: min(
+            math.hypot(float(p[0] - p_a[0]), float(p[1] - p_a[1])),
+            math.hypot(float(p[0] - p_b[0]), float(p[1] - p_b[1]))))
+
+        score_a = _arrow_density(float(p_a[0]), float(p_a[1]), gray)
+        score_b = _arrow_density(float(p_b[0]), float(p_b[1]), gray)
+        mid_score = _arrow_density(float(mid[0]), float(mid[1]), gray, radius=6)
+        head_a = score_a > mid_score + ARROW_DENSITY_MARGIN
+        head_b = score_b > mid_score + ARROW_DENSITY_MARGIN
+
+        if head_a and not head_b:
+            direction, src, dst = "directed", b_id, a_id
+        elif head_b and not head_a:
+            direction, src, dst = "directed", a_id, b_id
+        elif head_a and head_b:
+            direction, src, dst = "bidirectional", a_id, b_id
+        else:
+            direction, src, dst = "undirected", a_id, b_id
+
+        # Same confidence formula as the straight path, over the stroke's
+        # own length rather than a chord, so "needs_review" means the same
+        # thing however an edge was found.
+        length_conf = min(1.0, (peri / 2) / 100)
+        direction_conf = 0.7 if direction != "undirected" else 0.5
+        candidates.append({
+            "a_id": a_id, "b_id": b_id,
+            "from_node": src, "to_node": dst, "direction": direction,
+            "confidence": round(length_conf * direction_conf, 3),
+            "detector": "contour",
+            "curviness": round(curviness, 3),
+        })
+
+    return candidates
+
+
 def detect_edges(gray: np.ndarray, nodes: list[dict]) -> list[dict]:
     """Returns a list of edge dicts: {"edge_id", "from_node", "to_node",
     "direction" ("directed"|"bidirectional"|"undirected"), "confidence",
@@ -473,17 +776,24 @@ def detect_edges(gray: np.ndarray, nodes: list[dict]) -> list[dict]:
     edges_img = cv2.Canny(masked, 50, 150, apertureSize=3)
     raw = cv2.HoughLinesP(edges_img, 1, np.pi / 180, threshold=30,
                            minLineLength=25, maxLineGap=8)
-    if raw is None:
-        return []
 
-    segs = [tuple(int(v) for v in line.flatten()) for line in raw]
-    merged = _merge_segments(segs)
-    merged = [m for m in merged if math.hypot(m[2] - m[0], m[3] - m[1]) >= MIN_EDGE_LENGTH_PX]
+    if raw is None:
+        # No straight segments anywhere is NOT "no connectors" — it is the
+        # normal result for an all-curved diagram. Fall through to the
+        # contour pass instead of returning early, which is what this
+        # function used to do (and why the curved family scored zero).
+        merged = []
+    else:
+        segs = [tuple(int(v) for v in line.flatten()) for line in raw]
+        merged = _merge_segments(segs)
+        merged = [m for m in merged if math.hypot(m[2] - m[0], m[3] - m[1]) >= MIN_EDGE_LENGTH_PX]
 
     # node_pair -> best candidate edge (by confidence), so a line broken
     # into near-duplicate merged segments (or detected from both directions
     # of the same drawn arrow) doesn't produce duplicate edges between the
-    # same two nodes.
+    # same two nodes. The contour pass below feeds the same dict, so a
+    # straight connector found by BOTH detectors is still one edge — kept at
+    # whichever detector was more confident about it.
     best_by_pair: dict[frozenset, dict] = {}
 
     for x1, y1, x2, y2 in merged:
@@ -519,7 +829,17 @@ def detect_edges(gray: np.ndarray, nodes: list[dict]) -> list[dict]:
         if existing is None or confidence > existing["confidence"]:
             best_by_pair[pair_key] = {
                 "from_node": src, "to_node": dst, "direction": direction,
-                "confidence": confidence,
+                "confidence": confidence, "detector": "hough", "curviness": None,
+            }
+
+    for candidate in _detect_connector_contours(gray, masked, nodes):
+        pair_key = frozenset((candidate["a_id"], candidate["b_id"]))
+        existing = best_by_pair.get(pair_key)
+        if existing is None or candidate["confidence"] > existing["confidence"]:
+            best_by_pair[pair_key] = {
+                "from_node": candidate["from_node"], "to_node": candidate["to_node"],
+                "direction": candidate["direction"], "confidence": candidate["confidence"],
+                "detector": "contour", "curviness": candidate["curviness"],
             }
 
     edges = []
@@ -530,6 +850,13 @@ def detect_edges(gray: np.ndarray, nodes: list[dict]) -> list[dict]:
             "to_node": edge["to_node"],
             "direction": edge["direction"],
             "confidence": edge["confidence"],
+            # Which detector won this edge, and (contour pass only) how far
+            # the stroke deviates from straight. Provenance only — nothing
+            # scores on it — but it is what lets a bad edge be blamed on the
+            # right half of this module, the same reason each node carries
+            # the OCR engine that read it.
+            "detector": edge["detector"],
+            "curviness": edge["curviness"],
             # Same convention as answer_blocks.confidence_score (PROJECT_CONTEXT.md
             # §5): a low-confidence detection is routed for human review, not
             # trusted or silently dropped.
