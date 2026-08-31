@@ -17,7 +17,7 @@ later addition (plan.md §5 step 5 / §7 phase 2) — not implemented here.
 """
 from __future__ import annotations
 
-import difflib
+from core import text_match
 
 # Lazy-loaded on first call — same pattern as core/evaluator.py's
 # _get_embedding_model. Kept as its own module-level cache rather than
@@ -51,23 +51,12 @@ GLOSSARY_FUZZY_THRESHOLD = 0.75
 SHORT_LABEL_MAX_LEN = 6
 SHORT_LABEL_MAX_EDITS = 1
 
-
-def _edit_distance(a: str, b: str) -> int:
-    """Plain Levenshtein distance, stdlib-only (no extra dependency for
-    what's only used on short strings, at most a few times per node)."""
-    if a == b:
-        return 0
-    prev_row = list(range(len(b) + 1))
-    for i, ca in enumerate(a, start=1):
-        cur_row = [i] + [0] * len(b)
-        for j, cb in enumerate(b, start=1):
-            cur_row[j] = min(
-                cur_row[j - 1] + 1,
-                prev_row[j] + 1,
-                prev_row[j - 1] + (ca != cb),
-            )
-        prev_row = cur_row
-    return prev_row[-1]
+# Backward-compatible alias: this used to be a private function defined in
+# this module. The implementation now lives in core/text_match.py (shared
+# with core/plugins/text_extraction.py's keyword/rubric coverage matching),
+# but existing callers/tests referencing core.diagram_evaluator._edit_distance
+# keep working unchanged.
+_edit_distance = text_match.edit_distance
 
 
 def _get_embedding_model():
@@ -85,43 +74,34 @@ def match_glossary(label: str, glossary_terms: list[dict]) -> dict | None:
     noise, not to find semantic equivalents.
 
     Returns {"term_id", "canonical_term", "match_type"} or None if nothing
-    clears GLOSSARY_FUZZY_THRESHOLD."""
-    label_norm = label.strip().lower()
-    if not label_norm:
+    clears GLOSSARY_FUZZY_THRESHOLD.
+
+    Delegates the actual string comparison to core/text_match.py::fuzzy_match,
+    flattening every term's (canonical_term + aliases) into one ordered
+    candidate list first — fuzzy_match's own short-circuit-on-first-hit,
+    else-best-of-the-rest semantics reproduce this function's original
+    nested-loop behavior exactly when the candidates are flattened in the
+    same term-by-term, candidate-by-candidate order."""
+    flat_candidates: list[tuple[str, dict]] = []
+    for term in glossary_terms:
+        for candidate in [term["canonical_term"]] + list(term.get("aliases") or []):
+            flat_candidates.append((candidate, term))
+
+    result = text_match.fuzzy_match(
+        label, [candidate for candidate, _ in flat_candidates],
+        threshold=GLOSSARY_FUZZY_THRESHOLD,
+        short_max_len=SHORT_LABEL_MAX_LEN,
+        short_max_edits=SHORT_LABEL_MAX_EDITS,
+    )
+    if result is None:
         return None
 
-    best_term = None
-    best_ratio = 0.0
-    for term in glossary_terms:
-        candidates = [term["canonical_term"]] + list(term.get("aliases") or [])
-        for candidate in candidates:
-            candidate_norm = candidate.strip().lower()
-            if candidate_norm == label_norm:
-                return {
-                    "term_id": term["term_id"],
-                    "canonical_term": term["canonical_term"],
-                    "match_type": "exact",
-                }
-            if (max(len(label_norm), len(candidate_norm)) <= SHORT_LABEL_MAX_LEN
-                    and _edit_distance(label_norm, candidate_norm) <= SHORT_LABEL_MAX_EDITS):
-                return {
-                    "term_id": term["term_id"],
-                    "canonical_term": term["canonical_term"],
-                    "match_type": "fuzzy",
-                }
-
-            ratio = difflib.SequenceMatcher(None, label_norm, candidate_norm).ratio()
-            if ratio > best_ratio:
-                best_ratio = ratio
-                best_term = term
-
-    if best_term is not None and best_ratio >= GLOSSARY_FUZZY_THRESHOLD:
-        return {
-            "term_id": best_term["term_id"],
-            "canonical_term": best_term["canonical_term"],
-            "match_type": "fuzzy",
-        }
-    return None
+    _, term = flat_candidates[result["index"]]
+    return {
+        "term_id": term["term_id"],
+        "canonical_term": term["canonical_term"],
+        "match_type": result["match_type"],
+    }
 
 
 def _canonicalize_nodes(nodes: list[dict], glossary_terms: list[dict]) -> tuple[list[dict], list[dict]]:

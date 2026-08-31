@@ -16,18 +16,22 @@ This script becomes a scheduled job later; standalone CLI first.
 Usage:
     export PGHOST=... PGDATABASE=... PGUSER=... PGPASSWORD=...
 
+    python3 scripts/evaluate_pending.py                                  # --method blended (default)
     python3 scripts/evaluate_pending.py --method embeddings
     python3 scripts/evaluate_pending.py --method llm
-    python3 scripts/evaluate_pending.py --method embeddings --stub --dry-run
-    python3 scripts/evaluate_pending.py --method embeddings --limit 10
+    python3 scripts/evaluate_pending.py --method keyword
+    python3 scripts/evaluate_pending.py --method blended --weights "llm=0.5,semantic=0.3,keyword=0.1,rubric=0.1"
+    python3 scripts/evaluate_pending.py --stub --dry-run
+    python3 scripts/evaluate_pending.py --stub-llm --limit 10
 """
 import argparse
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core import db as db_mod                          # noqa: E402
-from scripts.evaluate_answer import evaluate_answer, METHODS  # noqa: E402
+from core import db as db_mod                                          # noqa: E402
+from core.plugins.text_extraction import parse_weights                 # noqa: E402
+from scripts.evaluate_answer import evaluate_answer, METHODS           # noqa: E402
 
 
 def _find_pending(cur, limit: int | None = None) -> list[dict]:
@@ -57,15 +61,28 @@ def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--method", required=True, choices=list(METHODS),
-                    help="scoring method: embeddings or llm")
+    ap.add_argument("--method", default="blended", choices=list(METHODS),
+                    help="scoring method (default: blended)")
+    ap.add_argument("--weights", default=None,
+                    help="override blend weights for --method blended, e.g. "
+                         "'llm=0.5,semantic=0.3,keyword=0.1,rubric=0.1'")
     ap.add_argument("--limit", type=int, default=None,
                     help="max answers to process (default: all)")
     ap.add_argument("--dry-run", action="store_true",
                     help="roll back each answer instead of committing")
     ap.add_argument("--stub", action="store_true",
-                    help="deterministic fake scores (no model/API needed)")
+                    help="deterministic fake score for every signal (no model/API needed)")
+    ap.add_argument("--stub-llm", action="store_true",
+                    help="deterministic fake for the LLM signal only — the rest run for real")
     args = ap.parse_args()
+
+    weights = None
+    if args.weights:
+        try:
+            weights = parse_weights(args.weights)
+        except ValueError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(1)
 
     conn = db_mod.get_connection()
     conn.autocommit = False
@@ -101,7 +118,8 @@ def main():
                 cur.execute("SET LOCAL app.is_platform_admin = 'true'")
                 result = evaluate_answer(
                     cur, item["answer_id"], item["variant_id"],
-                    method=args.method, stub=args.stub,
+                    method=args.method, stub=args.stub, stub_llm=args.stub_llm,
+                    weights=weights,
                 )
             if args.dry_run:
                 conn.rollback()
@@ -110,10 +128,12 @@ def main():
             scored += 1
             metrics = result.get('metrics', {})
             latency_str = f"{metrics.get('latency_ms', 0)}ms"
-            usage_str = f", tokens={metrics['usage']['total_tokens']}" if "usage" in metrics else ""
+            llm_usage = metrics.get('signals', {}).get('llm', {}).get('metrics', {}).get('usage')
+            usage_str = f", tokens={llm_usage['total_tokens']}" if llm_usage else ""
+            confidence_flag = " [LOW CONFIDENCE]" if metrics.get('low_confidence') else ""
             print(f"  OK   {result['answer_id']}: "
                   f"{result['score']}/{result['marks_max']} "
-                  f"({result['model']}, {latency_str}{usage_str})")
+                  f"({result['model']}, {latency_str}{usage_str}){confidence_flag}")
         except Exception as e:
             conn.rollback()
             failed += 1

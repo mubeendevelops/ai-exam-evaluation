@@ -1,14 +1,24 @@
 #!/usr/bin/env python3
 """
 scripts/evaluate_answer.py — Task 3: score a single student answer against
-a reference answer variant using AI (embeddings or LLM).
+a reference answer variant using AI (embeddings, LLM, keyword coverage, or
+a weighted blend of all four signals plus rubric coverage).
 
 BEHAVIOUR:
-  1. Fetches answers.text_extracted + reference_answer_variants.content.
-  2. Calls core/evaluator (--method embeddings|llm).
-  3. Flips is_current=False on any previous evaluation_results for this answer.
+  1. Fetches answers.text_extracted + reference_answer_variants.content,
+     and — for --method blended|keyword — the question's weighted keywords
+     (question_keywords joined to keywords).
+  2. Routes through the plugin registry: core/plugins/registry.get_plugin
+     ("text_extraction"), whose extract()/evaluate() wrap
+     core/evaluator.py's score_with_embeddings/score_with_llm (no
+     reimplementation) and add keyword/rubric coverage. See
+     core/plugins/text_extraction.py's module docstring for the four
+     signals and how they blend.
+  3. Flips is_current=False on any previous evaluation_results for this
+     answer.
   4. Inserts new evaluation_results row: evaluator_type='ai',
-     evaluator_model=<model name>, is_current=True.
+     evaluator_model=<model/blend descriptor>, is_current=True, with the
+     full per-signal breakdown in metrics (migration 010).
   5. Updates answers.status: pending_evaluation → ai_scored.
   6. Writes answer_status_history (changed_by=NULL — system-driven).
 
@@ -24,12 +34,16 @@ Written as a plain function so a future API endpoint can call it directly.
 
 Usage:
     export PGHOST=... PGDATABASE=... PGUSER=... PGPASSWORD=...
-    export GROQ_API_KEY=...  # only for --method llm
+    export GROQ_API_KEY=...  # only needed for the llm signal (blended/llm)
 
+    python3 scripts/evaluate_answer.py <answer_id> <variant_id>                       # --method blended (default)
     python3 scripts/evaluate_answer.py <answer_id> <variant_id> --method embeddings
     python3 scripts/evaluate_answer.py <answer_id> <variant_id> --method llm
-    python3 scripts/evaluate_answer.py <answer_id> <variant_id> --method llm --dry-run
-    python3 scripts/evaluate_answer.py <answer_id> <variant_id> --method embeddings --stub
+    python3 scripts/evaluate_answer.py <answer_id> <variant_id> --method keyword
+    python3 scripts/evaluate_answer.py <answer_id> <variant_id> --method blended --weights "llm=0.5,semantic=0.25,keyword=0.15,rubric=0.1"
+    python3 scripts/evaluate_answer.py <answer_id> <variant_id> --method blended --dry-run
+    python3 scripts/evaluate_answer.py <answer_id> <variant_id> --method blended --stub-llm   # real semantic/keyword/rubric, fake LLM call
+    python3 scripts/evaluate_answer.py <answer_id> <variant_id> --method embeddings --stub    # everything fake, no model/API needed
 """
 import argparse
 import sys
@@ -37,15 +51,28 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import db as db_mod              # noqa: E402
-from core import evaluator                 # noqa: E402
 from core import answer_evaluation         # noqa: E402
+from core.plugins.registry import get_plugin       # noqa: E402
+from core.plugins.text_extraction import (         # noqa: E402
+    PlainText, TextReference, parse_weights,
+)
 
-METHODS = {"embeddings": evaluator.score_with_embeddings,
-           "llm": evaluator.score_with_llm}
+METHODS = ("blended", "embeddings", "llm", "keyword")
+
+
+def _load_keywords(cur, question_id: str) -> list[dict]:
+    cur.execute("""
+        SELECT k.term, qk.weight
+        FROM question_keywords qk
+        JOIN keywords k ON k.keyword_id = qk.keyword_id
+        WHERE qk.question_id = %s
+    """, (question_id,))
+    return [{"term": term, "weight": float(weight)} for term, weight in cur.fetchall()]
 
 
 def evaluate_answer(cur, answer_id: str, variant_id: str,
-                    method: str = "embeddings", stub: bool = False) -> dict:
+                    method: str = "blended", stub: bool = False,
+                    stub_llm: bool = False, weights: dict | None = None) -> dict:
     """Score one answer against one reference variant. Caller owns the
     transaction — commit/rollback is the caller's responsibility.
 
@@ -53,7 +80,7 @@ def evaluate_answer(cur, answer_id: str, variant_id: str,
     or the correct college_id set."""
 
     if method not in METHODS:
-        raise ValueError(f"method must be one of {list(METHODS)}, got {method!r}")
+        raise ValueError(f"method must be one of {METHODS}, got {method!r}")
 
     # Fetch student answer
     cur.execute("""
@@ -89,20 +116,31 @@ def evaluate_answer(cur, answer_id: str, variant_id: str,
         raise ValueError(f"question_id {question_id} not found")
     marks_max = float(row[0])
 
-    # Score
-    if stub:
-        result = evaluator.stub_score(student_text, reference_text, marks_max)
-    else:
-        result = METHODS[method](student_text, reference_text, marks_max)
+    keywords = _load_keywords(cur, question_id) if method in ("blended", "keyword") else []
+
+    reference = TextReference(
+        reference_text=reference_text,
+        marks_max=marks_max,
+        keywords=keywords,
+        question_id=str(question_id),
+        variant_id=str(variant_id),
+    )
+
+    plugin = get_plugin("text_extraction")
+    extracted = plugin.extract(PlainText(student_text), stub=stub)
+    result = plugin.evaluate(
+        extracted, reference,
+        stub=stub, stub_llm=stub_llm, method=method, weights=weights,
+    )
 
     evaluation_id = answer_evaluation.record_evaluation(
         cur,
         answer_id=answer_id,
         reference_answer_variant_id=variant_id,
-        evaluator_model=result["model"],
-        score=result["score"],
-        explanation=result["explanation"],
-        metrics=result.get("metrics"),
+        evaluator_model=result.metrics["evaluator_model"],
+        score=result.score,
+        explanation=result.explanation,
+        metrics=result.metrics,
     )
 
     status_changed = answer_evaluation.transition_to_ai_scored(cur, answer_id, answer_status)
@@ -111,14 +149,29 @@ def evaluate_answer(cur, answer_id: str, variant_id: str,
         "answer_id": answer_id,
         "evaluation_id": evaluation_id,
         "variant_id": variant_id,
-        "method": method if not stub else "stub",
-        "model": result["model"],
-        "score": result["score"],
+        "method": method if not stub else f"{method}(stub)",
+        "model": result.metrics["evaluator_model"],
+        "score": result.score,
         "marks_max": marks_max,
-        "explanation": result["explanation"],
-        "metrics": result.get("metrics", {}),
+        "confidence": result.confidence,
+        "explanation": result.explanation,
+        "metrics": result.metrics,
         "status_changed": status_changed,
     }
+
+
+def _print_signals(result: dict) -> None:
+    signals = result["metrics"].get("signals", {})
+    weights = result["metrics"].get("weights", {})
+    for name in ("semantic", "llm", "keyword", "rubric"):
+        sig = signals.get(name)
+        if sig is None:
+            continue
+        if sig.get("score") is None:
+            print(f"    [{name:<8}] unavailable — {sig['explanation']}")
+            continue
+        weight_str = f" (weight {weights[name]})" if name in weights else ""
+        print(f"    [{name:<8}] {sig['score']}/{result['marks_max']}{weight_str} — {sig['model']}")
 
 
 def main():
@@ -127,34 +180,50 @@ def main():
     )
     ap.add_argument("answer_id")
     ap.add_argument("variant_id")
-    ap.add_argument("--method", required=True, choices=list(METHODS),
-                    help="scoring method: embeddings (sentence-transformers) "
-                         "or llm (Groq API)")
+    ap.add_argument("--method", default="blended", choices=list(METHODS),
+                    help="scoring method (default: blended). 'blended' combines "
+                         "semantic + llm + keyword + rubric; the others isolate "
+                         "one signal.")
+    ap.add_argument("--weights", default=None,
+                    help="override blend weights for --method blended, e.g. "
+                         "'llm=0.5,semantic=0.25,keyword=0.15,rubric=0.1' — "
+                         "unspecified signals keep their default weight")
     ap.add_argument("--dry-run", action="store_true",
                     help="print result, roll back instead of committing")
     ap.add_argument("--stub", action="store_true",
-                    help="deterministic fake score (no model/API needed)")
+                    help="deterministic fake score for every signal touched "
+                         "(no model/API needed)")
+    ap.add_argument("--stub-llm", action="store_true",
+                    help="deterministic fake for the LLM signal only — semantic/"
+                         "keyword/rubric still run for real (saves Groq quota "
+                         "while exercising the rest of blended scoring)")
     args = ap.parse_args()
+
+    weights = None
+    if args.weights:
+        try:
+            weights = parse_weights(args.weights)
+        except ValueError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(1)
 
     try:
         with db_mod.transaction(dry_run=args.dry_run) as cur:
             cur.execute("SET LOCAL app.is_platform_admin = 'true'")
             result = evaluate_answer(
                 cur, args.answer_id, args.variant_id,
-                method=args.method, stub=args.stub,
+                method=args.method, stub=args.stub, stub_llm=args.stub_llm,
+                weights=weights,
             )
 
         print(f"Answer {result['answer_id']}: "
               f"{result['score']}/{result['marks_max']} "
-              f"(method={result['method']}, model={result['model']})")
+              f"(method={result['method']}, confidence={result['confidence']})")
         print(f"  {result['explanation']}")
+        _print_signals(result)
 
-        metrics = result.get('metrics', {})
-        metrics_str = ", ".join(f"{k}={v}" for k, v in metrics.items() if k != "usage")
-        if "usage" in metrics:
-            metrics_str += f", usage={metrics['usage']}"
-        if metrics_str:
-            print(f"  Metrics: {metrics_str}")
+        if result["metrics"].get("low_confidence"):
+            print("  ⚠ LOW CONFIDENCE — semantic/LLM signals diverge, flagged for human review.")
 
         if result["status_changed"]:
             print("  Status: pending_evaluation → ai_scored")
