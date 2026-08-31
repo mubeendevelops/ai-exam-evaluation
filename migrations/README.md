@@ -391,7 +391,8 @@ Three linked tables defining reusable exam paper templates:
 # Generated papers schema — migration notes
 
 File: `008_generated_papers.sql`
-**Prerequisite:** `001` through `007` already applied.
+**Prerequisite:** `001` through `006` already applied. (There is no 007 — see
+the index table at the end of this file.)
 
 ## What this adds
 
@@ -569,9 +570,38 @@ column (from 010), following the pattern of "structured extra detail."
 | 004 | `questions.content` TEXT column |
 | 005 | `questions.is_ai_generated` BOOLEAN + `questions.parent_question_id` + `question_tree` view |
 | 006 | Paper patterns (`paper_patterns`, `pattern_sections`, `pattern_slots` tables) |
-| 007 | *Missing from git* — next migration would be 007 if it existed |
+| 007 | *Never existed.* The `pattern_slots` ordering fix that docs once attributed to a `007_fix_pattern_slot_ordering.sql` was folded into 006 before 006 was ever committed. Verified 2026-08-31 (see note below). The next migration number is **013**. |
 | 008 | Generated papers (`generated_papers`, `paper_sections`, `paper_questions` tables) |
 | 009 | `evaluation_results.evaluator_model` TEXT column |
 | 010 | `evaluation_results.metrics` JSONB column |
 | 011 | Glossary terms (`glossary_terms` table) |
 | 012 | Diagram evaluation support (make `evaluation_results` polymorphic over `reference_answer_variant_id` / `reference_asset_id`) |
+
+### Note on the "missing" migration 007
+
+Earlier revisions of this file, `readme files/SCRIPT_COMMANDS.md` and
+`CLAUDE_CONTEXT.md` described a `007_fix_pattern_slot_ordering.sql` that
+patched a buggy first cut of 006, and warned that the file was missing from
+git. **It was never written.** Resolved 2026-08-31 by three independent
+checks:
+
+1. **006's own source.** `006_paper_pattern_schema.sql` already creates both
+   correctly-scoped partial unique indexes —
+   `idx_pattern_slots_top_level_order` on `(section_id, slot_order) WHERE
+   parent_slot_id IS NULL` and `idx_pattern_slots_child_order` on
+   `(parent_slot_id, slot_order) WHERE parent_slot_id IS NOT NULL` — and
+   carries an in-file comment explaining why a plain
+   `UNIQUE(section_id, slot_order)` would be wrong (every top-level row has
+   `parent_slot_id = NULL`, and NULLs never collide for uniqueness, so
+   top-level ordering would go unenforced).
+2. **Git history.** `git log --follow -- migrations/006_paper_pattern_schema.sql`
+   returns exactly one commit (`ee6d7f6`, 2026-08-23), and that commit's diff
+   already contains both partial indexes. There was never a buggy first cut
+   in version control — the fix was folded in before the file was committed.
+3. **The live database.** `\d pattern_slots` on `ai_evaluation` shows zero
+   drift from 006: both partial unique indexes present, no plain
+   `UNIQUE(section_id, slot_order)` constraint, and the
+   `trg_slot_parent_same_section` trigger in place.
+
+No 007 is needed and none should be written. The next migration number is
+**013**.

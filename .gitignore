@@ -81,3 +81,22 @@ minio-data/
 readme files/
 CLAUDE_CONTEXT.md
 plan.md
+claude_code_roadmap_prompts.md
+
+# ──────────────────────────────────────────────
+# Test tooling
+# ──────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# ──────────────────────────────────────────────
+# Local agent/tooling state
+# ──────────────────────────────────────────────
+# Claude Code per-checkout session state (locks, scheduled tasks) — local,
+# not project config. NOTE: media/ocr_benchmark/ is deliberately NOT ignored:
+# it looks like generator output but is the committed labelled fixture set
+# that scripts/benchmark_ocr_engines.py scores against.
+.claude/

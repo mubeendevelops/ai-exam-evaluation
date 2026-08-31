@@ -54,3 +54,13 @@ pytesseract>=0.3
 # providing it.
 Pillow>=10.0
 numpy>=1.24
+
+# ──────────────────────────────────────────────
+# Test tooling (tests/, pytest.ini, Makefile `make test*` targets).
+# Pinned to the exact versions that installed into .venv-paddleocr on
+# 2026-08-31 (`pip install pytest pytest-cov` then `pip show`), not guessed —
+# characterization tests should run against a known-good pytest, not
+# whatever floats in on a loose `>=`.
+# ──────────────────────────────────────────────
+pytest==9.1.1
+pytest-cov==7.1.0
