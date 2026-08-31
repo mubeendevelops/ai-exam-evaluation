@@ -46,6 +46,17 @@ paddlepaddle>=3.0
 # ARE available — not required for --stub-extraction / --stub.
 pytesseract>=0.3
 
+# OpenCV (cv2) is imported DIRECTLY by core/diagram_shapes.py and
+# core/table_extractor.py, but is deliberately NOT pinned here. It already
+# arrives transitively via paddleocr, and this venv currently resolves cv2 to
+# opencv-python-headless while also having opencv-contrib-python installed —
+# adding a pin for one distribution on top of that would make the double
+# install worse, not better. Relevant finding from the table-extractor engine
+# comparison (CLAUDE_CONTEXT.md §7B): the img2table library needs
+# opencv-contrib-python specifically (cv2.ximgproc.niBlackThreshold) and
+# fails outright against opencv-python-headless — so do not swap the OpenCV
+# distribution without re-testing the diagram pipeline, which depends on it.
+#
 # core/diagram_extractor.py and core/ocr_engines/ import these directly
 # (PIL.Image for the fetched scan / engine crops, numpy to feed PaddleOCR's
 # detector/recognizer arrays) — both currently arrive transitively via

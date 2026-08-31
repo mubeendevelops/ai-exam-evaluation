@@ -1,0 +1,67 @@
+{
+  "rows": 4,
+  "cols": 3,
+  "has_header": true,
+  "cells": [
+    {
+      "row": 0,
+      "col": 0,
+      "text": "Algorithm"
+    },
+    {
+      "row": 0,
+      "col": 1,
+      "text": "Preemptive"
+    },
+    {
+      "row": 0,
+      "col": 2,
+      "text": "Avg Wait"
+    },
+    {
+      "row": 1,
+      "col": 0,
+      "text": "FCFS"
+    },
+    {
+      "row": 1,
+      "col": 1,
+      "text": "No"
+    },
+    {
+      "row": 1,
+      "col": 2,
+      "text": "8.0"
+    },
+    {
+      "row": 2,
+      "col": 0,
+      "text": "SJF"
+    },
+    {
+      "row": 2,
+      "col": 1,
+      "text": "No"
+    },
+    {
+      "row": 2,
+      "col": 2,
+      "text": "5.5"
+    },
+    {
+      "row": 3,
+      "col": 0,
+      "text": "Round Robin"
+    },
+    {
+      "row": 3,
+      "col": 1,
+      "text": "Yes"
+    },
+    {
+      "row": 3,
+      "col": 2,
+      "text": "6.2"
+    }
+  ]
+}

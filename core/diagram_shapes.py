@@ -254,6 +254,24 @@ def _find_box_by_lines(gray: np.ndarray, tx: int, ty: int, tw: int, th: int) -> 
     return sides
 
 
+def binarize(gray: np.ndarray) -> np.ndarray:
+    """Inverted OTSU binary (ink = 255, paper = 0) — the one binarization
+    step every pixel-geometry pass in this repo starts from.
+
+    Shared with core/table_extractor.py rather than re-written there.
+    OTSU specifically, NOT cv2.adaptiveThreshold: on a clean synthetic /
+    flat-scanned image with a near-uniform background, an adaptive-mean
+    threshold with a negative C makes essentially EVERY pixel foreground
+    (each pixel sits within C of its own neighbourhood mean), which reads
+    downstream as "the whole page is ink" rather than as an error. Measured
+    on media/tables/images/ during the table-extractor spike: adaptive
+    thresholding put 312 of 376 image rows over a 30%-ink line-detection
+    threshold; OTSU put exactly the 5 real ruling lines over it.
+    """
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    return binary
+
+
 def _classify_shape(contour) -> str:
     peri = cv2.arcLength(contour, True)
     approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
@@ -273,7 +291,7 @@ def pair_shapes(gray: np.ndarray, nodes: list[dict]) -> list[dict]:
     """Mutates and returns `nodes`, adding "shape_bbox" ([x, y, w, h]) and
     "shape_type" (str | None) to each. See module docstring for the
     matching rule and its known limitation."""
-    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    binary = binarize(gray)
     closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, _MORPH_CLOSE_KERNEL)
     contours, _ = cv2.findContours(closed, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 

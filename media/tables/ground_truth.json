@@ -1,0 +1,842 @@
+{
+  "Caveat_bordered.png": {
+    "style": "Caveat",
+    "variant": "bordered",
+    "image": "Caveat_bordered.png",
+    "bordered": true,
+    "rows": 4,
+    "cols": 3,
+    "has_header": true,
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "text": "Algorithm"
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "text": "Preemptive"
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "text": "Avg Wait"
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "text": "FCFS"
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "text": "8.0"
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "text": "SJF"
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "text": "5.5"
+      },
+      {
+        "row": 3,
+        "col": 0,
+        "text": "Round Robin"
+      },
+      {
+        "row": 3,
+        "col": 1,
+        "text": "Yes"
+      },
+      {
+        "row": 3,
+        "col": 2,
+        "text": "6.2"
+      }
+    ],
+    "differs_from_reference": []
+  },
+  "Caveat_borderless.png": {
+    "style": "Caveat",
+    "variant": "borderless",
+    "image": "Caveat_borderless.png",
+    "bordered": false,
+    "rows": 4,
+    "cols": 3,
+    "has_header": true,
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "text": "Algorithm"
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "text": "Preemptive"
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "text": "Avg Wait"
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "text": "FCFS"
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "text": "8.0"
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "text": "SJF"
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "text": "5.5"
+      },
+      {
+        "row": 3,
+        "col": 0,
+        "text": "Round Robin"
+      },
+      {
+        "row": 3,
+        "col": 1,
+        "text": "Yes"
+      },
+      {
+        "row": 3,
+        "col": 2,
+        "text": "6.2"
+      }
+    ],
+    "differs_from_reference": []
+  },
+  "Caveat_missing_row.png": {
+    "style": "Caveat",
+    "variant": "missing_row",
+    "image": "Caveat_missing_row.png",
+    "bordered": true,
+    "rows": 3,
+    "cols": 3,
+    "has_header": true,
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "text": "Algorithm"
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "text": "Preemptive"
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "text": "Avg Wait"
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "text": "FCFS"
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "text": "8.0"
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "text": "Round Robin"
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "text": "Yes"
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "text": "6.2"
+      }
+    ],
+    "differs_from_reference": [
+      "body row 'SJF' omitted"
+    ]
+  },
+  "Caveat_shifted.png": {
+    "style": "Caveat",
+    "variant": "shifted",
+    "image": "Caveat_shifted.png",
+    "bordered": true,
+    "rows": 4,
+    "cols": 3,
+    "has_header": true,
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "text": "Algorithm"
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "text": "Preemtive"
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "text": "Avg Wait"
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "text": "SJF"
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "text": "5.5"
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "text": "FCFS"
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "text": "8.5"
+      },
+      {
+        "row": 3,
+        "col": 0,
+        "text": "Round Robin"
+      },
+      {
+        "row": 3,
+        "col": 1,
+        "text": "Yes"
+      },
+      {
+        "row": 3,
+        "col": 2,
+        "text": "6.25"
+      }
+    ],
+    "differs_from_reference": [
+      "body rows reordered (SJF before FCFS)",
+      "header cell 'Preemptive' misspelled 'Preemtive'",
+      "cell FCFS/Avg Wait perturbed 8.0 -> 8.5 (substantively wrong)",
+      "cell Round Robin/Avg Wait perturbed 6.2 -> 6.25 (rounding-level)"
+    ]
+  },
+  "IndieFlower_bordered.png": {
+    "style": "IndieFlower",
+    "variant": "bordered",
+    "image": "IndieFlower_bordered.png",
+    "bordered": true,
+    "rows": 4,
+    "cols": 3,
+    "has_header": true,
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "text": "Algorithm"
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "text": "Preemptive"
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "text": "Avg Wait"
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "text": "FCFS"
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "text": "8.0"
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "text": "SJF"
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "text": "5.5"
+      },
+      {
+        "row": 3,
+        "col": 0,
+        "text": "Round Robin"
+      },
+      {
+        "row": 3,
+        "col": 1,
+        "text": "Yes"
+      },
+      {
+        "row": 3,
+        "col": 2,
+        "text": "6.2"
+      }
+    ],
+    "differs_from_reference": []
+  },
+  "IndieFlower_borderless.png": {
+    "style": "IndieFlower",
+    "variant": "borderless",
+    "image": "IndieFlower_borderless.png",
+    "bordered": false,
+    "rows": 4,
+    "cols": 3,
+    "has_header": true,
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "text": "Algorithm"
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "text": "Preemptive"
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "text": "Avg Wait"
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "text": "FCFS"
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "text": "8.0"
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "text": "SJF"
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "text": "5.5"
+      },
+      {
+        "row": 3,
+        "col": 0,
+        "text": "Round Robin"
+      },
+      {
+        "row": 3,
+        "col": 1,
+        "text": "Yes"
+      },
+      {
+        "row": 3,
+        "col": 2,
+        "text": "6.2"
+      }
+    ],
+    "differs_from_reference": []
+  },
+  "IndieFlower_missing_row.png": {
+    "style": "IndieFlower",
+    "variant": "missing_row",
+    "image": "IndieFlower_missing_row.png",
+    "bordered": true,
+    "rows": 3,
+    "cols": 3,
+    "has_header": true,
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "text": "Algorithm"
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "text": "Preemptive"
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "text": "Avg Wait"
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "text": "FCFS"
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "text": "8.0"
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "text": "Round Robin"
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "text": "Yes"
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "text": "6.2"
+      }
+    ],
+    "differs_from_reference": [
+      "body row 'SJF' omitted"
+    ]
+  },
+  "IndieFlower_shifted.png": {
+    "style": "IndieFlower",
+    "variant": "shifted",
+    "image": "IndieFlower_shifted.png",
+    "bordered": true,
+    "rows": 4,
+    "cols": 3,
+    "has_header": true,
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "text": "Algorithm"
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "text": "Preemtive"
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "text": "Avg Wait"
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "text": "SJF"
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "text": "5.5"
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "text": "FCFS"
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "text": "8.5"
+      },
+      {
+        "row": 3,
+        "col": 0,
+        "text": "Round Robin"
+      },
+      {
+        "row": 3,
+        "col": 1,
+        "text": "Yes"
+      },
+      {
+        "row": 3,
+        "col": 2,
+        "text": "6.25"
+      }
+    ],
+    "differs_from_reference": [
+      "body rows reordered (SJF before FCFS)",
+      "header cell 'Preemptive' misspelled 'Preemtive'",
+      "cell FCFS/Avg Wait perturbed 8.0 -> 8.5 (substantively wrong)",
+      "cell Round Robin/Avg Wait perturbed 6.2 -> 6.25 (rounding-level)"
+    ]
+  },
+  "PatrickHand_bordered.png": {
+    "style": "PatrickHand",
+    "variant": "bordered",
+    "image": "PatrickHand_bordered.png",
+    "bordered": true,
+    "rows": 4,
+    "cols": 3,
+    "has_header": true,
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "text": "Algorithm"
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "text": "Preemptive"
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "text": "Avg Wait"
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "text": "FCFS"
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "text": "8.0"
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "text": "SJF"
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "text": "5.5"
+      },
+      {
+        "row": 3,
+        "col": 0,
+        "text": "Round Robin"
+      },
+      {
+        "row": 3,
+        "col": 1,
+        "text": "Yes"
+      },
+      {
+        "row": 3,
+        "col": 2,
+        "text": "6.2"
+      }
+    ],
+    "differs_from_reference": []
+  },
+  "PatrickHand_borderless.png": {
+    "style": "PatrickHand",
+    "variant": "borderless",
+    "image": "PatrickHand_borderless.png",
+    "bordered": false,
+    "rows": 4,
+    "cols": 3,
+    "has_header": true,
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "text": "Algorithm"
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "text": "Preemptive"
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "text": "Avg Wait"
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "text": "FCFS"
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "text": "8.0"
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "text": "SJF"
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "text": "5.5"
+      },
+      {
+        "row": 3,
+        "col": 0,
+        "text": "Round Robin"
+      },
+      {
+        "row": 3,
+        "col": 1,
+        "text": "Yes"
+      },
+      {
+        "row": 3,
+        "col": 2,
+        "text": "6.2"
+      }
+    ],
+    "differs_from_reference": []
+  },
+  "PatrickHand_missing_row.png": {
+    "style": "PatrickHand",
+    "variant": "missing_row",
+    "image": "PatrickHand_missing_row.png",
+    "bordered": true,
+    "rows": 3,
+    "cols": 3,
+    "has_header": true,
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "text": "Algorithm"
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "text": "Preemptive"
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "text": "Avg Wait"
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "text": "FCFS"
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "text": "8.0"
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "text": "Round Robin"
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "text": "Yes"
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "text": "6.2"
+      }
+    ],
+    "differs_from_reference": [
+      "body row 'SJF' omitted"
+    ]
+  },
+  "PatrickHand_shifted.png": {
+    "style": "PatrickHand",
+    "variant": "shifted",
+    "image": "PatrickHand_shifted.png",
+    "bordered": true,
+    "rows": 4,
+    "cols": 3,
+    "has_header": true,
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "text": "Algorithm"
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "text": "Preemtive"
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "text": "Avg Wait"
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "text": "SJF"
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "text": "5.5"
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "text": "FCFS"
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "text": "No"
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "text": "8.5"
+      },
+      {
+        "row": 3,
+        "col": 0,
+        "text": "Round Robin"
+      },
+      {
+        "row": 3,
+        "col": 1,
+        "text": "Yes"
+      },
+      {
+        "row": 3,
+        "col": 2,
+        "text": "6.25"
+      }
+    ],
+    "differs_from_reference": [
+      "body rows reordered (SJF before FCFS)",
+      "header cell 'Preemptive' misspelled 'Preemtive'",
+      "cell FCFS/Avg Wait perturbed 8.0 -> 8.5 (substantively wrong)",
+      "cell Round Robin/Avg Wait perturbed 6.2 -> 6.25 (rounding-level)"
+    ]
+  }
+}
