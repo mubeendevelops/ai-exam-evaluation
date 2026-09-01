@@ -1,0 +1,184 @@
+{
+  "pdf": "sample_booklet.pdf",
+  "font": "PatrickHand",
+  "page_size": [
+    1240,
+    1754
+  ],
+  "rotated_pages": {
+    "2": -1.6,
+    "4": 1.1
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "regions": [
+        {
+          "bbox": [
+            110,
+            110,
+            64,
+            58
+          ],
+          "type": "marker",
+          "marker": "Q1"
+        },
+        {
+          "bbox": [
+            110,
+            200,
+            951,
+            168
+          ],
+          "type": "text",
+          "question": "Q1"
+        },
+        {
+          "bbox": [
+            110,
+            438,
+            965,
+            168
+          ],
+          "type": "text",
+          "question": "Q1"
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "regions": [
+        {
+          "bbox": [
+            110,
+            110,
+            69,
+            58
+          ],
+          "type": "marker",
+          "marker": "Q2"
+        },
+        {
+          "bbox": [
+            110,
+            200,
+            781,
+            56
+          ],
+          "type": "text",
+          "question": "Q2"
+        },
+        {
+          "bbox": [
+            110,
+            316,
+            990,
+            360
+          ],
+          "type": "table",
+          "question": "Q2"
+        },
+        {
+          "bbox": [
+            110,
+            756,
+            39,
+            58
+          ],
+          "type": "marker",
+          "marker": "Q2a"
+        },
+        {
+          "bbox": [
+            110,
+            836,
+            983,
+            56
+          ],
+          "type": "text",
+          "question": "Q2a"
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "regions": [
+        {
+          "bbox": [
+            110,
+            110,
+            963,
+            168
+          ],
+          "type": "text",
+          "question": "Q2a"
+        },
+        {
+          "bbox": [
+            110,
+            348,
+            40,
+            58
+          ],
+          "type": "marker",
+          "marker": "Q2b"
+        },
+        {
+          "bbox": [
+            110,
+            428,
+            913,
+            112
+          ],
+          "type": "text",
+          "question": "Q2b"
+        }
+      ]
+    },
+    {
+      "page_number": 4,
+      "regions": [
+        {
+          "bbox": [
+            110,
+            110,
+            421,
+            56
+          ],
+          "type": "text",
+          "question": "Q2b"
+        },
+        {
+          "bbox": [
+            110,
+            246,
+            68,
+            58
+          ],
+          "type": "marker",
+          "marker": "Q3"
+        },
+        {
+          "bbox": [
+            110,
+            336,
+            600,
+            56
+          ],
+          "type": "text",
+          "question": "Q3"
+        },
+        {
+          "bbox": [
+            110,
+            462,
+            1020,
+            120
+          ],
+          "type": "diagram",
+          "question": "Q3"
+        }
+      ]
+    }
+  ]
+}

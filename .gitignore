@@ -96,9 +96,12 @@ htmlcov/
 # Local agent/tooling state
 # ──────────────────────────────────────────────
 # Claude Code per-checkout session state (locks, scheduled tasks) — local,
-# not project config. NOTE: media/ocr_benchmark/, media/tables/ and
-# media/diagram_benchmark/ are deliberately NOT ignored: they look like
-# generator output but are the committed labelled fixture sets that
-# scripts/benchmark_ocr_engines.py and
-# scripts/benchmark_diagram_extraction.py score against.
+# not project config. NOTE: media/ocr_benchmark/, media/tables/,
+# media/diagram_benchmark/ and media/booklets/ are deliberately NOT ignored:
+# they look like generator output but are the committed labelled fixture sets
+# that scripts/benchmark_ocr_engines.py,
+# scripts/benchmark_diagram_extraction.py and
+# scripts/benchmark_booklet_segmentation.py score against. media/booklets/
+# also holds sample_booklet.pdf — the only PDF in this repo, and the only
+# input scripts/ingest_booklet.py can be verified on.
 .claude/

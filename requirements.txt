@@ -66,6 +66,22 @@ pytesseract>=0.3
 Pillow>=10.0
 numpy>=1.24
 
+# PDF page rasterization for booklet ingestion (core/booklet_ingest.py, Task 5).
+# Chosen over pdf2image deliberately: pdf2image is a thin wrapper that shells
+# out to poppler's `pdftoppm`, an OS binary that is NOT pip-installable and
+# would add a second "install this outside the venv" setup step of exactly the
+# kind core/ocr_engines/tesseract_engine.py already has to apologize for (see
+# the pytesseract note above — the tesseract binary is the existing example of
+# this cost). pypdfium2 bundles its own libpdfium and needs nothing installed
+# outside the venv.
+#
+# Already present transitively (paddlex pulls it in for its own PDF input
+# support), but core/booklet_ingest.py imports it DIRECTLY, and a direct
+# import gets a direct pin rather than relying on another package's dependency
+# graph to keep providing it — the same rationale stated for Pillow/numpy
+# immediately above.
+pypdfium2>=4.0
+
 # ──────────────────────────────────────────────
 # Test tooling (tests/, pytest.ini, Makefile `make test*` targets).
 # Pinned to the exact versions that installed into .venv-paddleocr on

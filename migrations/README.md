@@ -570,12 +570,13 @@ column (from 010), following the pattern of "structured extra detail."
 | 004 | `questions.content` TEXT column |
 | 005 | `questions.is_ai_generated` BOOLEAN + `questions.parent_question_id` + `question_tree` view |
 | 006 | Paper patterns (`paper_patterns`, `pattern_sections`, `pattern_slots` tables) |
-| 007 | *Never existed.* The `pattern_slots` ordering fix that docs once attributed to a `007_fix_pattern_slot_ordering.sql` was folded into 006 before 006 was ever committed. Verified 2026-08-31 (see note below). The next migration number is **013**. |
+| 007 | *Never existed.* The `pattern_slots` ordering fix that docs once attributed to a `007_fix_pattern_slot_ordering.sql` was folded into 006 before 006 was ever committed. Verified 2026-08-31 (see note below). |
 | 008 | Generated papers (`generated_papers`, `paper_sections`, `paper_questions` tables) |
 | 009 | `evaluation_results.evaluator_model` TEXT column |
 | 010 | `evaluation_results.metrics` JSONB column |
 | 011 | Glossary terms (`glossary_terms` table) |
 | 012 | Diagram evaluation support (make `evaluation_results` polymorphic over `reference_answer_variant_id` / `reference_asset_id`) |
+| 013 | Booklet region provenance on `answer_blocks` (page number, bbox, page image ref, classification label/confidence, review flag) |
 
 ### Note on the "missing" migration 007
 
@@ -603,5 +604,70 @@ checks:
    `UNIQUE(section_id, slot_order)` constraint, and the
    `trg_slot_parent_same_section` trigger in place.
 
-No 007 is needed and none should be written. The next migration number is
-**013**.
+No 007 is needed and none should be written. 013 has since been written
+(booklet region provenance), so the next migration number is **014**.
+
+---
+
+# Booklet region provenance — migration notes
+
+`013_booklet_regions.sql`
+
+## What this adds
+
+Six nullable columns on `answer_blocks`, plus two indexes and two guarded
+CHECK constraints:
+
+| column | type | purpose |
+|---|---|---|
+| `page_number` | `INT` | 1-based page of the source booklet PDF |
+| `region_bbox` | `JSONB` | `[x, y, w, h]` in **deskewed page-image** pixels |
+| `page_image_url` | `TEXT` | stable `bucket/key` of the full deskewed page |
+| `classification_label` | `TEXT` | the raw layout-model label, pre-mapping |
+| `classification_confidence` | `REAL` | layout-model confidence, `[0, 1]` |
+| `needs_review` | `BOOLEAN NOT NULL DEFAULT false` | flagged for a human |
+
+## Why it exists
+
+Until Task 5, every `answer_blocks` row was created one at a time from a
+single pre-cropped image (`scripts/upload_diagram_scan.py`, or the ad-hoc
+INSERT behind `run_table_eval_demo.sh`). Booklet ingestion instead produces
+many blocks per answer, each cut out of a specific page by a layout model, so
+the table needed to record *where a block came from* and *how sure the
+classifier was*. Without both, a mis-routed region is indistinguishable from a
+correct one after the fact and a reviewer cannot find it on the page.
+
+## Design decisions
+
+**No new `answer_block_type` enum value.** The obvious alternative was an
+`'unknown'` block_type for uncertain regions. Rejected: `block_type` is what
+plugins dispatch on (`core/plugins/registry.py::plugins_for`), so `'unknown'`
+would be a type no plugin supports — silently dropping regions instead of
+surfacing them. Uncertainty is a separate axis from kind, so it gets its own
+column (`needs_review`) and the block keeps its best guess. This also sidesteps
+`ALTER TYPE ... ADD VALUE`, whose new value cannot be used in the transaction
+that adds it, and so cannot be made cleanly idempotent inside the
+`BEGIN`/`COMMIT` that rule 5 requires.
+
+**`classification_confidence` is not `confidence_score`.** The existing
+`confidence_score` is the OCR confidence of the text read out of a block. A
+region can be confidently a table and still be read badly; the two failures
+have different fixes, so they get different columns.
+
+**Everything nullable.** All six columns are nullable (or defaulted), so every
+pre-existing row and writer keeps working with no change — the migration is
+purely additive.
+
+## Still open
+
+There is **no FK from `exams` to `generated_papers`**, so a scanned booklet's
+exam cannot be resolved to the paper whose `pattern_slots.slot_label` values
+("Q1", "Q2a") its detected markers must match against.
+`scripts/ingest_booklet.py` therefore takes an explicit `--paper-id`. Adding
+`exams.paper_id UUID NULL REFERENCES generated_papers(paper_id)` would close
+this, but exam/answer modelling is on the list of open product decisions
+(`readme files/PROJECT_CONTEXT.md` §7) and was deliberately not settled here.
+
+Unassigned regions are likewise **not persisted at all** —
+`answer_blocks.answer_id` is `NOT NULL`, so an orphan region has nowhere to
+live without weakening that FK. They appear in the ingestion report only.
