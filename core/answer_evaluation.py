@@ -71,3 +71,42 @@ def transition_to_ai_scored(cur, answer_id: str, current_status: str) -> bool:
         VALUES (%s, %s, 'pending_evaluation', 'ai_scored', NULL, now())
     """, (str(uuid.uuid4()), answer_id))
     return True
+
+
+def transition_to_sme_reviewed(cur, answer_id: str, current_status: str,
+                               reviewer_id: str) -> bool:
+    """If a human review can move this answer forward, transitions it to
+    'sme_reviewed' and records the change in answer_status_history
+    (changed_by = the reviewer, since this one is NOT system-driven — the
+    counterpart to transition_to_ai_scored's changed_by=NULL). Returns
+    whether the transition happened.
+
+    Allowed from 'pending_evaluation', 'ai_scored' and 'flagged'. A teacher
+    may override a score that was never produced (the AI failed, or the
+    question was flagged for review) — refusing that would make an unscorable
+    answer permanently unreviewable, which is the opposite of what the review
+    queue is for.
+
+    NOT allowed from 'finalized': there is no path back out of finalized in
+    this schema (PROJECT_CONTEXT.md §7 lists re-opening a finalized answer as
+    an open product decision), so quietly reversing it here would settle that
+    decision by accident. Returns False and leaves the status alone; the
+    caller reports it.
+
+    'sme_reviewed' is re-entrant — a second override by another teacher stays
+    in the same state and writes another answer_reviews row rather than
+    inventing a transition, because answer_reviews is the log of who said
+    what and the status is only a summary of where the answer has got to.
+    """
+    reviewable = ("pending_evaluation", "ai_scored", "flagged")
+    if current_status not in reviewable:
+        return False
+
+    cur.execute("UPDATE answers SET status = 'sme_reviewed' WHERE answer_id = %s",
+                (answer_id,))
+    cur.execute("""
+        INSERT INTO answer_status_history
+            (history_id, answer_id, old_status, new_status, changed_by, changed_at)
+        VALUES (%s, %s, %s, 'sme_reviewed', %s, now())
+    """, (str(uuid.uuid4()), answer_id, current_status, reviewer_id))
+    return True

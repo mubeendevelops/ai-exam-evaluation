@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""run_job_worker.py — claims and runs evaluation_jobs rows.
+
+    # one pass, do nothing real, don't write:
+    python scripts/run_job_worker.py --once --stub --dry-run
+
+    # drain everything queued, stub execution:
+    python scripts/run_job_worker.py --drain --stub
+
+    # long-running worker (what you'd actually deploy):
+    python scripts/run_job_worker.py --stub
+
+THE WORKER NOW RUNS THE REAL PIPELINE. A `booklet_eval` job loads the
+booklet's persisted regions and hands them to core/booklet_evaluator.py
+through api/services/evaluation.py, which appends one evaluation_results row
+per question. `--stub` and the job payload's own stub flags select the
+plugins' stub paths so the whole loop can run with no models and no network.
+
+INGESTION IS NOT PART OF THIS. The regions must already exist as answer_blocks
+rows, put there by scripts/ingest_booklet.py. §7C and §7D are separate passes
+so segmentation can be verified before anything scores on top of it, and
+re-running ingestion inside an evaluation job would rewrite a student's blocks
+every time their booklet is re-scored. A booklet with no persisted regions
+fails with a message naming the missing step rather than succeeding with an
+empty report that reads like a zero.
+
+RLS: this is a SYSTEM-LEVEL job, not a tenant request, so every transaction
+runs as platform admin — the same posture evaluate_pending.py,
+evaluate_pending_diagrams.py and core/booklet_persist.py already take
+(CLAUDE_CONTEXT.md §6). It has to be: a worker serves every college, and there
+is no single current_college_id it could set. It reuses
+api/deps/db.py::set_admin_context rather than re-typing the SET LOCAL, so the
+worker and the API cannot drift on how the context is established or on the
+read-back check that proves it stuck.
+
+TRANSACTION SHAPE — the part that is easy to get wrong:
+
+    txn 1:  claim (SELECT ... FOR UPDATE SKIP LOCKED, status -> running)
+            COMMIT                      <- releases the row lock
+    (no txn) do the work
+    txn 2:  mark succeeded / failed
+            COMMIT
+
+The claim is committed BEFORE the work starts. Holding the claiming
+transaction open across a minutes-long evaluation would block nothing (SKIP
+LOCKED means other workers move on) but would keep a transaction open for
+minutes, pinning the oldest xmin and preventing vacuum across the whole
+database. Commit early; the 'running' status, not the lock, is what marks the
+job as taken.
+
+CRASH SEMANTICS: a worker killed between the two transactions leaves the job
+'running' forever, with attempts already incremented. That is a known,
+deliberate gap — reaping stalled jobs needs a heartbeat/lease column and a
+reaper, which is real design work and not today's task. `attempts` and
+`started_at` are already on the row so the reaper has what it needs. Until it
+exists, `--requeue-stalled` below is the manual lever.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import signal
+import sys
+import time
+import traceback
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import api.services.evaluation as evaluation_service
+import core.db
+import core.jobs
+from api.deps.db import set_admin_context
+
+#: Job types this worker handles. A job of any other type is left alone rather
+#: than claimed and failed — a queue shared by several worker kinds must not
+#: have one of them eat and reject everyone else's work.
+HANDLED_JOB_TYPES = [evaluation_service.JOB_TYPE_BOOKLET_EVAL]
+
+_shutdown = False
+
+
+def _install_signal_handlers() -> None:
+    """SIGINT/SIGTERM set a flag instead of raising.
+
+    A worker killed mid-job should finish the job it holds and then stop, not
+    abandon a 'running' row that nothing will reap (see the module docstring's
+    crash semantics). Between jobs the flag is checked and the loop exits.
+    """
+    def handle(signum, _frame):
+        global _shutdown
+        _shutdown = True
+        print(
+            f"[worker] signal {signum} received — finishing the current job, "
+            f"then stopping.",
+            file=sys.stderr,
+        )
+
+    signal.signal(signal.SIGINT, handle)
+    signal.signal(signal.SIGTERM, handle)
+
+
+def _admin_transaction():
+    """Opens a connection with the platform-admin RLS context set.
+
+    Not a context manager over the whole worker: each transaction is short and
+    separate on purpose (module docstring). Callers commit/rollback and close.
+    """
+    conn = core.db.get_connection()
+    try:
+        with conn.cursor() as cur:
+            set_admin_context(cur)
+    except Exception:
+        conn.rollback()
+        conn.close()
+        raise
+    return conn
+
+
+def claim_one(job_types=None):
+    """Claims one job in its own committed transaction. Returns it or None."""
+    conn = _admin_transaction()
+    try:
+        with conn.cursor() as cur:
+            job = core.jobs.claim_next_job(cur, job_types=job_types)
+        conn.commit()          # release the row lock before doing any work
+        return job
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def finish(job_id, *, result=None, error=None, dry_run: bool = False) -> None:
+    """Moves a claimed job to its terminal state in a fresh transaction."""
+    conn = _admin_transaction()
+    try:
+        with conn.cursor() as cur:
+            if error is not None:
+                core.jobs.mark_failed(cur, job_id=job_id, error=error)
+            else:
+                core.jobs.mark_succeeded(cur, job_id=job_id, result=result)
+        if dry_run:
+            conn.rollback()
+        else:
+            conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _progress_reporter(job_id):
+    """Returns an on_progress(stage, percent, message, **counts) callback that
+    writes evaluation_jobs.progress in its OWN short transaction.
+
+    Its own transaction, and its own connection, for two reasons. The job's
+    work runs outside any transaction (see the module docstring), so there is
+    none to piggyback on. And a progress write must be visible to
+    GET /api/v1/jobs/{id} IMMEDIATELY — progress committed only at the end
+    would report nothing during the minutes it was supposed to cover, which is
+    the entire problem it exists to solve.
+
+    Every failure is swallowed. Progress is a convenience; a booklet whose
+    progress reporting breaks must still be evaluated and still produce a
+    correct result. The failure is printed so it is not silent to an operator,
+    just not fatal to the student's marks.
+    """
+    def report(stage: str, percent=None, message: str = "", **counts) -> None:
+        try:
+            conn = _admin_transaction()
+            try:
+                with conn.cursor() as cur:
+                    core.jobs.set_progress(cur, job_id=job_id, stage=stage,
+                                           percent=percent, message=message,
+                                           counts=counts)
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as exc:                # noqa: BLE001 — never fatal
+            print(f"[worker] progress write failed ({stage}): {exc}", file=sys.stderr)
+
+    return report
+
+
+def _run_job(job: dict, *, stub: bool, stub_seconds: float, dry_run: bool = False) -> dict:
+    """Does the actual work for one job. Returns the run report."""
+    if job["job_type"] == evaluation_service.JOB_TYPE_BOOKLET_EVAL:
+        return _run_booklet_eval(job, stub=stub, dry_run=dry_run)
+
+    raise ValueError(
+        f"No handler for job_type {job['job_type']!r}. This worker handles "
+        f"{HANDLED_JOB_TYPES}; --job-type should have kept it from claiming this "
+        f"row at all, so reaching here means the filter and the dispatch have "
+        f"drifted apart."
+    )
+
+
+def _run_booklet_eval(job: dict, *, stub: bool, dry_run: bool) -> dict:
+    """Loads the booklet's persisted regions, scores them, appends the ledger
+    rows. All of the actual work happens in core/booklet_evaluator.py.
+
+    The connection runs as PLATFORM ADMIN, like every other system-level job in
+    this repo (§6). That is correct for a worker serving every college, and it
+    is also why the payload's college_id is not used to scope the query: the
+    booklet is addressed by (student_id, exam_id, source_scan_url), all three
+    of which were resolved tenant-scoped by POST /api/v1/evaluate before the
+    job was ever created.
+
+    `stub` is the OR of the CLI flag and the job's own payload option, so a
+    job queued in stub mode stays stubbed no matter which worker picks it up —
+    the alternative is a job that scores for real because the worker that
+    happened to claim it was not started with --stub.
+    """
+    payload = job["payload"]
+    options = payload.get("options") or {}
+    effective_stub = stub or bool(options.get("stub"))
+
+    conn = _admin_transaction()
+    try:
+        report = evaluation_service.run_booklet_evaluation(
+            conn,
+            {**payload, "options": {**options, "stub": effective_stub}},
+            on_progress=_progress_reporter(job["job_id"]),
+            persist=True,
+            dry_run=dry_run,
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    # The report is large (every region, every signal, every failure). What
+    # goes into evaluation_jobs.result is the SUMMARY — the per-question
+    # detail is already in the evaluation_results ledger, which is the record
+    # of account, and duplicating it into a JSONB column would create a second
+    # copy that can disagree with it.
+    return _summarize(report, stub=effective_stub, dry_run=dry_run)
+
+
+def _summarize(report: dict, *, stub: bool, dry_run: bool) -> dict:
+    """The job result: counts, totals, and where to find the detail."""
+    questions = report.get("questions", [])
+    return {
+        "stub": stub,
+        "dry_run": dry_run,
+        "booklet": report.get("booklet", {}),
+        "totals": report.get("totals", {}),
+        "confidence": report.get("confidence", {}),
+        "persistence": report.get("persistence", {}),
+        "counts": {
+            "questions": len(questions),
+            "scored": sum(1 for q in questions if q.get("scored")),
+            # Unscored is NOT zero-scored — §7D keeps them apart on purpose,
+            # so the summary does too.
+            "unscored": sum(1 for q in questions if not q.get("scored")),
+            # regions_* live under totals, not at the report root — read from
+            # where core/booklet_evaluator.aggregate actually writes them.
+            "regions": report.get("totals", {}).get("regions_total"),
+            "regions_evaluated": report.get("totals", {}).get("regions_evaluated"),
+            "regions_failed": report.get("totals", {}).get("regions_failed"),
+            "failures": len(report.get("failures", [])),
+        },
+        "review_queue": report.get("review_queue", {}),
+        "failures": report.get("failures", []),
+        "detail": (
+            "Per-question scores are in the evaluation_results ledger — fetch "
+            "them with GET /api/v1/results/{answer_id}. They are not duplicated "
+            "here: a second copy in JSONB can disagree with the record of "
+            "account."
+        ),
+        "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    }
+
+
+def process_one(*, stub: bool, stub_seconds: float, dry_run: bool, job_types) -> dict | None:
+    """Claims and runs at most one job. Returns the job dict, or None if the
+    queue was empty."""
+    job = claim_one(job_types=job_types)
+    if job is None:
+        return None
+
+    print(
+        f"[worker] claimed {job['job_id']} type={job['job_type']} "
+        f"college={job['college_id']} attempt={job['attempts']}",
+        file=sys.stderr,
+    )
+
+    try:
+        result = _run_job(job, stub=stub, stub_seconds=stub_seconds, dry_run=dry_run)
+    except Exception as exc:
+        # Every failure is recorded ON THE JOB, with its traceback, rather
+        # than only logged. The client polling GET /jobs/{id} has no access to
+        # this process's stderr, and "the job just stayed running" is the
+        # least debuggable outcome available.
+        detail = f"{type(exc).__name__}: {exc}\n\n{traceback.format_exc()}"
+        finish(job["job_id"], error=detail, dry_run=dry_run)
+        print(f"[worker] FAILED {job['job_id']}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return job
+
+    finish(job["job_id"], result=result, dry_run=dry_run)
+    print(f"[worker] succeeded {job['job_id']}", file=sys.stderr)
+    return job
+
+
+def requeue_stalled(older_than_minutes: int, dry_run: bool) -> int:
+    """Manual reaper: returns jobs stuck in 'running' to the queue.
+
+    The stopgap for the crash semantics in the module docstring, kept explicit
+    and opt-in rather than automatic — an automatic reaper without a heartbeat
+    would race a slow-but-healthy job and run it twice.
+    """
+    conn = _admin_transaction()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT job_id FROM evaluation_jobs
+                WHERE status = 'running'
+                  AND started_at < now() - make_interval(mins => %s)
+                """,
+                (older_than_minutes,),
+            )
+            stalled = [row[0] for row in cur.fetchall()]
+            for job_id in stalled:
+                core.jobs.requeue(
+                    cur,
+                    job_id=job_id,
+                    error=(
+                        f"Requeued by --requeue-stalled: still 'running' more "
+                        f"than {older_than_minutes} min after being claimed, "
+                        f"so the worker holding it is presumed dead."
+                    ),
+                )
+        if dry_run:
+            conn.rollback()
+        else:
+            conn.commit()
+        return len(stalled)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--once", action="store_true",
+                        help="Claim and run at most one job, then exit.")
+    parser.add_argument("--drain", action="store_true",
+                        help="Run until the queue is empty, then exit.")
+    parser.add_argument("--stub", action="store_true",
+                        help="Run the plugins' stub paths — no models, no Groq. "
+                             "OR-ed with the job payload's own stub option, so a "
+                             "job queued in stub mode stays stubbed. NOTE: a stub "
+                             "score is FABRICATED and is still appended to the "
+                             "append-only ledger, so never point a --stub worker "
+                             "at a production queue.")
+    parser.add_argument("--stub-seconds", type=float, default=0.5,
+                        help="Unused by the real pipeline; kept for the "
+                             "no-op job types that still sleep.")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Roll back the terminal-state write instead of committing. "
+                             "The CLAIM still commits — otherwise there is nothing to "
+                             "run and the flag would test nothing.")
+    parser.add_argument("--poll-interval", type=float, default=2.0,
+                        help="Seconds to sleep when the queue is empty (default 2.0).")
+    parser.add_argument("--max-jobs", type=int, default=0,
+                        help="Stop after this many jobs. 0 = unlimited.")
+    parser.add_argument("--job-type", action="append", dest="job_types",
+                        help="Only claim these job types. Repeatable. "
+                             f"Default: {HANDLED_JOB_TYPES}.")
+    parser.add_argument("--requeue-stalled", type=int, metavar="MINUTES",
+                        help="Return jobs 'running' for longer than MINUTES to the "
+                             "queue, then exit. See the module docstring.")
+    args = parser.parse_args()
+
+    if args.requeue_stalled is not None:
+        count = requeue_stalled(args.requeue_stalled, args.dry_run)
+        print(json.dumps({"requeued": count, "dry_run": args.dry_run}))
+        return 0
+
+    job_types = args.job_types or HANDLED_JOB_TYPES
+    _install_signal_handlers()
+
+    processed = 0
+    while not _shutdown:
+        job = process_one(
+            stub=args.stub,
+            stub_seconds=args.stub_seconds,
+            dry_run=args.dry_run,
+            job_types=job_types,
+        )
+
+        if job is not None:
+            processed += 1
+            if args.max_jobs and processed >= args.max_jobs:
+                break
+            if args.once:
+                break
+            continue
+
+        # Queue empty.
+        if args.once or args.drain:
+            break
+        time.sleep(args.poll_interval)
+
+    print(json.dumps({"processed": processed}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -91,3 +91,31 @@ pypdfium2>=4.0
 # ──────────────────────────────────────────────
 pytest==9.1.1
 pytest-cov==7.1.0
+
+# ──────────────────────────────────────────────
+# API layer (api/) — FastAPI over the same core/ library the scripts use.
+# The API imports core/ directly; it never shells out to scripts/ and never
+# reimplements evaluation logic (see api/__init__.py).
+# ──────────────────────────────────────────────
+fastapi>=0.115
+uvicorn>=0.30
+# Multipart form parsing — not used by any endpoint yet, but every planned
+# ingestion endpoint (booklet PDF / scan upload) is a file upload, and FastAPI
+# raises at import time on a File()/UploadFile parameter without it.
+python-multipart>=0.0.9
+# Typed access to the SAME .env keys the CLI already uses (PG*, MINIO_*,
+# GROQ_*) — see api/settings.py. Not a second config source: it copies the
+# resolved values back into os.environ, because core/db.py, core/storage.py
+# and core/llm.py read os.environ directly and are shared with scripts/,
+# which have no FastAPI in scope.
+pydantic-settings>=2.0
+
+# Async test support for tests/test_api/ — those tests drive the real ASGI app
+# through httpx.AsyncClient rather than mocking a connection, because the
+# thing under test is the request→dependency→transaction chain (does
+# app.current_college_id actually get set inside the request's transaction),
+# which a mocked connection would confirm without proving.
+# httpx already arrives transitively via fastapi's test tooling / paddle stack;
+# pinned directly here since tests import it.
+httpx>=0.27
+pytest-asyncio>=0.23

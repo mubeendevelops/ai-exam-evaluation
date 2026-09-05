@@ -262,38 +262,100 @@ def evaluate_persisted_booklet(conn, *, student_id=None, exam_id=None, answer_id
     return report
 
 
+# --- terminal styling -----------------------------------------------------
+# Bare ANSI codes, no dependency — disabled outright when stderr isn't a
+# terminal (piped to a file/CI log) so redirected output stays clean text.
+_ANSI = {"reset": "\033[0m", "bold": "\033[1m", "dim": "\033[2m",
+         "red": "\033[31m", "green": "\033[32m", "yellow": "\033[33m",
+         "cyan": "\033[36m", "gray": "\033[90m"}
+
+
+def _colorer(stream):
+    enabled = hasattr(stream, "isatty") and stream.isatty()
+
+    def c(text, *styles):
+        if not enabled:
+            return str(text)
+        prefix = "".join(_ANSI[s] for s in styles)
+        return f"{prefix}{text}{_ANSI['reset']}"
+    return c
+
+
+def _score_style(fraction: float | None) -> tuple:
+    """Color for a 0..1 fraction — good/borderline/poor, same cutoffs the
+    review queue already uses conceptually (nothing scientific, just legible)."""
+    if fraction is None:
+        return ("dim",)
+    if fraction >= 0.7:
+        return ("green",)
+    if fraction >= 0.4:
+        return ("yellow",)
+    return ("red",)
+
+
+#: Verdict -> one-glyph, colorable status used by both the per-question table
+#: and the match/mismatch summary, so a reader learns one vocabulary.
+_VERDICT_GLYPH = {
+    "matched": ("✓", ("green",)), "exact": ("✓", ("green",)),
+    "fuzzy": ("~", ("yellow",)), "numeric_close": ("~", ("yellow",)),
+    "missing": ("✗", ("red",)), "miss": ("✗", ("red",)),
+    "not_extracted": ("?", ("dim",)), "extra": ("+", ("cyan",)),
+    "wrong": ("✗", ("red",)),
+}
+
+
+def _glyph(status: str, c) -> str:
+    symbol, styles = _VERDICT_GLYPH.get(status, ("?", ("dim",)))
+    return c(symbol, *styles)
+
+
 def _print_summary(report: dict, stream=sys.stderr) -> None:
     """Human-readable summary, on STDERR so stdout stays pure JSON."""
+    c = _colorer(stream)
+
     def out(text=""):
         print(text, file=stream)
 
+    def rule(char="─", width=72):
+        out(c(char * width, "gray"))
+
     totals, confidence = report["totals"], report["confidence"]
     booklet = report.get("booklet", {})
-    header = f"Booklet evaluation — {booklet.get('pdf') or booklet.get('source_scan_url') or booklet.get('mode', '')}"
-    out(header)
-    out("=" * len(header))
+    title = booklet.get('pdf') or booklet.get('source_scan_url') or booklet.get('mode', '')
+    out(c(f"  Booklet evaluation — {title}", "bold", "cyan"))
+    rule("═")
     if booklet.get("synthetic_references"):
-        out("!! SYNTHETIC REFERENCES (--offline): scores below check the pipeline, "
-            "not the answers.")
-    out(f"score      : {totals['score']}/{totals['max_score']}"
-        + (f"  ({totals['percentage'] * 100:.1f}%)" if totals["percentage"] is not None else ""))
-    out(f"questions  : {totals['questions_scored']}/{totals['questions_total']} scored, "
-        f"{totals['questions_needing_review']} need review")
-    out(f"regions    : {totals['regions_evaluated']}/{totals['regions_routable']} evaluated, "
-        f"{totals['regions_failed']} failed, {totals['regions_unassigned']} unassigned")
-    out(f"confidence : {confidence['booklet']}  "
-        f"(weakest {confidence['weakest']} on {confidence['weakest_question']}; "
-        f"arithmetic mean would say {confidence['arithmetic_mean']})")
+        out(c("  !! SYNTHETIC REFERENCES (--offline): scores below check the "
+              "pipeline, not the answers.", "yellow", "bold"))
+
+    pct = totals["percentage"]
+    score_text = f"{totals['score']}/{totals['max_score']}" + (f"  ({pct * 100:.1f}%)" if pct is not None else "")
+    out(f"  {'Score':<12}{c(score_text, 'bold', *_score_style(pct))}")
+    out(f"  {'Questions':<12}{totals['questions_scored']}/{totals['questions_total']} scored, "
+        + c(f"{totals['questions_needing_review']} need review",
+            "yellow" if totals["questions_needing_review"] else "dim"))
+    out(f"  {'Regions':<12}{totals['regions_evaluated']}/{totals['regions_routable']} evaluated, "
+        + c(f"{totals['regions_failed']} failed", "red" if totals["regions_failed"] else "dim")
+        + f", {totals['regions_unassigned']} unassigned")
+    out(f"  {'Confidence':<12}{c(confidence['booklet'], *_score_style(confidence['booklet']))}"
+        f"  (weakest {confidence['weakest']} on {confidence['weakest_question']})")
     out()
 
-    out(f"{'question':<12} {'score':>10}  {'conf':>5}  {'pages':<9} {'plugin':<20} flags")
+    rule()
+    out(c("  QUESTIONS", "bold"))
+    rule()
+    col = f"  {'question':<10} {'score':>12}  {'conf':>5}  {'pages':<8} {'plugin':<20} flags"
+    out(c(col, "dim"))
     for row in report["questions"]:
-        score = (f"{row['score']}/{row['marks_max']}" if row["scored"]
-                 else f"—/{row['marks_max']}")
+        pct_row = row["score"] / row["marks_max"] if row["scored"] and row["marks_max"] else None
+        score = (f"{row['score']}/{row['marks_max']}" if row["scored"] else f"—/{row['marks_max']}")
         plugin = row["primary"]["plugin"] if row["primary"] else "-"
         pages = ",".join(str(p) for p in row["pages"]) or "-"
-        out(f"{row['question']:<12} {score:>10}  {row['confidence']:>5.2f}  {pages:<9} "
-            f"{plugin:<20} {', '.join(row['flags']) if row['flags'] else '-'}")
+        flags = c(", ".join(row["flags"]), "yellow") if row["flags"] else c("-", "dim")
+        score_cell = c(f"{score:>12}", *_score_style(pct_row))
+        conf_cell = c(f"{row['confidence']:>5.2f}", *_score_style(row['confidence']))
+        out(f"  {row['question']:<10} {score_cell}  {conf_cell}  "
+            f"{pages:<8} {plugin:<20} {flags}")
 
         for component in row["components"]:
             signals = component.get("signals")
@@ -301,17 +363,21 @@ def _print_summary(report: dict, stream=sys.stderr) -> None:
                 continue
             for name, signal in signals.items():
                 if signal["score"] is None:
-                    out(f"    [{name:<8}] unavailable — {signal['explanation']}")
+                    out(c(f"      [{name:<8}] unavailable — {signal['explanation']}", "dim"))
                 else:
                     weight = f" w={signal['weight']}" if signal["weight"] is not None else ""
-                    out(f"    [{name:<8}] {signal['score']}/{component['max_score']}"
-                        f"{weight} — {signal['model']}")
+                    frac = signal["score"] / component["max_score"] if component["max_score"] else None
+                    signal_score = c(f"{signal['score']}/{component['max_score']}", *_score_style(frac))
+                    out(f"      [{name:<8}] {signal_score}{weight} — {c(signal['model'], 'dim')}")
     out()
 
-    out("Pages")
+    rule()
+    out(c("  PAGES", "bold"))
+    rule()
     for page in report["pages"]:
+        failed = c(f"{page['failed']} failed", "red" if page["failed"] else "dim")
         out(f"  page {page['page_number']}: {page['regions']} region(s), "
-            f"{page['evaluated']} evaluated, {page['failed']} failed, "
+            f"{page['evaluated']} evaluated, {failed}, "
             f"{page['unassigned']} unassigned  "
             f"questions: {', '.join(page['questions']) or '-'}"
             + (f"  (spanning: {', '.join(page['spanning_questions'])})"
@@ -319,35 +385,150 @@ def _print_summary(report: dict, stream=sys.stderr) -> None:
     out()
 
     queue = report["review_queue"]
-    out(f"Needs teacher review ({len(queue)})")
+    rule()
+    out(c(f"  NEEDS TEACHER REVIEW ({len(queue)})", "bold", "yellow" if queue else "bold"))
+    rule()
     for item in queue:
         confidence_str = ("  -" if item["confidence"] is None else f"{item['confidence']:.2f}")
-        out(f"  [{item['kind']:<18}] {str(item['question'] or '(unassigned)'):<12} "
-            f"conf {confidence_str}  {', '.join(item['reasons'])}")
+        out(f"  [{item['kind']:<18}] {str(item['question'] or '(unassigned)'):<10} "
+            f"conf {confidence_str}  {c(', '.join(item['reasons']), 'yellow')}")
     if not queue:
-        out("  (none)")
+        out(c("  (none)", "dim"))
     out()
 
     failures = report["failures"]
-    out(f"Failures ({len(failures)})")
+    rule()
+    out(c(f"  FAILURES ({len(failures)})", "bold", "red" if failures else "bold"))
+    rule()
     for failure in failures:
-        out(f"  [{failure['stage']:<9}] {str(failure.get('question')):<12} "
-            f"{failure['error_type']}: {failure['message'][:120]}")
+        out(f"  [{failure['stage']:<9}] {str(failure.get('question')):<10} "
+            f"{c(failure['error_type'], 'red')}: {failure['message'][:120]}")
     if not failures:
-        out("  (none)")
+        out(c("  (none)", "dim"))
     out()
 
     throttle = report["rate_limit"]["throttle"]
     if not throttle.get("disabled"):
-        out(f"Groq throttle: {throttle['acquired']} request(s) paced at "
-            f"{throttle['rate_per_minute']}/min, {throttle['total_wait_seconds']}s spent "
-            f"waiting; retries {report['rate_limit']['retries']}")
+        out(c(f"  Groq throttle: {throttle['acquired']} request(s) paced at "
+              f"{throttle['rate_per_minute']}/min, {throttle['total_wait_seconds']}s spent "
+              f"waiting; retries {report['rate_limit']['retries']}", "dim"))
 
     persistence = report.get("persistence", {})
-    out(f"Persistence: {persistence.get('written', 0)} written, "
-        f"{persistence.get('skipped', 0)} skipped, {persistence.get('failed', 0)} failed"
-        + (f" — {persistence['reason']}" if persistence.get("reason") else "")
-        + ("  [dry-run: rolled back]" if persistence.get("dry_run") else ""))
+    out(c(f"  Persistence: {persistence.get('written', 0)} written, "
+          f"{persistence.get('skipped', 0)} skipped, {persistence.get('failed', 0)} failed"
+          + (f" — {persistence['reason']}" if persistence.get("reason") else "")
+          + ("  [dry-run: rolled back]" if persistence.get("dry_run") else ""), "dim"))
+    out()
+
+    _print_match_summary(report, stream)
+
+
+def _print_match_summary(report: dict, stream=sys.stderr) -> None:
+    """Final matched/unmatched breakdown across every scored region — the
+    part a teacher actually reads to see WHAT was right or wrong, as opposed
+    to the score tables above which only say HOW MUCH. Walks every
+    component's own plugin-specific metrics (diagram node/edge comparison,
+    table cell verdicts, text keyword/rubric hits) rather than re-deriving
+    any of it, so this can never disagree with the score that produced it."""
+    c = _colorer(stream)
+
+    def out(text=""):
+        print(text, file=stream)
+
+    def rule(char="─", width=72):
+        out(c(char * width, "gray"))
+
+    rule("═")
+    out(c("  MATCH SUMMARY — what matched vs. what didn't", "bold", "cyan"))
+    rule("═")
+
+    any_detail = False
+    for row in report["questions"]:
+        for component in row["components"]:
+            block_type = component["block_type"]
+            metrics = component.get("metrics") or {}
+
+            if block_type == "diagram":
+                nodes = metrics.get("node_validation") or []
+                edges = metrics.get("edge_comparison") or []
+                if not nodes and not edges:
+                    continue
+                any_detail = True
+                matched = sum(1 for n in nodes if n["status"] == "matched")
+                out(f"\n  {c(row['question'], 'bold')} — diagram  "
+                    f"({matched}/{len(nodes)} labels matched)")
+                for node in nodes:
+                    label = node["reference_label"]
+                    got = node.get("matched_label")
+                    glyph = _glyph(node["status"], c)
+                    if node["status"] == "matched":
+                        out(f"      {glyph} {label}")
+                    elif got:
+                        out(f"      {glyph} {label}  (student drew: \"{got}\", "
+                            f"similarity {node.get('similarity', 0):.2f} — too far to count)")
+                    else:
+                        out(f"      {glyph} {label}  (not found in student's diagram)")
+                if edges:
+                    matched_edges = sum(1 for e in edges if e["status"] == "matched")
+                    out(f"      edges: {matched_edges}/{len(edges)} matched")
+                    for edge in edges:
+                        if edge["status"] != "matched":
+                            out(f"      {_glyph(edge['status'], c)} {edge['from']} → {edge['to']}")
+                extras = metrics.get("anomalies") or []
+                for anomaly in extras:
+                    text = anomaly.get("description", anomaly) if isinstance(anomaly, dict) else anomaly
+                    out(f"      {c('+', 'cyan')} unexpected: {text}")
+
+            elif block_type == "table":
+                comparison = metrics.get("comparison") or {}
+                verdicts = comparison.get("cell_verdicts") or []
+                if not verdicts:
+                    continue
+                any_detail = True
+                counts = comparison.get("verdict_counts", {})
+                matched = counts.get("exact", 0) + counts.get("fuzzy", 0) + counts.get("numeric_close", 0)
+                out(f"\n  {c(row['question'], 'bold')} — table  "
+                    f"({matched}/{len(verdicts)} cells matched)")
+                for cell in verdicts:
+                    if cell["verdict"] in ("exact",):
+                        continue  # exact matches are the expected case; only show what needs a look
+                    glyph = _glyph(cell["verdict"], c)
+                    where = f"row {cell['reference_row']}, col {cell['reference_col']}"
+                    ref = cell["reference_text"] or "(empty)"
+                    student = cell["student_text"] if cell["student_text"] is not None else "(missing)"
+                    out(f"      {glyph} {where}: expected \"{ref}\" — got \"{student}\"")
+                if matched == len(verdicts):
+                    out(f"      {c('✓', 'green')} every cell matched exactly")
+
+            elif block_type == "text":
+                signals = metrics.get("signals") or {}
+                keyword_metrics = (signals.get("keyword") or {}).get("metrics") or {}
+                matched_kw = keyword_metrics.get("matched") or []
+                missed_kw = keyword_metrics.get("missed") or []
+                rubric_metrics = (signals.get("rubric") or {}).get("metrics") or {}
+                breakdown = rubric_metrics.get("breakdown") if rubric_metrics.get("mode") == "structured" else None
+
+                if not matched_kw and not missed_kw and not breakdown:
+                    continue
+                any_detail = True
+                out(f"\n  {c(row['question'], 'bold')} — text")
+                if matched_kw or missed_kw:
+                    out(f"      keywords: {len(matched_kw)}/{len(matched_kw) + len(missed_kw)} matched")
+                    for kw in matched_kw:
+                        out(f"      {c('✓', 'green')} {kw['term']}")
+                    for kw in missed_kw:
+                        out(f"      {c('✗', 'red')} {kw['term']}")
+                if breakdown:
+                    hit = sum(1 for b in breakdown if b["matched"])
+                    out(f"      rubric criteria: {hit}/{len(breakdown)} matched")
+                    for item in breakdown:
+                        glyph = c("✓", "green") if item["matched"] else c("✗", "red")
+                        out(f"      {glyph} {item['criterion']}")
+
+    if not any_detail:
+        out(c("  (no per-item detail available for this run's components — "
+              "stub/offline runs and low-level extraction failures skip it)", "dim"))
+    out()
 
 
 def main() -> int:

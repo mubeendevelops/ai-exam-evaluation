@@ -1,0 +1,140 @@
+"""api/schemas/papers.py — Pydantic v2 models for paper generation.
+
+The response models below mirror the dict `core/paper_generator.generate_paper`
+already returns, field for field, rather than flattening it. That structure —
+sections, each with top-level slots, each with the leaf slots that actually
+carry a question — IS the paper: a flat list of questions would lose which
+either/or section they belong to and how many of a section a student must
+answer, which is precisely what makes a paper a paper rather than a quiz.
+
+`warnings` is part of the success response, not an error channel. A paper with
+an unfilled OPTIONAL slot is valid but degraded, and the caller has to be told
+which slot so someone can write the missing question. An unfilled MANDATORY
+slot is not a warning at all — generate_paper raises, and the endpoint answers
+409 with no paper persisted.
+"""
+from __future__ import annotations
+
+import uuid
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+#: paper_status enum (migration 008). A generated paper starts as 'draft' —
+#: generation fills slots, it does not publish a paper.
+PaperStatus = Literal["draft", "finalized"]
+
+
+class PaperGenerateRequest(BaseModel):
+    """POST /api/v1/papers/generate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pattern_id: uuid.UUID = Field(
+        description="The paper_pattern to fill. Must be is_active — generating "
+                    "from a retired pattern is refused."
+    )
+    name: str = Field(
+        min_length=1, max_length=500,
+        description='Human-readable paper name, e.g. "AIML CIA-2 Aug 2026".',
+    )
+    generated_by: uuid.UUID | None = Field(
+        default=None,
+        description="reviewer_id of the teacher creating this paper. Null means "
+                    "system-generated (migration 008 line 62). Validated against "
+                    "the reviewers table when present.",
+    )
+    choose_count: int = Field(
+        default=1, ge=1,
+        description="Default choose_count for OPTIONAL sections — how many of "
+                    "the section's questions a student must answer. Mandatory "
+                    "sections ignore it and always use their full slot count.",
+    )
+    marks_tolerance: float = Field(
+        default=1.0, ge=0.0, le=5.0,
+        description="How far a question's marks_max may sit from the slot's "
+                    "marks when no exact match exists. 0 disables fuzzy "
+                    "matching, making generation exact-or-fail.",
+    )
+
+
+class AssignedSlot(BaseModel):
+    """One LEAF slot: the level at which a question is actually assigned.
+
+    `assigned` false with a null question_id is a real, expected state for an
+    optional section — the slot exists in the pattern and the bank had nothing
+    that fits. It is reported rather than silently dropped, because a caller
+    rendering the paper needs to show the gap to whoever must fill it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    slot_id: uuid.UUID
+    slot_label: str
+    marks: float
+    style: str
+    assigned: bool
+    question_id: uuid.UUID | None = None
+    question_content: str | None = None
+    question_marks: float | None = Field(
+        default=None,
+        description="The assigned question's own marks_max. Differs from "
+                    "`marks` when it was matched within marks_tolerance rather "
+                    "than exactly — that difference is the caller's to notice.",
+    )
+
+
+class PaperSlot(BaseModel):
+    """A top-level slot. Parent slots (Q2 = Q2a + Q2b) are STRUCTURAL and
+    carry no question of their own — only their leaves do, which is why
+    `leaves` exists even for a standalone slot (it holds exactly itself)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    slot_label: str
+    marks: float
+    style: str
+    is_parent: bool
+    leaves: list[AssignedSlot]
+
+
+class PaperSection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    section_label: str
+    section_order: int
+    is_mandatory: bool
+    choose_count: int
+    slots: list[PaperSlot]
+
+
+class PaperGenerateResponse(BaseModel):
+    """The generated paper, as persisted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    paper_id: uuid.UUID
+    pattern_id: uuid.UUID
+    pattern_name: str
+    name: str
+    status: PaperStatus
+    total_filled: int = Field(ge=0)
+    total_slots: int = Field(ge=0)
+    sections: list[PaperSection]
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Unfilled OPTIONAL slots. A paper with warnings is valid "
+                    "but incomplete; unfilled MANDATORY slots are a 409, not a "
+                    "warning.",
+    )
+
+
+def paper_to_response(result: dict[str, Any]) -> PaperGenerateResponse:
+    """core/paper_generator.generate_paper's dict -> response model.
+
+    A straight construction, not a rewrite: pydantic coerces the module's
+    str-typed uuids into UUID objects and validates the shape, which is the
+    only checking this mapping does. If generate_paper's return shape changes,
+    this raises at the boundary instead of shipping a half-populated paper.
+    """
+    return PaperGenerateResponse(**result)

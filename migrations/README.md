@@ -671,3 +671,208 @@ this, but exam/answer modelling is on the list of open product decisions
 Unassigned regions are likewise **not persisted at all** —
 `answer_blocks.answer_id` is `NOT NULL`, so an orphan region has nowhere to
 live without weakening that FK. They appear in the ingestion report only.
+
+---
+
+# Evaluation job queue — migration notes
+
+**File:** `014_evaluation_jobs.sql`. Run after 001–013. Idempotent
+(`CREATE TABLE IF NOT EXISTS`, guarded `CREATE TYPE`, guarded `ADD CONSTRAINT`,
+`CREATE INDEX IF NOT EXISTS`, `DROP POLICY IF EXISTS` before each
+`CREATE POLICY`), wrapped in `BEGIN`/`COMMIT` per rule 5. Purely additive — it
+touches no existing table, column, or row.
+
+## What this adds
+
+One table, `evaluation_jobs`, and one enum, `evaluation_job_status`
+(`queued | running | succeeded | failed`).
+
+| column | type | notes |
+|---|---|---|
+| `job_id` | UUID PK | `gen_random_uuid()` |
+| `college_id` | UUID **NOT NULL** → `colleges` | many jobs → one college, `ON DELETE RESTRICT` |
+| `job_type` | TEXT NOT NULL | e.g. `booklet_evaluation` |
+| `status` | `evaluation_job_status` NOT NULL | default `queued` |
+| `payload` | JSONB NOT NULL | worker input; default `{}` |
+| `result` | JSONB NULL | run report, once terminal |
+| `error` | TEXT NULL | required when `status='failed'` |
+| `attempts` | INT NOT NULL | default 0, incremented on each **claim** |
+| `created_at` | TIMESTAMPTZ NOT NULL | `now()` |
+| `started_at` / `finished_at` | TIMESTAMPTZ NULL | see the state-machine constraints |
+
+RLS: `ENABLE` + `FORCE`, with the same `tenant_isolation` /
+`platform_admin_bypass` policy pair migration 003 puts on the other
+answer-schema tables.
+
+## Why it exists
+
+Booklet evaluation takes **minutes** (§7D — OCR, layout detection and LLM
+calls per region), so the API cannot do it inside a request. The job row is the
+handoff between `POST /api/v1/upload` and `scripts/run_job_worker.py`.
+
+**Why not Redis.** The design doc names Redis for job queueing;
+`CLAUDE_CONTEXT.md` §2 and §10 both record that it is implemented *nowhere* —
+no client, no helper, no code. Choosing Postgres here buys three things Redis
+cannot: the same RLS tenant isolation every other answer-schema table already
+has (Redis has none, so it would be hand-rolled a second time), inclusion in
+the existing backup, and **transactional consistency with the rows a job reads
+and writes** — a job's state change and the `evaluation_results` row it
+produces commit together or not at all.
+
+`SELECT ... FOR UPDATE SKIP LOCKED` is what makes it a queue rather than a
+table people race on: a row locked by one worker's open transaction is *skipped*
+by every other worker's claim rather than blocking it.
+
+**Scale honesty:** right at this project's scale (one Postgres, a handful of
+workers, minute-long jobs, queue depth in the tens). Not a general broker
+replacement — no fan-out, no pub/sub, no delayed-retry backoff, and the long
+row locks would matter if jobs were milliseconds. Revisit if those stop being
+true; not merely because a broker is conventional.
+
+## Design decisions
+
+**Status is an enum, `job_type` is TEXT.** The four statuses *are* the state
+machine, and adding one is a design change. Job *kinds* are expected to be
+added routinely (pending-text batches, re-scoring runs), and an enum would make
+each need a migration plus `ALTER TYPE ... ADD VALUE` — which cannot use its new
+value in the transaction that adds it, so it cannot be made idempotent inside
+this file's `BEGIN`/`COMMIT`. Same argument 013 records for
+`answer_block_type`.
+
+**The state machine is enforced by CHECK constraints, not only in Python.** A
+job row is written by a worker process that can be killed at any instant; an
+invariant living only in application code holds only when that code got to
+finish. Hence: terminal status ⟺ `finished_at IS NOT NULL`; nothing finishes
+without having started; a `failed` row must carry an `error`; a `queued` row
+carries no `result`; `attempts >= 0`.
+
+**`attempts` increments on the claim, not the enqueue,** so a job that is
+repeatedly picked up and dies mid-run is distinguishable from one no worker
+ever touched. The retry cap is worker policy, not a constraint.
+
+**`result` is the run report, not the scores.** Scores are appended to
+`evaluation_results`, the ledger of record (rule 2). Duplicating them here
+would create a second, diverging record of what a student was given.
+
+**`payload.blob_url` is a stable `"bucket/key"` ref, never a presigned URL**
+(rule 1 / §10) — a queued job may not run for minutes, by which time a signed
+URL would have expired.
+
+**Indexes.** `idx_evaluation_jobs_claim` is partial on `WHERE status='queued'`:
+the claim query runs on every poll of every worker, and succeeded jobs
+accumulate forever, so it must not pay for them.
+`idx_evaluation_jobs_college_created` serves the tenant's "my uploads" list.
+
+## Still open
+
+**RLS on this table is inert under a superuser.** Postgres exempts `SUPERUSER`
+and `BYPASSRLS` roles from row-level security, and `FORCE ROW LEVEL SECURITY`
+does not change that. With `PGUSER=postgres` (the `.env.example` default) the
+policies above — and 003's — do nothing. `api/routers/jobs.py` therefore also
+filters `college_id` explicitly in its `WHERE` clause, and that predicate is
+currently the *only* thing isolating tenants. Fix is a non-superuser
+application role; see `api/README.md`.
+
+**Stalled jobs are not reaped automatically.** A worker killed between claiming
+and finishing leaves the row `running` forever. `attempts` and `started_at` are
+already on the row so a reaper has what it needs, but a correct one needs a
+heartbeat/lease column — otherwise it races a slow-but-healthy job and runs it
+twice. Until then, `scripts/run_job_worker.py --requeue-stalled MINUTES` is the
+manual lever.
+
+---
+
+# Booklet uploads + job progress — migration notes
+
+**File:** `015_booklet_uploads.sql`. Run after 001–014. Idempotent
+(`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, guarded
+`ADD CONSTRAINT`, `CREATE INDEX IF NOT EXISTS`, `DROP POLICY IF EXISTS` before
+each `CREATE POLICY`), wrapped in `BEGIN`/`COMMIT`. Additive — one new table
+plus one nullable column; no existing row is modified.
+
+## What this adds
+
+**`booklet_uploads`** — one uploaded answer-booklet PDF.
+
+| column | type | notes |
+|---|---|---|
+| `upload_id` | UUID PK | `gen_random_uuid()` |
+| `college_id` | UUID **NOT NULL** → `colleges` | many uploads → one college, `ON DELETE RESTRICT` |
+| `blob_url` | TEXT NOT NULL | stable `"bucket/key"`, never a presigned URL |
+| `filename` | TEXT NOT NULL | as the client sent it |
+| `content_type` | TEXT NULL | client-declared, recorded for provenance only |
+| `size_bytes` | BIGINT NOT NULL | `CHECK >= 0` |
+| `storage_mode` | TEXT NOT NULL | `CHECK IN ('dummy','minio')` |
+| `uploaded_at` | TIMESTAMPTZ NOT NULL | `now()` |
+
+Plus the 003/014 RLS policy pair, an index on `(college_id, uploaded_at DESC)`,
+and one on `blob_url` (looked up by value — see below).
+
+**`evaluation_jobs.progress JSONB NULL`** — `{stage, percent, message, counts}`.
+
+## Why booklet_uploads exists
+
+Until 015, `POST /api/v1/upload` enqueued an `evaluation_jobs` row and returned
+its id as `upload_id`, because one upload meant exactly one job.
+`POST /api/v1/evaluate` ends that: it takes `{upload_id, exam_id, student_id}`,
+so **one upload can be evaluated many times** — a different exam/student
+binding, a re-run after a reference answer is corrected, a re-run after
+re-ingestion.
+
+With the old shape the upload's own job row becomes a job nobody handles: it
+sits `queued` forever while `GET /api/v1/jobs/{id}` reports *"waiting for a
+worker to pick this up"* about work no worker will ever pick up. An API that
+lies about its own state is worse than one that needs another table.
+
+**ONE `booklet_uploads` : MANY `evaluation_jobs`.**
+
+**No FK from `evaluation_jobs` to here, deliberately.** 014 made `payload`
+generic precisely so a new job kind needs no migration, and a typed
+`upload_id` column would serve exactly one `job_type`. The cost is real and
+stated rather than hidden — an `upload_id` inside a payload can dangle if its
+upload is deleted. Mitigation is at the edge: `POST /api/v1/evaluate` resolves
+the upload **tenant-scoped, before enqueueing**, so a job is never created
+against an upload that does not exist, and `tests/test_api/test_evaluation.py`
+asserts the 404.
+
+**`blob_url` is indexed because it is the join key to the answers.**
+There is no booklets table and no `exams.paper_id` (§7C's open gap), so
+`core/booklet_evaluator.load_booklet_tasks` addresses a booklet as "the answers
+one student wrote for one exam", optionally narrowed by `source_scan_url`.
+`booklet_uploads.blob_url` is that `source_scan_url` — which is what makes
+`{upload_id, exam_id, student_id}` a well-formed request rather than three
+loosely related ids.
+
+## Why progress is its own column
+
+014 gave a job `payload` (input) and `result` (output, terminal only). A
+running job had nothing to say between the two, so `GET /jobs/{id}` could only
+report the four statuses — and "running" for four minutes with no further
+signal is indistinguishable from "hung".
+
+**Not stored in `payload`:** payload is the job's immutable input, and a worker
+that overwrites its own input destroys the record of what it was asked to do,
+and with it any chance of a faithful retry.
+
+**`percent` is a stage marker, not a measured fraction.**
+`core/booklet_evaluator` runs extraction and evaluation as bounded thread pools
+with no progress callback, so completion *within* a phase is genuinely unknown.
+Reporting which phase a job is in is honest; interpolating a percentage inside
+one would be a fabricated number that a client renders as a smoothly moving
+bar — and it would hide, from us, that real progress reporting does not exist.
+Adding a callback to `core/booklet_evaluator.py` is what would make these real.
+
+`api/schemas/jobs.py` ignores stored progress for any non-running job, so a job
+that died during `persisting` does not keep reporting 85% forever.
+
+## Still open
+
+Same two gaps 014 records, unchanged: **RLS is inert under a superuser**
+(the explicit `college_id` predicates in `core/uploads.py` and
+`core/jobs.py` are what actually isolate tenants), and **there is no
+stalled-job reaper**.
+
+New: **the API cannot ingest.** An uploaded PDF is stored but never segmented
+into `answer_blocks` rows — that is still `scripts/ingest_booklet.py`'s job
+(§7C). `POST /api/v1/evaluate` therefore evaluates regions that must already
+exist, and fails loudly naming the missing step if they do not.

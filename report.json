@@ -1,0 +1,1299 @@
+{
+  "schema_version": 1,
+  "generator": {
+    "name": "booklet_evaluator",
+    "version": "0.1.0"
+  },
+  "generated_at": "2026-09-02T08:48:03.796736+00:00",
+  "booklet": {
+    "mode": "persisted",
+    "student_id": "cccccccc-0001-0001-0001-cccccccccccc",
+    "exam_id": "dddddddd-0001-0001-0001-dddddddddddd",
+    "paper_id": "eeeeeeee-0001-0001-0001-eeeeeeeeeeee",
+    "source_scan_url": null
+  },
+  "totals": {
+    "score": 16.41,
+    "max_score": 25.0,
+    "percentage": 0.6564,
+    "attempted_score": 16.41,
+    "attempted_max_score": 25.0,
+    "attempted_percentage": 0.6564,
+    "questions_total": 3,
+    "questions_scored": 3,
+    "questions_unscored": 0,
+    "questions_needing_review": 1,
+    "regions_total": 5,
+    "regions_routable": 5,
+    "regions_evaluated": 4,
+    "regions_failed": 1,
+    "regions_unassigned": 0,
+    "evaluation_seconds": 33.58
+  },
+  "confidence": {
+    "booklet": 0.6521,
+    "method": "marks-weighted harmonic mean of question confidence x region coverage",
+    "harmonic_weighted": 0.8151,
+    "arithmetic_mean": 0.811,
+    "weakest": 0.772,
+    "weakest_question": "Q1",
+    "coverage": 0.8,
+    "regions_evaluated": 4,
+    "regions_routable": 5
+  },
+  "questions": [
+    {
+      "question": "question:88880001",
+      "question_id": "88880001-0001-0001-0001-888800019999",
+      "answer_id": "88880003-0003-0003-0003-888800039999",
+      "marks_max": 10.0,
+      "score": 5.98,
+      "percentage": 0.598,
+      "confidence": 0.7741,
+      "scored": true,
+      "pages": [],
+      "regions": {
+        "total": 1,
+        "evaluated": 1,
+        "failed": 0,
+        "flagged": 0
+      },
+      "components": [
+        {
+          "block_type": "diagram",
+          "plugin": "diagram_evaluation",
+          "plugin_version": "0.1.0",
+          "evaluator_model": "embeddings",
+          "reference_kind": "asset",
+          "reference_id": "1aef8f91-dc13-4f15-b1e1-e2df54df087a",
+          "score": 5.98,
+          "max_score": 10.0,
+          "confidence": 0.7741,
+          "regions": [
+            {
+              "block_id": "1d9115d4-cd43-4a53-9681-a303f4d2b0e7",
+              "key": "1d9115d4-cd43-4a53-9681-a303f4d2b0e7",
+              "question": "question:88880001",
+              "block_type": "diagram",
+              "page_number": null,
+              "bbox": null
+            }
+          ],
+          "block_ids": [
+            "1d9115d4-cd43-4a53-9681-a303f4d2b0e7"
+          ],
+          "pages": [],
+          "merged_from": 1,
+          "extraction_confidence": 0.7741,
+          "explanation": "Diagram comparison: 8 missing item(s), 9 anomaly/anomalies.",
+          "signals": null,
+          "detail": {
+            "scores_breakdown": {
+              "node_precision": 0.8571,
+              "node_recall": 0.8571,
+              "node_f1": 0.8571,
+              "edge_precision": 0.2,
+              "edge_recall": 0.2222,
+              "edge_f1": 0.2105
+            },
+            "missing_information_count": 8,
+            "anomalies_count": 9
+          },
+          "latency_ms": 20.09,
+          "metrics": {
+            "schema_version": 1,
+            "similarity_score": 5.98,
+            "marks_max": 10.0,
+            "node_validation": [
+              {
+                "reference_label": "CPU",
+                "matched_label": "CPV",
+                "status": "matched",
+                "similarity": 1.0
+              },
+              {
+                "reference_label": "Memory",
+                "matched_label": "Memory",
+                "status": "matched",
+                "similarity": 1.0
+              },
+              {
+                "reference_label": "Input & Output",
+                "matched_label": "Anput& outut",
+                "status": "matched",
+                "similarity": 1.0
+              },
+              {
+                "reference_label": "Control Bus",
+                "matched_label": "Contralbus",
+                "status": "matched",
+                "similarity": 1.0
+              },
+              {
+                "reference_label": "Address Bus",
+                "matched_label": "Addregs bu",
+                "status": "matched",
+                "similarity": 1.0
+              },
+              {
+                "reference_label": "Data Bus",
+                "matched_label": "Data Bu",
+                "status": "matched",
+                "similarity": 1.0
+              },
+              {
+                "reference_label": "System Bus",
+                "matched_label": null,
+                "status": "missing"
+              }
+            ],
+            "edge_comparison": [
+              {
+                "from": "n1",
+                "to": "n4",
+                "status": "missing"
+              },
+              {
+                "from": "n1",
+                "to": "n5",
+                "status": "missing"
+              },
+              {
+                "from": "n1",
+                "to": "n6",
+                "status": "missing"
+              },
+              {
+                "from": "n2",
+                "to": "n4",
+                "status": "matched"
+              },
+              {
+                "from": "n2",
+                "to": "n5",
+                "status": "missing"
+              },
+              {
+                "from": "n2",
+                "to": "n6",
+                "status": "missing"
+              },
+              {
+                "from": "n3",
+                "to": "n4",
+                "status": "matched"
+              },
+              {
+                "from": "n3",
+                "to": "n5",
+                "status": "missing"
+              },
+              {
+                "from": "n3",
+                "to": "n6",
+                "status": "missing"
+              }
+            ],
+            "missing_information": [
+              "Node 'System Bus' not found in student diagram",
+              "Edge n1\u2192n4 not found",
+              "Edge n1\u2192n5 not found",
+              "Edge n1\u2192n6 not found",
+              "Edge n2\u2192n5 not found",
+              "Edge n2\u2192n6 not found",
+              "Edge n3\u2192n5 not found",
+              "Edge n3\u2192n6 not found"
+            ],
+            "anomalies": [
+              "Extra node 'ysten' with no reference counterpart",
+              "Extra edge n15\u2192n16 with no reference counterpart",
+              "Extra edge n20\u2192n16 with no reference counterpart",
+              "Extra edge n1\u2192n3 with no reference counterpart (maps to reference nodes n1\u2192n2, but no such reference edge exists)",
+              "Extra edge n15\u2192n18 with no reference counterpart (maps to reference nodes n4\u2192n5, but no such reference edge exists)",
+              "Extra edge n3\u2192n2 with no reference counterpart (maps to reference nodes n2\u2192n3, but no such reference edge exists)",
+              "Extra edge n2\u2192n16 with no reference counterpart",
+              "Extra edge n18\u2192n20 with no reference counterpart (maps to reference nodes n5\u2192n6, but no such reference edge exists)",
+              "Extra edge n18\u2192n16 with no reference counterpart"
+            ],
+            "glossary_matches": [
+              {
+                "extracted_label": "CPV",
+                "canonical_term": "CPU",
+                "match_type": "fuzzy"
+              },
+              {
+                "extracted_label": "Anput& outut",
+                "canonical_term": "Input & Output",
+                "match_type": "fuzzy"
+              },
+              {
+                "extracted_label": "Memory",
+                "canonical_term": "Memory",
+                "match_type": "exact"
+              },
+              {
+                "extracted_label": "Contralbus",
+                "canonical_term": "Control Bus",
+                "match_type": "fuzzy"
+              },
+              {
+                "extracted_label": "Addregs bu",
+                "canonical_term": "Address Bus",
+                "match_type": "fuzzy"
+              },
+              {
+                "extracted_label": "Data Bu",
+                "canonical_term": "Bus",
+                "match_type": "fuzzy"
+              }
+            ],
+            "scores_breakdown": {
+              "node_precision": 0.8571,
+              "node_recall": 0.8571,
+              "node_f1": 0.8571,
+              "edge_precision": 0.2,
+              "edge_recall": 0.2222,
+              "edge_f1": 0.2105
+            },
+            "model": {
+              "matching_method": "embeddings",
+              "embedding_model": "all-MiniLM-L6-v2"
+            },
+            "plugin": "diagram_evaluation",
+            "plugin_version": "0.1.0",
+            "evaluator_model": "embeddings",
+            "latency_ms": 20.03,
+            "extraction": {
+              "plugin": "diagram_evaluation",
+              "plugin_version": "0.1.0",
+              "mode": "real",
+              "latency_ms": 13661.07,
+              "node_count": 7,
+              "edge_count": 10,
+              "unreadable_node_count": 0,
+              "needs_review_edge_count": 4,
+              "shape_types": [
+                "rectangle"
+              ],
+              "engines": [
+                "paddleocr"
+              ],
+              "extraction_warnings": [
+                "No enclosing shape found for 1 node(s) (ysten) \u2014 shape_bbox falls back to the label's own text bbox for these.",
+                "4 edge(s) below the confidence threshold (e4, e5, e9, e10) \u2014 flagged needs_review, should route to human review rather than be trusted as-detected.",
+                "Edge detection (core/diagram_shapes.py) is measured per diagram family on a SYNTHETIC labeled set (media/diagram_benchmark/, scored by scripts/benchmark_diagram_extraction.py) \u2014 boxes, diamonds, ellipses, curved connectors and mixed flowcharts all score 1.000 edge F1 there, but those fixtures are rendered, not scanned. On a photo of ruled notebook paper \u2014 this project's real input \u2014 connector detection is unchanged and still weak (see that module's MEASURED SCOPE). A missing edge should be read as 'not reliably detected', not 'confirmed absent'."
+              ]
+            }
+          },
+          "primary": true
+        }
+      ],
+      "primary": {
+        "block_type": "diagram",
+        "plugin": "diagram_evaluation",
+        "plugin_version": "0.1.0",
+        "evaluator_model": "embeddings",
+        "reference_kind": "asset",
+        "reference_id": "1aef8f91-dc13-4f15-b1e1-e2df54df087a",
+        "score": 5.98,
+        "max_score": 10.0,
+        "confidence": 0.7741,
+        "regions": [
+          {
+            "block_id": "1d9115d4-cd43-4a53-9681-a303f4d2b0e7",
+            "key": "1d9115d4-cd43-4a53-9681-a303f4d2b0e7",
+            "question": "question:88880001",
+            "block_type": "diagram",
+            "page_number": null,
+            "bbox": null
+          }
+        ],
+        "block_ids": [
+          "1d9115d4-cd43-4a53-9681-a303f4d2b0e7"
+        ],
+        "pages": [],
+        "merged_from": 1,
+        "extraction_confidence": 0.7741,
+        "explanation": "Diagram comparison: 8 missing item(s), 9 anomaly/anomalies.",
+        "signals": null,
+        "detail": {
+          "scores_breakdown": {
+            "node_precision": 0.8571,
+            "node_recall": 0.8571,
+            "node_f1": 0.8571,
+            "edge_precision": 0.2,
+            "edge_recall": 0.2222,
+            "edge_f1": 0.2105
+          },
+          "missing_information_count": 8,
+          "anomalies_count": 9
+        },
+        "latency_ms": 20.09,
+        "metrics": {
+          "schema_version": 1,
+          "similarity_score": 5.98,
+          "marks_max": 10.0,
+          "node_validation": [
+            {
+              "reference_label": "CPU",
+              "matched_label": "CPV",
+              "status": "matched",
+              "similarity": 1.0
+            },
+            {
+              "reference_label": "Memory",
+              "matched_label": "Memory",
+              "status": "matched",
+              "similarity": 1.0
+            },
+            {
+              "reference_label": "Input & Output",
+              "matched_label": "Anput& outut",
+              "status": "matched",
+              "similarity": 1.0
+            },
+            {
+              "reference_label": "Control Bus",
+              "matched_label": "Contralbus",
+              "status": "matched",
+              "similarity": 1.0
+            },
+            {
+              "reference_label": "Address Bus",
+              "matched_label": "Addregs bu",
+              "status": "matched",
+              "similarity": 1.0
+            },
+            {
+              "reference_label": "Data Bus",
+              "matched_label": "Data Bu",
+              "status": "matched",
+              "similarity": 1.0
+            },
+            {
+              "reference_label": "System Bus",
+              "matched_label": null,
+              "status": "missing"
+            }
+          ],
+          "edge_comparison": [
+            {
+              "from": "n1",
+              "to": "n4",
+              "status": "missing"
+            },
+            {
+              "from": "n1",
+              "to": "n5",
+              "status": "missing"
+            },
+            {
+              "from": "n1",
+              "to": "n6",
+              "status": "missing"
+            },
+            {
+              "from": "n2",
+              "to": "n4",
+              "status": "matched"
+            },
+            {
+              "from": "n2",
+              "to": "n5",
+              "status": "missing"
+            },
+            {
+              "from": "n2",
+              "to": "n6",
+              "status": "missing"
+            },
+            {
+              "from": "n3",
+              "to": "n4",
+              "status": "matched"
+            },
+            {
+              "from": "n3",
+              "to": "n5",
+              "status": "missing"
+            },
+            {
+              "from": "n3",
+              "to": "n6",
+              "status": "missing"
+            }
+          ],
+          "missing_information": [
+            "Node 'System Bus' not found in student diagram",
+            "Edge n1\u2192n4 not found",
+            "Edge n1\u2192n5 not found",
+            "Edge n1\u2192n6 not found",
+            "Edge n2\u2192n5 not found",
+            "Edge n2\u2192n6 not found",
+            "Edge n3\u2192n5 not found",
+            "Edge n3\u2192n6 not found"
+          ],
+          "anomalies": [
+            "Extra node 'ysten' with no reference counterpart",
+            "Extra edge n15\u2192n16 with no reference counterpart",
+            "Extra edge n20\u2192n16 with no reference counterpart",
+            "Extra edge n1\u2192n3 with no reference counterpart (maps to reference nodes n1\u2192n2, but no such reference edge exists)",
+            "Extra edge n15\u2192n18 with no reference counterpart (maps to reference nodes n4\u2192n5, but no such reference edge exists)",
+            "Extra edge n3\u2192n2 with no reference counterpart (maps to reference nodes n2\u2192n3, but no such reference edge exists)",
+            "Extra edge n2\u2192n16 with no reference counterpart",
+            "Extra edge n18\u2192n20 with no reference counterpart (maps to reference nodes n5\u2192n6, but no such reference edge exists)",
+            "Extra edge n18\u2192n16 with no reference counterpart"
+          ],
+          "glossary_matches": [
+            {
+              "extracted_label": "CPV",
+              "canonical_term": "CPU",
+              "match_type": "fuzzy"
+            },
+            {
+              "extracted_label": "Anput& outut",
+              "canonical_term": "Input & Output",
+              "match_type": "fuzzy"
+            },
+            {
+              "extracted_label": "Memory",
+              "canonical_term": "Memory",
+              "match_type": "exact"
+            },
+            {
+              "extracted_label": "Contralbus",
+              "canonical_term": "Control Bus",
+              "match_type": "fuzzy"
+            },
+            {
+              "extracted_label": "Addregs bu",
+              "canonical_term": "Address Bus",
+              "match_type": "fuzzy"
+            },
+            {
+              "extracted_label": "Data Bu",
+              "canonical_term": "Bus",
+              "match_type": "fuzzy"
+            }
+          ],
+          "scores_breakdown": {
+            "node_precision": 0.8571,
+            "node_recall": 0.8571,
+            "node_f1": 0.8571,
+            "edge_precision": 0.2,
+            "edge_recall": 0.2222,
+            "edge_f1": 0.2105
+          },
+          "model": {
+            "matching_method": "embeddings",
+            "embedding_model": "all-MiniLM-L6-v2"
+          },
+          "plugin": "diagram_evaluation",
+          "plugin_version": "0.1.0",
+          "evaluator_model": "embeddings",
+          "latency_ms": 20.03,
+          "extraction": {
+            "plugin": "diagram_evaluation",
+            "plugin_version": "0.1.0",
+            "mode": "real",
+            "latency_ms": 13661.07,
+            "node_count": 7,
+            "edge_count": 10,
+            "unreadable_node_count": 0,
+            "needs_review_edge_count": 4,
+            "shape_types": [
+              "rectangle"
+            ],
+            "engines": [
+              "paddleocr"
+            ],
+            "extraction_warnings": [
+              "No enclosing shape found for 1 node(s) (ysten) \u2014 shape_bbox falls back to the label's own text bbox for these.",
+              "4 edge(s) below the confidence threshold (e4, e5, e9, e10) \u2014 flagged needs_review, should route to human review rather than be trusted as-detected.",
+              "Edge detection (core/diagram_shapes.py) is measured per diagram family on a SYNTHETIC labeled set (media/diagram_benchmark/, scored by scripts/benchmark_diagram_extraction.py) \u2014 boxes, diamonds, ellipses, curved connectors and mixed flowcharts all score 1.000 edge F1 there, but those fixtures are rendered, not scanned. On a photo of ruled notebook paper \u2014 this project's real input \u2014 connector detection is unchanged and still weak (see that module's MEASURED SCOPE). A missing edge should be read as 'not reliably detected', not 'confirmed absent'."
+            ]
+          }
+        },
+        "primary": true
+      },
+      "flags": [],
+      "failures": [],
+      "persistence": {
+        "answer_id": "88880003-0003-0003-0003-888800039999",
+        "primary_block_id": "1d9115d4-cd43-4a53-9681-a303f4d2b0e7",
+        "reference_kind": "asset",
+        "reference_id": "1aef8f91-dc13-4f15-b1e1-e2df54df087a",
+        "evaluation_id": "36ba3504-2c37-4d9c-bd47-99082d0ed85e",
+        "written": true,
+        "skip_reason": null,
+        "status_changed": false
+      },
+      "needs_review": false,
+      "explanation": "Booklet question question:88880001: 5.98/10.0, from 1/1 region(s), via diagram_evaluation (diagram), confidence 0.7741. Diagram comparison: 8 missing item(s), 9 anomaly/anomalies."
+    },
+    {
+      "question": "Q1",
+      "question_id": "a0a0a0a0-0001-0001-0001-a0a0a0a0a0a0",
+      "answer_id": "ee09ffb5-fe96-4ae7-b250-80c70828489b",
+      "marks_max": 5.0,
+      "score": 0.43,
+      "percentage": 0.086,
+      "confidence": 0.772,
+      "scored": true,
+      "pages": [
+        1
+      ],
+      "regions": {
+        "total": 2,
+        "evaluated": 2,
+        "failed": 0,
+        "flagged": 0
+      },
+      "components": [
+        {
+          "block_type": "text",
+          "plugin": "text_extraction",
+          "plugin_version": "0.2.0",
+          "evaluator_model": "blended(keyword,llm,rubric,semantic)",
+          "reference_kind": "variant",
+          "reference_id": "a0a0a0a0-0002-0002-0002-a0a0a0a0a0a0",
+          "score": 0.43,
+          "max_score": 5.0,
+          "confidence": 0.772,
+          "regions": [
+            {
+              "block_id": "781f3610-f25a-46c8-9db2-908873b86c89",
+              "key": "781f3610-f25a-46c8-9db2-908873b86c89",
+              "question": "Q1",
+              "block_type": "text",
+              "page_number": 1,
+              "bbox": [
+                138,
+                277,
+                1276,
+                207
+              ]
+            },
+            {
+              "block_id": "ca942155-53e1-4470-9256-c91923ec88b2",
+              "key": "ca942155-53e1-4470-9256-c91923ec88b2",
+              "question": "Q1",
+              "block_type": "text",
+              "page_number": 1,
+              "bbox": [
+                137,
+                594,
+                1295,
+                211
+              ]
+            }
+          ],
+          "block_ids": [
+            "781f3610-f25a-46c8-9db2-908873b86c89",
+            "ca942155-53e1-4470-9256-c91923ec88b2"
+          ],
+          "pages": [
+            1
+          ],
+          "merged_from": 2,
+          "extraction_confidence": 0.9786,
+          "explanation": "Blended score 0.43/5.0 from semantic=1.14/5.0, w=0.3529; llm=0.0/5.0, w=0.4706; rubric=0.13/5.0, w=0.1765.",
+          "signals": {
+            "semantic": {
+              "score": 1.14,
+              "model": "all-MiniLM-L6-v2",
+              "weight": 0.3529,
+              "available": true,
+              "explanation": "Cosine similarity: 0.2286 (22.9% match). Score: 1.14/5.0."
+            },
+            "llm": {
+              "score": 0.0,
+              "model": "qwen/qwen3.6-27b",
+              "weight": 0.4706,
+              "available": true,
+              "explanation": "The student's answer discusses operating system process scheduling, which is completely unrelated to the reference material on stacks (LIFO) and queues (FIFO). No relevant content was provided."
+            },
+            "keyword": {
+              "score": null,
+              "model": "fuzzy_keyword_coverage_v1",
+              "weight": null,
+              "available": false,
+              "explanation": "No keywords defined for this question \u2014 keyword signal unavailable."
+            },
+            "rubric": {
+              "score": 0.13,
+              "model": "fuzzy_rubric_coverage_v1",
+              "weight": 0.1765,
+              "available": true,
+              "explanation": "Rubric (whole-answer fallback \u2014 no structured criteria found in the reference answer): 2.7% fuzzy match."
+            }
+          },
+          "detail": null,
+          "latency_ms": 7965.35,
+          "metrics": {
+            "plugin": "text_extraction",
+            "plugin_version": "0.2.0",
+            "evaluator_model": "blended(keyword,llm,rubric,semantic)",
+            "latency_ms": 7965.24,
+            "method": "blended",
+            "signals": {
+              "semantic": {
+                "score": 1.14,
+                "explanation": "Cosine similarity: 0.2286 (22.9% match). Score: 1.14/5.0.",
+                "model": "all-MiniLM-L6-v2",
+                "confidence": 1.0,
+                "metrics": {
+                  "latency_ms": 3825
+                }
+              },
+              "llm": {
+                "score": 0.0,
+                "explanation": "The student's answer discusses operating system process scheduling, which is completely unrelated to the reference material on stacks (LIFO) and queues (FIFO). No relevant content was provided.",
+                "model": "qwen/qwen3.6-27b",
+                "confidence": 1.0,
+                "metrics": {
+                  "latency_ms": 2190,
+                  "usage": {
+                    "queue_time": 0.043414737,
+                    "prompt_tokens": 283,
+                    "prompt_time": 0.020070493,
+                    "completion_tokens": 981,
+                    "completion_time": 2.032634361,
+                    "total_tokens": 1264,
+                    "total_time": 2.052704854
+                  }
+                }
+              },
+              "keyword": {
+                "score": null,
+                "explanation": "No keywords defined for this question \u2014 keyword signal unavailable.",
+                "model": "fuzzy_keyword_coverage_v1",
+                "confidence": 0.0,
+                "metrics": {
+                  "coverage": null,
+                  "matched": [],
+                  "missed": [],
+                  "total_weight": 0.0
+                }
+              },
+              "rubric": {
+                "score": 0.13,
+                "explanation": "Rubric (whole-answer fallback \u2014 no structured criteria found in the reference answer): 2.7% fuzzy match.",
+                "model": "fuzzy_rubric_coverage_v1",
+                "confidence": 1.0,
+                "metrics": {
+                  "mode": "whole_answer",
+                  "coverage": 0.0266,
+                  "criteria": []
+                }
+              }
+            },
+            "low_confidence": false,
+            "weights": {
+              "semantic": 0.3529,
+              "llm": 0.4706,
+              "rubric": 0.1765
+            }
+          },
+          "primary": true
+        }
+      ],
+      "primary": {
+        "block_type": "text",
+        "plugin": "text_extraction",
+        "plugin_version": "0.2.0",
+        "evaluator_model": "blended(keyword,llm,rubric,semantic)",
+        "reference_kind": "variant",
+        "reference_id": "a0a0a0a0-0002-0002-0002-a0a0a0a0a0a0",
+        "score": 0.43,
+        "max_score": 5.0,
+        "confidence": 0.772,
+        "regions": [
+          {
+            "block_id": "781f3610-f25a-46c8-9db2-908873b86c89",
+            "key": "781f3610-f25a-46c8-9db2-908873b86c89",
+            "question": "Q1",
+            "block_type": "text",
+            "page_number": 1,
+            "bbox": [
+              138,
+              277,
+              1276,
+              207
+            ]
+          },
+          {
+            "block_id": "ca942155-53e1-4470-9256-c91923ec88b2",
+            "key": "ca942155-53e1-4470-9256-c91923ec88b2",
+            "question": "Q1",
+            "block_type": "text",
+            "page_number": 1,
+            "bbox": [
+              137,
+              594,
+              1295,
+              211
+            ]
+          }
+        ],
+        "block_ids": [
+          "781f3610-f25a-46c8-9db2-908873b86c89",
+          "ca942155-53e1-4470-9256-c91923ec88b2"
+        ],
+        "pages": [
+          1
+        ],
+        "merged_from": 2,
+        "extraction_confidence": 0.9786,
+        "explanation": "Blended score 0.43/5.0 from semantic=1.14/5.0, w=0.3529; llm=0.0/5.0, w=0.4706; rubric=0.13/5.0, w=0.1765.",
+        "signals": {
+          "semantic": {
+            "score": 1.14,
+            "model": "all-MiniLM-L6-v2",
+            "weight": 0.3529,
+            "available": true,
+            "explanation": "Cosine similarity: 0.2286 (22.9% match). Score: 1.14/5.0."
+          },
+          "llm": {
+            "score": 0.0,
+            "model": "qwen/qwen3.6-27b",
+            "weight": 0.4706,
+            "available": true,
+            "explanation": "The student's answer discusses operating system process scheduling, which is completely unrelated to the reference material on stacks (LIFO) and queues (FIFO). No relevant content was provided."
+          },
+          "keyword": {
+            "score": null,
+            "model": "fuzzy_keyword_coverage_v1",
+            "weight": null,
+            "available": false,
+            "explanation": "No keywords defined for this question \u2014 keyword signal unavailable."
+          },
+          "rubric": {
+            "score": 0.13,
+            "model": "fuzzy_rubric_coverage_v1",
+            "weight": 0.1765,
+            "available": true,
+            "explanation": "Rubric (whole-answer fallback \u2014 no structured criteria found in the reference answer): 2.7% fuzzy match."
+          }
+        },
+        "detail": null,
+        "latency_ms": 7965.35,
+        "metrics": {
+          "plugin": "text_extraction",
+          "plugin_version": "0.2.0",
+          "evaluator_model": "blended(keyword,llm,rubric,semantic)",
+          "latency_ms": 7965.24,
+          "method": "blended",
+          "signals": {
+            "semantic": {
+              "score": 1.14,
+              "explanation": "Cosine similarity: 0.2286 (22.9% match). Score: 1.14/5.0.",
+              "model": "all-MiniLM-L6-v2",
+              "confidence": 1.0,
+              "metrics": {
+                "latency_ms": 3825
+              }
+            },
+            "llm": {
+              "score": 0.0,
+              "explanation": "The student's answer discusses operating system process scheduling, which is completely unrelated to the reference material on stacks (LIFO) and queues (FIFO). No relevant content was provided.",
+              "model": "qwen/qwen3.6-27b",
+              "confidence": 1.0,
+              "metrics": {
+                "latency_ms": 2190,
+                "usage": {
+                  "queue_time": 0.043414737,
+                  "prompt_tokens": 283,
+                  "prompt_time": 0.020070493,
+                  "completion_tokens": 981,
+                  "completion_time": 2.032634361,
+                  "total_tokens": 1264,
+                  "total_time": 2.052704854
+                }
+              }
+            },
+            "keyword": {
+              "score": null,
+              "explanation": "No keywords defined for this question \u2014 keyword signal unavailable.",
+              "model": "fuzzy_keyword_coverage_v1",
+              "confidence": 0.0,
+              "metrics": {
+                "coverage": null,
+                "matched": [],
+                "missed": [],
+                "total_weight": 0.0
+              }
+            },
+            "rubric": {
+              "score": 0.13,
+              "explanation": "Rubric (whole-answer fallback \u2014 no structured criteria found in the reference answer): 2.7% fuzzy match.",
+              "model": "fuzzy_rubric_coverage_v1",
+              "confidence": 1.0,
+              "metrics": {
+                "mode": "whole_answer",
+                "coverage": 0.0266,
+                "criteria": []
+              }
+            }
+          },
+          "low_confidence": false,
+          "weights": {
+            "semantic": 0.3529,
+            "llm": 0.4706,
+            "rubric": 0.1765
+          }
+        },
+        "primary": true
+      },
+      "flags": [],
+      "failures": [],
+      "persistence": {
+        "answer_id": "ee09ffb5-fe96-4ae7-b250-80c70828489b",
+        "primary_block_id": "781f3610-f25a-46c8-9db2-908873b86c89",
+        "reference_kind": "variant",
+        "reference_id": "a0a0a0a0-0002-0002-0002-a0a0a0a0a0a0",
+        "evaluation_id": "74e011a8-125d-4002-80dd-372a98f04e7d",
+        "written": true,
+        "skip_reason": null,
+        "status_changed": false
+      },
+      "needs_review": false,
+      "explanation": "Booklet question Q1: 0.43/5.0, from 2/2 region(s), via text_extraction (text), confidence 0.772. Blended score 0.43/5.0 from semantic=1.14/5.0, w=0.3529; llm=0.0/5.0, w=0.4706; rubric=0.13/5.0, w=0.1765."
+    },
+    {
+      "question": "Q3",
+      "question_id": "ffffffff-0001-0001-0001-ffffffffffff",
+      "answer_id": "af43308c-237d-4e78-8b12-f00882a6e529",
+      "marks_max": 10.0,
+      "score": 10.0,
+      "percentage": 1.0,
+      "confidence": 0.8868,
+      "scored": true,
+      "pages": [
+        4
+      ],
+      "regions": {
+        "total": 2,
+        "evaluated": 1,
+        "failed": 1,
+        "flagged": 0
+      },
+      "components": [
+        {
+          "block_type": "diagram",
+          "plugin": "diagram_evaluation",
+          "plugin_version": "0.1.0",
+          "evaluator_model": "embeddings",
+          "reference_kind": "asset",
+          "reference_id": "aaaaaaaa-0001-0001-0001-aaaaaaaaaaaa",
+          "score": 10.0,
+          "max_score": 10.0,
+          "confidence": 0.986,
+          "regions": [
+            {
+              "block_id": "ef18ffa6-92b9-4968-89f1-b5995bf72886",
+              "key": "ef18ffa6-92b9-4968-89f1-b5995bf72886",
+              "question": "Q3",
+              "block_type": "diagram",
+              "page_number": 4,
+              "bbox": [
+                143,
+                610,
+                1364,
+                166
+              ]
+            }
+          ],
+          "block_ids": [
+            "ef18ffa6-92b9-4968-89f1-b5995bf72886"
+          ],
+          "pages": [
+            4
+          ],
+          "merged_from": 1,
+          "extraction_confidence": 0.986,
+          "explanation": "Diagram comparison: 0 missing item(s), 0 anomaly/anomalies.",
+          "signals": null,
+          "detail": {
+            "scores_breakdown": {
+              "node_precision": 1.0,
+              "node_recall": 1.0,
+              "node_f1": 1.0,
+              "edge_precision": 1.0,
+              "edge_recall": 1.0,
+              "edge_f1": 1.0
+            },
+            "missing_information_count": 0,
+            "anomalies_count": 0
+          },
+          "latency_ms": 5791.78,
+          "metrics": {
+            "schema_version": 1,
+            "similarity_score": 10.0,
+            "marks_max": 10.0,
+            "node_validation": [
+              {
+                "reference_label": "Input",
+                "matched_label": "Input",
+                "status": "matched",
+                "similarity": 1.0
+              },
+              {
+                "reference_label": "Process",
+                "matched_label": "Process",
+                "status": "matched",
+                "similarity": 1.0
+              },
+              {
+                "reference_label": "Output",
+                "matched_label": "Output",
+                "status": "matched",
+                "similarity": 1.0
+              }
+            ],
+            "edge_comparison": [
+              {
+                "from": "n1",
+                "to": "n2",
+                "status": "matched"
+              },
+              {
+                "from": "n2",
+                "to": "n3",
+                "status": "matched"
+              }
+            ],
+            "missing_information": [],
+            "anomalies": [],
+            "glossary_matches": [
+              {
+                "extracted_label": "Process",
+                "canonical_term": "CPU",
+                "match_type": "fuzzy"
+              }
+            ],
+            "scores_breakdown": {
+              "node_precision": 1.0,
+              "node_recall": 1.0,
+              "node_f1": 1.0,
+              "edge_precision": 1.0,
+              "edge_recall": 1.0,
+              "edge_f1": 1.0
+            },
+            "model": {
+              "matching_method": "embeddings",
+              "embedding_model": "all-MiniLM-L6-v2"
+            },
+            "plugin": "diagram_evaluation",
+            "plugin_version": "0.1.0",
+            "evaluator_model": "embeddings",
+            "latency_ms": 5791.73,
+            "extraction": {
+              "plugin": "diagram_evaluation",
+              "plugin_version": "0.1.0",
+              "mode": "real",
+              "latency_ms": 4816.0,
+              "node_count": 3,
+              "edge_count": 2,
+              "unreadable_node_count": 0,
+              "needs_review_edge_count": 0,
+              "shape_types": [
+                "rectangle"
+              ],
+              "engines": [
+                "paddleocr",
+                "tesseract"
+              ],
+              "extraction_warnings": [
+                "Edge detection (core/diagram_shapes.py) is measured per diagram family on a SYNTHETIC labeled set (media/diagram_benchmark/, scored by scripts/benchmark_diagram_extraction.py) \u2014 boxes, diamonds, ellipses, curved connectors and mixed flowcharts all score 1.000 edge F1 there, but those fixtures are rendered, not scanned. On a photo of ruled notebook paper \u2014 this project's real input \u2014 connector detection is unchanged and still weak (see that module's MEASURED SCOPE). A missing edge should be read as 'not reliably detected', not 'confirmed absent'."
+              ]
+            }
+          },
+          "primary": true
+        }
+      ],
+      "primary": {
+        "block_type": "diagram",
+        "plugin": "diagram_evaluation",
+        "plugin_version": "0.1.0",
+        "evaluator_model": "embeddings",
+        "reference_kind": "asset",
+        "reference_id": "aaaaaaaa-0001-0001-0001-aaaaaaaaaaaa",
+        "score": 10.0,
+        "max_score": 10.0,
+        "confidence": 0.986,
+        "regions": [
+          {
+            "block_id": "ef18ffa6-92b9-4968-89f1-b5995bf72886",
+            "key": "ef18ffa6-92b9-4968-89f1-b5995bf72886",
+            "question": "Q3",
+            "block_type": "diagram",
+            "page_number": 4,
+            "bbox": [
+              143,
+              610,
+              1364,
+              166
+            ]
+          }
+        ],
+        "block_ids": [
+          "ef18ffa6-92b9-4968-89f1-b5995bf72886"
+        ],
+        "pages": [
+          4
+        ],
+        "merged_from": 1,
+        "extraction_confidence": 0.986,
+        "explanation": "Diagram comparison: 0 missing item(s), 0 anomaly/anomalies.",
+        "signals": null,
+        "detail": {
+          "scores_breakdown": {
+            "node_precision": 1.0,
+            "node_recall": 1.0,
+            "node_f1": 1.0,
+            "edge_precision": 1.0,
+            "edge_recall": 1.0,
+            "edge_f1": 1.0
+          },
+          "missing_information_count": 0,
+          "anomalies_count": 0
+        },
+        "latency_ms": 5791.78,
+        "metrics": {
+          "schema_version": 1,
+          "similarity_score": 10.0,
+          "marks_max": 10.0,
+          "node_validation": [
+            {
+              "reference_label": "Input",
+              "matched_label": "Input",
+              "status": "matched",
+              "similarity": 1.0
+            },
+            {
+              "reference_label": "Process",
+              "matched_label": "Process",
+              "status": "matched",
+              "similarity": 1.0
+            },
+            {
+              "reference_label": "Output",
+              "matched_label": "Output",
+              "status": "matched",
+              "similarity": 1.0
+            }
+          ],
+          "edge_comparison": [
+            {
+              "from": "n1",
+              "to": "n2",
+              "status": "matched"
+            },
+            {
+              "from": "n2",
+              "to": "n3",
+              "status": "matched"
+            }
+          ],
+          "missing_information": [],
+          "anomalies": [],
+          "glossary_matches": [
+            {
+              "extracted_label": "Process",
+              "canonical_term": "CPU",
+              "match_type": "fuzzy"
+            }
+          ],
+          "scores_breakdown": {
+            "node_precision": 1.0,
+            "node_recall": 1.0,
+            "node_f1": 1.0,
+            "edge_precision": 1.0,
+            "edge_recall": 1.0,
+            "edge_f1": 1.0
+          },
+          "model": {
+            "matching_method": "embeddings",
+            "embedding_model": "all-MiniLM-L6-v2"
+          },
+          "plugin": "diagram_evaluation",
+          "plugin_version": "0.1.0",
+          "evaluator_model": "embeddings",
+          "latency_ms": 5791.73,
+          "extraction": {
+            "plugin": "diagram_evaluation",
+            "plugin_version": "0.1.0",
+            "mode": "real",
+            "latency_ms": 4816.0,
+            "node_count": 3,
+            "edge_count": 2,
+            "unreadable_node_count": 0,
+            "needs_review_edge_count": 0,
+            "shape_types": [
+              "rectangle"
+            ],
+            "engines": [
+              "paddleocr",
+              "tesseract"
+            ],
+            "extraction_warnings": [
+              "Edge detection (core/diagram_shapes.py) is measured per diagram family on a SYNTHETIC labeled set (media/diagram_benchmark/, scored by scripts/benchmark_diagram_extraction.py) \u2014 boxes, diamonds, ellipses, curved connectors and mixed flowcharts all score 1.000 edge F1 there, but those fixtures are rendered, not scanned. On a photo of ruled notebook paper \u2014 this project's real input \u2014 connector detection is unchanged and still weak (see that module's MEASURED SCOPE). A missing edge should be read as 'not reliably detected', not 'confirmed absent'."
+            ]
+          }
+        },
+        "primary": true
+      },
+      "flags": [
+        "partial_failure:1"
+      ],
+      "failures": [
+        {
+          "stage": "reference",
+          "error_type": "reference",
+          "message": "question ffffffff-0001-0001-0001-ffffffffffff has no current reference_answer_variants row \u2014 nothing to score a text answer against",
+          "block_id": "17f14200-08e1-4619-a4be-5b5aacf01945",
+          "key": "17f14200-08e1-4619-a4be-5b5aacf01945",
+          "question": "Q3",
+          "block_type": "text",
+          "page_number": 4,
+          "bbox": [
+            139,
+            457,
+            806,
+            59
+          ]
+        }
+      ],
+      "persistence": {
+        "answer_id": "af43308c-237d-4e78-8b12-f00882a6e529",
+        "primary_block_id": "ef18ffa6-92b9-4968-89f1-b5995bf72886",
+        "reference_kind": "asset",
+        "reference_id": "aaaaaaaa-0001-0001-0001-aaaaaaaaaaaa",
+        "evaluation_id": "bdbf773e-0848-4b9a-a20f-d8bac8469397",
+        "written": true,
+        "skip_reason": null,
+        "status_changed": false
+      },
+      "needs_review": true,
+      "explanation": "Booklet question Q3: 10.0/10.0, from 1/2 region(s), via diagram_evaluation (diagram), confidence 0.8868. Diagram comparison: 0 missing item(s), 0 anomaly/anomalies. FLAGS: partial_failure:1. 1 region(s) failed and are excluded."
+    }
+  ],
+  "pages": [
+    {
+      "page_number": 1,
+      "regions": 2,
+      "evaluated": 2,
+      "failed": 0,
+      "flagged": 0,
+      "unassigned": 0,
+      "questions": [
+        "Q1"
+      ],
+      "questions_complete_on_page": [
+        "Q1"
+      ],
+      "spanning_questions": []
+    },
+    {
+      "page_number": 4,
+      "regions": 2,
+      "evaluated": 1,
+      "failed": 1,
+      "flagged": 0,
+      "unassigned": 0,
+      "questions": [
+        "Q3"
+      ],
+      "questions_complete_on_page": [
+        "Q3"
+      ],
+      "spanning_questions": []
+    },
+    {
+      "page_number": null,
+      "regions": 1,
+      "evaluated": 1,
+      "failed": 0,
+      "flagged": 0,
+      "unassigned": 0,
+      "questions": [
+        "question:88880001"
+      ],
+      "questions_complete_on_page": [
+        "question:88880001"
+      ],
+      "spanning_questions": []
+    }
+  ],
+  "review_queue": [
+    {
+      "kind": "question",
+      "question": "Q3",
+      "pages": [
+        4
+      ],
+      "confidence": 0.8868,
+      "score": 10.0,
+      "marks_max": 10.0,
+      "reasons": [
+        "partial_failure:1"
+      ],
+      "block_ids": [
+        "ef18ffa6-92b9-4968-89f1-b5995bf72886"
+      ]
+    }
+  ],
+  "failures": [
+    {
+      "stage": "reference",
+      "error_type": "reference",
+      "message": "question ffffffff-0001-0001-0001-ffffffffffff has no current reference_answer_variants row \u2014 nothing to score a text answer against",
+      "block_id": "17f14200-08e1-4619-a4be-5b5aacf01945",
+      "key": "17f14200-08e1-4619-a4be-5b5aacf01945",
+      "question": "Q3",
+      "block_type": "text",
+      "page_number": 4,
+      "bbox": [
+        139,
+        457,
+        806,
+        59
+      ]
+    }
+  ],
+  "rate_limit": {
+    "throttle": {
+      "rate_per_minute": 25.0,
+      "burst_capacity": 5.0,
+      "acquired": 1,
+      "total_wait_seconds": 0.0
+    },
+    "daily": {
+      "limit": 14000,
+      "used": 1,
+      "day": "2026-09-02"
+    },
+    "retries": {
+      "429": 0,
+      "5xx": 0,
+      "transport": 0
+    }
+  },
+  "review_threshold": 0.6,
+  "run": {
+    "max_concurrency": 2,
+    "stub": false,
+    "stub_extraction": false,
+    "stub_llm": false,
+    "method": "blended",
+    "extraction_latency_ms": 37563.79,
+    "evaluation_latency_ms": 13777.22
+  },
+  "persistence": {
+    "written": 3,
+    "skipped": 0,
+    "failed": 0,
+    "dry_run": false
+  }
+}
