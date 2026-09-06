@@ -11,6 +11,7 @@ import { Home } from "./routes/Home";
 import { Login } from "./routes/Login";
 import { PaperGeneration } from "./routes/PaperGeneration";
 import { QuestionBank } from "./routes/QuestionBank";
+import { ResultDetail } from "./routes/ResultDetail";
 import { Results } from "./routes/Results";
 import { Upload } from "./routes/Upload";
 
@@ -28,6 +29,7 @@ function App() {
                   <Route path="/" element={<Home />} />
                   <Route path="/upload" element={<Upload />} />
                   <Route path="/results" element={<Results />} />
+                  <Route path="/results/:answerId" element={<ResultDetail />} />
                   <Route path="/questions" element={<QuestionBank />} />
                   <Route path="/papers" element={<PaperGeneration />} />
                   <Route path="/classes" element={<Classes />} />
