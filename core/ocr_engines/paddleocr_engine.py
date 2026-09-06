@@ -10,43 +10,21 @@ being the pipeline's only option.
 """
 from __future__ import annotations
 
-import contextlib
-import io
 import os
 
 from core.ocr_engines.base import OCREngine
+from core.paddle_workarounds import construct, quiet_paddle
 
 # See core/diagram_extractor.py's original docstring (now moved here) for
 # the reasoning behind every constant below — server det / mobile en rec,
-# lowered detection thresholds, oneDNN disabled.
+# lowered detection thresholds. oneDNN is disabled by core/paddle_workarounds
+# (crashes otherwise on this repo's pinned paddlepaddle — see that module).
 _DET_MODEL_NAME = os.environ.get("PADDLEOCR_DET_MODEL", "PP-OCRv5_server_det")
 _REC_MODEL_NAME = os.environ.get("PADDLEOCR_REC_MODEL", "en_PP-OCRv5_mobile_rec")
 
 DETECT_THRESH = 0.2
 DETECT_BOX_THRESH = 0.3
 DETECT_UNCLIP_RATIO = 2.0
-
-_ENABLE_MKLDNN = False
-
-os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-
-
-@contextlib.contextmanager
-def _quiet_paddle():
-    """Suppresses PaddleOCR/paddlex/paddle's own chatter during model
-    construction and inference. See the pre-refactor version of this
-    function (git history, core/diagram_extractor.py before the plugin
-    split) for the full rationale — unchanged here."""
-    import logging
-    import warnings
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=UserWarning, message="No ccache found")
-        logging.disable(logging.CRITICAL)
-        try:
-            with contextlib.redirect_stdout(io.StringIO()):
-                yield
-        finally:
-            logging.disable(logging.NOTSET)
 
 
 class PaddleOCREngine(OCREngine):
@@ -59,24 +37,19 @@ class PaddleOCREngine(OCREngine):
     def _get_detector(self):
         if self._detector is None:
             from paddleocr import TextDetection
-            with _quiet_paddle():
-                self._detector = TextDetection(
-                    model_name=_DET_MODEL_NAME,
-                    enable_mkldnn=_ENABLE_MKLDNN,
-                    thresh=DETECT_THRESH,
-                    box_thresh=DETECT_BOX_THRESH,
-                    unclip_ratio=DETECT_UNCLIP_RATIO,
-                )
+            self._detector = construct(
+                TextDetection,
+                model_name=_DET_MODEL_NAME,
+                thresh=DETECT_THRESH,
+                box_thresh=DETECT_BOX_THRESH,
+                unclip_ratio=DETECT_UNCLIP_RATIO,
+            )
         return self._detector
 
     def _get_recognizer(self):
         if self._recognizer is None:
             from paddleocr import TextRecognition
-            with _quiet_paddle():
-                self._recognizer = TextRecognition(
-                    model_name=_REC_MODEL_NAME,
-                    enable_mkldnn=_ENABLE_MKLDNN,
-                )
+            self._recognizer = construct(TextRecognition, model_name=_REC_MODEL_NAME)
         return self._recognizer
 
     def detect_regions(self, image) -> list[tuple[int, int, int, int]]:
@@ -85,7 +58,7 @@ class PaddleOCREngine(OCREngine):
         detector = self._get_detector()
         arr = np.array(image)  # RGB, as PaddleOCR expects
 
-        with _quiet_paddle():
+        with quiet_paddle():
             results = list(detector.predict(arr))
         if not results:
             return []
@@ -105,7 +78,7 @@ class PaddleOCREngine(OCREngine):
         import numpy as np
 
         recognizer = self._get_recognizer()
-        with _quiet_paddle():
+        with quiet_paddle():
             results = list(recognizer.predict(np.array(crop)))
         if not results:
             return "", None

@@ -29,8 +29,11 @@ both the full PP-StructureV3 pipeline and a hand-rolled OpenCV heuristic:
 
   §7B records that PP-StructureV3 crashes on this repo's pinned
   paddlepaddle 3.3.1 unless constructed with enable_mkldnn=False. The same
-  guard is applied here, exactly as core/ocr_engines/paddleocr_engine.py
-  already does for TextDetection/TextRecognition.
+  guard applies to LayoutDetection here, and is applied through the shared
+  core/paddle_workarounds.py helper — the same one
+  core/ocr_engines/paddleocr_engine.py uses for TextDetection/TextRecognition
+  (see that module's docstring for the crash detail and the version this is
+  measured against).
 
 QUESTION MARKERS COME FROM A SEPARATE OCR PASS, not from the layout model.
 This is a measured decision, not a stylistic one: on the benchmark booklet the
@@ -62,13 +65,12 @@ regions that interleave rather than stack, and answer text on ruled notebook
 paper — the last being this project's real input distribution and its known
 hard case. No fixture for any of these was fabricated.
 """
-import contextlib
-import io
-import logging
 import os
 import re
 
 import numpy as np
+
+from core.paddle_workarounds import construct, quiet_paddle
 
 # --- classification tunables --------------------------------------------
 
@@ -149,35 +151,22 @@ MARKER_REGION_OVERLAP = 0.60
 _LAYOUT_MODEL = None
 
 
-@contextlib.contextmanager
-def _quiet_paddle():
-    """Silence paddle's construction/inference chatter so a region report is
-    readable. Same approach as core/ocr_engines/paddleocr_engine.py."""
-    logging.disable(logging.WARNING)
-    buffer = io.StringIO()
-    try:
-        with contextlib.redirect_stdout(buffer):
-            yield
-    finally:
-        logging.disable(logging.NOTSET)
-
-
 def _get_layout_model():
     """Lazily construct and cache the layout detector.
 
     Cached at module level because construction measured ~18 s against ~3 s
     per page — rebuilding it per page would dominate a booklet's runtime.
     Lazy so that --stub runs, and every import of this module, cost nothing.
+
+    Construction (including the enable_mkldnn guard — see module docstring /
+    §7B and core/paddle_workarounds.py) goes through the same helper
+    core/ocr_engines/paddleocr_engine.py uses; only the caching shown here is
+    specific to this module.
     """
     global _LAYOUT_MODEL
     if _LAYOUT_MODEL is None:
-        os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
         from paddleocr import LayoutDetection
-        with _quiet_paddle():
-            _LAYOUT_MODEL = LayoutDetection(
-                model_name=LAYOUT_MODEL_NAME,
-                enable_mkldnn=False,   # see module docstring / §7B
-            )
+        _LAYOUT_MODEL = construct(LayoutDetection, model_name=LAYOUT_MODEL_NAME)
     return _LAYOUT_MODEL
 
 
@@ -233,7 +222,7 @@ def classify_page(
         return regions
 
     array = np.array(image.convert("RGB"))[:, :, ::-1]   # PIL RGB -> OpenCV BGR
-    with _quiet_paddle():
+    with quiet_paddle():
         predictions = model.predict(array)
 
     regions = []

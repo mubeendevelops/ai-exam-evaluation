@@ -45,8 +45,10 @@ RUN pip install --no-cache-dir -r requirements.txt \
     # brings up a real MinIO alongside this image specifically so the
     # container path can be exercised for real, so it's installed here
     # rather than uncommenting a line whose comment explains why it is off
-    # by default for the bare CLI/venv setup.
-    && pip install --no-cache-dir boto3>=1.34
+    # by default for the bare CLI/venv setup. Pinned to the same version
+    # requirements.txt's own boto3 comment names, so the two install paths
+    # can't silently drift apart.
+    && pip install --no-cache-dir boto3==1.43.82
 
 # ── App code — its own layer, changes on every commit ──────────────────────
 COPY . .
