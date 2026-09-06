@@ -37,6 +37,12 @@ wheels/
 # Re-generate locally with: python3 scripts/extract_exam_bank.py exam\ bank.docx --outdir ./extracted
 extracted/
 
+# Build output of scripts/evaluate_booklet.py / ingest_booklet.py's --output
+# flag (neither has a default path — this file was committed by someone
+# running `--output report.json` from the repo root). Not a source file or a
+# fixture; regenerate with --offline --stub if you need one to look at.
+/report.json
+
 # Source binary — too large for Git, keep in shared drive / object storage
 exam bank.docx
 

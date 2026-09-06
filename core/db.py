@@ -24,6 +24,25 @@ def get_connection() -> psycopg2.extensions.connection:
     )
 
 
+def get_admin_connection() -> psycopg2.extensions.connection:
+    """Owner-role connection, for schema work only (migrations, scripts/migrate.py,
+    pg_dump, scripts/reset_and_seed_db.sh) — never for application reads/writes.
+
+    Reads PGADMIN_USER/PGADMIN_PASSWORD, falling back to PGUSER/PGPASSWORD
+    when those are unset (a disposable container where PGUSER already IS the
+    owner, before migration 016 has created the non-superuser application
+    role). This connection bypasses RLS (§6) by virtue of the role, not by
+    any GUC this module sets.
+    """
+    return psycopg2.connect(
+        host=os.environ.get("PGHOST", "localhost"),
+        port=os.environ.get("PGPORT", "5432"),
+        dbname=os.environ.get("PGDATABASE", "ai_evaluation"),
+        user=os.environ.get("PGADMIN_USER") or os.environ.get("PGUSER", "postgres"),
+        password=os.environ.get("PGADMIN_PASSWORD") or os.environ.get("PGPASSWORD", ""),
+    )
+
+
 @contextlib.contextmanager
 def transaction(dry_run: bool = False) -> Iterator[psycopg2.extensions.cursor]:
     """Opens a fresh connection, yields a cursor for the caller to run

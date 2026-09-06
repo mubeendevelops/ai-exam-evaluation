@@ -54,7 +54,7 @@ from api.deps.identity import create_access_token
 from api.main import create_app
 from api.settings import Settings
 
-from .conftest import COLLEGE_A, COLLEGE_B, TEST_PASSWORD
+from .conftest import COLLEGE_A, TEST_PASSWORD
 
 # `asyncio` is applied per-test rather than module-wide: the last two tests in
 # this file are SYNCHRONOUS on purpose (they drive a dependency directly rather

@@ -27,7 +27,6 @@ on true camera photos of booklets — no such fixture exists in this repo — so
 perspective correction is not attempted at all, only in-plane rotation.
 Stating that here rather than letting the absence read as coverage.
 """
-import io
 import os
 import tempfile
 import uuid

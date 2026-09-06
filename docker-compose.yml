@@ -1,0 +1,126 @@
+# docker-compose.yml — the whole local stack: Postgres, MinIO, API, worker.
+#
+# First-time setup:
+#     docker compose up -d postgres minio     # wait for postgres to report healthy
+#     docker compose run --rm seed            # loads migrations/seed_minimal.sql
+#     docker compose up -d api worker
+#
+# Ordinary restarts:
+#     docker compose up -d
+#
+# `migrate` is a dependency of `api`/`worker`, so it runs automatically on
+# every `up` — harmlessly, since scripts/migrate.py --up is a no-op once
+# everything is applied (that's the point of it). `seed` is DELIBERATELY NOT
+# wired in as an automatic dependency: it runs
+# scripts/reset_and_seed_db.sh --yes, which TRUNCATES every data table before
+# reloading the minimal fixture set. Auto-running that on every `docker
+# compose up` would silently erase whatever you'd built up in the running
+# stack since the last restart. Run `docker compose run --rm seed` yourself,
+# whenever you actually want a clean slate.
+#
+# MinIO is included from the file it already lived in, not duplicated —
+# docker-compose.minio.yml is unchanged and still works standalone.
+include:
+  - path: docker-compose.minio.yml
+
+x-app-env: &app-env
+  # PGUSER defaults to the RLS-enforcing application role (migration 016),
+  # never `postgres` — see CLAUDE_CONTEXT.md §6. PGADMIN_* is the owner role
+  # migrate/seed run as; api/worker never see it.
+  PGHOST: postgres
+  PGPORT: "5432"
+  PGDATABASE: ${PGDATABASE:-ai_evaluation}
+  PGUSER: ${PGUSER:-ai_eval_app}
+  PGPASSWORD: ${APP_DB_PASSWORD:-ai_eval_app_password}
+  PGADMIN_USER: ${PGADMIN_USER:-postgres}
+  PGADMIN_PASSWORD: ${PGADMIN_PASSWORD:-postgres_owner_password}
+  APP_DB_USER: ${PGUSER:-ai_eval_app}
+  APP_DB_PASSWORD: ${APP_DB_PASSWORD:-ai_eval_app_password}
+  # Matches docker-compose.minio.yml's MINIO_ROOT_USER/PASSWORD exactly —
+  # these are that container's real credentials, not .env.example's
+  # placeholder defaults (which don't match it).
+  MINIO_ENDPOINT: http://minio:9000
+  MINIO_ACCESS_KEY: minioadmin
+  MINIO_SECRET_KEY: minioadmin123
+  MINIO_BUCKET: ${MINIO_BUCKET:-ai-evaluation}
+  STORAGE_MODE: minio
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+  API_ENV: ${API_ENV:-development}
+  JWT_SECRET: ${JWT_SECRET:-}
+  CORS_ORIGINS: ${CORS_ORIGINS:-}
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${PGADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${PGADMIN_PASSWORD:-postgres_owner_password}
+      POSTGRES_DB: ${PGDATABASE:-ai_evaluation}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot: applies pending migrations (scripts/migrate.py --up) and exits.
+  # Re-run on every `up` as api/worker's dependency; idempotent after the
+  # first time.
+  migrate:
+    build: .
+    image: ai-evaluation-app
+    command: ["python", "scripts/migrate.py", "--up"]
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # One-shot, NOT auto-wired — see the header comment. Run by hand:
+  #     docker compose run --rm seed
+  seed:
+    build: .
+    image: ai-evaluation-app
+    entrypoint: ["./scripts/reset_and_seed_db.sh"]
+    command: ["--yes"]
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    profiles: ["seed"]
+    restart: "no"
+
+  api:
+    build: .
+    image: ai-evaluation-app
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_started
+    volumes:
+      - dummy_storage:/home/appuser/dummy-storage
+
+  worker:
+    build: .
+    image: ai-evaluation-app
+    command: ["python", "scripts/run_job_worker.py"]
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_started
+    volumes:
+      - dummy_storage:/home/appuser/dummy-storage
+
+volumes:
+  pg_data:
+  dummy_storage:

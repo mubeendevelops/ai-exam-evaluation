@@ -38,7 +38,6 @@ from api.deps.identity import create_access_token
 from tests.test_api.conftest import (
     COLLEGE_A,
     COLLEGE_B,
-    REVIEWER_SME,
     REVIEWER_TEACHER,
 )
 

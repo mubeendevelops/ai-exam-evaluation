@@ -58,7 +58,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import db as db_mod                                        # noqa: E402
-from core.plugins import persistence                                  # noqa: E402
 from scripts.evaluate_diagram_answer import evaluate_diagram_answer   # noqa: E402
 
 #: How much of a UUID to show in the summary table. Full UUIDs make every

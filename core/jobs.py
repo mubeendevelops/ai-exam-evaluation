@@ -43,8 +43,6 @@ can refuse the row is this predicate. See api/README.md.
 """
 from __future__ import annotations
 
-import json
-import uuid
 from typing import Any, Iterable
 
 from psycopg2.extras import Json

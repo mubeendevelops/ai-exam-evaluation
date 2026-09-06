@@ -4,15 +4,59 @@
 # (migrations/seed_minimal.sql). Schema/migrations are untouched — only data.
 #
 # Usage:
-#   ./scripts/reset_and_seed_db.sh          # asks for a typed confirmation first
-#   ./scripts/reset_and_seed_db.sh --yes    # skips the confirmation prompt
+#   ./scripts/reset_and_seed_db.sh                          # asks for a typed confirmation first
+#   ./scripts/reset_and_seed_db.sh --yes                    # skips the confirmation prompt
+#   ./scripts/reset_and_seed_db.sh --yes --force-external-host   # see the PGHOST guard below
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-set -a
-source .env
-set +a
+# .env is optional here on purpose: this script also runs inside the
+# docker-compose `seed` service, where PG*/APP_DB_* arrive as real container
+# environment variables (docker-compose.yml's `environment:` block) and no
+# .env file exists in the image at all. A local checkout still gets its
+# usual values from .env when one is present.
+if [[ -f .env ]]; then
+  set -a
+  source .env
+  set +a
+fi
+
+YES=false
+FORCE_EXTERNAL_HOST=false
+for arg in "$@"; do
+  case "$arg" in
+    --yes) YES=true ;;
+    --force-external-host) FORCE_EXTERNAL_HOST=true ;;
+  esac
+done
+
+# ── PGHOST GUARD ─────────────────────────────────────────────────────────
+# This script TRUNCATES every data table. It exists to reset a disposable
+# development/CI database, never a configured external one — but PGHOST is
+# read from the environment like everything else here, so a stray .env
+# pointed at a real staging/prod host would otherwise be nuked exactly like
+# a throwaway container. Refuse unless PGHOST is a recognized local/disposable
+# host, or the caller explicitly overrides with --force-external-host — the
+# same kind of deliberate, spelled-out friction
+# scripts/bootstrap_platform_admin.py already uses for --allow-additional.
+_SAFE_HOSTS=(localhost 127.0.0.1 ::1 postgres db)
+_host_is_safe=false
+for h in "${_SAFE_HOSTS[@]}"; do
+  if [[ "${PGHOST:-}" == "$h" ]]; then
+    _host_is_safe=true
+    break
+  fi
+done
+if [[ "$_host_is_safe" != true && "$FORCE_EXTERNAL_HOST" != true ]]; then
+  echo "REFUSING to run: PGHOST='${PGHOST:-unset}' is not a recognized" >&2
+  echo "local/disposable database host (${_SAFE_HOSTS[*]})." >&2
+  echo "This script TRUNCATES ALL DATA — it must never point at a real," >&2
+  echo "configured external database." >&2
+  echo "If PGHOST really is a disposable container under an unlisted name," >&2
+  echo "rerun with --force-external-host as an explicit, deliberate override." >&2
+  exit 1
+fi
 
 # ── RUNS AS THE OWNER ROLE, NOT AS THE APPLICATION ROLE ─────────────────────
 # PGUSER points at the non-superuser application role (migration 016), which
@@ -35,7 +79,7 @@ ADMIN_USER="${PGADMIN_USER:-postgres}"
 ADMIN_PASSWORD="${PGADMIN_PASSWORD:-}"
 echo ">>> Connecting as '$ADMIN_USER' (owner role); the app's PGUSER is '${PGUSER:-unset}'."
 
-if [[ "${1:-}" != "--yes" ]]; then
+if [[ "$YES" != true ]]; then
   echo "This will DELETE ALL DATA in database '$PGDATABASE' on $PGHOST:$PGPORT"
   echo "and replace it with the minimal fixture set (migrations/seed_minimal.sql)."
   echo
