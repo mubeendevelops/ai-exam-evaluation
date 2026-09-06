@@ -183,7 +183,11 @@ async def test_evaluate_rejects_stub_when_debug_is_off(make_booklet, sign_token,
     # test in test_auth.py.
     prod_settings = Settings(api_env="production", enable_debug_endpoints=False,
                              storage_mode="dummy",
-                             jwt_secret="a signing key for this test's app")
+                             jwt_secret="a signing key for this test's app",
+                             # CORS_ORIGINS has no permissive default outside
+                             # development (Hardening pass 2026-09-06) — a
+                             # production app refuses to boot without one.
+                             cors_origins="https://example.test")
     prod_app = create_app(prod_settings)
 
     async with httpx.AsyncClient(
@@ -308,6 +312,18 @@ async def test_results_list_is_isolated_by_tenant(make_client, make_booklet, col
     assert a["answer_id"] not in theirs_ids
     assert b["answer_id"] in theirs_ids
     assert b["answer_id"] not in mine_ids
+
+
+async def test_results_list_limit_above_max_is_clamped_not_rejected(make_client, make_booklet):
+    """A limit far above MAX_LIMIT (200) is CLAMPED, not answered with 422 —
+    see api/deps/pagination.py."""
+    make_booklet()
+
+    async with make_client(COLLEGE_A) as client:
+        response = await client.get("/api/v1/results", params={"limit": 100_000})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["limit"] == 200
 
 
 async def test_results_list_filters_by_exam_student_and_status(make_client, make_booklet):

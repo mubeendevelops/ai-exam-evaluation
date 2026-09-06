@@ -212,6 +212,7 @@ def generate_paper(cur, pattern_id: str, name: str,
     result_sections = []
     total_filled = 0
     total_slots = 0
+    filled_marks = 0.0
     warnings = []
 
     for section in tree["sections"]:
@@ -254,6 +255,12 @@ def generate_paper(cur, pattern_id: str, name: str,
                     """, (paper_question_id, paper_section_id,
                           leaf["slot_id"], match["question_id"]))
                     total_filled += 1
+                    # The SLOT's own marks, not the matched question's — a
+                    # fuzzy match within marks_tolerance can differ slightly
+                    # from the slot, and filled_marks reports what the PAPER
+                    # actually accounts for against pattern_total_marks, not
+                    # what the bank happened to have.
+                    filled_marks += leaf["marks"]
                     slot_results.append({
                         "slot_id": leaf["slot_id"],
                         "slot_label": leaf["slot_label"],
@@ -265,13 +272,23 @@ def generate_paper(cur, pattern_id: str, name: str,
                         "question_marks": match["marks_max"],
                     })
                 else:
-                    # No match — record warning
-                    severity = "ERROR" if section["is_mandatory"] else "WARNING"
-                    msg = (f"{severity}: slot {leaf['slot_label']} "
-                           f"({leaf['style']}, {leaf['marks']}M) in "
-                           f"section '{section['section_label']}' — "
-                           f"no matching live question found")
-                    warnings.append(msg)
+                    # No match — record a STRUCTURED warning (slot_label,
+                    # section, marks, reason), not a prose string. is_mandatory
+                    # travels with it so the check below can tell a hole in an
+                    # OPTIONAL slot (a warning on the success response) from
+                    # one in a MANDATORY slot (fatal — see below) without
+                    # re-parsing a message for a magic prefix.
+                    warnings.append({
+                        "slot_label": leaf["slot_label"],
+                        "section": section["section_label"],
+                        "marks": leaf["marks"],
+                        "reason": (
+                            f"No live question matches style={leaf['style']!r}, "
+                            f"marks={leaf['marks']} (±{marks_tolerance} "
+                            f"tolerance)."
+                        ),
+                        "is_mandatory": section["is_mandatory"],
+                    })
                     slot_results.append({
                         "slot_id": leaf["slot_id"],
                         "slot_label": leaf["slot_label"],
@@ -299,13 +316,27 @@ def generate_paper(cur, pattern_id: str, name: str,
             "slots": result_slots,
         })
 
-    # Check if mandatory sections have unfilled slots → raise
-    mandatory_gaps = [w for w in warnings if w.startswith("ERROR:")]
+    # A MANDATORY slot with no match means no valid paper exists for this
+    # pattern against today's bank — fatal, and nothing above is committed
+    # (api/routers/papers.py's docstring: the caller's transaction rolls back
+    # on this exception, so the rows written above never become visible).
+    mandatory_gaps = [w for w in warnings if w["is_mandatory"]]
     if mandatory_gaps:
+        listed = "\n".join(
+            f"  - {w['section']} / {w['slot_label']} ({w['marks']}M): {w['reason']}"
+            for w in mandatory_gaps
+        )
         raise ValueError(
             f"Cannot generate paper: {len(mandatory_gaps)} mandatory slot(s) "
-            f"could not be filled:\n" + "\n".join(mandatory_gaps)
+            f"could not be filled:\n{listed}"
         )
+
+    # Past this point every remaining warning is about an OPTIONAL slot —
+    # `is_mandatory` has done its job distinguishing them and would be
+    # redundant (always False) on every warning the caller actually sees.
+    optional_gaps = [
+        {k: v for k, v in w.items() if k != "is_mandatory"} for w in warnings
+    ]
 
     return {
         "paper_id": paper_id,
@@ -315,6 +346,9 @@ def generate_paper(cur, pattern_id: str, name: str,
         "status": "draft",
         "total_filled": total_filled,
         "total_slots": total_slots,
+        "is_complete": not optional_gaps,
+        "filled_marks": filled_marks,
+        "pattern_total_marks": tree["total_marks"],
         "sections": result_sections,
-        "warnings": warnings,
+        "warnings": optional_gaps,
     }

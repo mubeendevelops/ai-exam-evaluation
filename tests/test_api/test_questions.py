@@ -423,7 +423,11 @@ async def test_stub_llm_is_refused_when_debug_is_off(make_paragraph, sign_token)
     # test in test_auth.py.
     prod_settings = Settings(api_env="production", enable_debug_endpoints=False,
                              storage_mode="dummy",
-                             jwt_secret="a signing key for this test's app")
+                             jwt_secret="a signing key for this test's app",
+                             # CORS_ORIGINS has no permissive default outside
+                             # development (Hardening pass 2026-09-06) — a
+                             # production app refuses to boot without one.
+                             cors_origins="https://example.test")
     prod_app = create_app(prod_settings)
 
     async with httpx.AsyncClient(
@@ -459,6 +463,20 @@ async def test_list_filters_by_status(make_client, make_question):
     assert draft_id in ids
     assert live_id not in ids
     assert statuses <= {"draft"}
+
+
+async def test_list_limit_above_max_is_clamped_not_rejected(make_client, make_question):
+    """A limit far above MAX_LIMIT (200) is CLAMPED, not answered with 422 —
+    this endpoint used to declare its own `Query(le=200)` and 422 above the
+    cap; api/deps/pagination.py::get_pagination brought it in line with every
+    other list endpoint (CLAUDE_CONTEXT.md §11's Pagination note)."""
+    make_question(status="draft")
+
+    async with make_client(COLLEGE_A) as client:
+        response = await client.get("/api/v1/questions", params={"limit": 100_000})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["limit"] == 200
 
 
 async def test_list_rejects_a_status_the_database_does_not_have(make_client):

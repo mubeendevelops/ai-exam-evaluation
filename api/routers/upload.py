@@ -41,6 +41,7 @@ import core.uploads
 from api.deps.db import get_tenant_conn
 from api.deps.identity import CurrentUser, require_college_user
 from api.deps.pagination import Pagination, get_pagination
+from api.deps.quota import rate_limit
 from api.schemas.pagination import Page
 from api.schemas.upload import UploadResponse, UploadSummary, upload_to_summary
 from api.settings import Settings, get_settings
@@ -103,6 +104,16 @@ def _settings(request: Request) -> Settings:
     response_model=UploadResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Upload a scanned answer booklet (PDF)",
+    responses={
+        429: {
+            "description": (
+                "This college's request rate for this endpoint is at its "
+                "configured cap (UPLOAD_RATE_LIMIT_*). `Retry-After` says "
+                "how long to wait — see api/deps/quota.py."
+            )
+        },
+    },
+    dependencies=[Depends(rate_limit("upload"))],
 )
 def upload_booklet(
     request: Request,

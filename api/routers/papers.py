@@ -32,6 +32,7 @@ import api.services.papers as papers_service
 from api.deps.db import get_tenant_conn
 from api.deps.identity import CurrentUser, get_current_user
 from api.deps.pagination import Pagination, get_pagination
+from api.deps.quota import rate_limit
 from api.schemas.pagination import Page
 from api.schemas.papers import (
     PaperGenerateRequest,
@@ -89,7 +90,15 @@ def list_papers(
                 "matching live question. Nothing is persisted."
             )
         },
+        429: {
+            "description": (
+                "This caller's request rate for this endpoint is at its "
+                "configured cap (PAPERS_GENERATE_RATE_LIMIT_*). "
+                "`Retry-After` says how long to wait — see api/deps/quota.py."
+            )
+        },
     },
+    dependencies=[Depends(rate_limit("papers_generate"))],
 )
 def generate_paper(
     body: PaperGenerateRequest,

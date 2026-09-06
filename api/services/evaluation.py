@@ -63,6 +63,7 @@ def enqueue_booklet_evaluation(
     stub_extraction: bool = False,
     stub_llm: bool = False,
     method: str | None = None,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Resolves the upload, then queues one booklet_eval job for it.
 
@@ -99,6 +100,10 @@ def enqueue_booklet_evaluation(
             "method": method,
         },
     }
+    if request_id:
+        # See api/services/ingestion.py::enqueue_booklet_ingest — same
+        # reasoning, same key, read back by scripts/run_job_worker.py.
+        payload["request_id"] = request_id
 
     return core.jobs.enqueue_job(
         cur,

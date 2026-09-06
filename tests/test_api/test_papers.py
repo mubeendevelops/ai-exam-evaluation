@@ -97,6 +97,24 @@ async def test_papers_list_filters_by_status_and_pattern(make_client, make_patte
     assert mine.json()["paper_id"] not in {p["paper_id"] for p in finalized.json()["items"]}
 
 
+async def test_papers_list_limit_above_max_is_clamped_not_rejected(make_client, make_pattern,
+                                                                    make_question):
+    """A limit far above MAX_LIMIT (200) is CLAMPED, not answered with 422 —
+    see api/deps/pagination.py."""
+    pattern_id = make_pattern(slots=(("Q1", ODD_MARKS_LONG, "long"),))
+    make_question(status="live", style="long", marks_max=ODD_MARKS_LONG)
+
+    async with make_client(COLLEGE_A) as client:
+        await client.post(GENERATE, json={
+            "pattern_id": pattern_id, "name": "Clamp test paper",
+            "marks_tolerance": 0.0,
+        })
+        response = await client.get("/api/v1/papers", params={"limit": 100_000})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["limit"] == 200
+
+
 async def test_generation_assigns_only_live_questions(make_client, make_pattern,
                                                       make_question, admin_conn):
     """THE PROOF THAT REVIEW CANNOT BE BYPASSED VIA PAPER GENERATION.
@@ -253,7 +271,17 @@ async def test_an_unfillable_optional_slot_is_a_warning_not_a_failure(make_clien
     body = response.json()
     assert body["total_filled"] == 1
     assert body["total_slots"] == 2
-    assert any("Q2" in w for w in body["warnings"]), body["warnings"]
+    # Structured warnings (slot_label, section, marks, reason), not prose —
+    # Hardening pass 2026-09-06. is_complete/filled_marks are the same fact
+    # surfaced WITHOUT reading warnings at all.
+    assert body["is_complete"] is False
+    assert body["filled_marks"] == ODD_MARKS_LONG
+    assert body["pattern_total_marks"] == ODD_MARKS_LONG + ODD_MARKS_SHORT
+    assert any(w["slot_label"] == "Q2" for w in body["warnings"]), body["warnings"]
+    q2_warning = next(w for w in body["warnings"] if w["slot_label"] == "Q2")
+    assert q2_warning["marks"] == ODD_MARKS_SHORT
+    assert q2_warning["section"]
+    assert q2_warning["reason"]
 
 
 async def test_generation_404s_on_an_unknown_pattern(make_client):

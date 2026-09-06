@@ -58,6 +58,7 @@ import api.services.questions as questions_service
 from api.deps.db import get_tenant_conn
 from api.deps.identity import CurrentUser, get_current_user
 from api.deps.pagination import Pagination, get_pagination
+from api.deps.quota import rate_limit
 from api.schemas.questions import (
     GenerateQuestionsRequest,
     GenerateQuestionsResponse,
@@ -173,7 +174,15 @@ def get_question(
         403: {"description": "stub_llm requested outside development."},
         404: {"description": "No such paragraph."},
         409: {"description": "The paragraph is superseded."},
+        429: {
+            "description": (
+                "This caller's request rate for this endpoint is at its "
+                "configured cap (QUESTIONS_GENERATE_RATE_LIMIT_*). "
+                "`Retry-After` says how long to wait — see api/deps/quota.py."
+            )
+        },
     },
+    dependencies=[Depends(rate_limit("questions_generate"))],
 )
 def generate_questions(
     body: GenerateQuestionsRequest,

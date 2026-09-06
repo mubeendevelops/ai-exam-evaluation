@@ -136,14 +136,19 @@ curl -s -H "$H" -H 'Content-Type: application/json' \
 
 ```
 api/
-├── main.py         # create_app(): CORS, exception handlers, router mounting
+├── main.py         # create_app(): CORS, request-id middleware, exception
+│                   #   handlers, router mounting
 ├── settings.py     # pydantic-settings over the SAME .env keys the CLI uses
+├── logging_config.py # JSON log formatting + the request-id contextvar/filter
 ├── deps/
 │   ├── db.py         # get_tenant_conn() / get_admin_conn() / get_auth_conn()
 │   │                 #   — the ONLY DB entry points
 │   ├── identity.py   # get_current_user(), require_role() — THE only file that
 │   │                 #   knows how a caller is identified
 │   ├── ratelimit.py  # the login rate limiter (in-process, no Redis)
+│   ├── quota.py      # per-college rate limits + the concurrent job-backlog
+│   │                 #   cap, for /evaluate, /questions/generate,
+│   │                 #   /papers/generate, /upload
 │   └── pagination.py # get_pagination() — the ONE shared limit/offset dependency
 ├── routers/
 │   ├── auth.py       # login / refresh / logout / me
@@ -620,6 +625,48 @@ the failing statement in its message — table names, column names, interpolated
 literals. That was a partial schema dump available from any endpoint a caller
 could crash. The text still goes to the log always; it goes to the client only
 when debug endpoints are enabled.
+
+## Hardening pass 2026-09-06 — what changed and why
+
+**Per-college rate limiting on `/evaluate`, `/questions/generate`,
+`/papers/generate` and `/upload`.** Nothing bounded these before — `core/
+llm.py`'s token bucket paces OUTBOUND Groq calls one process makes, not how
+many callers ask it to make them. Two limits, both in `api/deps/quota.py`:
+a per-minute `SlidingWindowLimiter` (in-process, no Redis — the same
+mechanism `api/deps/ratelimit.py`'s login limiter already uses, generalized
+to count every accepted call rather than only failures), keyed by the
+caller's college and applied via a route-level dependency; and
+`check_concurrent_job_cap()`, called inside `POST /evaluate` itself, which
+refuses a new job once the calling college already has
+`MAX_QUEUED_JOBS_PER_COLLEGE` of its own `queued`/`running` in
+`evaluation_jobs`. The second one is what actually protects the shared Groq
+daily quota — it is read live from the job table, so it is correct across
+every API process and worker, unlike the per-minute limiter.
+
+**`CORS_ORIGINS` has no permissive default outside development.** It used
+to silently become `"*"` when unset, in every environment. Unset now resolves
+to the local Vite dev origin ONLY when `API_ENV=development`
+(`Settings.cors_origin_list`), and raises at startup everywhere else — the
+`_configure_cors()` logic from the previous hardening pass (credentials only
+with named origins; refuse `*` mixed with a named list) is unchanged.
+
+**Structured JSON logs and a request id on every response.**
+`api/logging_config.py` + a request-id middleware in `api/main.py` bind one
+id per request (inbound `X-Request-ID` if the caller sent one, else a fresh
+uuid4), echo it back as a response header, and stamp it onto every log line
+via a `contextvars`-based filter. The catch-all handler's body now carries
+`request_id` — the safe correlation handle to the full exception text, which
+still never reaches the client. `api/services/ingestion.py`/`evaluation.py`
+write the same id into a job's payload so `scripts/run_job_worker.py`'s log
+lines for that job (and the `booklet_eval` job an ingest job chains into)
+correlate back to the HTTP request that queued them.
+
+**`POST /papers/generate` surfaces an incomplete paper without prose
+parsing.** `warnings` is now `list[SlotWarning]` (`slot_label`, `section`,
+`marks`, `reason`) instead of formatted sentences, and the response also
+carries `is_complete: bool` and `filled_marks`/`pattern_total_marks: float` —
+a client can check completeness, or the size of the gap in marks, without
+reading `warnings` at all.
 
 ## The RLS boundary — `tests/test_api/test_rls_isolation.py`
 

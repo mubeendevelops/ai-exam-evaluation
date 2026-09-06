@@ -68,6 +68,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import logging
 import os
 import signal
 import sys
@@ -81,6 +82,15 @@ import api.services.ingestion as ingestion_service
 import core.db
 import core.jobs
 from api.deps.db import set_admin_context
+from api.logging_config import bind_request_id, configure_logging
+
+#: JSON, request-id-stamped, same shape the API's own log lines use — see
+#: api/logging_config.py. The existing print()s to stderr stay: they are the
+#: operator-facing progress feed this script has always had, and several
+#: (the --requeue-stalled / --drain summaries) are JSON on STDOUT that other
+#: tooling may already parse. These log lines are additive, for correlating
+#: one job's run with the HTTP request that queued it via `request_id`.
+log = logging.getLogger("worker")
 
 #: Job types this worker handles. A job of any other type is left alone rather
 #: than claimed and failed — a queue shared by several worker kinds must not
@@ -412,27 +422,45 @@ def process_one(*, stub: bool, stub_seconds: float, dry_run: bool, job_types) ->
     if job is None:
         return None
 
-    print(
-        f"[worker] claimed {job['job_id']} type={job['job_type']} "
-        f"college={job['college_id']} attempt={job['attempts']}",
-        file=sys.stderr,
-    )
+    # Read back from the payload the API wrote it into (POST /evaluate, via
+    # api/services/ingestion.py / evaluation.py) — see api/logging_config.py.
+    # A job with no request_id (queued by a CLI script, or predating this
+    # pass) binds None, which the logging filter renders as "-" rather than
+    # raising on a job with nothing to correlate against.
+    request_id = (job.get("payload") or {}).get("request_id")
+    with bind_request_id(request_id):
+        print(
+            f"[worker] claimed {job['job_id']} type={job['job_type']} "
+            f"college={job['college_id']} attempt={job['attempts']}",
+            file=sys.stderr,
+        )
+        log.info(
+            "claimed job", extra={
+                "job_id": str(job["job_id"]), "job_type": job["job_type"],
+                "college_id": str(job["college_id"]), "attempt": job["attempts"],
+            },
+        )
 
-    try:
-        result = _run_job(job, stub=stub, stub_seconds=stub_seconds, dry_run=dry_run)
-    except Exception as exc:
-        # Every failure is recorded ON THE JOB, with its traceback, rather
-        # than only logged. The client polling GET /jobs/{id} has no access to
-        # this process's stderr, and "the job just stayed running" is the
-        # least debuggable outcome available.
-        detail = f"{type(exc).__name__}: {exc}\n\n{traceback.format_exc()}"
-        finish(job["job_id"], error=detail, dry_run=dry_run)
-        print(f"[worker] FAILED {job['job_id']}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        try:
+            result = _run_job(job, stub=stub, stub_seconds=stub_seconds, dry_run=dry_run)
+        except Exception as exc:
+            # Every failure is recorded ON THE JOB, with its traceback, rather
+            # than only logged. The client polling GET /jobs/{id} has no
+            # access to this process's stderr, and "the job just stayed
+            # running" is the least debuggable outcome available.
+            detail = f"{type(exc).__name__}: {exc}\n\n{traceback.format_exc()}"
+            finish(job["job_id"], error=detail, dry_run=dry_run)
+            print(f"[worker] FAILED {job['job_id']}: {type(exc).__name__}: {exc}",
+                  file=sys.stderr)
+            log.error(
+                "job failed", extra={"job_id": str(job["job_id"]), "error": str(exc)},
+            )
+            return job
+
+        finish(job["job_id"], result=result, dry_run=dry_run)
+        print(f"[worker] succeeded {job['job_id']}", file=sys.stderr)
+        log.info("job succeeded", extra={"job_id": str(job["job_id"])})
         return job
-
-    finish(job["job_id"], result=result, dry_run=dry_run)
-    print(f"[worker] succeeded {job['job_id']}", file=sys.stderr)
-    return job
 
 
 def requeue_stalled(older_than_minutes: int, dry_run: bool) -> int:
@@ -477,6 +505,7 @@ def requeue_stalled(older_than_minutes: int, dry_run: bool) -> int:
 
 
 def main() -> int:
+    configure_logging()
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--once", action="store_true",
                         help="Claim and run at most one job, then exit.")

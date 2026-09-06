@@ -31,6 +31,7 @@ import api.services.ingestion as ingestion_service
 from api.deps.db import get_tenant_conn
 from api.deps.identity import CurrentUser, require_college_user
 from api.deps.pagination import Pagination, get_pagination
+from api.deps.quota import check_concurrent_job_cap, rate_limit
 from api.schemas.evaluation import (
     AnswerStatus,
     EvaluateRequest,
@@ -56,7 +57,18 @@ def _settings(request: Request) -> Settings:
     response_model=EvaluateResponse,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Queue a booklet for evaluation",
-    responses={404: {"description": "No such upload, or no such paper."}},
+    responses={
+        404: {"description": "No such upload, or no such paper."},
+        429: {
+            "description": (
+                "Either this college's request rate for this endpoint, or "
+                "its concurrent queued+running job backlog "
+                "(MAX_QUEUED_JOBS_PER_COLLEGE), is at its configured cap. "
+                "`Retry-After` says how long to wait — see api/deps/quota.py."
+            )
+        },
+    },
+    dependencies=[Depends(rate_limit("evaluate"))],
 )
 def evaluate(
     body: EvaluateRequest,
@@ -105,6 +117,15 @@ def evaluate(
 
     try:
         with conn.cursor() as cur:
+            # THE limit that actually protects the shared Groq daily quota —
+            # see api/deps/quota.py's module docstring. Checked inside this
+            # request's own transaction, against the count of THIS college's
+            # own jobs, so it reflects exactly the backlog this request is
+            # about to add one more job to.
+            check_concurrent_job_cap(
+                cur, college_id=user.college_id,
+                cap=settings.max_queued_jobs_per_college,
+            )
             queued = ingestion_service.enqueue_evaluation_pipeline(
                 cur,
                 college_id=user.college_id,
@@ -115,6 +136,10 @@ def evaluate(
                 stub=body.stub,
                 stub_llm=body.stub_llm,
                 method=body.method,
+                # So the worker's log lines for this booklet's job(s) can be
+                # tied back to the request that queued them — see
+                # api/logging_config.py.
+                request_id=getattr(request.state, "request_id", None),
             )
     except evaluation_service.UploadNotFoundError:
         # Same 404 as a nonexistent upload — see api/routers/jobs.py on why

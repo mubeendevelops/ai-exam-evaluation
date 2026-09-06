@@ -22,6 +22,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 ENV_FILE = REPO_ROOT / ".env"
 
+#: The origin Vite's dev server binds by default. Only ever used as the
+#: CORS_ORIGINS fallback in `api_env == "development"` — see
+#: `Settings.cors_origin_list`.
+_DEV_DEFAULT_CORS_ORIGIN = "http://localhost:5173"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -60,8 +65,10 @@ class Settings(BaseSettings):
     #: and a limit that trusts it is not a limit. 50 MB comfortably exceeds a
     #: scanned booklet (media/booklets/sample_booklet.pdf is a few hundred KB).
     max_upload_bytes: int = 50 * 1024 * 1024
-    #: Comma-separated origins for CORS. "*" in development only.
-    cors_origins: str = "*"
+    #: Comma-separated allowed CORS origins. Empty (the default) means
+    #: "not configured" — see `cors_origin_list` below for what that resolves
+    #: to, which depends on `api_env` and is NOT "*" outside development.
+    cors_origins: str = ""
     #: GET /api/v1/_debug/whoami is a throwaway plumbing probe (see
     #: api/routers/debug.py). It is registered ONLY when this is true, and
     #: this defaults to false whenever api_env != "development".
@@ -94,6 +101,36 @@ class Settings(BaseSettings):
     #: api/deps/ratelimit.py for what that does and does not buy).
     login_rate_limit_attempts: int = 10
     login_rate_limit_window_seconds: int = 300
+
+    # ── per-college API rate limits (api/deps/quota.py) ──────────────────
+    #: In-process, no Redis — same limitation as LOGIN_RATE_LIMIT_* (per
+    #: worker, reset by a restart; see api/deps/quota.py's module docstring
+    #: for why that is still worth having and what a real gateway-level limit
+    #: would add on top). Keyed by the caller's college (or user id for a
+    #: platform_admin), never by IP and never by a body field.
+    #:
+    #: /evaluate and /questions/generate are the tightest: both spend real
+    #: Groq tokens (§9's ~14,400/day, 30/min free-tier ceiling), so a limit
+    #: here is what stops one college's burst from starving every other
+    #: college's share before core/llm.py's OUTBOUND token bucket even sees
+    #: the requests. /papers/generate and /upload do no LLM work but still
+    #: write real rows on every call.
+    evaluate_rate_limit_attempts: int = 10
+    evaluate_rate_limit_window_seconds: int = 60
+    questions_generate_rate_limit_attempts: int = 10
+    questions_generate_rate_limit_window_seconds: int = 60
+    papers_generate_rate_limit_attempts: int = 30
+    papers_generate_rate_limit_window_seconds: int = 60
+    upload_rate_limit_attempts: int = 20
+    upload_rate_limit_window_seconds: int = 60
+    #: How many of a college's OWN evaluation_jobs may sit 'queued' or
+    #: 'running' at once (api/deps/quota.py::check_concurrent_job_cap). THIS,
+    #: not the per-minute limit above, is what actually protects the shared
+    #: Groq daily quota: core/llm.py's counter is per-process and resets on
+    #: restart, so it cannot see a backlog building slowly across many
+    #: requests over hours. Read live from evaluation_jobs on every
+    #: POST /evaluate, so it is correct across every API process and worker.
+    max_queued_jobs_per_college: int = 5
 
     @property
     def jwt_signing_key(self) -> str:
@@ -129,7 +166,48 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        """The origins CORSMiddleware is configured with. NOT just a parse of
+        CORS_ORIGINS — this is where "unset" is resolved, and the resolution
+        depends on `api_env`.
+
+        Before this pass, an unset CORS_ORIGINS defaulted to "*" in every
+        environment, including production — a permissive fallback nobody had
+        to opt into. `_configure_cors` (api/main.py) already refuses to pair
+        "*" with credentials, which closed the CSRF hole (Hardening pass
+        2026-09-05); it never asked whether "*" should be the DEFAULT at all.
+        It should not be: a deployment that forgets to set CORS_ORIGINS is a
+        deployment that forgot to configure CORS, and "silently permissive"
+        is the wrong way to fail that.
+
+          * unset + development -> the local Vite dev server origin. Usable
+            on a bare checkout with the default frontend tooling, exactly
+            like JWT_SECRET's development fallback.
+          * unset + anything else -> raises at STARTUP (via `_configure_cors`
+            reading this property while building the app), same shape as
+            `jwt_signing_key` above. A production process that will not admit
+            a single browser origin is a broken deployment, not a locked-down
+            one; better to refuse to boot than to serve with no configured
+            CORS policy and no error anywhere.
+          * set (to "*" or an explicit list) -> parsed as before, in every
+            environment. Setting CORS_ORIGINS=* in production remains
+            possible — it is a decision an operator can make explicitly —
+            just no longer the unannounced default.
+        """
+        raw = self.cors_origins.strip()
+        if raw:
+            return [o.strip() for o in raw.split(",") if o.strip()]
+
+        if self.api_env == "development":
+            return [_DEV_DEFAULT_CORS_ORIGIN]
+
+        raise RuntimeError(
+            "CORS_ORIGINS is not set and API_ENV is not 'development'. There "
+            "is deliberately no permissive fallback outside development: an "
+            "unconfigured CORS policy used to default to '*', which is "
+            "silently permissive rather than a deployment asking for it. Set "
+            "CORS_ORIGINS to a comma-separated list of allowed origins (or "
+            "explicitly to '*' if that is really the intended policy)."
+        )
 
 
 @functools.lru_cache(maxsize=1)

@@ -263,6 +263,22 @@ async def test_uploads_list_filters_by_exam_binding_state(make_client, make_book
     assert bound_row["bound"] is True
 
 
+async def test_uploads_list_limit_above_max_is_clamped_not_rejected(make_client, make_booklet):
+    """A limit far above MAX_LIMIT (200) is CLAMPED, not answered with 422 —
+    see api/deps/pagination.py. Same property test_jobs.py/test_exams.py/
+    test_students.py already pin for their own list endpoints; /uploads
+    wants its own because the client-facing pagination dependency is shared
+    but each endpoint's core list_*()/count_*() pair enforces it again
+    independently (core/pagination.py::clamp_limit's docstring)."""
+    make_booklet()
+
+    async with make_client(COLLEGE_A) as client:
+        response = await client.get(UPLOADS, params={"limit": 100_000})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["limit"] == 200
+
+
 def _upload_count(conn) -> int:
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM booklet_uploads")

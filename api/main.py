@@ -43,21 +43,30 @@ for what is in a token and api/routers/auth.py for how one is obtained.
 from __future__ import annotations
 
 import logging
+import uuid
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.deps.db import TenantContextError
+from api.deps.quota import SlidingWindowLimiter
 from api.deps.ratelimit import LoginRateLimiter
+from api.logging_config import bind_request_id, configure_logging, get_request_id
 from api.settings import Settings, get_settings, load_dotenv_once
 
 log = logging.getLogger("api")
+
+#: Echoed back verbatim if the caller sends one (so a request can be traced
+#: across a gateway that mints its own), generated fresh otherwise. See
+#: api/logging_config.py for how this ties one request's log lines together.
+REQUEST_ID_HEADER = "X-Request-ID"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     load_dotenv_once()
     settings = settings or get_settings()
+    configure_logging()
 
     app = FastAPI(
         title="AI Exam Evaluation API",
@@ -83,7 +92,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         window_seconds=settings.login_rate_limit_window_seconds,
     )
 
+    # Per-college rate limits for the endpoints that spend real Groq tokens
+    # or real CPU/DB writes on every call — api/deps/quota.py::rate_limit(name)
+    # looks these up by name. One dict per app instance, same reasoning as
+    # login_rate_limiter above: two apps in one process (every test module)
+    # must not share counters.
+    app.state.rate_limiters = {
+        "evaluate": SlidingWindowLimiter(
+            limit=settings.evaluate_rate_limit_attempts,
+            window_seconds=settings.evaluate_rate_limit_window_seconds,
+        ),
+        "questions_generate": SlidingWindowLimiter(
+            limit=settings.questions_generate_rate_limit_attempts,
+            window_seconds=settings.questions_generate_rate_limit_window_seconds,
+        ),
+        "papers_generate": SlidingWindowLimiter(
+            limit=settings.papers_generate_rate_limit_attempts,
+            window_seconds=settings.papers_generate_rate_limit_window_seconds,
+        ),
+        "upload": SlidingWindowLimiter(
+            limit=settings.upload_rate_limit_attempts,
+            window_seconds=settings.upload_rate_limit_window_seconds,
+        ),
+    }
+
     _configure_cors(app, settings)
+
+    _register_request_id_middleware(app)
 
     _register_exception_handlers(app)
 
@@ -164,7 +199,74 @@ def _configure_cors(app: FastAPI, settings: Settings) -> None:
     )
 
 
+def _register_request_id_middleware(app: FastAPI) -> None:
+    """Binds one request id to every log line this request produces, and
+    echoes it back as `X-Request-ID` on every response — including error
+    responses, which is the point: see the hardening-pass note on the
+    exception handlers below for why the id belongs in an error BODY too.
+
+    Added AFTER `_configure_cors` (`app.add_middleware` wraps outside-in, so
+    the LAST one added is the OUTERMOST), so this runs first on the way in
+    and last on the way out — every response CORS produces, including a
+    preflight's, still gets the header, and `request.state.request_id` is
+    already set by the time an exception handler runs (Starlette's exception
+    handling lives inside this middleware in the stack, not outside it).
+
+    `bind_request_id` uses a contextvar, which anyio's thread-offloading
+    propagates into the worker thread a sync endpoint actually runs in — so
+    `log.info(...)` calls made from deep inside a router or a core/ function
+    during this request pick up the id with no call-site changes.
+    """
+
+    @app.middleware("http")
+    async def add_request_id(request: Request, call_next):
+        request_id = request.headers.get(REQUEST_ID_HEADER) or uuid.uuid4().hex
+        request.state.request_id = request_id
+        with bind_request_id(request_id):
+            response = await call_next(request)
+        response.headers[REQUEST_ID_HEADER] = request_id
+        return response
+
+
+def _request_id_for(request: Request) -> str:
+    """The id to put in an error body — request.state if the middleware set
+    it, the contextvar as a fallback (belt and braces; nothing today reaches
+    an exception handler without going through the middleware first), and a
+    literal "unknown" only if neither did, which would itself be a bug in the
+    middleware wiring rather than a normal outcome."""
+    return getattr(request.state, "request_id", None) or get_request_id() or "unknown"
+
+
 def _register_exception_handlers(app: FastAPI) -> None:
+    # WHY BOTH HANDLERS SET `extra={"request_id": ...}` EXPLICITLY, AND SET
+    # THE RESPONSE HEADER THEMSELVES, RATHER THAN LEANING ON THE MIDDLEWARE.
+    #
+    # A handler registered for the bare `Exception` class is not run inside
+    # ExceptionMiddleware like every other handler here — Starlette pulls it
+    # out and hands it to ServerErrorMiddleware instead, which is
+    # UNCONDITIONALLY THE OUTERMOST layer of the stack, outside every
+    # `add_middleware` call regardless of order. So `_unhandled` runs OUTSIDE
+    # `_register_request_id_middleware`'s `with bind_request_id(...):` block
+    # — by the time it executes, that block's `finally` has already reset the
+    # contextvar (the exception unwound through it on its way out), and
+    # Starlette additionally dispatches a SYNC handler like this one through
+    # `run_in_threadpool`, i.e. a DIFFERENT OS THREAD, where a contextvar
+    # binding from the request's thread would not apply even if it were
+    # still set. Concretely: `get_request_id()` here returns None and the
+    # response never reaches the middleware's own `response.headers[...] =`
+    # line at all, because ServerErrorMiddleware sends the response directly
+    # rather than returning it back up through the stack.
+    #
+    # `request.state.request_id` has neither problem — it was set as a plain
+    # attribute on the Request object before any of this, and Request is the
+    # one thing both layers still share. So it is read directly here instead
+    # of relying on the contextvar, for the log line (`extra=`, which the
+    # filter in api/logging_config.py only fills in when a call site has NOT
+    # already supplied one) and for the response, on BOTH count.
+    def _finish(response: JSONResponse, request: Request) -> JSONResponse:
+        response.headers[REQUEST_ID_HEADER] = _request_id_for(request)
+        return response
+
     @app.exception_handler(TenantContextError)
     def _tenant_context_error(request: Request, exc: TenantContextError) -> JSONResponse:
         """A missing/ineffective RLS context is a 500, not a 404 or an empty
@@ -176,14 +278,20 @@ def _register_exception_handlers(app: FastAPI) -> None:
         looking empty data. It is logged at ERROR and answered as a server
         misconfiguration, which is what it is.
         """
-        log.error("tenant context failure on %s %s: %s", request.method, request.url.path, exc)
-        return JSONResponse(
+        request_id = _request_id_for(request)
+        log.error("tenant context failure on %s %s: %s", request.method, request.url.path, exc,
+                  extra={"request_id": request_id})
+        return _finish(JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "error": "tenant_context_error",
                 "detail": str(exc),
+                # The safe correlation handle: this text is never SQL, but an
+                # operator still needs to find THIS request's full log line
+                # among every other request's, and the id is what lets them.
+                "request_id": request_id,
             },
-        )
+        ), request)
 
     @app.exception_handler(Exception)
     def _unhandled(request: Request, exc: Exception) -> JSONResponse:
@@ -198,11 +306,19 @@ def _register_exception_handlers(app: FastAPI) -> None:
         caller a partial schema dump from any endpoint they can crash. The
         operator who needs the text has the log; the client gets a stable
         shape and nothing else.
+
+        `exc_info=exc` rather than `log.exception(...)` (which reads
+        `sys.exc_info()`): Starlette runs this handler via `run_in_threadpool`
+        — a DIFFERENT thread than the one the exception was raised in — and
+        `sys.exc_info()` is thread-local, so it would come back empty there.
+        Passing the exception object directly sidesteps that entirely.
         """
-        log.exception("unhandled error on %s %s", request.method, request.url.path)
+        request_id = _request_id_for(request)
+        log.error("unhandled error on %s %s", request.method, request.url.path,
+                  exc_info=exc, extra={"request_id": request_id})
         settings = getattr(app.state, "settings", None)
         expose = bool(settings and settings.debug_endpoints_enabled)
-        return JSONResponse(
+        return _finish(JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "error": "internal_error",
@@ -211,8 +327,15 @@ def _register_exception_handlers(app: FastAPI) -> None:
                     "log; they are withheld here because an exception message "
                     "can carry SQL and schema details."
                 ),
+                # The full exception text stays server-side (logged above,
+                # with the request id explicitly attached — see this
+                # function's docstring on why that cannot rely on the
+                # ambient contextvar here). This is the client's correlation
+                # handle to it — safe to return because it is never derived
+                # from the exception, only from the request.
+                "request_id": request_id,
             },
-        )
+        ), request)
 
 
 app = create_app()

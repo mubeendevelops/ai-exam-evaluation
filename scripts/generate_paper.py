@@ -58,7 +58,9 @@ def _print_paper(result: dict) -> None:
     print(f"  {result['name']}")
     print(f"  Pattern: {result['pattern_name']}")
     print(f"  Status:  {result['status']}")
-    print(f"  Filled:  {result['total_filled']}/{result['total_slots']} slots")
+    print(f"  Filled:  {result['total_filled']}/{result['total_slots']} slots, "
+          f"{result['filled_marks']}/{result['pattern_total_marks']} marks"
+          f"{'' if result['is_complete'] else '  [INCOMPLETE]'}")
     print(f"{'=' * 60}\n")
 
     for section in result["sections"]:
@@ -78,9 +80,13 @@ def _print_paper(result: dict) -> None:
         print()
 
     if result["warnings"]:
+        # Structured {slot_label, section, marks, reason} objects, not prose
+        # (Hardening pass 2026-09-06) — formatted here for a human reading
+        # the CLI's output; api/schemas/papers.py::SlotWarning is what a
+        # client of the API actually gets.
         print("  ⚠ Warnings:")
         for w in result["warnings"]:
-            print(f"    {w}")
+            print(f"    {w['section']} / {w['slot_label']} ({w['marks']}M): {w['reason']}")
         print()
 
 

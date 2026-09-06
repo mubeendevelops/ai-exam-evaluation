@@ -12,6 +12,16 @@ an unfilled OPTIONAL slot is valid but degraded, and the caller has to be told
 which slot so someone can write the missing question. An unfilled MANDATORY
 slot is not a warning at all — generate_paper raises, and the endpoint answers
 409 with no paper persisted.
+
+`warnings` carries STRUCTURED `SlotWarning` objects (slot_label, section,
+marks, reason) — not prose strings. Before this pass, an unfilled optional
+slot was a real hole in the paper buried inside a formatted sentence in a
+plain `list[str]`, which forced a client to parse English to find out which
+slot, in which section, at how many marks, was missing. `is_complete` and
+`filled_marks`/`pattern_total_marks` make the same fact visible WITHOUT
+reading `warnings` at all — a client that only checks `is_complete` still
+learns the paper has a hole, and one that only compares `filled_marks` to
+`pattern_total_marks` learns how big it is, in marks rather than slot count.
 """
 from __future__ import annotations
 
@@ -140,6 +150,27 @@ class PaperSection(BaseModel):
     slots: list[PaperSlot]
 
 
+class SlotWarning(BaseModel):
+    """One unfilled OPTIONAL slot, structured rather than a formatted
+    sentence — a client renders "Q3 (Part B, 5M): <reason>" itself, or filters
+    by section, or counts gaps per section, none of which a prose string
+    supports without parsing it back apart.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    slot_label: str
+    section: str = Field(description="The section's label, e.g. 'Part B'.")
+    marks: float
+    reason: str = Field(
+        description="Why no live question was assigned — today, always "
+                    "'no matching live question' with the style/marks it "
+                    "looked for; kept as text rather than an enum because "
+                    "core/paper_generator.py's matching strategy (exact, "
+                    "then ±marks_tolerance) may grow more failure shapes.",
+    )
+
+
 class PaperGenerateResponse(BaseModel):
     """The generated paper, as persisted."""
 
@@ -152,12 +183,33 @@ class PaperGenerateResponse(BaseModel):
     status: PaperStatus
     total_filled: int = Field(ge=0)
     total_slots: int = Field(ge=0)
+    is_complete: bool = Field(
+        description="False iff `warnings` is non-empty — every LEAF slot in "
+                    "the pattern got a question. Equivalent to `not warnings`, "
+                    "surfaced as its own field so a client can check "
+                    "completeness without inspecting the warnings list.",
+    )
+    filled_marks: float = Field(
+        ge=0,
+        description="Sum of the MARKS of every filled slot (the slot's own "
+                    "marks value, not the assigned question's marks_max, "
+                    "which can differ slightly under marks_tolerance fuzzy "
+                    "matching). Compare against `pattern_total_marks` to see "
+                    "how much of the paper's intended marks are covered.",
+    )
+    pattern_total_marks: float = Field(
+        ge=0,
+        description="paper_patterns.total_marks for the pattern this paper "
+                    "was generated from — the full marks the pattern is "
+                    "worth when every slot is filled.",
+    )
     sections: list[PaperSection]
-    warnings: list[str] = Field(
+    warnings: list[SlotWarning] = Field(
         default_factory=list,
-        description="Unfilled OPTIONAL slots. A paper with warnings is valid "
-                    "but incomplete; unfilled MANDATORY slots are a 409, not a "
-                    "warning.",
+        description="One entry per unfilled OPTIONAL slot. A paper with "
+                    "warnings is valid but incomplete (is_complete=false); "
+                    "unfilled MANDATORY slots are a 409, not a warning — see "
+                    "this module's header.",
     )
 
 

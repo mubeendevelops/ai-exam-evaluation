@@ -84,6 +84,7 @@ def enqueue_booklet_ingest(
     skip_denoise: bool = False,
     stub: bool = False,
     evaluate_after: dict[str, Any] | None = None,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Resolves the upload and the paper, then queues one booklet_ingest job.
 
@@ -128,6 +129,14 @@ def enqueue_booklet_ingest(
         },
         "evaluate_after": evaluate_after,
     }
+    if request_id:
+        # Read back by scripts/run_job_worker.py so its log lines for THIS
+        # job can be bound to the same id the HTTP request logged under —
+        # see api/logging_config.py. Omitted entirely rather than stored as
+        # None when the caller has none (a CLI enqueue, a test), so a
+        # payload's shape says whether a request id exists rather than
+        # everyone having to check for null.
+        payload["request_id"] = request_id
 
     return core.jobs.enqueue_job(
         cur,
@@ -233,15 +242,23 @@ def enqueue_chained_evaluation(cur, *, college_id, payload: dict) -> dict[str, A
     if existing is not None:
         return existing
 
+    chained_payload = {
+        **identity,
+        "source_scan_url": payload["source_scan_url"],
+        "options": evaluate_after,
+    }
+    # Inherited from the ingest job, not re-derived — the eval job this
+    # chains into is still part of the SAME original HTTP request, so both
+    # halves of one booklet's pipeline share one id across two workers and
+    # (usually) two different points in time. See api/logging_config.py.
+    if payload.get("request_id"):
+        chained_payload["request_id"] = payload["request_id"]
+
     return core.jobs.enqueue_job(
         cur,
         college_id=college_id,
         job_type=JOB_TYPE_BOOKLET_EVAL,
-        payload={
-            **identity,
-            "source_scan_url": payload["source_scan_url"],
-            "options": evaluate_after,
-        },
+        payload=chained_payload,
     )
 
 
@@ -262,6 +279,7 @@ def enqueue_evaluation_pipeline(
     dpi: int | None = None,
     min_confidence: float | None = None,
     skip_denoise: bool = False,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Queues whatever this booklet actually needs, and says which it was.
 
@@ -308,6 +326,7 @@ def enqueue_evaluation_pipeline(
             stub_extraction=stub_extraction,
             stub_llm=stub_llm,
             method=method,
+            request_id=request_id,
         )
         return {"job": job, "ingest_job_id": None}
 
@@ -328,5 +347,6 @@ def enqueue_evaluation_pipeline(
             "stub_llm": stub_llm,
             "method": method,
         },
+        request_id=request_id,
     )
     return {"job": job, "ingest_job_id": job["job_id"]}
