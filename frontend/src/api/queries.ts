@@ -22,6 +22,21 @@ export type PageSummary = components["schemas"]["PageSummary"];
 export type SignalDetail = components["schemas"]["SignalDetail"];
 export type OverrideRequest = components["schemas"]["OverrideRequest"];
 export type OverrideResponse = components["schemas"]["OverrideResponse"];
+export type QuestionSummary = components["schemas"]["QuestionSummary"];
+export type QuestionDetail = components["schemas"]["QuestionDetail"];
+export type QuestionListResponse = components["schemas"]["QuestionListResponse"];
+export type PriorReview = components["schemas"]["PriorReview"];
+export type GenerateQuestionsRequest = components["schemas"]["GenerateQuestionsRequest"];
+export type GenerateQuestionsResponse = components["schemas"]["GenerateQuestionsResponse"];
+export type GeneratedQuestion = components["schemas"]["GeneratedQuestion"];
+export type ReviewRequest = components["schemas"]["ReviewRequest"];
+export type TransitionResponse = components["schemas"]["TransitionResponse"];
+export type PaperGenerateRequest = components["schemas"]["PaperGenerateRequest"];
+export type PaperGenerateResponse = components["schemas"]["PaperGenerateResponse"];
+export type PaperSection = components["schemas"]["PaperSection"];
+export type PaperSlot = components["schemas"]["PaperSlot"];
+export type AssignedSlot = components["schemas"]["AssignedSlot"];
+export type SlotWarning = components["schemas"]["SlotWarning"];
 
 async function unwrap<T>(promise: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await promise;
@@ -49,10 +64,20 @@ export function useStudents(examId: string | undefined) {
   });
 }
 
-export function usePapers() {
+export interface PapersFilter {
+  status?: PaperSummary["status"];
+  pattern_id?: string;
+}
+
+export function usePapers(filter: PapersFilter = {}) {
   return useQuery({
-    queryKey: ["papers"],
-    queryFn: () => unwrap(api.GET("/api/v1/papers", { params: { query: { limit: 200 } } })),
+    queryKey: ["papers", filter],
+    queryFn: () =>
+      unwrap(
+        api.GET("/api/v1/papers", {
+          params: { query: { status: filter.status ?? null, pattern_id: filter.pattern_id ?? null, limit: 200 } },
+        }),
+      ),
   });
 }
 
@@ -217,6 +242,105 @@ export function useOverride(answerId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["result", answerId] });
       void queryClient.invalidateQueries({ queryKey: ["results"] });
+    },
+  });
+}
+
+// ─────────────────────────────── question bank ──────────────────────────────
+// The bank (questions + papers, 12 tables) is SHARED across colleges by
+// design — no college_id column, no RLS (CLAUDE_CONTEXT.md §11). These hooks
+// authenticate via get_tenant_conn like everything else but never filter on
+// a college; do not add a collegeId param here to make that look tenanted.
+
+export interface QuestionsFilter {
+  status?: QuestionSummary["status"];
+  style?: NonNullable<QuestionSummary["style"]>;
+  source_type?: NonNullable<QuestionSummary["source_type"]>;
+  is_ai_generated?: boolean;
+  paper_id?: string;
+}
+
+export function useQuestionsList(filter: QuestionsFilter, page: { limit: number; offset: number }) {
+  return useQuery({
+    queryKey: ["questions", filter, page],
+    queryFn: () =>
+      unwrap(
+        api.GET("/api/v1/questions", {
+          params: {
+            query: {
+              status: filter.status ?? null,
+              style: filter.style ?? null,
+              source_type: filter.source_type ?? null,
+              is_ai_generated: filter.is_ai_generated ?? null,
+              paper_id: filter.paper_id ?? null,
+              limit: page.limit,
+              offset: page.offset,
+            },
+          },
+        }),
+      ),
+  });
+}
+
+export function useQuestion(questionId: string | undefined) {
+  return useQuery({
+    queryKey: ["question", questionId],
+    queryFn: () =>
+      unwrap(api.GET("/api/v1/questions/{question_id}", { params: { path: { question_id: questionId! } } })),
+    enabled: Boolean(questionId),
+  });
+}
+
+export function useGenerateQuestions() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: GenerateQuestionsRequest) => unwrap(api.POST("/api/v1/questions/generate", { body })),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["questions"] });
+    },
+  });
+}
+
+/** Gate 1 — quality. Fires only from 'draft'; a re-review is a 409, not an
+ * overwrite (see the schema's ReviewRequest docstring) — this hook does not
+ * retry or paper over that, it surfaces whatever describeApiError produces. */
+export function useReviewQuestion(questionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ReviewRequest) =>
+      unwrap(api.POST("/api/v1/questions/{question_id}/review", { params: { path: { question_id: questionId } }, body })),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["question", questionId] });
+      void queryClient.invalidateQueries({ queryKey: ["questions"] });
+    },
+  });
+}
+
+/** Gate 2 — publication. Fires only from 'confirmed'; posting this against a
+ * draft is a 409 and the row stays a draft (CLAUDE_CONTEXT.md §11). Takes no
+ * body — the promoting reviewer is the authenticated caller (RE-4). There is
+ * deliberately no combined confirm-and-publish call: do not chain this onto
+ * useReviewQuestion's onSuccess anywhere. */
+export function usePromoteQuestion(questionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      unwrap(api.POST("/api/v1/questions/{question_id}/promote", { params: { path: { question_id: questionId } } })),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["question", questionId] });
+      void queryClient.invalidateQueries({ queryKey: ["questions"] });
+    },
+  });
+}
+
+// ─────────────────────────────── paper generation ───────────────────────────
+
+export function useGeneratePaper() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: PaperGenerateRequest) => unwrap(api.POST("/api/v1/papers/generate", { body })),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["papers"] });
     },
   });
 }

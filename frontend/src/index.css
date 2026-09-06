@@ -20,3 +20,25 @@ body {
     @apply rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400;
   }
 }
+
+/* Paper generation's print/export-to-PDF view (src/features/papers/PaperPreview.tsx):
+   only .print-area survives printing, and .no-print (buttons, nav, filters,
+   the generate form) never does — so "Print / Export PDF" reliably produces
+   just the paper, not the whole app chrome around it. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
