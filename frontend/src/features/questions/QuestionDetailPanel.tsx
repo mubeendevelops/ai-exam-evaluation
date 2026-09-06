@@ -12,6 +12,7 @@ import { useState } from "react";
 import { useQuestion, useReviewQuestion, usePromoteQuestion, type QuestionDetail } from "../../api/queries";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { Loading } from "../../components/Loading";
+import { useFormDraft } from "../../hooks/useFormDraft";
 import { GatePipeline, type RecentPromotion } from "./GatePipeline";
 import { QuestionStatusBadge } from "./QuestionStatusBadge";
 
@@ -101,19 +102,35 @@ function Body({
 
 function QualityGateForm({ questionId }: { questionId: string }) {
   const review = useReviewQuestion(questionId);
-  const [comment, setComment] = useState("");
+  // Same rationale as ReviewPanel's override draft: a forced logout mid-typed
+  // comment (expired refresh token, hard redirect to /login) must not
+  // silently discard it — see useFormDraft's docstring.
+  const { draft, save: saveDraft, clear: clearDraft } = useFormDraft<{ comment: string }>(
+    `ai-eval.review-draft:${questionId}`,
+  );
+  const [comment, setComment] = useState(draft?.comment ?? "");
+
+  function updateComment(next: string) {
+    setComment(next);
+    saveDraft({ comment: next });
+  }
 
   return (
     <div className="rounded-md border border-slate-200 p-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
         Gate 1 — is this question correct?
       </p>
+      {draft && (
+        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Restored a comment you hadn't submitted yet — your session may have expired before it saved.
+        </p>
+      )}
       <textarea
         className="select mt-2 w-full"
         rows={2}
         placeholder="Comment (optional)"
         value={comment}
-        onChange={(e) => setComment(e.target.value)}
+        onChange={(e) => updateComment(e.target.value)}
         maxLength={4000}
       />
       {review.error && <p className="mt-2 text-sm text-red-600">{(review.error as Error).message}</p>}
@@ -122,7 +139,12 @@ function QualityGateForm({ questionId }: { questionId: string }) {
           type="button"
           className="btn-primary"
           disabled={review.isPending}
-          onClick={() => review.mutate({ action: "confirm", comment: comment.trim() || null })}
+          onClick={() =>
+            review.mutate(
+              { action: "confirm", comment: comment.trim() || null },
+              { onSuccess: clearDraft },
+            )
+          }
         >
           {review.isPending ? "Saving…" : "Confirm — content is correct"}
         </button>
@@ -130,7 +152,12 @@ function QualityGateForm({ questionId }: { questionId: string }) {
           type="button"
           className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-red-300"
           disabled={review.isPending}
-          onClick={() => review.mutate({ action: "reject", comment: comment.trim() || null })}
+          onClick={() =>
+            review.mutate(
+              { action: "reject", comment: comment.trim() || null },
+              { onSuccess: clearDraft },
+            )
+          }
         >
           Reject
         </button>

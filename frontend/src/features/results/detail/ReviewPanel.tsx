@@ -9,6 +9,7 @@
 import { useState } from "react";
 
 import { useOverride, type OverrideRequest, type ResultResponse } from "../../../api/queries";
+import { useFormDraft } from "../../../hooks/useFormDraft";
 import { ScoreValue } from "../StatusBadge";
 
 type CappedListOf<T> = { items: T[]; total: number; truncated: boolean };
@@ -29,14 +30,40 @@ interface ReviewPanelProps {
  * reopening-a-finalized-answer.md. */
 const FINALIZED_STATUS = "finalized";
 
+interface OverrideDraft {
+  action: OverrideRequest["action"];
+  marks: string;
+  comment: string;
+}
+
 export function ReviewPanel({ answerId, status, marksMax, evaluation, finalMarks, history, reviews }: ReviewPanelProps) {
   const override = useOverride(answerId);
-  const [action, setAction] = useState<OverrideRequest["action"]>("overridden");
-  const [marks, setMarks] = useState("");
-  const [comment, setComment] = useState("");
+  // Survives a forced logout mid-form (an expired refresh token hard-redirects
+  // to /login, unmounting this component — see useFormDraft's docstring):
+  // restored once here, kept in sync on every change, and cleared once the
+  // override actually saves.
+  const { draft, save: saveDraft, clear: clearDraft } = useFormDraft<OverrideDraft>(
+    `ai-eval.override-draft:${answerId}`,
+  );
+  const [action, setAction] = useState<OverrideRequest["action"]>(draft?.action ?? "overridden");
+  const [marks, setMarks] = useState(draft?.marks ?? "");
+  const [comment, setComment] = useState(draft?.comment ?? "");
   const [formError, setFormError] = useState<string | null>(null);
 
   const isFinalized = status === FINALIZED_STATUS;
+
+  function updateAction(next: OverrideRequest["action"]) {
+    setAction(next);
+    saveDraft({ action: next, marks, comment });
+  }
+  function updateMarks(next: string) {
+    setMarks(next);
+    saveDraft({ action, marks: next, comment });
+  }
+  function updateComment(next: string) {
+    setComment(next);
+    saveDraft({ action, marks, comment: next });
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -55,6 +82,7 @@ export function ReviewPanel({ answerId, status, marksMax, evaluation, finalMarks
         onSuccess: () => {
           setMarks("");
           setComment("");
+          clearDraft();
         },
         onError: (err) => setFormError((err as Error).message),
       },
@@ -95,13 +123,18 @@ export function ReviewPanel({ answerId, status, marksMax, evaluation, finalMarks
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-3 border-t border-slate-100 pt-3">
+          {draft && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Restored an override you hadn't submitted yet — your session may have expired before it saved.
+            </p>
+          )}
           <div className="flex flex-wrap gap-3">
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium text-slate-700">Action</span>
               <select
                 className="select"
                 value={action}
-                onChange={(e) => setAction(e.target.value as OverrideRequest["action"])}
+                onChange={(e) => updateAction(e.target.value as OverrideRequest["action"])}
               >
                 <option value="overridden">Override the mark</option>
                 <option value="confirmed">Confirm the AI's score</option>
@@ -117,7 +150,7 @@ export function ReviewPanel({ answerId, status, marksMax, evaluation, finalMarks
                   step="0.5"
                   className="select w-28"
                   value={marks}
-                  onChange={(e) => setMarks(e.target.value)}
+                  onChange={(e) => updateMarks(e.target.value)}
                 />
               </label>
             )}
@@ -128,7 +161,7 @@ export function ReviewPanel({ answerId, status, marksMax, evaluation, finalMarks
               className="select"
               rows={2}
               value={comment}
-              onChange={(e) => setComment(e.target.value)}
+              onChange={(e) => updateComment(e.target.value)}
               maxLength={4000}
             />
           </label>
