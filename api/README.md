@@ -24,7 +24,8 @@ set -a && source .env && set +a
 | `GET` | `/api/v1/jobs` | list/filter this college's jobs by status, job_type, created-after |
 | `GET` | `/api/v1/jobs/{job_id}` | status, stage progress, error — another college's job is **404** |
 | `GET` | `/api/v1/results` | list/filter this college's answers by exam, student, status, needs-review |
-| `GET` | `/api/v1/results/{answer_id}` | score, per-signal breakdown, components, confidence, ledger history, reviews |
+| `GET` | `/api/v1/results/{answer_id}` | score, per-signal breakdown, components, confidence, ledger history, reviews, **per-region detail** (page, bbox, classification, flags, reading order) and the merged text that was scored, with each region's offset in it |
+| `GET` | `/api/v1/results/{answer_id}/pages/{page_number}/image` | one scanned page as a **300 s presigned URL**, minted per request, stored nowhere. 404 covers "not yours", "no such page" and "no image stored" alike; a dummy-storage ref is 503 |
 | `POST` | `/api/v1/results/{answer_id}/override` | teacher override → `answer_reviews`, **never** the ledger |
 | `GET` | `/api/v1/exams` | list/filter this college's exams by status |
 | `GET` | `/api/v1/students` | list this college's students, optionally filtered to one exam |
@@ -36,7 +37,7 @@ set -a && source .env && set +a
 | `GET` | `/api/v1/papers` | list/filter the shared bank of generated papers by status, pattern |
 | `POST` | `/api/v1/papers/generate` | pattern → paper filled with **live** questions → 201 |
 
-Twenty-two endpoints, and that is the complete list in **every** environment —
+Twenty-three endpoints, and that is the complete list in **every** environment —
 there are no env-gated routes. `tests/test_api/test_rls_isolation.py` derives
 its endpoint matrix from the app's own OpenAPI schema and fails if this table
 and the app disagree.
@@ -154,7 +155,8 @@ api/
 │   ├── auth.py       # login / refresh / logout / me
 │   ├── health.py     # GET /health
 │   ├── upload.py     # POST /api/v1/upload, GET /api/v1/uploads
-│   ├── evaluation.py # POST /evaluate, GET /results (list) + /results/{id}, POST .../override
+│   ├── evaluation.py # POST /evaluate, GET /results (list) + /results/{id},
+│                   #   GET /results/{id}/pages/{n}/image, POST .../override
 │   ├── jobs.py       # GET  /api/v1/jobs (list) + /api/v1/jobs/{job_id}
 │   ├── questions.py  # the bank + the TWO MANDATORY REVIEW GATES
 │   ├── papers.py     # GET /api/v1/papers (list), POST /api/v1/papers/generate
@@ -168,8 +170,8 @@ api/
     └── papers.py     # adapter onto core/paper_generator.py + core/papers.py
 ```
 
-`core/exams.py`, `core/students.py`, `core/results.py`, `core/papers.py` (the
-read side) hold the SQL for the list endpoints that have no real translation
+`core/exams.py`, `core/students.py`, `core/results.py`, `core/answer_regions.py`,
+`core/papers.py` (the read side) hold the SQL for the list endpoints that have no real translation
 to do — `api/routers/exams.py` and `api/routers/students.py` call them
 directly, the same pattern `jobs.py` and `upload.py` already used for
 `core/jobs.py`/`core/uploads.py`'s single-row reads. A service-layer adapter
@@ -193,6 +195,40 @@ by `core/booklet_evaluator.py`; every row it writes goes through
 `core/plugins/persistence.py` or `core/answer_evaluation.py`. If you are about
 to add an `if` there that changes a score, a threshold, or which reference is
 used — it belongs in `core/`, where the CLI can reach it too.
+
+## The Results screen's regions, and the text that is not there
+
+`GET /results/{answer_id}` returns, alongside the score, every persisted region
+backing the answer in READING ORDER — `page_number`, `region_bbox`,
+`block_type`, `classification_label`/`classification_confidence`,
+`needs_review` and its ingestion flags, which component scored it and how many
+regions were merged into that component, plus any per-region failure. It also
+returns `merged_text`: the string §7D actually scored, with each region's
+`offset`/`length` inside it, so a teacher can see the SEAM where an answer runs
+over a page break. Never the merged string alone. `core/answer_regions.py` owns
+the SQL (Rule 1) and the pure join onto `evaluation_results.metrics`.
+
+**A region's `text` is usually `null`, and that is a real finding, not a bug in
+this endpoint.** Ingestion writes `answer_blocks.content` as NULL for every
+region cut out of a scan, and the OCR output is discarded when the evaluation
+run ends — nothing persists it, so nothing can return it. `text_source` is what
+distinguishes "no text stored" from "the region is blank", and `merged_text`
+refuses to return a partial merge for the same reason. See CLAUDE_CONTEXT.md
+§11's "The region text the Results screen needs is NOT PERSISTED" and
+`migrations/019_answer_block_extractions.sql.proposed` (drafted, append-only,
+**not applied** — its extension keeps `scripts/migrate.py` from seeing it).
+
+`GET /results/{answer_id}/pages/{page_number}/image` is the left-hand panel: a
+presigned URL valid for **300 seconds**, minted per request by
+`core/storage.py::presigned_get_url` and written nowhere. A URL rather than the
+bytes because a 200-DPI deskewed page is multi-megabyte and proxying it would
+pin an API worker and its connection per page per reviewer; the cost — the
+browser must reach the storage endpoint — is stated in
+`api/services/evaluation.py::resolve_page_image`. The page is resolved THROUGH
+the answer, so another college's page, a page the booklet does not have, and a
+page with no stored image are one indistinguishable 404. A `dummy-storage/`
+reference is **503**: it is a placeholder with no object behind it, and
+fabricating a URL for it would be a lie.
 
 ## Rule 1 — the API calls `core/`, never `scripts/`
 

@@ -1,0 +1,202 @@
+-- =============================================================================
+-- Migration 019 (PROPOSED — NOT APPLIED) — per-region extraction history
+-- =============================================================================
+--
+-- ┌───────────────────────────────────────────────────────────────────────┐
+-- │ THIS FILE IS A DRAFT AWAITING APPROVAL AND HAS RUN AGAINST NO         │
+-- │ DATABASE. Its extension is deliberately ".sql.proposed", not ".sql",  │
+-- │ so scripts/migrate.py's discovery glob (MIGRATIONS_DIR.glob("*.sql"), │
+-- │ scripts/migrate.py:96) does not see it and `--up` cannot apply it by  │
+-- │ accident. Approving it means renaming it to                           │
+-- │ 019_answer_block_extractions.sql and running the normal --up path.    │
+-- └───────────────────────────────────────────────────────────────────────┘
+--
+-- WHY
+--
+-- The Results screen (UI-2B) shows a scanned page beside the text that was
+-- read out of each region on it. That text does not exist anywhere today:
+--
+--   * core/booklet_persist.py::insert_region_block writes answer_blocks.content
+--     as a literal NULL for every ingested region (it is the column for a
+--     block whose text was ALREADY digital), and never writes
+--     answer_blocks.confidence_score at all. There is no UPDATE against
+--     answer_blocks anywhere in the repo — ingestion is its only writer and it
+--     never comes back.
+--   * The text a plugin extracts lives in core/booklet_evaluator.py's
+--     Extraction/Component objects for the duration of one evaluation run and
+--     is then discarded: _component_row() (that module, line ~636) records the
+--     region's ids, page, bbox, score and confidence, but never
+--     component.extraction.content, and the merged text built in
+--     build_components() survives only as parts[].chars — a character COUNT.
+--   * The text plugin's evaluation metrics carry per-signal scores, models and
+--     explanations, not the answer. core/evaluator.py::score_with_llm keeps
+--     {latency_ms, usage} and drops the prompt.
+--
+-- So a re-read of a booklet page is impossible, a teacher cannot see what the
+-- OCR actually read, and a bad score cannot be attributed to a bad read.
+--
+-- WHY A NEW TABLE AND NOT A COLUMN ON answer_blocks
+--
+-- CLAUDE_CONTEXT.md §10 decision 2 ("no answer-text version history") is an
+-- OPEN product decision, and an `answer_blocks.text_extracted` column would
+-- settle it the wrong way by default: a re-OCR would UPDATE it in place and
+-- the previous extraction — the evidence of what the pipeline saw the first
+-- time — would be gone with nothing recording that it changed. That is the
+-- same argument §7C uses to refuse delete-and-reingest, and the same one
+-- PROJECT_CONTEXT.md rule 2 makes about evaluation_results.
+--
+-- This table therefore takes the ledger shape the repo already uses for
+-- scores: one row per extraction, is_current flags the active one, and a
+-- re-OCR is an INSERT plus a flip — never an UPDATE of `text`. It does NOT
+-- decide §10 decision 2 for `answers.text_extracted`, which is a different
+-- column at a different granularity and is left exactly as it is.
+--
+-- WHAT IT DOES NOT DO
+--
+-- It stores nothing for a region that was never assigned to a question:
+-- answer_blocks.answer_id is NOT NULL (§7C), unassigned regions are persisted
+-- NOWHERE, and this table hangs off answer_blocks — so it inherits that
+-- boundary rather than quietly becoming the home §7C says is still open.
+--
+-- Run AFTER: 001 through 018 (needs answer_blocks, colleges, and the RLS
+-- conventions from 003).
+-- Idempotent: CREATE TABLE / INDEX IF NOT EXISTS, guarded ADD CONSTRAINT,
+--             CREATE OR REPLACE FUNCTION, DROP+CREATE TRIGGER and POLICY.
+-- =============================================================================
+
+BEGIN;
+
+-- -----------------------------------------------------------------------------
+-- 1. The table
+-- -----------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS answer_block_extractions (
+    extraction_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    block_id        UUID NOT NULL REFERENCES answer_blocks(block_id),
+    -- Derived by trigger from the parent block, never trusted from input —
+    -- exactly as migration 003 does for answer_blocks/evaluation_results.
+    college_id      UUID NOT NULL REFERENCES colleges(college_id),
+
+    text            TEXT,
+    -- OCR confidence for THIS region's read. Distinct from
+    -- answer_blocks.classification_confidence (how sure the layout model was
+    -- about what KIND of region it is) — migration 013's comment on that
+    -- column spells out why the two are never merged into one number.
+    ocr_confidence  REAL,
+
+    -- Provenance: which extractor produced this text, and how. `mode` is the
+    -- plugin's own extraction mode ('ocr', 'plain_text', 'stub', 'merged'),
+    -- `engines` the per-region engine attribution core/plugins/
+    -- text_extraction.py::_metrics already emits under "engines" — the reason
+    -- a bad read can later be blamed on a specific OCR engine rather than on
+    -- the scoring model.
+    plugin          TEXT NOT NULL,
+    plugin_version  TEXT,
+    mode            TEXT,
+    engines         JSONB,
+
+    is_current      BOOLEAN NOT NULL DEFAULT true,
+    extracted_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+DO $$ BEGIN
+    ALTER TABLE answer_block_extractions
+        ADD CONSTRAINT answer_block_extractions_ocr_confidence_range
+        CHECK (ocr_confidence IS NULL
+               OR (ocr_confidence >= 0 AND ocr_confidence <= 1));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- -----------------------------------------------------------------------------
+-- 2. Indexes
+-- -----------------------------------------------------------------------------
+
+CREATE INDEX IF NOT EXISTS idx_answer_block_extractions_block
+    ON answer_block_extractions (block_id);
+
+-- THE CONSTRAINT THAT MAKES "append-only + is_current flip" REAL rather than
+-- a convention: at most one current extraction per block. A writer that
+-- INSERTs a second current row without flipping the first one fails loudly
+-- here instead of leaving two rows both claiming to be the extraction.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_answer_block_extractions_current
+    ON answer_block_extractions (block_id) WHERE is_current;
+
+CREATE INDEX IF NOT EXISTS idx_answer_block_extractions_college_id
+    ON answer_block_extractions (college_id);
+
+-- -----------------------------------------------------------------------------
+-- 3. Tenancy — college_id derived from the parent block, then RLS
+-- -----------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION fn_derive_college_from_answer_block()
+RETURNS TRIGGER AS $$
+DECLARE
+    parent_college UUID;
+BEGIN
+    SELECT college_id INTO parent_college
+      FROM answer_blocks WHERE block_id = NEW.block_id;
+    IF parent_college IS NULL THEN
+        RAISE EXCEPTION '%.block_id % does not exist in answer_blocks',
+            TG_TABLE_NAME, NEW.block_id;
+    END IF;
+    NEW.college_id := parent_college;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_answer_block_extractions_derive_college
+    ON answer_block_extractions;
+CREATE TRIGGER trg_answer_block_extractions_derive_college
+    BEFORE INSERT OR UPDATE OF block_id, college_id ON answer_block_extractions
+    FOR EACH ROW
+    EXECUTE FUNCTION fn_derive_college_from_answer_block();
+
+-- Same two policies migration 003 puts on every answer-schema table, in the
+-- same shape. FORCE included: without it the policies do not apply to the
+-- table's owner, and a database whose PGUSER is a superuser would silently
+-- have no isolation here at all (§6).
+ALTER TABLE answer_block_extractions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE answer_block_extractions FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_isolation ON answer_block_extractions;
+CREATE POLICY tenant_isolation ON answer_block_extractions
+    FOR ALL
+    USING (college_id = current_setting('app.current_college_id', true)::uuid)
+    WITH CHECK (college_id = current_setting('app.current_college_id', true)::uuid);
+
+DROP POLICY IF EXISTS platform_admin_bypass ON answer_block_extractions;
+CREATE POLICY platform_admin_bypass ON answer_block_extractions
+    FOR ALL
+    USING (current_setting('app.is_platform_admin', true) = 'true')
+    WITH CHECK (current_setting('app.is_platform_admin', true) = 'true');
+
+-- No GRANT here: migration 016 set ALTER DEFAULT PRIVILEGES IN SCHEMA public
+-- for the application role, so a table created by the owner from 017 onwards
+-- is granted SELECT/INSERT/UPDATE/DELETE automatically (016, lines ~155-165).
+-- Applying this file as a role OTHER than the one that ran 016 would skip
+-- that, and the symptom would look exactly like RLS failing closed.
+
+-- -----------------------------------------------------------------------------
+-- 4. Documentation
+-- -----------------------------------------------------------------------------
+
+COMMENT ON TABLE answer_block_extractions IS
+    'Append-only history of the text extracted from one answer_blocks region. '
+    'A re-OCR INSERTs a new row and flips the previous row''s is_current — it '
+    'NEVER updates `text` in place, so the record of what the pipeline read '
+    'the first time survives (PROJECT_CONTEXT.md rule 2; CLAUDE_CONTEXT.md '
+    '§10 decision 2). Written by core/booklet_evaluator.py after extraction; '
+    'read by GET /api/v1/results/{answer_id}.';
+COMMENT ON COLUMN answer_block_extractions.text IS
+    'What the plugin read out of this region. NULL is legitimate: an '
+    'extraction that produced nothing is a fact worth recording, and is not '
+    'the same as never having tried.';
+COMMENT ON COLUMN answer_block_extractions.ocr_confidence IS
+    'The extractor''s confidence in this read, in [0, 1]. DISTINCT from '
+    'answer_blocks.classification_confidence — a region can be confidently a '
+    'table and still be read badly (migration 013).';
+COMMENT ON COLUMN answer_block_extractions.is_current IS
+    'True for the one extraction that currently stands for this block, '
+    'enforced by uq_answer_block_extractions_current. Same convention as '
+    'evaluation_results.is_current.';
+
+COMMIT;

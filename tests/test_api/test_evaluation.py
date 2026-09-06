@@ -16,6 +16,7 @@ getting them wrong would do:
 from __future__ import annotations
 
 import importlib.util
+import json
 import pathlib
 import uuid
 
@@ -24,6 +25,7 @@ import pytest
 import api.services.evaluation as evaluation_service
 import core.db
 import core.jobs
+import core.storage
 from api.deps.db import set_admin_context
 from tests.test_api.conftest import (
     COLLEGE_A,
@@ -723,6 +725,19 @@ async def test_full_loop_upload_evaluate_poll_results_override_in_stub_mode(
     # region's own result preserved underneath it.
     assert len(report["components"]["items"]) >= 1
     assert report["confidence"]["question"] is not None
+    # ...and every region is tied back to the component that scored it, which
+    # is what lets the Results screen point at a rectangle on a page and say
+    # which score it contributed to.
+    regions = report["regions"]["items"]
+    assert regions, "a scored answer must report the regions it was scored from"
+    scored_regions = [r for r in regions if r["scored"]]
+    assert scored_regions, "no region was linked to a component"
+    for region in scored_regions:
+        assert region["component_index"] is not None
+        assert 0 <= region["component_index"] < len(report["components"]["items"])
+        assert region["merged_with"] >= 1
+        assert region["question"], "the region must name the question label it was assigned"
+        assert region["component_score"] is not None
     assert len(report["history"]["items"]) == 1
     assert report["history"]["total"] == 1
     assert report["final_marks"]["source"] == "ai"
@@ -1108,3 +1123,332 @@ def _block_count(cur, booklet, blob_url) -> int:
         (booklet["student_id"], booklet["exam_id"], blob_url),
     )
     return int(cur.fetchone()[0])
+
+
+# ════════════════ per-region detail and the page-image endpoint ═════════════
+#
+# The Results screen (UI-2B) shows a scanned page beside the text read out of
+# each region on it. Two properties matter more than the rest here:
+#
+#   1. ONE CALL DRIVES THE SCREEN. GET /results/{answer_id} carries every
+#      region's page, bbox, classification, flags and reading order, plus the
+#      merged text §7D actually scored AND the seam between the regions it was
+#      built from. A UI that had to reconstruct the merge would get the
+#      separator wrong; one that only got the merged string could not show a
+#      teacher which page a sentence came from.
+#   2. THE IMAGE URL IS A CREDENTIAL, AND THE PAGE IS SOMEONE'S. It expires, it
+#      is minted per request, it is never written to the database, and asking
+#      for another college's page is byte-identical to asking for one that does
+#      not exist.
+
+
+def _add_region(admin_conn, answer_id, *, page, sequence, bbox, content=None,
+                block_type="text", label="text", confidence=0.95,
+                needs_review=False, page_image_url=None):
+    """One extra answer_blocks row, the shape booklet ingestion writes.
+
+    `content=None` is the REAL ingested shape — core/booklet_persist.py writes
+    it as a literal NULL for every region cut out of a scan — so the tests
+    below can build both cases: a region whose text is persisted and one whose
+    is not.
+    """
+    block_id = str(uuid.uuid4())
+    with admin_conn.cursor() as cur:
+        set_admin_context(cur)
+        cur.execute(
+            """
+            INSERT INTO answer_blocks (block_id, answer_id, block_type, content,
+                                       sequence_order, page_number, region_bbox,
+                                       page_image_url, classification_label,
+                                       classification_confidence, needs_review)
+            VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
+            """,
+            (block_id, answer_id, block_type, content, sequence, page,
+             json.dumps(bbox), page_image_url, label, confidence, needs_review),
+        )
+    admin_conn.commit()
+    return block_id
+
+
+def _set_page_images(admin_conn, answer_id, ref):
+    with admin_conn.cursor() as cur:
+        set_admin_context(cur)
+        cur.execute(
+            "UPDATE answer_blocks SET page_image_url = %s WHERE answer_id = %s",
+            (ref, str(answer_id)),
+        )
+    admin_conn.commit()
+
+
+async def test_results_carry_per_region_text_and_bbox_for_a_multi_region_question(
+    make_client, make_booklet, admin_conn
+):
+    """A question whose answer spans a page break comes back as REGIONS, not
+    as one anonymous blob of text.
+
+    This is the payload the Results screen is built on: every region carries
+    the page it is on and the rectangle it occupies (so the overlay and
+    zoom-to-region have something to point at), and `merged_text` carries both
+    the string §7D scored and the offset of each region inside it — the seam.
+    """
+    booklet = make_booklet()
+    answer_id = booklet["answer_id"]
+    # The fixture's own block is page 1 / sequence 0 and carries answer_text.
+    second = _add_region(admin_conn, answer_id, page=2, sequence=1,
+                         bbox=[10, 20, 300, 120], content="It continues here.")
+
+    async with make_client(COLLEGE_A) as ac:
+        response = await ac.get(f"/api/v1/results/{answer_id}")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    regions = body["regions"]["items"]
+    assert body["regions"]["total"] == 2
+    assert body["regions"]["truncated"] is False
+    assert [r["page_number"] for r in regions] == [1, 2], \
+        "regions must come back in READING ORDER — page, then sequence"
+    assert [r["reading_order"] for r in regions] == [0, 1]
+
+    first, cont = regions
+    assert cont["block_id"] == second
+    assert cont["region_bbox"] == [10, 20, 300, 120]
+    assert cont["text"] == "It continues here."
+    assert cont["text_source"] == "answer_blocks.content"
+    assert cont["block_type"] == "text"
+    assert cont["classification_label"] == "text"
+    assert cont["classification_confidence"] == 0.95
+    assert cont["needs_review"] is False
+    assert cont["ingestion_flags"] == []
+
+    # BOTH shapes, which is the whole requirement: the merged text that was
+    # scored, and which region each part of it came from.
+    merged = body["merged_text"]
+    assert merged["available"] is True
+    assert merged["text"] == f"{first['text']}{merged['separator']}It continues here."
+    assert [p["block_id"] for p in merged["parts"]] == [first["block_id"], second]
+    assert [p["page_number"] for p in merged["parts"]] == [1, 2]
+    # The seam: the second region starts exactly where the first one's text
+    # plus the separator ends, so a UI can highlight the page break.
+    seam = merged["parts"][1]
+    assert seam["offset"] == len(first["text"]) + len(merged["separator"])
+    assert merged["text"][seam["offset"]:seam["offset"] + seam["length"]] == \
+        "It continues here."
+
+    # And the page strip the left-hand panel needs.
+    assert [p["page_number"] for p in body["pages"]] == [1, 2]
+    assert all(p["has_image"] is False for p in body["pages"]), \
+        "these fixture blocks have no page_image_url, and the response says so"
+
+
+async def test_a_region_with_no_persisted_extraction_says_so_rather_than_lying(
+    make_client, make_booklet, admin_conn
+):
+    """The honest half, and the reason migration 019 is proposed.
+
+    A region cut out of a scan has `content` NULL — ingestion writes it that
+    way and the OCR output is never persisted (core/answer_regions.py's
+    docstring). The response must report that as "no text stored", not as an
+    empty answer, and must refuse to show a merged answer with a hole in it.
+    """
+    booklet = make_booklet()
+    scanned = _add_region(admin_conn, booklet["answer_id"], page=2, sequence=1,
+                          bbox=[0, 0, 100, 50], content=None, needs_review=True)
+
+    async with make_client(COLLEGE_A) as ac:
+        body = (await ac.get(f"/api/v1/results/{booklet['answer_id']}")).json()
+
+    region = next(r for r in body["regions"]["items"] if r["block_id"] == scanned)
+    assert region["text"] is None
+    assert region["text_source"] is None, \
+        "a null text_source is what tells a client 'not stored' from 'blank'"
+    assert region["needs_review"] is True
+    assert region["ingestion_flags"] == ["needs_review_at_ingestion"]
+
+    merged = body["merged_text"]
+    assert merged["available"] is False
+    assert merged["text"] is None, "a partial merge would read as a complete answer"
+    assert "no persisted extraction" in merged["reason"]
+
+
+async def test_page_image_returns_a_short_lived_presigned_url(
+    make_client, make_booklet, admin_conn, monkeypatch
+):
+    """The happy path: a URL, an expiry, and nothing written back."""
+    booklet = make_booklet()
+    _set_page_images(admin_conn, booklet["answer_id"], "bucket/pages/page-1.png")
+
+    calls: list[tuple] = []
+
+    def fake_presign(ref, expires_in=3600):
+        calls.append((ref, expires_in))
+        return f"https://storage.example/{ref}?sig={len(calls)}"
+
+    monkeypatch.setattr(core.storage, "presigned_get_url", fake_presign)
+
+    async with make_client(COLLEGE_A) as ac:
+        response = await ac.get(
+            f"/api/v1/results/{booklet['answer_id']}/pages/1/image")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["answer_id"] == booklet["answer_id"]
+    assert body["page_number"] == 1
+    assert body["url"] == "https://storage.example/bucket/pages/page-1.png?sig=1"
+    assert body["expires_in"] == evaluation_service.PAGE_IMAGE_URL_TTL_SECONDS == 300
+    assert body["expires_at"]
+    # The stable ref went to core/storage.py unchanged, with the SHORT expiry —
+    # not boto3's hour-long default.
+    assert calls == [("bucket/pages/page-1.png", 300)]
+
+
+async def test_a_presigned_url_is_generated_per_request_and_never_stored(
+    make_client, make_booklet, admin_conn, monkeypatch
+):
+    """Two calls, two URLs, and NOTHING in the database ever holds one.
+
+    CLAUDE_CONTEXT.md §10: page_image_url/blob_url are stable "bucket/key"
+    strings, never presigned URLs — a presigned URL expires, and a value baked
+    into a column has to stay valid indefinitely. This asserts the column is
+    untouched after two requests AND that no answer-schema column anywhere
+    contains the minted URL.
+    """
+    booklet = make_booklet()
+    _set_page_images(admin_conn, booklet["answer_id"], "bucket/pages/page-1.png")
+
+    minted: list[str] = []
+
+    def fake_presign(ref, expires_in=3600):
+        minted.append(f"https://storage.example/{ref}?sig={len(minted)}&exp={expires_in}")
+        return minted[-1]
+
+    monkeypatch.setattr(core.storage, "presigned_get_url", fake_presign)
+
+    async with make_client(COLLEGE_A) as ac:
+        first = await ac.get(f"/api/v1/results/{booklet['answer_id']}/pages/1/image")
+        second = await ac.get(f"/api/v1/results/{booklet['answer_id']}/pages/1/image")
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["url"] != second.json()["url"], \
+        "each request must mint its own URL — a cached one would outlive its expiry"
+
+    with admin_conn.cursor() as cur:
+        set_admin_context(cur)
+        cur.execute(
+            "SELECT DISTINCT page_image_url, blob_url FROM answer_blocks "
+            " WHERE answer_id = %s",
+            (booklet["answer_id"],),
+        )
+        rows = cur.fetchall()
+        assert rows == [("bucket/pages/page-1.png", None)], \
+            "the stored reference must still be the stable bucket/key one"
+
+        # Nothing anywhere in this answer's rows learned the URL.
+        for url in minted:
+            cur.execute(
+                """
+                SELECT count(*) FROM answer_blocks
+                 WHERE answer_id = %s
+                   AND (coalesce(page_image_url, '') LIKE %s
+                        OR coalesce(blob_url, '')   LIKE %s)
+                """,
+                (booklet["answer_id"], f"%{url}%", f"%{url}%"),
+            )
+            assert cur.fetchone()[0] == 0
+            cur.execute(
+                "SELECT count(*) FROM answers WHERE answer_id = %s "
+                "  AND coalesce(source_scan_url, '') LIKE %s",
+                (booklet["answer_id"], f"%{url}%"),
+            )
+            assert cur.fetchone()[0] == 0
+
+
+async def test_page_image_for_another_colleges_answer_is_404_and_indistinguishable(
+    make_client, make_booklet, admin_conn, college_b, monkeypatch
+):
+    """THE CROSS-TENANT PROOF for the image endpoint.
+
+    College B asks for college A's page by its exact answer id and gets a 404
+    that is byte-identical to the one a made-up answer id gets — and to the one
+    a page this booklet does not have gets. 403 would confirm the answer
+    exists, turning the endpoint into an existence oracle over other colleges'
+    ids; and because the URL is minted only after the tenant-scoped query
+    resolves, a stranger's request never reaches core/storage.py at all.
+    """
+    booklet = make_booklet(college_id=COLLEGE_A)
+    _set_page_images(admin_conn, booklet["answer_id"], "bucket/pages/page-1.png")
+    b_booklet = make_booklet(college_id=college_b["college_id"],
+                             student_id=college_b["student_id"],
+                             exam_id=college_b["exam_id"])
+    _set_page_images(admin_conn, b_booklet["answer_id"], "bucket/pages/b-page-1.png")
+
+    presigned_for: list[str] = []
+
+    def fake_presign(ref, expires_in=3600):
+        presigned_for.append(ref)
+        return f"https://storage.example/{ref}"
+
+    monkeypatch.setattr(core.storage, "presigned_get_url", fake_presign)
+
+    path = f"/api/v1/results/{booklet['answer_id']}/pages/1/image"
+    async with make_client(COLLEGE_A) as owner:
+        mine = await owner.get(path)
+    async with make_client(COLLEGE_B) as stranger:
+        theirs = await stranger.get(path)
+        made_up = await stranger.get(f"/api/v1/results/{uuid.uuid4()}/pages/1/image")
+        no_such_page = await stranger.get(
+            f"/api/v1/results/{b_booklet['answer_id']}/pages/99/image")
+        own = await stranger.get(
+            f"/api/v1/results/{b_booklet['answer_id']}/pages/1/image")
+
+    assert mine.status_code == 200, mine.text
+    # B is a real, active tenant with a page of its own — which is what makes
+    # the 404 below isolation rather than a rejected caller.
+    assert own.status_code == 200, own.text
+
+    assert theirs.status_code == 404, theirs.text
+    assert made_up.status_code == 404
+    assert no_such_page.status_code == 404
+    assert theirs.json()["detail"].replace(booklet["answer_id"], "X") == \
+        made_up.json()["detail"].replace(made_up.request.url.path.split("/")[4], "X")
+    # Not one fact about A's row came back...
+    assert "bucket/pages/page-1.png" not in theirs.text
+    assert "storage.example" not in theirs.text
+    # ...and no URL was ever minted for A's page on B's behalf.
+    assert presigned_for == ["bucket/pages/page-1.png", "bucket/pages/b-page-1.png"]
+
+
+async def test_page_image_with_no_stored_image_is_the_same_404(
+    make_client, make_booklet
+):
+    """A block predating booklet ingestion has a NULL page_image_url (migration
+    013's columns are all nullable). That is a 404 too, with the same body —
+    "nothing to serve" and "not yours" must not be tellable apart."""
+    booklet = make_booklet()
+
+    async with make_client(COLLEGE_A) as ac:
+        response = await ac.get(
+            f"/api/v1/results/{booklet['answer_id']}/pages/1/image")
+
+    assert response.status_code == 404, response.text
+    assert "No page 1 image" in response.json()["detail"]
+
+
+async def test_a_dummy_storage_page_image_is_503_not_a_fabricated_url(
+    make_client, make_booklet, admin_conn
+):
+    """core/storage.py's dummy mode is STORAGE_MODE's default and does no I/O:
+    a "dummy-storage/..." ref is a placeholder with no object behind it, so
+    there is no presigned form to hand out. 503 names the misconfiguration
+    instead of 404ing (which would send an operator hunting a tenant bug) or
+    returning a URL that cannot resolve."""
+    booklet = make_booklet()
+    _set_page_images(admin_conn, booklet["answer_id"],
+                     "dummy-storage/pages/page-1.png")
+
+    async with make_client(COLLEGE_A) as ac:
+        response = await ac.get(
+            f"/api/v1/results/{booklet['answer_id']}/pages/1/image")
+
+    assert response.status_code == 503, response.text
+    assert "STORAGE_MODE" in response.json()["detail"]

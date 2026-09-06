@@ -261,6 +261,235 @@ class FinalMarks(BaseModel):
     )
 
 
+class RegionDetail(BaseModel):
+    """One persisted region (`answer_blocks` row) of this answer, in reading
+    order, with what the evaluation did with it.
+
+    THIS IS THE SHAPE THE RESULTS SCREEN OVERLAYS ON A PAGE IMAGE: `bbox` is
+    in pixel coordinates of the DESKEWED page the image endpoint serves (not
+    of the original PDF page — migration 013's COMMENT on region_bbox says
+    why the deskewed page is the one that is stored), so a rectangle drawn
+    from it lands where the region actually is.
+
+    `extra="allow"` unlike most models here: the region row gains fields as
+    the pipeline records more per region (019's extraction provenance is next),
+    and a client should not 500 on a field the server added.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    block_id: uuid.UUID
+    block_type: str = Field(
+        description="answer_block_type — what a plugin dispatches on. Lossy by "
+                    "design: 20 layout labels collapse into 4 types, which is "
+                    "why classification_label is kept beside it.",
+    )
+    page_number: int | None = Field(
+        default=None,
+        description="1-based page of the source booklet. Null for a block "
+                    "attached from a single image rather than segmented out of "
+                    "a booklet — every row predating booklet ingestion.",
+    )
+    region_bbox: list[float] | None = Field(
+        default=None,
+        description="[x, y, w, h] in pixels of the deskewed page image. Feed "
+                    "GET /results/{answer_id}/pages/{page_number}/image to draw "
+                    "it, and use it as the zoom-to-region target.",
+    )
+    sequence_order: int
+    reading_order: int = Field(
+        description="0-based position among this answer's regions, page then "
+                    "sequence. THE ORDER §7D MERGED THE TEXT IN — the same sort "
+                    "key core/booklet_evaluator.build_components uses, so "
+                    "`merged_text.parts` and this agree by construction.",
+    )
+
+    classification_label: str | None = Field(
+        default=None,
+        description="Raw layout-model label before it was mapped onto "
+                    "block_type ('paragraph_title', 'chart'). The label to "
+                    "debug a mis-route with.",
+    )
+    classification_confidence: float | None = Field(
+        default=None,
+        description="How sure the layout model was of classification_label, in "
+                    "[0,1]. A DIFFERENT axis from ocr_confidence: a region can "
+                    "be confidently a table and still be read badly.",
+    )
+    needs_review: bool = Field(
+        description="Set at INGESTION (migration 013) — low classification "
+                    "confidence, a block_type no plugin supports, or the "
+                    "heuristic fallback path.",
+    )
+    ingestion_flags: list[str] = Field(
+        default_factory=list,
+        description="Why ingestion flagged this region, in the same vocabulary "
+                    "core/booklet_evaluator.py uses in its own report.",
+    )
+
+    text: str | None = Field(
+        default=None,
+        description=(
+            "What this region says — READ `text_source` BEFORE TRUSTING A NULL. "
+            "Null does NOT mean the region is empty: the text a plugin OCRs out "
+            "of a scanned region is not persisted anywhere today (ingestion "
+            "writes answer_blocks.content as NULL and the extraction is dropped "
+            "after scoring), so a scanned region has no text to return. Only a "
+            "block whose text was already digital carries one. See "
+            "core/answer_regions.py's docstring and "
+            "migrations/019_answer_block_extractions.sql.proposed."
+        ),
+    )
+    text_source: str | None = Field(
+        default=None,
+        description="Where `text` came from — 'answer_blocks.content' today. "
+                    "Null means no text is persisted for this region, NOT that "
+                    "the region is blank.",
+    )
+    ocr_confidence: float | None = Field(
+        default=None,
+        description="Extraction confidence for THIS region, when one is "
+                    "attributable. Null for a region merged with others: the "
+                    "merged component's confidence is the MINIMUM across its "
+                    "parts (§7D decision 4), and attributing that minimum to "
+                    "each part would misreport every part but the worst.",
+    )
+    ocr_confidence_source: str | None = None
+
+    question: str | None = Field(
+        default=None,
+        description="The question label ingestion assigned this region ('Q2a'), "
+                    "from the paper's slot labels. Not derivable from the answer "
+                    "row alone — there is no FK from exams to generated_papers "
+                    "(§7C).",
+    )
+    scored: bool = Field(
+        description="Whether this region ended up inside a component that was "
+                    "actually scored. False with `failure` set is a region that "
+                    "failed; false with no failure is one nothing routed.",
+    )
+    component_index: int | None = Field(
+        default=None, description="Index into `components` of the component this "
+                                  "region belongs to.",
+    )
+    order_in_component: int | None = None
+    merged_with: int = Field(
+        default=0,
+        description="How many regions were merged into this region's component, "
+                    "including itself. >1 is the page-break case §7D decision 3 "
+                    "exists for: several regions, ONE scored answer.",
+    )
+    component_score: float | None = None
+    component_confidence: float | None = None
+    component_is_primary: bool = Field(
+        default=False,
+        description="True for the component whose score became the question's "
+                    "score (core/booklet_evaluator._pick_primary).",
+    )
+    failure: dict[str, Any] | None = Field(
+        default=None,
+        description="This region's own failure record (stage, error_type, "
+                    "message) when a stage failed on it. Partial failure is the "
+                    "normal case (§7D), so a region that was not scored says why "
+                    "rather than silently missing from the components.",
+    )
+
+    has_page_image: bool = Field(
+        description="Whether a full-page image is stored for this region's page "
+                    "— i.e. whether the image endpoint can serve it.",
+    )
+    has_region_image: bool = Field(
+        description="Whether the CROPPED region itself is stored (blob_url). "
+                    "Separate from has_page_image: the page is what a reviewer "
+                    "sees the region in context on.",
+    )
+
+
+class MergedTextPart(BaseModel):
+    """Where one region's text sits inside the merged answer — THE SEAM."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    block_id: uuid.UUID
+    page_number: int | None = None
+    reading_order: int
+    offset: int = Field(description="Start index of this region's text in "
+                                    "`merged_text.text`.")
+    length: int
+
+
+class MergedText(BaseModel):
+    """The text that was actually scored, and which region each part came from.
+
+    §7D decision 3: a question's text regions are ONE answer, concatenated in
+    reading order and evaluated once — scoring each half of a page-spanning
+    answer against the whole reference would mark a complete answer twice as
+    incomplete. So the merged string is what the score is about, and the
+    per-part offsets are what let a teacher see the seam.
+
+    NEVER PARTIAL. `available` is false with a `reason` when any part's text is
+    missing, rather than returning a merge with a hole in it — an answer
+    missing its second page would otherwise read as a complete answer that
+    simply says less, which is the exact failure the merge exists to prevent.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str | None = None
+    available: bool
+    reason: str | None = Field(
+        default=None, description="Why `text` is null. Null when available.",
+    )
+    separator: str = Field(
+        description="What the parts were joined with — the evaluator's own "
+                    "TEXT_MERGE_SEPARATOR, not a value this layer chose.",
+    )
+    block_ids: list[uuid.UUID] = Field(default_factory=list)
+    parts: list[MergedTextPart] = Field(default_factory=list)
+
+
+class PageSummary(BaseModel):
+    """One page of this answer's booklet, for the page strip."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    page_number: int
+    regions: int
+    has_image: bool = Field(
+        description="Whether GET /results/{answer_id}/pages/{page_number}/image "
+                    "has anything to serve — so the client does not have to "
+                    "probe it per page to find out.",
+    )
+    needs_review: bool = Field(
+        description="True when at least one region on this page is flagged.",
+    )
+
+
+class PageImageResponse(BaseModel):
+    """GET /api/v1/results/{answer_id}/pages/{page_number}/image.
+
+    A SHORT-LIVED PRESIGNED URL, not the bytes — see
+    api/services/evaluation.py::resolve_page_image for the argument. The URL is
+    generated per request and is stored NOWHERE: the database keeps the stable
+    "bucket/key" reference and never a presigned one (CLAUDE_CONTEXT.md §10).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    answer_id: uuid.UUID
+    page_number: int
+    url: str = Field(
+        description="Fetch it directly from the browser. Treat it as a "
+                    "credential: it grants read access to this one object until "
+                    "it expires, so do not log it or put it in a shareable link.",
+    )
+    expires_in: int = Field(
+        description="Seconds this URL stays valid — short by design, and "
+                    "shorter than the access token's own lifetime.",
+    )
+    expires_at: dt.datetime
+
+
 class ResultResponse(BaseModel):
     """GET /api/v1/results/{answer_id} — the full report for one answer."""
 
@@ -293,6 +522,24 @@ class ResultResponse(BaseModel):
                     "Capped at core/pagination.py::NESTED_MAX — see that "
                     "module's docstring on why an unbounded nested list still "
                     "needs a cap even though it isn't a list endpoint.",
+    )
+    regions: CappedList[RegionDetail] = Field(
+        description="Every persisted region backing this answer, in reading "
+                    "order, with page/bbox for the overlay, classification, "
+                    "flags, and which component scored it. Capped at NESTED_MAX "
+                    "like the other nested lists — a re-ingest DUPLICATES a "
+                    "booklet's regions rather than replacing them (§7C), so this "
+                    "list has no inherent bound either.",
+    )
+    pages: list[PageSummary] = Field(
+        default_factory=list,
+        description="The pages this answer has regions on, and whether each has "
+                    "a stored image to fetch.",
+    )
+    merged_text: MergedText = Field(
+        description="The text as it was actually scored PLUS the seam between "
+                    "the regions it came from — both, never only the merged "
+                    "string (§7D decision 3).",
     )
     flags: list[str] = Field(default_factory=list)
     failures: list[dict[str, Any]] = Field(

@@ -1,9 +1,13 @@
-"""api/routers/evaluation.py — evaluate, results, override.
+"""api/routers/evaluation.py — evaluate, results, page images, override.
 
-Three endpoints, one rule each that matters more than the rest:
+Five endpoints, one rule each that matters more than the rest:
 
   POST /api/v1/evaluate                 -> 202, never a synchronous score.
+  GET  /api/v1/results                  -> one row per answer, not the report.
   GET  /api/v1/results/{answer_id}      -> 404 for another college, never a leak.
+  GET  /api/v1/results/{id}/pages/{n}/image
+                                        -> a URL that EXPIRES, generated per
+                                           request and stored nowhere.
   POST /api/v1/results/{id}/override    -> answer_reviews ONLY, never the ledger.
 
 THE LEDGER RULE, since this is the file most likely to be edited by someone in
@@ -38,6 +42,7 @@ from api.schemas.evaluation import (
     EvaluateResponse,
     OverrideRequest,
     OverrideResponse,
+    PageImageResponse,
     ResultResponse,
     ResultSummary,
     result_to_summary,
@@ -243,6 +248,68 @@ def get_result(
         )
 
     return ResultResponse(**report)
+
+
+@router.get(
+    "/results/{answer_id}/pages/{page_number}/image",
+    response_model=PageImageResponse,
+    summary="A short-lived URL for one scanned page of this answer",
+    responses={
+        404: {"description": "No such answer for this college, no region on "
+                             "that page, or no image stored for it — one "
+                             "response for all four."},
+        503: {"description": "The page image is a dummy-storage reference; "
+                             "there is no object storage behind it."},
+    },
+)
+def get_page_image(
+    answer_id: uuid.UUID,
+    page_number: int,
+    user: CurrentUser = Depends(require_college_user),
+    conn=Depends(get_tenant_conn),
+) -> PageImageResponse:
+    """The scanned page a region was cut from, as a SHORT-LIVED PRESIGNED URL.
+
+    This is the left half of the Results screen. `region_bbox` on each entry in
+    GET /results/{answer_id}'s `regions` is in pixel coordinates of exactly
+    this image (the DESKEWED page — migration 013), so an overlay drawn from
+    one lands on the other with no transform.
+
+    A URL RATHER THAN THE BYTES. A 200-DPI deskewed page is multi-megabyte;
+    streaming it would pin an API worker and its database connection for the
+    whole transfer, per page, per reviewer. The reasoning, and what that choice
+    costs, is in api/services/evaluation.py::resolve_page_image. The URL
+    expires in PAGE_IMAGE_URL_TTL_SECONDS (300s) and is generated per request:
+    nothing writes it back, because the database stores stable "bucket/key"
+    references and never presigned ones (CLAUDE_CONTEXT.md §10).
+
+    THE PAGE IS REACHED THROUGH THE ANSWER — `answers` JOIN `answer_blocks`,
+    with this college's id in the predicate. A page_image_url is never taken
+    from a caller. Another college's answer is 404, byte-identical to a
+    nonexistent answer id, to a page this booklet does not have, and to a page
+    whose image was never stored: four causes, one response, no oracle.
+    """
+    try:
+        with conn.cursor() as cur:
+            image = evaluation_service.resolve_page_image(
+                cur, answer_id=answer_id, page_number=page_number,
+                college_id=user.college_id,
+            )
+    except evaluation_service.AnswerNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No page {page_number} image for answer {answer_id} in this college.",
+        )
+    except evaluation_service.PageImageUnavailableError as exc:
+        # 503, not 404: the row is there and the caller is entitled to it —
+        # this deployment simply has no storage behind the reference. Only
+        # reachable after the tenant check has already passed on the caller's
+        # OWN answer, so it is not an oracle over anyone else's ids.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc),
+        )
+
+    return PageImageResponse(answer_id=answer_id, **image)
 
 
 @router.post(

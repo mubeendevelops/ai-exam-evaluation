@@ -210,6 +210,13 @@ def build_matrix(*, booklet, job_id, question_id, paragraph_id, pattern_id) -> l
             note="reads answers/evaluation_results/answer_reviews",
         ),
         Endpoint(
+            "GET", f"/api/v1/results/{booklet['answer_id']}/pages/1/image",
+            touches_tenant_data=True,
+            note="resolves answer_blocks.page_image_url THROUGH answers (RLS + "
+                 "explicit predicate) before presigning anything — a request "
+                 "with no tenant context must not reach core/storage.py at all",
+        ),
+        Endpoint(
             "GET", "/api/v1/uploads",
             touches_tenant_data=True,
             note="lists booklet_uploads (RLS + explicit predicate)",
@@ -370,6 +377,12 @@ async def test_every_endpoint_is_covered_by_this_module(matrix, api_settings):
 
     # Path templates ("/api/v1/jobs/{job_id}") vs the concrete paths the
     # matrix calls ("/api/v1/jobs/<uuid>"), compared by their shape.
+    #
+    # A path parameter is a uuid in almost every route here, but not in all of
+    # them: /results/{answer_id}/pages/{page_number}/image addresses a page by
+    # its 1-based number. So a segment that is entirely digits is normalized
+    # too. No literal segment in this app is numeric ("v1" is not), so this
+    # cannot collapse two genuinely different routes into one shape.
     def shape(entry: str) -> str:
         method, path = entry.split(" ", 1)
         parts = []
@@ -377,7 +390,10 @@ async def test_every_endpoint_is_covered_by_this_module(matrix, api_settings):
             try:
                 uuid.UUID(part)
             except ValueError:
-                parts.append("{}" if part.startswith("{") else part)
+                if part.startswith("{") or part.isdigit():
+                    parts.append("{}")
+                else:
+                    parts.append(part)
             else:
                 parts.append("{}")
         return f"{method} {'/'.join(parts)}"

@@ -333,6 +333,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/results/{answer_id}/pages/{page_number}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A short-lived URL for one scanned page of this answer
+         * @description The scanned page a region was cut from, as a SHORT-LIVED PRESIGNED URL.
+         *
+         *     This is the left half of the Results screen. `region_bbox` on each entry in
+         *     GET /results/{answer_id}'s `regions` is in pixel coordinates of exactly
+         *     this image (the DESKEWED page — migration 013), so an overlay drawn from
+         *     one lands on the other with no transform.
+         *
+         *     A URL RATHER THAN THE BYTES. A 200-DPI deskewed page is multi-megabyte;
+         *     streaming it would pin an API worker and its database connection for the
+         *     whole transfer, per page, per reviewer. The reasoning, and what that choice
+         *     costs, is in api/services/evaluation.py::resolve_page_image. The URL
+         *     expires in PAGE_IMAGE_URL_TTL_SECONDS (300s) and is generated per request:
+         *     nothing writes it back, because the database stores stable "bucket/key"
+         *     references and never presigned ones (CLAUDE_CONTEXT.md §10).
+         *
+         *     THE PAGE IS REACHED THROUGH THE ANSWER — `answers` JOIN `answer_blocks`,
+         *     with this college's id in the predicate. A page_image_url is never taken
+         *     from a caller. Another college's answer is 404, byte-identical to a
+         *     nonexistent answer id, to a page this booklet does not have, and to a page
+         *     whose image was never stored: four causes, one response, no oracle.
+         */
+        get: operations["get_page_image_api_v1_results__answer_id__pages__page_number__image_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/results/{answer_id}/override": {
         parameters: {
             query?: never;
@@ -647,6 +686,21 @@ export interface components {
         CappedList_LedgerEntry_: {
             /** Items */
             items: components["schemas"]["LedgerEntry"][];
+            /**
+             * Total
+             * @description The TRUE count before capping, not len(items).
+             */
+            total: number;
+            /**
+             * Truncated
+             * @description True when `total` exceeds `items` — more rows exist than were returned.
+             */
+            truncated: boolean;
+        };
+        /** CappedList[RegionDetail] */
+        CappedList_RegionDetail_: {
+            /** Items */
+            items: components["schemas"]["RegionDetail"][];
             /**
              * Total
              * @description The TRUE count before capping, not len(items).
@@ -1166,6 +1220,63 @@ export interface components {
             all_sessions: boolean;
         };
         /**
+         * MergedText
+         * @description The text that was actually scored, and which region each part came from.
+         *
+         *     §7D decision 3: a question's text regions are ONE answer, concatenated in
+         *     reading order and evaluated once — scoring each half of a page-spanning
+         *     answer against the whole reference would mark a complete answer twice as
+         *     incomplete. So the merged string is what the score is about, and the
+         *     per-part offsets are what let a teacher see the seam.
+         *
+         *     NEVER PARTIAL. `available` is false with a `reason` when any part's text is
+         *     missing, rather than returning a merge with a hole in it — an answer
+         *     missing its second page would otherwise read as a complete answer that
+         *     simply says less, which is the exact failure the merge exists to prevent.
+         */
+        MergedText: {
+            /** Text */
+            text?: string | null;
+            /** Available */
+            available: boolean;
+            /**
+             * Reason
+             * @description Why `text` is null. Null when available.
+             */
+            reason?: string | null;
+            /**
+             * Separator
+             * @description What the parts were joined with — the evaluator's own TEXT_MERGE_SEPARATOR, not a value this layer chose.
+             */
+            separator: string;
+            /** Block Ids */
+            block_ids?: string[];
+            /** Parts */
+            parts?: components["schemas"]["MergedTextPart"][];
+        };
+        /**
+         * MergedTextPart
+         * @description Where one region's text sits inside the merged answer — THE SEAM.
+         */
+        MergedTextPart: {
+            /**
+             * Block Id
+             * Format: uuid
+             */
+            block_id: string;
+            /** Page Number */
+            page_number?: number | null;
+            /** Reading Order */
+            reading_order: number;
+            /**
+             * Offset
+             * @description Start index of this region's text in `merged_text.text`.
+             */
+            offset: number;
+            /** Length */
+            length: number;
+        };
+        /**
          * OverrideRequest
          * @description POST /api/v1/results/{answer_id}/override.
          *
@@ -1245,6 +1356,59 @@ export interface components {
              * @constant
              */
             evaluation_results_untouched: true;
+        };
+        /**
+         * PageImageResponse
+         * @description GET /api/v1/results/{answer_id}/pages/{page_number}/image.
+         *
+         *     A SHORT-LIVED PRESIGNED URL, not the bytes — see
+         *     api/services/evaluation.py::resolve_page_image for the argument. The URL is
+         *     generated per request and is stored NOWHERE: the database keeps the stable
+         *     "bucket/key" reference and never a presigned one (CLAUDE_CONTEXT.md §10).
+         */
+        PageImageResponse: {
+            /**
+             * Answer Id
+             * Format: uuid
+             */
+            answer_id: string;
+            /** Page Number */
+            page_number: number;
+            /**
+             * Url
+             * @description Fetch it directly from the browser. Treat it as a credential: it grants read access to this one object until it expires, so do not log it or put it in a shareable link.
+             */
+            url: string;
+            /**
+             * Expires In
+             * @description Seconds this URL stays valid — short by design, and shorter than the access token's own lifetime.
+             */
+            expires_in: number;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /**
+         * PageSummary
+         * @description One page of this answer's booklet, for the page strip.
+         */
+        PageSummary: {
+            /** Page Number */
+            page_number: number;
+            /** Regions */
+            regions: number;
+            /**
+             * Has Image
+             * @description Whether GET /results/{answer_id}/pages/{page_number}/image has anything to serve — so the client does not have to probe it per page to find out.
+             */
+            has_image: boolean;
+            /**
+             * Needs Review
+             * @description True when at least one region on this page is flagged.
+             */
+            needs_review: boolean;
         };
         /** Page[ExamSummary] */
         Page_ExamSummary_: {
@@ -1618,6 +1782,139 @@ export interface components {
             refresh_token: string;
         };
         /**
+         * RegionDetail
+         * @description One persisted region (`answer_blocks` row) of this answer, in reading
+         *     order, with what the evaluation did with it.
+         *
+         *     THIS IS THE SHAPE THE RESULTS SCREEN OVERLAYS ON A PAGE IMAGE: `bbox` is
+         *     in pixel coordinates of the DESKEWED page the image endpoint serves (not
+         *     of the original PDF page — migration 013's COMMENT on region_bbox says
+         *     why the deskewed page is the one that is stored), so a rectangle drawn
+         *     from it lands where the region actually is.
+         *
+         *     `extra="allow"` unlike most models here: the region row gains fields as
+         *     the pipeline records more per region (019's extraction provenance is next),
+         *     and a client should not 500 on a field the server added.
+         */
+        RegionDetail: {
+            /**
+             * Block Id
+             * Format: uuid
+             */
+            block_id: string;
+            /**
+             * Block Type
+             * @description answer_block_type — what a plugin dispatches on. Lossy by design: 20 layout labels collapse into 4 types, which is why classification_label is kept beside it.
+             */
+            block_type: string;
+            /**
+             * Page Number
+             * @description 1-based page of the source booklet. Null for a block attached from a single image rather than segmented out of a booklet — every row predating booklet ingestion.
+             */
+            page_number?: number | null;
+            /**
+             * Region Bbox
+             * @description [x, y, w, h] in pixels of the deskewed page image. Feed GET /results/{answer_id}/pages/{page_number}/image to draw it, and use it as the zoom-to-region target.
+             */
+            region_bbox?: number[] | null;
+            /** Sequence Order */
+            sequence_order: number;
+            /**
+             * Reading Order
+             * @description 0-based position among this answer's regions, page then sequence. THE ORDER §7D MERGED THE TEXT IN — the same sort key core/booklet_evaluator.build_components uses, so `merged_text.parts` and this agree by construction.
+             */
+            reading_order: number;
+            /**
+             * Classification Label
+             * @description Raw layout-model label before it was mapped onto block_type ('paragraph_title', 'chart'). The label to debug a mis-route with.
+             */
+            classification_label?: string | null;
+            /**
+             * Classification Confidence
+             * @description How sure the layout model was of classification_label, in [0,1]. A DIFFERENT axis from ocr_confidence: a region can be confidently a table and still be read badly.
+             */
+            classification_confidence?: number | null;
+            /**
+             * Needs Review
+             * @description Set at INGESTION (migration 013) — low classification confidence, a block_type no plugin supports, or the heuristic fallback path.
+             */
+            needs_review: boolean;
+            /**
+             * Ingestion Flags
+             * @description Why ingestion flagged this region, in the same vocabulary core/booklet_evaluator.py uses in its own report.
+             */
+            ingestion_flags?: string[];
+            /**
+             * Text
+             * @description What this region says — READ `text_source` BEFORE TRUSTING A NULL. Null does NOT mean the region is empty: the text a plugin OCRs out of a scanned region is not persisted anywhere today (ingestion writes answer_blocks.content as NULL and the extraction is dropped after scoring), so a scanned region has no text to return. Only a block whose text was already digital carries one. See core/answer_regions.py's docstring and migrations/019_answer_block_extractions.sql.proposed.
+             */
+            text?: string | null;
+            /**
+             * Text Source
+             * @description Where `text` came from — 'answer_blocks.content' today. Null means no text is persisted for this region, NOT that the region is blank.
+             */
+            text_source?: string | null;
+            /**
+             * Ocr Confidence
+             * @description Extraction confidence for THIS region, when one is attributable. Null for a region merged with others: the merged component's confidence is the MINIMUM across its parts (§7D decision 4), and attributing that minimum to each part would misreport every part but the worst.
+             */
+            ocr_confidence?: number | null;
+            /** Ocr Confidence Source */
+            ocr_confidence_source?: string | null;
+            /**
+             * Question
+             * @description The question label ingestion assigned this region ('Q2a'), from the paper's slot labels. Not derivable from the answer row alone — there is no FK from exams to generated_papers (§7C).
+             */
+            question?: string | null;
+            /**
+             * Scored
+             * @description Whether this region ended up inside a component that was actually scored. False with `failure` set is a region that failed; false with no failure is one nothing routed.
+             */
+            scored: boolean;
+            /**
+             * Component Index
+             * @description Index into `components` of the component this region belongs to.
+             */
+            component_index?: number | null;
+            /** Order In Component */
+            order_in_component?: number | null;
+            /**
+             * Merged With
+             * @description How many regions were merged into this region's component, including itself. >1 is the page-break case §7D decision 3 exists for: several regions, ONE scored answer.
+             * @default 0
+             */
+            merged_with: number;
+            /** Component Score */
+            component_score?: number | null;
+            /** Component Confidence */
+            component_confidence?: number | null;
+            /**
+             * Component Is Primary
+             * @description True for the component whose score became the question's score (core/booklet_evaluator._pick_primary).
+             * @default false
+             */
+            component_is_primary: boolean;
+            /**
+             * Failure
+             * @description This region's own failure record (stage, error_type, message) when a stage failed on it. Partial failure is the normal case (§7D), so a region that was not scored says why rather than silently missing from the components.
+             */
+            failure?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Has Page Image
+             * @description Whether a full-page image is stored for this region's page — i.e. whether the image endpoint can serve it.
+             */
+            has_page_image: boolean;
+            /**
+             * Has Region Image
+             * @description Whether the CROPPED region itself is stored (blob_url). Separate from has_page_image: the page is what a reviewer sees the region in context on.
+             */
+            has_region_image: boolean;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
          * ResultResponse
          * @description GET /api/v1/results/{answer_id} — the full report for one answer.
          */
@@ -1661,6 +1958,15 @@ export interface components {
             signals?: components["schemas"]["SignalBreakdown"] | null;
             /** @description Per-region scores that were aggregated into the single question result — one ledger row per QUESTION is decision 1 in core/booklet_evaluator.py, and this is what it preserved. Capped at core/pagination.py::NESTED_MAX — see that module's docstring on why an unbounded nested list still needs a cap even though it isn't a list endpoint. */
             components: components["schemas"]["CappedList_dict_str__Any__"];
+            /** @description Every persisted region backing this answer, in reading order, with page/bbox for the overlay, classification, flags, and which component scored it. Capped at NESTED_MAX like the other nested lists — a re-ingest DUPLICATES a booklet's regions rather than replacing them (§7C), so this list has no inherent bound either. */
+            regions: components["schemas"]["CappedList_RegionDetail_"];
+            /**
+             * Pages
+             * @description The pages this answer has regions on, and whether each has a stored image to fetch.
+             */
+            pages?: components["schemas"]["PageSummary"][];
+            /** @description The text as it was actually scored PLUS the seam between the regions it came from — both, never only the merged string (§7D decision 3). */
+            merged_text: components["schemas"]["MergedText"];
             /** Flags */
             flags?: string[];
             /**
@@ -2521,6 +2827,52 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    get_page_image_api_v1_results__answer_id__pages__page_number__image_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                answer_id: string;
+                page_number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageImageResponse"];
+                };
+            };
+            /** @description No such answer for this college, no region on that page, or no image stored for it — one response for all four. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The page image is a dummy-storage reference; there is no object storage behind it. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

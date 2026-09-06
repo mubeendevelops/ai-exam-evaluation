@@ -24,17 +24,33 @@ three loosely related ids.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import core.answer_evaluation
+import core.answer_regions
 import core.booklet_evaluator
 import core.jobs
 import core.pagination
 import core.results
+import core.storage
 import core.uploads
 
 #: evaluation_jobs.job_type for a booklet evaluation.
 JOB_TYPE_BOOKLET_EVAL = "booklet_eval"
+
+#: How long a page-image URL handed to a browser stays valid, in seconds.
+#:
+#: FIVE MINUTES, and short on purpose. A presigned URL is a BEARER CREDENTIAL
+#: for one object, carried in a query string — it lands in browser history,
+#: in any Referer a linked page sends, and in whatever proxy logs the request
+#: passes through, none of which the API controls once it is handed over. Five
+#: minutes covers a page load plus the re-fetches a reviewer's zooming does,
+#: and expires well inside the 15-minute access token, so a leaked image URL
+#: never outlives the session that produced it. It is generated per request
+#: and stored nowhere: the DB keeps the stable "bucket/key" ref and nothing
+#: else (CLAUDE_CONTEXT.md §10, migration 013's COMMENT on page_image_url).
+PAGE_IMAGE_URL_TTL_SECONDS = 300
 
 
 class UploadNotFoundError(LookupError):
@@ -48,6 +64,21 @@ class UploadNotFoundError(LookupError):
 
 class AnswerNotFoundError(LookupError):
     """The answer_id does not resolve for this college. Same reasoning."""
+
+
+class PageImageUnavailableError(RuntimeError):
+    """The page image exists as a row, but there is no object storage behind
+    its reference — a "dummy-storage/..." ref (core/storage.py's dummy mode,
+    which is STORAGE_MODE's default and does no I/O at all).
+
+    Its own type, and NOT folded into AnswerNotFoundError, because the two are
+    different facts and only one of them is a tenant boundary. A 404 here is
+    reserved for "this college has no such page", which must stay
+    indistinguishable from a nonexistent id; this error is only ever reachable
+    by a caller that has ALREADY passed that check on their own answer, so
+    reporting it plainly leaks nothing and saves an operator from debugging
+    tenant isolation when the real answer is a misconfigured STORAGE_MODE.
+    """
 
 
 # ─────────────────────────────── enqueue ────────────────────────────────────
@@ -366,6 +397,23 @@ def get_answer_report(cur, *, answer_id, college_id) -> dict[str, Any]:
 
     metrics = (current[5] if current else None) or {}
 
+    # ── the regions behind the score ────────────────────────────────────────
+    # Two sources, joined here rather than in either of them: answer_blocks
+    # holds where each region IS (page, bbox, type, classification, flags) and
+    # the ledger's metrics hold what the evaluation DID with it (which
+    # component, merged with what, which failure). core/answer_regions.py owns
+    # both the SQL and the join; this line is the translation §11 rule 1 says
+    # belongs in api/services/.
+    #
+    # Capped like history/reviews/components: a booklet page can carry a
+    # dozen regions and a re-ingest DUPLICATES rather than replaces them
+    # (§7C), so this list has no inherent bound either.
+    with_detail = core.answer_regions.attach_evaluation_detail(
+        core.answer_regions.list_answer_regions(
+            cur, answer_id=answer_id, college_id=college_id),
+        metrics,
+    )
+
     # _final_marks reads the whole review log newest-first to find the most
     # recent one with an explicit mark. Capping `reviews` above does not
     # affect this: a review old enough to fall outside NESTED_MAX has
@@ -386,6 +434,15 @@ def get_answer_report(cur, *, answer_id, college_id) -> dict[str, Any]:
         "evaluation": _evaluation_block(current, metrics) if current else None,
         "signals": _signals(metrics),
         "components": core.pagination.cap(metrics.get("components") or []),
+        # Per-region detail for the whole answer, in reading order — the
+        # overlay, the zoom-to-region target, and which part of the merged
+        # text came from where.
+        "regions": core.pagination.cap(with_detail),
+        "pages": core.answer_regions.list_answer_pages(
+            cur, answer_id=answer_id, college_id=college_id),
+        # BOTH shapes, never just one: the text as it was actually scored,
+        # AND the seam between the regions it was built from (§7D decision 3).
+        "merged_text": core.answer_regions.merged_text(with_detail),
         "flags": metrics.get("flags") or [],
         "failures": metrics.get("failures") or [],
         "confidence": _confidence(metrics),
@@ -490,6 +547,69 @@ def _final_marks(current, reviews: list) -> dict:
             }
     return {"marks": ai_score, "source": "ai" if ai_score is not None else None,
             "review_id": None, "ai_score": ai_score}
+
+
+# ─────────────────────────────── page images ────────────────────────────────
+
+def resolve_page_image(cur, *, answer_id, page_number, college_id,
+                       expires_in: int = PAGE_IMAGE_URL_TTL_SECONDS) -> dict[str, Any]:
+    """Turn (answer_id, page_number) into a SHORT-LIVED presigned GET URL.
+
+    A URL, NOT THE BYTES, and the reasoning is not a preference. A deskewed
+    page rendered at 200 DPI is a multi-megabyte image; streaming it through
+    this process would hold an API worker AND its database connection open for
+    the whole transfer, per page, per reviewer — the same argument that keeps
+    booklet evaluation out of the request path (§11's job queue), applied to
+    I/O instead of CPU. Handing the browser a signed URL lets it fetch from
+    object storage directly, which is what presigned URLs exist for, and keeps
+    the credential scoped to one object for `expires_in` seconds.
+
+    The cost of that choice, stated: the browser must be able to reach the
+    storage endpoint. Where it cannot (MinIO on a private network), the fix is
+    a public storage endpoint or a CDN in front of it — not moving megabytes
+    through this API.
+
+    THE URL IS GENERATED PER REQUEST AND STORED NOWHERE. core/storage.py's
+    module docstring and migration 013's COMMENT on page_image_url both say
+    the DB holds the stable "bucket/key" ref and never a presigned one; this
+    function is the "whatever eventually serves the file to a browser" that
+    docstring names.
+
+    Raises AnswerNotFoundError for every "you cannot have this" case at once —
+    no such answer, another college's answer, no region on that page, or a
+    page whose image was never stored — so the 404 the router returns is
+    identical for all four and cannot be used to probe another college's
+    answer ids. Raises PageImageUnavailableError when the ref is a dummy one,
+    which is a configuration fact about THIS deployment, not about the row.
+    """
+    ref = core.answer_regions.get_page_image_ref(
+        cur, answer_id=answer_id, page_number=page_number, college_id=college_id)
+    if ref is None:
+        raise AnswerNotFoundError(
+            f"No page {page_number} image for answer {answer_id} in this college. "
+            f"Either the answer is wrong or another college's, the booklet has no "
+            f"region on that page, or its blocks predate booklet ingestion (013's "
+            f"page_image_url is nullable). answers/answer_blocks are RLS-protected "
+            f"and fail closed SILENTLY (CLAUDE_CONTEXT.md §6), so a missing tenant "
+            f"context looks exactly like this too."
+        )
+
+    if core.storage.is_dummy_ref(ref):
+        raise PageImageUnavailableError(
+            f"This page's image is stored as a dummy reference ({ref!r}), which has "
+            f"no object storage behind it — core/storage.py's dummy mode does no I/O "
+            f"and STORAGE_MODE defaults to it. Set STORAGE_MODE=minio (and the "
+            f"MINIO_* variables) on the process that ingested this booklet; a "
+            f"presigned URL cannot be fabricated for a placeholder."
+        )
+
+    return {
+        "page_number": int(page_number),
+        # Generated NOW, per request. Nothing here writes it back.
+        "url": core.storage.presigned_get_url(ref, expires_in=expires_in),
+        "expires_in": int(expires_in),
+        "expires_at": datetime.now(timezone.utc) + timedelta(seconds=int(expires_in)),
+    }
 
 
 # ──────────────────────────────── override ──────────────────────────────────
