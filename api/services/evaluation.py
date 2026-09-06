@@ -29,6 +29,8 @@ from typing import Any
 import core.answer_evaluation
 import core.booklet_evaluator
 import core.jobs
+import core.pagination
+import core.results
 import core.uploads
 
 #: evaluation_jobs.job_type for a booklet evaluation.
@@ -196,6 +198,26 @@ class NoRegionsError(RuntimeError):
     """
 
 
+# ──────────────────────────────── list results ──────────────────────────────
+
+def list_results(
+    cur, *, college_id, exam_id=None, student_id=None, status: str | None = None,
+    needs_review: bool | None = None, limit: int = 50, offset: int = 0,
+) -> tuple[list[dict], int]:
+    """A page of answer summaries plus the matching total. Straight through
+    to core/results.py, which owns the SQL — same shape as
+    api/services/questions.py::list_bank."""
+    rows = core.results.list_results(
+        cur, college_id=college_id, exam_id=exam_id, student_id=student_id,
+        status=status, needs_review=needs_review, limit=limit, offset=offset,
+    )
+    total = core.results.count_results(
+        cur, college_id=college_id, exam_id=exam_id, student_id=student_id,
+        status=status, needs_review=needs_review,
+    )
+    return rows, total
+
+
 # ─────────────────────────────── read results ───────────────────────────────
 
 def get_answer_report(cur, *, answer_id, college_id) -> dict[str, Any]:
@@ -209,8 +231,9 @@ def get_answer_report(cur, *, answer_id, college_id) -> dict[str, Any]:
     reshapes, it does not recompute.
 
     Every query below carries `AND a.college_id = %s`. See core/jobs.py's
-    header: with a superuser PGUSER the RLS policies are inert, so these
-    predicates are currently the only tenant isolation in effect.
+    header: the RLS policies only run for a non-superuser role (migration
+    016), and these predicates are what isolate tenants regardless of which
+    role PGUSER names.
     """
     cur.execute(
         """
@@ -248,9 +271,26 @@ def get_answer_report(cur, *, answer_id, college_id) -> dict[str, Any]:
     )
     current = cur.fetchone()
 
-    # The full ledger history, newest first. evaluation_results is append-only
-    # (rule 2), so this is a real audit trail rather than a changelog someone
-    # maintains — every re-score is still here, is_current just moves.
+    # The ledger history, newest first, CAPPED at NESTED_MAX rows — a
+    # question re-scored often enough (a corrected reference, a model
+    # upgrade) must not make this response grow without bound.
+    # evaluation_results is append-only (rule 2), so this is a real audit
+    # trail rather than a changelog someone maintains; the cap does not
+    # discard the older rows, it just stops returning ALL of them in one
+    # response. `total` is a real COUNT, not len(items) — see
+    # core/pagination.py's docstring on why that has to be a separate query
+    # once the SELECT itself is LIMIT-ed.
+    cur.execute(
+        """
+        SELECT COUNT(*)
+          FROM evaluation_results er
+          JOIN answers a ON a.answer_id = er.answer_id
+         WHERE er.answer_id = %s AND a.college_id = %s
+        """,
+        (str(answer_id), str(college_id)),
+    )
+    (history_total,) = cur.fetchone()
+
     cur.execute(
         """
         SELECT er.evaluation_id, er.score, er.evaluator_type, er.evaluator_model,
@@ -258,21 +298,37 @@ def get_answer_report(cur, *, answer_id, college_id) -> dict[str, Any]:
           FROM evaluation_results er
           JOIN answers a ON a.answer_id = er.answer_id
          WHERE er.answer_id = %s AND a.college_id = %s
-         ORDER BY er.evaluated_at DESC
+         ORDER BY er.evaluated_at DESC, er.evaluation_id DESC
+         LIMIT %s
+        """,
+        (str(answer_id), str(college_id), core.pagination.NESTED_MAX),
+    )
+    history = {
+        "items": [
+            {
+                "evaluation_id": str(e_id),
+                "score": float(score),
+                "evaluator_type": e_type,
+                "evaluator_model": e_model,
+                "is_current": is_current,
+                "evaluated_at": at,
+            }
+            for e_id, score, e_type, e_model, is_current, at in cur.fetchall()
+        ],
+        "total": int(history_total),
+    }
+    history["truncated"] = len(history["items"]) < history["total"]
+
+    cur.execute(
+        """
+        SELECT COUNT(*)
+          FROM answer_reviews ar
+          JOIN answers a ON a.answer_id = ar.answer_id
+         WHERE ar.answer_id = %s AND a.college_id = %s
         """,
         (str(answer_id), str(college_id)),
     )
-    history = [
-        {
-            "evaluation_id": str(e_id),
-            "score": float(score),
-            "evaluator_type": e_type,
-            "evaluator_model": e_model,
-            "is_current": is_current,
-            "evaluated_at": at,
-        }
-        for e_id, score, e_type, e_model, is_current, at in cur.fetchall()
-    ]
+    (reviews_total,) = cur.fetchone()
 
     cur.execute(
         """
@@ -281,11 +337,12 @@ def get_answer_report(cur, *, answer_id, college_id) -> dict[str, Any]:
           FROM answer_reviews ar
           JOIN answers a ON a.answer_id = ar.answer_id
          WHERE ar.answer_id = %s AND a.college_id = %s
-         ORDER BY ar.reviewed_at DESC
+         ORDER BY ar.reviewed_at DESC, ar.review_id DESC
+         LIMIT %s
         """,
-        (str(answer_id), str(college_id)),
+        (str(answer_id), str(college_id), core.pagination.NESTED_MAX),
     )
-    reviews = [
+    reviews_rows = [
         {
             "review_id": str(r_id),
             "reviewer_id": str(rev_id),
@@ -296,9 +353,21 @@ def get_answer_report(cur, *, answer_id, college_id) -> dict[str, Any]:
         }
         for r_id, rev_id, action, marks, comment, at in cur.fetchall()
     ]
+    reviews = {
+        "items": reviews_rows,
+        "total": int(reviews_total),
+        "truncated": len(reviews_rows) < int(reviews_total),
+    }
 
     metrics = (current[5] if current else None) or {}
 
+    # _final_marks reads the whole review log newest-first to find the most
+    # recent one with an explicit mark. Capping `reviews` above does not
+    # affect this: a review old enough to fall outside NESTED_MAX has
+    # necessarily been superseded by every review still inside it, so the
+    # newest-with-marks search over the FULL set and over the capped `items`
+    # agree — but it is computed here over `reviews_rows` before any
+    # truncation happens to be reused, not re-derived from the capped list.
     return {
         "answer_id": str(answer_id_),
         "question_id": str(question_id),
@@ -311,7 +380,7 @@ def get_answer_report(cur, *, answer_id, college_id) -> dict[str, Any]:
         "marks_max": float(marks_max) if marks_max is not None else None,
         "evaluation": _evaluation_block(current, metrics) if current else None,
         "signals": _signals(metrics),
-        "components": metrics.get("components") or [],
+        "components": core.pagination.cap(metrics.get("components") or []),
         "flags": metrics.get("flags") or [],
         "failures": metrics.get("failures") or [],
         "confidence": _confidence(metrics),
@@ -321,7 +390,7 @@ def get_answer_report(cur, *, answer_id, college_id) -> dict[str, Any]:
         # score. Computed here rather than stored, because storing it would
         # mean UPDATEing something whenever a review arrives, and both tables
         # this reads are append-only by design.
-        "final_marks": _final_marks(current, reviews),
+        "final_marks": _final_marks(current, reviews_rows),
     }
 
 

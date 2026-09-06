@@ -57,12 +57,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 import api.services.questions as questions_service
 from api.deps.db import get_tenant_conn
 from api.deps.identity import CurrentUser, get_current_user
+from api.deps.pagination import Pagination, get_pagination
 from api.schemas.questions import (
     GenerateQuestionsRequest,
     GenerateQuestionsResponse,
     GeneratedQuestion,
-    PromoteRequest,
-    QuestionDetail,
+        QuestionDetail,
     QuestionListResponse,
     QuestionSourceType,
     QuestionStatus,
@@ -107,29 +107,35 @@ def list_questions(
             "paper_questions -> paper_sections -> generated_papers."
         ),
     ),
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
     user: CurrentUser = Depends(get_current_user),
     conn=Depends(get_tenant_conn),
+    pagination: Pagination = Depends(get_pagination),
 ) -> QuestionListResponse:
     """A filtered page of the shared bank, newest first.
 
     `status` is aliased from a parameter named `status_filter` because
     `status` is also the FastAPI status module imported in this file; the
     alias keeps the wire name right without shadowing it.
+
+    limit/offset now come from the shared api/deps/pagination.py dependency,
+    the same one every list endpoint added in this pass uses — this endpoint
+    used to declare its own `Query(le=200)`, which REJECTED a limit above
+    MAX_LIMIT with 422. The shared dependency CLAMPS instead (see its
+    docstring); this is the one behavioural change from bringing /questions
+    in line with the rest.
     """
     with conn.cursor() as cur:
         rows, total = questions_service.list_bank(
             cur, status=status_filter, style=style, source_type=source_type,
             is_ai_generated=is_ai_generated, paper_id=paper_id,
-            limit=limit, offset=offset,
+            limit=pagination.limit, offset=pagination.offset,
         )
 
     return QuestionListResponse(
         questions=[question_to_summary(r) for r in rows],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=pagination.limit,
+        offset=pagination.offset,
     )
 
 
@@ -260,7 +266,9 @@ def review_question(
             result = questions_service.review(
                 cur,
                 question_id=question_id,
-                reviewer_id=body.reviewer_id,
+                # RE-4: attributed to the authenticated caller, never to a
+                # reviewer named in the body. See ReviewRequest's docstring.
+                reviewer_id=user.reviewer_id,
                 action=body.action,
                 comment=body.comment,
             )
@@ -294,7 +302,6 @@ def review_question(
 )
 def promote_question(
     question_id: uuid.UUID,
-    body: PromoteRequest,
     user: CurrentUser = Depends(get_current_user),
     conn=Depends(get_tenant_conn),
 ) -> TransitionResponse:
@@ -307,6 +314,9 @@ def promote_question(
     other says students may now be asked it — and collapsing them would mean
     one person's click puts an unreviewed AI-generated question into an exam.
 
+    TAKES NO REQUEST BODY. Its only field was `reviewer_id`, which RE-4
+    deleted — the promoting reviewer is the authenticated caller.
+
     No question_reviews row is written; promotion is not a content judgement.
     The transition IS recorded in question_status_history, so the audit trail
     is complete either way.
@@ -314,7 +324,8 @@ def promote_question(
     try:
         with conn.cursor() as cur:
             result = questions_service.promote(
-                cur, question_id=question_id, reviewer_id=body.reviewer_id
+                # RE-4: the promoting reviewer is the authenticated caller.
+                cur, question_id=question_id, reviewer_id=user.reviewer_id
             )
     except questions_service.QuestionNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))

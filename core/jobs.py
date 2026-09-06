@@ -26,11 +26,20 @@ THE EXPLICIT college_id PREDICATE, and why it is not redundant: get_job() takes
 a college_id and puts it in the WHERE clause even though the RLS policy already
 filters on exactly that column. Postgres exempts SUPERUSER and BYPASSRLS roles
 from row-level security entirely — FORCE ROW LEVEL SECURITY closes the
-table-owner loophole, not that one — so with PGUSER=postgres (the
-.env.example default, and most local setups) migration 003's and 014's policies
-are INERT. Under such a role the predicate here is the only thing isolating
-tenants. Belt and braces; do not remove the belt because the braces exist,
-particularly when the braces are currently not fastened. See api/README.md.
+table-owner loophole, not that one — so with PGUSER=postgres (the .env.example
+default until migration 016) migrations 003's and 014's policies were INERT,
+and this predicate was the only thing isolating tenants on every deployment
+that had ever existed.
+
+016 creates the NOSUPERUSER/NOBYPASSRLS application role, so both layers run
+now. The predicate STAYS: it is the only layer left the moment anyone points
+PGUSER back at a superuser, which is a one-line .env edit with no visible
+symptom. Belt and braces; do not remove the belt because the braces are
+fastened today.
+tests/test_api/test_rls_isolation.py::test_the_isolating_predicate_is_not_only_rls
+drives this function on a PLATFORM-ADMIN connection — where the permissive
+bypass policy makes every tenant's rows visible — so that the only thing that
+can refuse the row is this predicate. See api/README.md.
 """
 from __future__ import annotations
 
@@ -39,6 +48,8 @@ import uuid
 from typing import Any, Iterable
 
 from psycopg2.extras import Json
+
+import core.pagination
 
 #: Columns every read below returns, in one place so the API's response model
 #: and the worker see the same shape.
@@ -127,6 +138,68 @@ def get_job(cur, *, job_id, college_id) -> dict[str, Any] | None:
     )
     row = cur.fetchone()
     return _row_to_dict(row) if row else None
+
+
+def list_jobs(
+    cur, *, college_id, status: str | None = None, job_type: str | None = None,
+    created_after=None, limit: int = 50, offset: int = 0,
+) -> list[dict[str, Any]]:
+    """A tenant-scoped, filtered page of jobs, newest first.
+
+    `created_after` is exclusive (`created_at > %s`) rather than `>=`, so a
+    client polling with "give me everything after the newest row I already
+    have" cannot see that same row again on the next call.
+
+    Same explicit `college_id` predicate as get_job() and claim_next_job(),
+    and for the identical reason (see the module docstring): RLS only really
+    filters under the non-superuser application role migration 016 creates.
+    """
+    limit = core.pagination.clamp_limit(limit)
+    if offset < 0:
+        raise ValueError(f"offset must be >= 0, got {offset}")
+
+    where, params = _list_filters(college_id, status, job_type, created_after)
+
+    cur.execute(
+        f"""
+        SELECT {_SELECT_COLUMNS}
+        FROM evaluation_jobs
+        WHERE {' AND '.join(where)}
+        ORDER BY created_at DESC, job_id DESC
+        LIMIT %s OFFSET %s
+        """,
+        (*params, limit, offset),
+    )
+    return [_row_to_dict(row) for row in cur.fetchall()]
+
+
+def count_jobs(
+    cur, *, college_id, status: str | None = None, job_type: str | None = None,
+    created_after=None,
+) -> int:
+    """Total matching `list_jobs`'s filters, ignoring limit/offset."""
+    where, params = _list_filters(college_id, status, job_type, created_after)
+    cur.execute(
+        f"SELECT COUNT(*) FROM evaluation_jobs WHERE {' AND '.join(where)}",
+        tuple(params),
+    )
+    (total,) = cur.fetchone()
+    return int(total)
+
+
+def _list_filters(college_id, status, job_type, created_after):
+    where = ["college_id = %s"]
+    params: list[Any] = [str(college_id)]
+    if status is not None:
+        where.append("status = %s")
+        params.append(status)
+    if job_type is not None:
+        where.append("job_type = %s")
+        params.append(job_type)
+    if created_after is not None:
+        where.append("created_at > %s")
+        params.append(created_after)
+    return where, params
 
 
 def claim_next_job(
@@ -323,3 +396,48 @@ def set_progress(cur, *, job_id, stage: str, percent: float | None = None,
             str(job_id),
         ),
     )
+
+
+def find_job_by_payload(cur, *, college_id, job_type: str, match: dict[str, Any],
+                        statuses: Iterable[str] | None = None) -> dict[str, Any] | None:
+    """Finds the newest job of `job_type` whose payload CONTAINS `match`.
+
+    Exists for ONE job: making job chaining idempotent. A booklet_ingest job
+    enqueues the booklet_eval job that follows it, and the worker's crash
+    window (module docstring of scripts/run_job_worker.py: killed between
+    finishing the work and marking the row terminal) means a requeued ingest
+    can reach that enqueue a second time. Without this check that would create
+    a second evaluation of the same booklet — not corrupting, since the ledger
+    is append-only and record_evaluation flips is_current, but a duplicate
+    score and duplicate LLM spend for a job nobody asked for twice.
+
+    `match` is a JSONB containment test (payload @> match), so a caller names
+    the identifying fields — {upload_id, student_id, exam_id} — without having
+    to reproduce the whole payload, options included.
+
+    Newest first, because the question this answers is always "has this
+    already been queued?", never "which was the first?".
+    """
+    filters = ["college_id = %s", "job_type = %s", "payload @> %s"]
+    params: list[Any] = [str(college_id), job_type, Json(match)]
+    if statuses is not None:
+        statuses = list(statuses)
+        if not statuses:
+            raise ValueError(
+                "statuses=[] would match nothing and read like 'any status'. "
+                "Pass None for any status, or name the ones you mean.")
+        filters.append("status = ANY(%s::evaluation_job_status[])")
+        params.append(statuses)
+
+    cur.execute(
+        f"""
+        SELECT {_SELECT_COLUMNS}
+          FROM evaluation_jobs
+         WHERE {' AND '.join(filters)}
+         ORDER BY created_at DESC
+         LIMIT 1
+        """,
+        params,
+    )
+    row = cur.fetchone()
+    return _row_to_dict(row) if row else None

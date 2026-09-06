@@ -346,6 +346,37 @@ def stub_segment(image=None, *, page_number: int = 1) -> list[dict]:
     ]
 
 
+def stub_markers(*, page_number: int = 1) -> list[dict]:
+    """One deterministic 'Q1' marker on page 1, none afterwards.
+
+    stub_segment() alone produces regions that NOTHING can place: with no
+    markers, assign_regions() correctly refuses to guess and every region
+    comes back unassigned — so a --stub run exercised segmentation and then
+    stopped short of assignment, association and persistence, which is most of
+    what ingestion actually does. This marker closes that gap without
+    weakening the contract: it sits above the stub regions and carries a real
+    confidence, so assignment runs the same code it runs on a real booklet.
+
+    Page 1 only, deliberately. An answer that continues onto later pages has
+    no marker of its own, so a single marker on the first page is also the
+    stub of the cross-page carry-over rule (§7C) rather than a marker
+    conveniently repeated on every page.
+    """
+    if page_number != 1:
+        return []
+    return [{
+        "page_number": 1,
+        # Left band, above stub_segment's first region (y=150), and far enough
+        # from it that MARKER_REGION_OVERLAP cannot swallow the region.
+        "bbox": [40, 60, 60, 40],
+        "raw_text": "Q1.",
+        "kind": "numeric",
+        "value": "1",
+        "confidence": 0.99,
+        "ocr_engine": "stub",
+    }]
+
+
 # --- question markers ----------------------------------------------------
 
 def _normalize_marker(text: str) -> tuple[str, str] | None:
@@ -529,7 +560,8 @@ def segment_booklet(
     for page in pages:
         number, image = page["page_number"], page["image"]
         if stub:
-            regions, markers = stub_segment(image, page_number=number), []
+            regions = stub_segment(image, page_number=number)
+            markers = stub_markers(page_number=number)
         else:
             regions = classify_page(image, page_number=number, min_confidence=min_confidence)
             markers = detect_question_markers(image, page_number=number,

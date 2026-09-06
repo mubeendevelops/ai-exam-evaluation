@@ -43,35 +43,49 @@ the tenant context was missing*". Without the positive half, this whole file
 could pass against an API that rejected every request it received.
 
 ════════════════════════════════════════════════════════════════════════════
-THE HONEST CAVEAT — READ THIS BEFORE CITING THIS FILE AS PROOF
+THE TWO LAYERS, AND WHICH ONE IS RUNNING
 ════════════════════════════════════════════════════════════════════════════
 
-Postgres exempts SUPERUSER and BYPASSRLS roles from row-level security, and
-migration 003's `FORCE ROW LEVEL SECURITY` closes only the table-OWNER
-loophole, not that one. With `PGUSER=postgres` — the .env.example default, and
-so almost every local checkout — **every RLS policy in migrations 003 and 014
-is inert**, and two different `app.current_college_id` values see identical
-rows.
+Until migration 016 this section was a caveat: `PGUSER=postgres` is a
+superuser, Postgres exempts SUPERUSER and BYPASSRLS roles from row-level
+security, `FORCE ROW LEVEL SECURITY` closes only the table-OWNER loophole, and
+so **every policy in migrations 003/014/015 was inert**. Two different
+`app.current_college_id` values saw identical rows, and the only thing
+isolating tenants was the explicit `college_id` predicate in
+`core/jobs.py::get_job`, `core/uploads.py` and `api/services/evaluation.py`.
 
-What actually isolates tenants today is the explicit `college_id` predicate in
-`core/jobs.py::get_job`, `core/uploads.py`, and
-`api/services/evaluation.py` — plain SQL, which runs regardless of role. So
-this file asserts the boundary at BOTH layers and is explicit about which one
-is load-bearing right now:
+Migration 016 creates a NOSUPERUSER/NOBYPASSRLS application role that owns
+nothing, and `.env.example` points `PGUSER` at it. Both layers now run:
 
-  * the identity/context layer (every test here except the last two) is
-    role-independent and always enforced;
-  * the RLS layer proper is asserted by `test_rls_policies_isolate_tenants`,
-    which SKIPS LOUDLY under a superuser instead of pretending to pass.
+  * the identity/context layer — role-independent, always enforced;
+  * the RLS layer proper — asserted by `test_rls_policies_isolate_tenants`,
+    which now FAILS (it used to skip) if the configured role bypasses RLS,
+    because that is a misconfiguration rather than an accepted state;
+  * the explicit predicates — asserted by
+    `test_the_isolating_predicate_is_not_only_rls`, which drives the query on
+    a connection where RLS is deliberately NOT filtering, so that deleting the
+    predicate as "redundant with the policy" fails a test. Belt and braces:
+    the braces are fastened now, and the belt is still load-bearing the moment
+    someone points PGUSER back at a superuser.
 
-`test_the_isolating_predicate_is_not_only_rls` is the one that matters on a
-superuser deployment: it drives the query under a deliberately WRONG RLS
-context and asserts the predicate still refuses, so deleting the predicate as
-"redundant with RLS" fails a test rather than silently removing the only
-mechanism running.
+════════════════════════════════════════════════════════════════════════════
+"THE OTHER TENANT" IS A REAL COLLEGE
+════════════════════════════════════════════════════════════════════════════
+
+Every cross-tenant assertion here uses `COLLEGE_B` — seed_minimal.sql's second
+REAL college, with its own student, exam and rows. It used to use an id that
+existed nowhere, which made these tests strictly weaker than they read: since
+`get_tenant_conn` began verifying the college, an absent id is refused at the
+edge with 401, so a "404 for the other tenant" assertion would have been
+proving that an unknown caller is rejected — and would have kept passing with
+tenant isolation entirely removed. An absent id (`COLLEGE_ABSENT`) still
+appears here, but only where the 401 itself is the property under test.
 """
 from __future__ import annotations
 
+import base64
+import datetime as dt
+import json as json_module
 import uuid
 
 import httpx
@@ -80,10 +94,16 @@ import pytest
 import core.db
 import core.jobs
 from api.deps.db import set_admin_context, set_tenant_context
-from api.deps.identity import DEBUG_COLLEGE_HEADER
+from api.deps.identity import create_access_token
 from api.main import create_app
 
-from .conftest import COLLEGE_A, COLLEGE_B_ABSENT, MINIMAL_PDF, REVIEWER_TEACHER
+from .conftest import (
+    COLLEGE_A,
+    COLLEGE_ABSENT,
+    COLLEGE_B,
+    COLLEGE_SUSPENDED,
+    MINIMAL_PDF,
+)
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
@@ -99,16 +119,36 @@ class Endpoint:
     bank is shared between *authenticated* colleges, not with the public — but
     only the first group can leak another tenant's rows, so the two are
     distinguished rather than blurred.
+
+    `authenticated` is False for the handful of routes that BY DESIGN answer
+    without a bearer token: `GET /health` and the credential-granting half of
+    `/auth`. They are still listed — the coverage test below is what forces a
+    new endpoint's author to decide which group it is in — but the paired
+    "with a credential / without one" assertions do not apply to them, since
+    for those routes the credential is the request body. What they do instead
+    is asserted in test_auth.py, and
+    `test_the_unauthenticated_surface_is_exactly_these_four` pins the list so
+    it cannot grow by accident.
+
+    `needs_tenant` is a SECOND and narrower distinction: `GET /auth/me` needs
+    a valid token but opens no connection and reads no row, so a token whose
+    college has since been suspended is still a perfectly good answer to "who
+    am I" while being refused everywhere else. It is the one endpoint for
+    which "the credential is bad" and "the tenant is bad" are different
+    questions, and the parametrization below asks it the one it can answer.
     """
 
     def __init__(self, method, path, *, json=None, files=None,
-                 touches_tenant_data, note):
+                 touches_tenant_data, note, authenticated=True,
+                 needs_tenant=True):
         self.method = method
         self.path = path
         self.json = json
         self.files = files
         self.touches_tenant_data = touches_tenant_data
         self.note = note
+        self.authenticated = authenticated
+        self.needs_tenant = needs_tenant
 
     @property
     def id(self) -> str:
@@ -143,10 +183,16 @@ def build_matrix(*, booklet, job_id, question_id, paragraph_id, pattern_id) -> l
                 "upload_id": booklet["upload_id"],
                 "exam_id": booklet["exam_id"],
                 "student_id": booklet["student_id"],
+                "paper_id": booklet["paper_id"],
                 "stub": True,
             },
             touches_tenant_data=True,
             note="reads booklet_uploads, writes evaluation_jobs",
+        ),
+        Endpoint(
+            "GET", "/api/v1/jobs",
+            touches_tenant_data=True,
+            note="lists evaluation_jobs (RLS + explicit predicate)",
         ),
         Endpoint(
             "GET", f"/api/v1/jobs/{job_id}",
@@ -154,13 +200,38 @@ def build_matrix(*, booklet, job_id, question_id, paragraph_id, pattern_id) -> l
             note="reads evaluation_jobs (RLS + explicit predicate)",
         ),
         Endpoint(
+            "GET", "/api/v1/results",
+            touches_tenant_data=True,
+            note="lists answers (RLS + explicit predicate)",
+        ),
+        Endpoint(
             "GET", f"/api/v1/results/{booklet['answer_id']}",
             touches_tenant_data=True,
             note="reads answers/evaluation_results/answer_reviews",
         ),
         Endpoint(
+            "GET", "/api/v1/uploads",
+            touches_tenant_data=True,
+            note="lists booklet_uploads (RLS + explicit predicate)",
+        ),
+        Endpoint(
+            "GET", "/api/v1/exams",
+            touches_tenant_data=True,
+            note="lists exams (RLS + explicit predicate)",
+        ),
+        Endpoint(
+            "GET", "/api/v1/students",
+            touches_tenant_data=True,
+            note="lists students (RLS + explicit predicate)",
+        ),
+        Endpoint(
+            "GET", "/api/v1/papers",
+            touches_tenant_data=False,
+            note="shared bank of generated papers — same as /questions",
+        ),
+        Endpoint(
             "POST", f"/api/v1/results/{booklet['answer_id']}/override",
-            json={"reviewer_id": REVIEWER_TEACHER, "action": "confirmed"},
+            json={"action": "confirmed"},
             touches_tenant_data=True,
             note="writes answer_reviews + answer_status_history",
         ),
@@ -182,13 +253,12 @@ def build_matrix(*, booklet, job_id, question_id, paragraph_id, pattern_id) -> l
         ),
         Endpoint(
             "POST", f"/api/v1/questions/{question_id}/review",
-            json={"reviewer_id": REVIEWER_TEACHER, "action": "confirm"},
+            json={"action": "confirm"},
             touches_tenant_data=False,
             note="GATE 1 — an unauthenticated caller must not move a question",
         ),
         Endpoint(
             "POST", f"/api/v1/questions/{question_id}/promote",
-            json={"reviewer_id": REVIEWER_TEACHER},
             touches_tenant_data=False,
             note="GATE 2 — an unauthenticated caller must not publish a question",
         ),
@@ -197,6 +267,40 @@ def build_matrix(*, booklet, job_id, question_id, paragraph_id, pattern_id) -> l
             json={"pattern_id": pattern_id, "name": "rls probe paper"},
             touches_tenant_data=False,
             note="writes generated_papers from the shared bank",
+        ),
+        Endpoint(
+            "GET", "/api/v1/auth/me",
+            touches_tenant_data=False, needs_tenant=False,
+            note="reads only the token's own claims — no connection at all",
+        ),
+
+        # ── the unauthenticated surface, in full ────────────────────────────
+        Endpoint(
+            "GET", "/health",
+            touches_tenant_data=False, authenticated=False,
+            note="liveness probe: no credential, and no database either",
+        ),
+        Endpoint(
+            "POST", "/api/v1/auth/login",
+            json={"email": "nobody@nowhere.example", "password": "wrong"},
+            touches_tenant_data=False, authenticated=False,
+            note="THE credential-granting endpoint — a bearer token here "
+                 "would be a chicken and an egg",
+        ),
+        Endpoint(
+            "POST", "/api/v1/auth/refresh",
+            json={"refresh_token": "not a real refresh token"},
+            touches_tenant_data=False, authenticated=False,
+            note="authenticated BY THE REFRESH TOKEN in its body, which is a "
+                 "credential the access token cannot stand in for — the whole "
+                 "point of this endpoint is that the access token has expired",
+        ),
+        Endpoint(
+            "POST", "/api/v1/auth/logout",
+            json={"refresh_token": "not a real refresh token"},
+            touches_tenant_data=False, authenticated=False,
+            note="revokes the refresh token in its body; 204 whether or not "
+                 "that token was live, so it is not an oracle",
         ),
     ]
 
@@ -215,7 +319,7 @@ def bare_client(_dotenv, api_settings):
     """
     app = create_app(api_settings)
 
-    def make(*, raise_app_exceptions: bool = True, **headers) -> httpx.AsyncClient:
+    def make(*, raise_app_exceptions: bool = True, **headers: str) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             transport=httpx.ASGITransport(
                 app=app, raise_app_exceptions=raise_app_exceptions),
@@ -335,6 +439,12 @@ async def test_every_endpoint_works_with_a_credential(matrix, make_client,
 
     async with make_client(COLLEGE_A) as client:
         for endpoint in matrix:
+            if not endpoint.authenticated:
+                # These are exercised in test_auth.py, where the credential
+                # is the body rather than the header. Firing /auth/login with
+                # a bearer token would assert nothing about either.
+                continue
+
             response = await endpoint.send(client)
 
             assert response.status_code not in (401, 403), (
@@ -370,21 +480,112 @@ async def test_every_endpoint_works_with_a_credential(matrix, make_client,
         admin_conn.commit()
 
 
+#: The credential kinds where the TOKEN is impeccable and only the college it
+#: names is unusable. Everything else in the parametrization below is a token
+#: that fails on its own terms (missing, forged, expired, self-contradictory).
+TENANT_ONLY_FAILURES = frozenset({"nil-uuid", "unknown-college", "suspended-college"})
+
+
+@pytest.fixture
+def unusable_credential(_dotenv, api_settings, admin_conn, suspended_college):
+    """Factory: every way of arriving without a usable tenant, as headers.
+
+    Each case is a DIFFERENT layer failing, and they are enumerated rather
+    than represented by one "bad token" because the layers fail differently:
+    a missing header never reaches the decoder, a forged one fails the
+    signature check, and a perfectly signed token with no `cid` passes every
+    cryptographic check and would have sailed through to the connection.
+    That last one is the case this whole module exists for.
+    """
+    from jose import jwt
+
+    from .conftest import _identity_for, _sign
+
+    def token_for(college_id, role="teacher"):
+        return _sign(_identity_for(admin_conn, college_id, role), api_settings)
+
+    def signed(claims: dict) -> str:
+        """A token signed with the APP'S OWN KEY — so what refuses it is the
+        claim check, never the signature."""
+        base = {
+            "sub": str(uuid.uuid4()), "rid": str(uuid.uuid4()),
+            "email": "someone@example.edu", "typ": "access",
+            "exp": 4102444800,
+        }
+        return jwt.encode({**base, **claims}, api_settings.jwt_signing_key,
+                          algorithm=api_settings.jwt_algorithm)
+
+    def make(kind: str) -> dict:
+        if kind == "absent":
+            return {}
+        if kind == "empty":
+            return {"Authorization": ""}
+        if kind == "whitespace":
+            return {"Authorization": "Bearer    "}
+        if kind == "not-a-token":
+            return {"Authorization": "Bearer not-a-token"}
+        if kind == "wrong-scheme":
+            # A valid token presented as Basic auth. HTTPBearer must not
+            # accept it, or "Authorization: Basic <base64>" from a browser's
+            # own prompt would be read as a bearer token.
+            return {"Authorization": f"Basic {token_for(COLLEGE_A)}"}
+        if kind == "forged":
+            return {"Authorization": "Bearer " + jwt.encode(
+                {"sub": str(uuid.uuid4()), "rid": str(uuid.uuid4()),
+                 "email": "x@y.z", "role": "teacher", "cid": COLLEGE_A,
+                 "typ": "access", "exp": 4102444800},
+                "a key this app has never seen", algorithm="HS256")}
+        if kind == "expired":
+            identity = _identity_for(admin_conn, COLLEGE_A, "teacher")
+            token, _ = create_access_token(
+                user_id=identity["user_id"], reviewer_id=identity["reviewer_id"],
+                email=identity["email"], role=identity["role"],
+                college_id=identity["college_id"], settings=api_settings,
+                now=dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=2))
+            return {"Authorization": f"Bearer {token}"}
+        if kind == "no-college":
+            return {"Authorization": f"Bearer {signed({'role': 'teacher', 'cid': None})}"}
+        if kind == "null-college":
+            return {"Authorization": f"Bearer {signed({'role': 'teacher', 'cid': 'null'})}"}
+        if kind == "unknown-role":
+            return {"Authorization": f"Bearer {signed({'role': 'superuser', 'cid': COLLEGE_A})}"}
+        if kind == "nil-uuid":
+            return {"Authorization": "Bearer " + token_for(
+                "00000000-0000-0000-0000-000000000000")}
+        if kind == "unknown-college":
+            return {"Authorization": f"Bearer {token_for(COLLEGE_ABSENT)}"}
+        if kind == "suspended-college":
+            return {"Authorization": f"Bearer {token_for(COLLEGE_SUSPENDED)}"}
+        raise AssertionError(f"unknown credential kind {kind!r}")
+
+    return make
+
+
 @pytest.mark.parametrize(
-    "credential, why",
+    "kind, why",
     [
-        (None, "no header at all — the header was simply never sent"),
-        ("", "an empty header, which SET LOCAL would accept and match nothing"),
-        ("   ", "whitespace, which survives a naive `if header:` check"),
-        ("not-a-uuid", "a malformed id, which would raise inside the ::uuid cast"),
-        ("null", "the literal string 'null', which a JS client sends by accident"),
-        ("undefined", "the literal 'undefined', same"),
-        ("00000000-0000-0000-0000-000000000000", "the nil uuid — well-formed, no rows"),
+        ("absent", "no Authorization header at all"),
+        ("empty", "an empty Authorization header"),
+        ("whitespace", "a Bearer scheme with nothing after it"),
+        ("not-a-token", "a credential that is not a JWT"),
+        ("wrong-scheme", "a REAL token presented as Basic rather than Bearer"),
+        ("forged", "a perfectly-shaped token signed with the wrong key — the "
+                   "one case where only the signature check can refuse it"),
+        ("expired", "a token this app really signed, two days ago"),
+        ("no-college", "OUR OWN SIGNATURE, role=teacher, and NO college: the "
+                       "token that would set no tenant context and make every "
+                       "query return zero rows"),
+        ("null-college", "the literal string 'null' as the college claim, "
+                         "which a JS client produces by accident"),
+        ("unknown-role", "a role no migration defines, which must not be "
+                         "treated as 'some role with no privileges'"),
+        ("nil-uuid", "the nil uuid — well-formed, and no college has it"),
+        ("unknown-college", "a plausible uuid naming a college that does not exist"),
+        ("suspended-college", "a REAL college the platform has suspended"),
     ],
-    ids=["absent", "empty", "whitespace", "malformed", "null", "undefined", "nil-uuid"],
 )
 async def test_no_usable_context_is_a_loud_refusal_on_every_endpoint(
-    matrix, bare_client, credential, why
+    matrix, bare_client, unusable_credential, kind, why
 ):
     """THE TEST THIS FILE EXISTS FOR.
 
@@ -394,51 +595,35 @@ async def test_no_usable_context_is_a_loud_refusal_on_every_endpoint(
     name the problem, so an operator reading a log sees a credential failure
     rather than a mysterious empty database.
 
-    The nil-uuid case is the interesting one and is NOT expected to 401: it is
-    syntactically valid, so identity accepts it and RLS scopes the request to
-    a college that owns nothing. That is the silent-empty scenario itself. It
-    is allowed to 404 (no such row for this tenant) but it must NEVER return
-    another college's row — asserted below by comparing against what the real
-    tenant sees.
+    THE CASE TO READ FIRST IS `no-college`. It is a token THIS APP SIGNED,
+    unexpired, structurally perfect, whose role is `teacher` and whose `cid`
+    is null. Every cryptographic check passes. If `user_from_claims` did not
+    refuse it, `get_tenant_conn` would be handed college_id=None — and the
+    honest-looking result would be a 200 with an empty list on every read
+    endpoint in this matrix. That is the §6 failure arriving through the front
+    door with a valid signature, and it is why the check is at the edge rather
+    than left to the database.
+
+    The unknown/suspended college cases used to be the interesting exception
+    here and are not any more: `get_tenant_conn` runs one SELECT against
+    `colleges` before `SET LOCAL`, so they are refused at the edge like every
+    other unusable credential.
     """
-    nil_uuid = credential == "00000000-0000-0000-0000-000000000000"
-    headers = {} if credential is None else {DEBUG_COLLEGE_HEADER: credential}
+    headers = unusable_credential(kind)
 
-    # The nil-uuid case can reach the database (it is syntactically valid, so
-    # identity accepts it), and POST /upload dies there on a FK violation.
-    # Let the app's own handler turn that into a response instead of raising
-    # into the test, so the assertion below sees what a CLIENT would see.
-    async with bare_client(raise_app_exceptions=not nil_uuid, **headers) as client:
+    async with bare_client(**headers) as client:
         for endpoint in matrix:
-            response = await endpoint.send(client)
-
-            if nil_uuid:
-                # A syntactically valid credential naming a college that does
-                # not exist. identity.py accepts it (it only parses the uuid),
-                # so this is the closest the API gets to the silent-empty
-                # failure: the context IS set, to a tenant that owns nothing.
-                #
-                # The property asserted is the safety one, not a specific code.
-                # Today the outcomes are: 404 on the tenant reads (correct and
-                # indistinguishable from any other miss), 409/201 on the shared
-                # bank (correct — it is shared between authenticated callers),
-                # and a 500 from POST /upload, where the college_id FK rejects
-                # the insert.
-                #
-                # KNOWN ROUGH EDGE, deliberately asserted rather than smoothed:
-                # that 500 is loud and writes nothing, which is what matters
-                # here, but a 401 naming the unknown tenant would be better.
-                # Fixing it means verifying the college exists in
-                # get_tenant_conn, which changes what every cross-tenant test
-                # using a non-existent college id means — a real change, not a
-                # test-file change. See the summary in the session notes.
-                assert not (response.status_code == 200 and endpoint.touches_tenant_data), (
-                    f"{endpoint.id} returned 200 to a college that owns no rows "
-                    f"({endpoint.note}): {response.text[:300]}"
-                )
-                if endpoint.touches_tenant_data and response.status_code == 200:
-                    pytest.fail(f"{endpoint.id} leaked to an unknown tenant")
+            if not endpoint.authenticated:
                 continue
+            if kind in TENANT_ONLY_FAILURES and not endpoint.needs_tenant:
+                # The token itself is fine here — it is the TENANT it names
+                # that cannot act. GET /auth/me neither opens a connection nor
+                # reads a row, so it answers from the claims and is right to.
+                # That is asserted positively below rather than skipped
+                # silently.
+                continue
+
+            response = await endpoint.send(client)
 
             assert response.status_code == 401, (
                 f"{endpoint.id} with {why} returned {response.status_code}, not 401.\n"
@@ -448,9 +633,14 @@ async def test_no_usable_context_is_a_loud_refusal_on_every_endpoint(
                 f"edge. Anything else — a 200, an empty list, a 404 — is the "
                 f"silent-empty failure CLAUDE_CONTEXT.md §6 describes."
             )
+            # The standard header that says which scheme to use. Its absence
+            # is what makes a 401 unactionable for a generic HTTP client.
+            assert response.headers.get("WWW-Authenticate") == "Bearer", (
+                f"{endpoint.id}: 401 without a WWW-Authenticate header")
 
             detail = response.json().get("detail", "")
-            assert DEBUG_COLLEGE_HEADER in detail or "uuid" in detail.lower(), (
+            assert any(word in detail.lower() for word in
+                       ("token", "college", "role", "bearer")), (
                 f"{endpoint.id}: the 401 does not say what was wrong "
                 f"({detail!r}). A bare 'unauthorized' sends the next reader "
                 f"looking at the database."
@@ -462,6 +652,60 @@ async def test_no_usable_context_is_a_loud_refusal_on_every_endpoint(
             assert "questions" not in body and "job_id" not in body, (
                 f"{endpoint.id} returned data-shaped keys on a refusal: {body}"
             )
+
+
+@pytest.mark.parametrize("kind", sorted(TENANT_ONLY_FAILURES))
+async def test_auth_me_still_answers_when_only_the_TENANT_is_unusable(
+    matrix, bare_client, unusable_credential, kind
+):
+    """The other half of the skip above, asserted rather than assumed.
+
+    A token for a suspended (or nonexistent) college is a VALID token: this
+    app signed it, it has not expired, and every claim in it is consistent.
+    What is wrong is the tenant, and `GET /auth/me` does not act as a tenant —
+    it reports the caller's own claims and opens no connection. So it answers
+    200 while every endpoint that touches data answers 401, and both are
+    correct.
+
+    This test exists so that the `continue` in the parametrization above is a
+    stated exception with a reason, rather than a hole nobody notices when
+    /auth/me grows a database read. The day it does, this fails and the skip
+    has to be revisited — which is exactly the right time.
+    """
+    async with bare_client(**unusable_credential(kind)) as client:
+        response = await client.get("/api/v1/auth/me")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    # It reports the caller's OWN identity and nothing else — no college
+    # name, no status, nothing about the tenant it could not have read.
+    assert set(body) == {"user_id", "reviewer_id", "email", "role", "college_id"}
+
+
+async def test_the_unauthenticated_surface_is_exactly_these_four(matrix):
+    """Only /health and the three /auth entry points answer without a token.
+
+    The matrix above SKIPS the endpoints marked `authenticated=False`, which
+    would be a hole in it if that flag could be set casually: an endpoint
+    added with `authenticated=False` would silently stop being checked for
+    tenant isolation. So the exempt list is pinned here by name. Adding to it
+    is a deliberate act with a failing test in front of it, which is the point.
+
+    Each of the four is exempt for a DIFFERENT and stated reason:
+      /health          reports nothing but its own aliveness, and no database.
+      /auth/login      IS how a credential is obtained.
+      /auth/refresh    is authenticated by the refresh token in its body; the
+                       access token is expired by definition when it is called.
+      /auth/logout     acts on the refresh token in its body, and answers 204
+                       either way, so it reveals nothing.
+    """
+    exempt = {e.id for e in matrix if not e.authenticated}
+    assert exempt == {
+        "GET /health",
+        "POST /api/v1/auth/login",
+        "POST /api/v1/auth/refresh",
+        "POST /api/v1/auth/logout",
+    }, exempt
 
 
 async def test_a_refused_request_writes_nothing(matrix, bare_client, admin_conn):
@@ -496,6 +740,11 @@ async def test_a_refused_request_writes_nothing(matrix, bare_client, admin_conn)
 
     async with bare_client() as client:
         for endpoint in matrix:
+            if not endpoint.authenticated:
+                # /auth/login and /auth/refresh are MEANT to be reachable
+                # here, and login deliberately does not write. Firing them
+                # would prove nothing about a refusal.
+                continue
             await endpoint.send(client)
 
     after = counts()
@@ -507,29 +756,109 @@ async def test_a_refused_request_writes_nothing(matrix, bare_client, admin_conn)
 
 # ═════════════════ escalation: a tenant cannot become an admin ══════════════
 
+@pytest.fixture
+def escalation_attempt(api_settings, admin_conn):
+    """Factory: every way a tenant caller might try to claim cross-tenant access.
+
+    All of these were headers when identity was a header. They are claims now,
+    and the interesting ones are the three that a signature CANNOT refuse:
+    a token we really signed, carrying an extra `is_platform_admin` claim, a
+    contradictory role, or an injection payload where a college id belongs.
+    Those reach the claim-reading code, which is where the refusal has to
+    happen.
+    """
+    from jose import jwt
+
+    from .conftest import _identity_for, _sign
+
+    def ours(claims: dict) -> str:
+        """Signed with the APP'S OWN KEY: nothing but the claim check can
+        refuse it."""
+        base = {"sub": str(uuid.uuid4()), "rid": str(uuid.uuid4()),
+                "email": "teacher@example.edu", "typ": "access",
+                "exp": 4102444800, "role": "teacher", "cid": COLLEGE_A}
+        return jwt.encode({**base, **claims}, api_settings.jwt_signing_key,
+                          algorithm=api_settings.jwt_algorithm)
+
+    def valid() -> str:
+        return _sign(_identity_for(admin_conn, COLLEGE_A, "teacher"), api_settings)
+
+    def make(kind: str) -> dict:
+        if kind == "invented-header":
+            return {"Authorization": f"Bearer {valid()}",
+                    "X-Is-Platform-Admin": "true"}
+        if kind == "official-looking":
+            return {"Authorization": f"Bearer {valid()}",
+                    "X-Debug-Is-Platform-Admin": "true"}
+        if kind == "extra-claim":
+            return {"Authorization": "Bearer " + ours({"is_platform_admin": True})}
+        if kind == "admin-claim-with-college":
+            # role says cross-tenant, cid says one tenant: a token that would
+            # have to be half-believed to be honoured at all.
+            return {"Authorization": "Bearer " + ours({"role": "platform_admin"})}
+        if kind == "forged-admin":
+            return {"Authorization": "Bearer " + jwt.encode(
+                {"sub": str(uuid.uuid4()), "rid": str(uuid.uuid4()),
+                 "email": "a@b.c", "role": "platform_admin", "cid": None,
+                 "typ": "access", "exp": 4102444800},
+                "a key this app has never seen", algorithm="HS256")}
+        if kind == "alg-none":
+            # The classic attack, and it has to be HAND-BUILT: python-jose
+            # refuses to encode `alg: none` at all ("Algorithm none not
+            # supported"), which is a good default and is also why a test
+            # that used its encoder would silently not be testing this.
+            # `decode_access_token` pins algorithms=[HS256], so the token is
+            # refused before its claims are read.
+            def b64(raw: bytes) -> str:
+                return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+            header = b64(json_module.dumps({"alg": "none", "typ": "JWT"}).encode())
+            payload = b64(json_module.dumps(
+                {"sub": str(uuid.uuid4()), "rid": str(uuid.uuid4()),
+                 "email": "a@b.c", "role": "platform_admin", "cid": None,
+                 "typ": "access", "exp": 4102444800}).encode())
+            return {"Authorization": f"Bearer {header}.{payload}."}
+        if kind == "two-ids":
+            return {"Authorization": "Bearer " + ours({"cid": f"{COLLEGE_A}, {COLLEGE_B}"})}
+        if kind == "sql-injection":
+            return {"Authorization": "Bearer " + ours({"cid": f"{COLLEGE_A}' OR '1'='1"})}
+        if kind == "set-injection":
+            return {"Authorization": "Bearer " + ours(
+                {"cid": f"{COLLEGE_A}'; SET app.is_platform_admin='true"})}
+        if kind == "case-variation":
+            return {"Authorization": "Bearer " + ours({"cid": COLLEGE_A.upper()})}
+        raise AssertionError(f"unknown escalation kind {kind!r}")
+
+    return make
+
+
 @pytest.mark.parametrize(
-    "headers, why",
+    "kind, why",
     [
-        ({"X-Is-Platform-Admin": "true"}, "a header inventing the admin claim"),
-        ({"X-Debug-Is-Platform-Admin": "true"}, "the same, named to look official"),
-        ({"X-Debug-College-Id": COLLEGE_A, "X-Platform-Admin": "1"}, "an extra flag alongside a real credential"),
-        ({"X-Debug-College-Id": f"{COLLEGE_A}, {COLLEGE_B_ABSENT}"}, "two ids, hoping one is honoured"),
-        ({"X-Debug-College-Id": f"{COLLEGE_A}\tX-Platform-Admin: true"}, "header injection via a tab"),
-        ({"X-Debug-College-Id": f"{COLLEGE_A}' OR '1'='1"}, "SQL injection into the GUC"),
-        ({"X-Debug-College-Id": f"{COLLEGE_A}'; SET app.is_platform_admin='true"}, "statement injection into SET LOCAL"),
-        ({"X-Debug-College-Id": COLLEGE_A.upper()}, "case variation, in case comparison is textual"),
+        ("invented-header", "a header inventing the admin claim beside a real token"),
+        ("official-looking", "the same, named to look official"),
+        ("extra-claim", "OUR OWN SIGNATURE plus an is_platform_admin claim the "
+                        "code does not read"),
+        ("admin-claim-with-college", "our signature, role=platform_admin, and a "
+                                     "college — a token that contradicts itself"),
+        ("forged-admin", "a platform_admin token signed with the wrong key"),
+        ("alg-none", "an UNSIGNED token claiming platform_admin — the alg:none attack"),
+        ("two-ids", "two college ids in one claim, hoping one is honoured"),
+        ("sql-injection", "SQL injection where the college id goes"),
+        ("set-injection", "statement injection aimed at SET LOCAL itself"),
+        ("case-variation", "case variation, in case the comparison is textual"),
     ],
-    ids=["invented-header", "official-looking", "extra-flag", "two-ids",
-         "tab-injection", "sql-injection", "set-injection", "case-variation"],
 )
-async def test_no_request_can_escalate_to_platform_admin(whoami_app, headers, why):
+async def test_no_request_can_escalate_to_platform_admin(
+    whoami_app, escalation_attempt, kind, why
+):
     """A tenant caller must never acquire `app.is_platform_admin`.
 
     That GUC activates migration 003's `platform_admin_bypass` policy, which
-    makes every college's rows visible on one connection. api/deps/identity.py
-    hardcodes `is_platform_admin=False` and there is no endpoint wired to
-    `get_admin_conn`, so the claim is unreachable by design — this test is
-    what keeps it unreachable when identity is rewritten for real auth.
+    makes every college's rows visible on one connection. It is set by
+    `get_tenant_conn` for exactly one input — a token whose verified `role`
+    claim is `platform_admin` — so this test is the standing proof that no
+    OTHER input reaches it.
 
     The whoami probe is used because it reports what POSTGRES believes about
     the transaction, not what the API says about itself. An escalation that
@@ -538,10 +867,18 @@ async def test_no_request_can_escalate_to_platform_admin(whoami_app, headers, wh
 
     The injection cases matter specifically because `SET LOCAL` cannot take a
     bind parameter — api/deps/db.py interpolates client-side through psycopg2
-    — so the only thing standing between a header and a SET statement is the
+    — so the only thing between a claim and a SET statement is the
     `uuid.UUID()` parse in identity.py. These assert that parse is doing its
-    job.
+    job, now on a claim rather than on a header.
+
+    `extra-claim` is the one to read: it is a token THIS APP SIGNED, with an
+    `is_platform_admin: true` claim added. It is harmless only because
+    `user_from_claims` derives admin-ness from `role` and never reads that
+    key — `CurrentUser.is_platform_admin` is a property, not a field, so
+    there is no attribute for a stray claim to land in.
     """
+    headers = escalation_attempt(kind)
+
     transport = httpx.ASGITransport(app=whoami_app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.get("/_test/whoami", headers=headers)
@@ -561,38 +898,53 @@ async def test_no_request_can_escalate_to_platform_admin(whoami_app, headers, wh
         f"{why} SET app.is_platform_admin in Postgres: {body['db']}. "
         f"This is a full cross-tenant bypass."
     )
-    # And the tenant it did resolve is a real, single, exactly-matching uuid.
-    assert body["db"]["current_college_id"] == body["identity"]["college_id"]
-    assert body["rls_context_ok"] is True
 
 
-async def test_the_tenant_comes_from_identity_not_from_the_request(make_client, make_job):
+async def test_the_tenant_comes_from_identity_not_from_the_request(make_client,
+                                                                  make_job,
+                                                                  college_b):
     """A college named in a body, query string or path must be ignored.
 
     RLS scopes a request to whatever college id it is handed, so the one place
-    that id may come from is the authenticated user. This fires COLLEGE_B's
-    job id at a COLLEGE_A caller in every position a caller controls — path,
-    query, body — and asserts none of them moves the tenant.
+    that id may come from is the authenticated user. Two halves:
+
+      * A's own job, asked for with `?college_id=<B>` — the answer must be
+        identical to asking without it, i.e. the parameter buys nothing;
+      * B's job, asked for by an A credential naming B in the query string —
+        the 404 is what says the parameter cannot MOVE the tenant. That leg
+        needed a real college B: against an id that owned no rows, "still 404"
+        was true no matter what the endpoint did with the parameter.
     """
-    other_job = make_job(college_id=COLLEGE_A)["job_id"]
+    own_job = make_job(college_id=COLLEGE_A)["job_id"]
+    b_job = make_job(college_id=college_b["college_id"])["job_id"]
 
     async with make_client(COLLEGE_A) as client:
-        # A query parameter that names another college is simply not a thing
-        # the endpoint reads; assert it changes nothing rather than assuming.
         with_query = await client.get(
-            f"/api/v1/jobs/{other_job}", params={"college_id": COLLEGE_B_ABSENT}
+            f"/api/v1/jobs/{own_job}", params={"college_id": COLLEGE_B}
         )
-        plain = await client.get(f"/api/v1/jobs/{other_job}")
+        plain = await client.get(f"/api/v1/jobs/{own_job}")
+        borrowed = await client.get(
+            f"/api/v1/jobs/{b_job}", params={"college_id": COLLEGE_B}
+        )
 
     assert with_query.status_code == plain.status_code == 200
     assert with_query.json() == plain.json(), (
         "a college_id query parameter changed the response — the tenant must "
         "come from identity alone"
     )
+    assert borrowed.status_code == 404, (
+        f"naming college B in the query string reached B's job from an A "
+        f"credential ({borrowed.status_code}): {borrowed.text[:300]}"
+    )
+    # The 404 body echoes the id that was ASKED for, exactly as it does for an
+    # id that exists nowhere (test_another_colleges_row_is_indistinguishable_
+    # from_a_missing_one pins that), so the id appearing here is not a leak —
+    # what must not appear is anything ABOUT B's job.
+    assert "blob_url" not in borrowed.text and "booklet_evaluation" not in borrowed.text
 
 
 async def test_another_colleges_row_is_indistinguishable_from_a_missing_one(
-    make_client, make_job
+    make_client, make_job, college_b
 ):
     """Rule 3, asserted as a single comparison rather than by eyeballing two
     tests: a real job in another college and a uuid that exists nowhere must
@@ -604,7 +956,7 @@ async def test_another_colleges_row_is_indistinguishable_from_a_missing_one(
     foreign_job = make_job(college_id=COLLEGE_A)["job_id"]
     nonexistent = uuid.uuid4()
 
-    async with make_client(COLLEGE_B_ABSENT) as client:
+    async with make_client(COLLEGE_B) as client:
         foreign = await client.get(f"/api/v1/jobs/{foreign_job}")
         missing = await client.get(f"/api/v1/jobs/{nonexistent}")
 
@@ -645,80 +997,131 @@ async def test_platform_admin_sees_across_colleges(make_job, admin_conn):
     assert colleges >= 1
 
 
-async def test_the_isolating_predicate_is_not_only_rls(make_job):
-    """THE TEST THAT ACTUALLY HOLDS ON THIS DEPLOYMENT.
+async def test_the_isolating_predicate_is_not_only_rls(make_job, college_b):
+    """THE BELT, TESTED WITH THE BRACES DELIBERATELY UNFASTENED.
 
-    With PGUSER a superuser, migration 003/014's policies are inert and RLS
-    isolates nothing (see the module docstring). What isolates tenants is the
-    explicit `AND college_id = %s` inside core/jobs.py::get_job.
+    `core/jobs.py::get_job` filters `AND college_id = %s` itself, and migration
+    016 does not make that redundant. It was the ONLY thing isolating tenants
+    on every pre-016 deployment (superuser PGUSER ⇒ inert policies), and it is
+    the only thing left the moment anyone points PGUSER back at a superuser —
+    a one-line .env edit with no visible symptom.
 
-    So this drives that query under a DELIBERATELY WRONG RLS context — the
-    exact situation where RLS would be the only thing stopping a leak — and
-    asserts the row is still refused. If someone deletes the predicate as
-    "redundant with the policy", this fails, instead of isolation silently
-    disappearing on every superuser deployment in existence.
+    So this asserts the predicate WITHOUT letting RLS do the work: the query
+    runs on a platform-admin connection, where 014's permissive bypass policy
+    makes every college's jobs visible. Anything that refuses the row there is
+    the predicate, because there is nothing else left. Deleting it as
+    "redundant with the policy" fails here rather than silently removing a
+    layer.
+
+    The wrong-tenant-context leg is kept as well: it is the shape the pre-016
+    version of this test had, and it is what a superuser deployment still
+    exercises.
     """
     job_a = make_job(college_id=COLLEGE_A)["job_id"]
 
     conn = core.db.get_connection()
     try:
         with conn.cursor() as cur:
-            # Context says college B; the query asks for college B's copy of a
-            # job that belongs to college A.
-            set_tenant_context(cur, COLLEGE_B_ABSENT)
-            leaked = core.jobs.get_job(cur, job_id=job_a, college_id=COLLEGE_B_ABSENT)
-
-            # Same connection, same wrong context, asking as the real owner —
-            # this is what proves the previous line failed for the right reason
-            # (the predicate) and not because the row was unreachable.
-            set_tenant_context(cur, COLLEGE_A)
+            # RLS deliberately NOT filtering: the admin bypass policy is
+            # permissive, so this connection can see every tenant's jobs.
+            set_admin_context(cur)
+            leaked = core.jobs.get_job(cur, job_id=job_a, college_id=COLLEGE_B)
+            # Same connection, same context, asking as the real owner — proof
+            # the row was reachable and the predicate is what refused it.
             owned = core.jobs.get_job(cur, job_id=job_a, college_id=COLLEGE_A)
+
+            # And with the policy fastened too, which is the deployment's
+            # actual configuration since 016.
+            set_tenant_context(cur, COLLEGE_B)
+            leaked_under_rls = core.jobs.get_job(cur, job_id=job_a,
+                                                 college_id=COLLEGE_B)
     finally:
         conn.close()
 
     assert leaked is None, (
-        "core/jobs.py::get_job returned another college's job. On a superuser "
-        "connection its college_id predicate is the ONLY thing isolating "
-        "tenants — see api/README.md's 'Known gap'."
+        "core/jobs.py::get_job returned another college's job on a connection "
+        "where RLS was bypassed. Its college_id predicate is the only "
+        "isolation left on a superuser deployment — see migrations/"
+        "016_application_role.sql."
     )
+    assert leaked_under_rls is None
     assert owned is not None, "the job should be visible to its own college"
 
 
-async def test_rls_policies_isolate_tenants(db_conn, tenant_conn):
-    """The RLS layer proper — SKIPPED, LOUDLY, under a role that bypasses it.
+async def test_rls_policies_isolate_tenants(db_conn, tenant_conn, college_b,
+                                            make_booklet):
+    """THE RLS LAYER PROPER — and it RUNS now.
 
-    This is the test that will start enforcing real isolation the day PGUSER
-    points at a non-superuser application role. It is written now, and skipped
-    with a message naming the fix, rather than omitted — an absent test looks
-    like an untested property, while a skipped one with this message is a
-    standing instruction.
+    This test used to skip, loudly, on every deployment: `PGUSER=postgres` is a
+    superuser, and Postgres exempts SUPERUSER/BYPASSRLS roles from row-level
+    security entirely, so migrations 003/014/015's policies were inert.
+    Migration 016 creates the NOSUPERUSER/NOBYPASSRLS application role they
+    always needed, and `.env.example` points PGUSER at it.
+
+    So a bypassing role is now a MISCONFIGURATION, not a state to skip on, and
+    this fails instead of skipping. A skip here would mean the suite reports
+    green while the property this whole file is about — two tenants, two sets
+    of rows — is untested.
+
+    The shape is the success criterion itself: two REAL colleges, each with a
+    real answer of its own, and one query — the same query — run under two
+    values of `app.current_college_id`, returning different rows. The old
+    version compared A's rows against a college that owned nothing, where "0
+    rows" is also what a broken query, an empty table, or a missing GUC
+    returns.
     """
     with db_conn.cursor() as cur:
         cur.execute(
-            "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user"
+            "SELECT current_user, rolsuper OR rolbypassrls FROM pg_roles "
+            "WHERE rolname = current_user"
         )
-        (bypasses,) = cur.fetchone()
+        role, bypasses = cur.fetchone()
 
-    if bypasses:
-        pytest.skip(
-            "PGUSER bypasses RLS (superuser or BYPASSRLS), so migrations 003 "
-            "and 014's policies are inert and tenant isolation is enforced "
-            "ONLY by the explicit college_id predicates "
-            "(test_the_isolating_predicate_is_not_only_rls covers those). "
-            "Fix: create a NOBYPASSRLS application role that owns nothing, "
-            "grant it DML on the answer schema, point PGUSER at it. "
-            "See api/README.md, 'Known gap'."
-        )
+    assert not bypasses, (
+        f"PGUSER={role!r} bypasses RLS (superuser or BYPASSRLS), so the tenant "
+        f"policies in migrations 003/014/015 are INERT and two colleges see "
+        f"the same rows. This is no longer a tolerated configuration: run "
+        f"migrations/016_application_role.sql and point PGUSER at the "
+        f"application role it creates (see .env.example). Isolation is "
+        f"currently held up only by the explicit college_id predicates."
+    )
 
-    seeded = tenant_conn(COLLEGE_A)
-    with seeded.cursor() as cur:
-        cur.execute("SELECT count(*) FROM answers")
-        (mine,) = cur.fetchone()
+    a = make_booklet(college_id=COLLEGE_A)
+    b = make_booklet(college_id=college_b["college_id"],
+                     student_id=college_b["student_id"],
+                     exam_id=college_b["exam_id"])
 
-    other = tenant_conn(uuid.UUID(COLLEGE_B_ABSENT))
-    with other.cursor() as cur:
-        cur.execute("SELECT count(*) FROM answers")
-        (theirs,) = cur.fetchone()
+    def answers_visible_to(college_id) -> set[str]:
+        conn = tenant_conn(college_id)
+        with conn.cursor() as cur:
+            cur.execute("SELECT answer_id::text FROM answers")
+            return {row[0] for row in cur.fetchall()}
 
-    assert mine > 0, "expected seeded answers for COLLEGE_A; run scripts/reset_and_seed_db.sh"
-    assert theirs == 0, "RLS did not isolate a college with no rows of its own"
+    seen_by_a = answers_visible_to(COLLEGE_A)
+    seen_by_b = answers_visible_to(uuid.UUID(COLLEGE_B))
+
+    # Each tenant sees its own row...
+    assert a["answer_id"] in seen_by_a
+    assert b["answer_id"] in seen_by_b
+    # ...and not the other's. This is the whole point of the file.
+    assert a["answer_id"] not in seen_by_b, (
+        "college B's connection can read college A's answer — RLS is not "
+        "isolating tenants"
+    )
+    assert b["answer_id"] not in seen_by_a
+    assert seen_by_a and seen_by_b and seen_by_a != seen_by_b
+
+    # A connection with NO tenant context at all sees nothing — the fail-closed
+    # behaviour every other module's docstring depends on, asserted once here.
+    blind = core.db.get_connection()
+    try:
+        with blind.cursor() as cur:
+            cur.execute("SELECT count(*) FROM answers")
+            (visible,) = cur.fetchone()
+    finally:
+        blind.rollback()
+        blind.close()
+    assert visible == 0, (
+        "a connection with no app.current_college_id could read answers — the "
+        "policies are not being applied to this role"
+    )

@@ -12,9 +12,10 @@ JobStatus = Literal["queued", "running", "succeeded", "failed"]
 #: Job kinds the API knows how to enqueue. evaluation_jobs.job_type is free
 #: TEXT in the DB (migration 014 §2 — new kinds must not need a migration);
 #: this is the API's narrower view of which of them a client may ask for.
-#: Defined in api/services/evaluation.py, which is what enqueues it; re-exported
-#: here so schema consumers do not have to import a service.
+#: Defined in the services that enqueue them; re-exported here so schema
+#: consumers do not have to import a service.
 from api.services.evaluation import JOB_TYPE_BOOKLET_EVAL  # noqa: E402,F401
+from api.services.ingestion import JOB_TYPE_BOOKLET_INGEST  # noqa: E402,F401
 
 
 class JobProgress(BaseModel):
@@ -37,8 +38,16 @@ class JobProgress(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     stage: str = Field(
-        description="Machine-readable phase: queued, loading, evaluating, "
-                    "persisting, done, failed."
+        description=(
+            "Machine-readable phase. Which phases are possible depends on the "
+            "job's type, and the two are deliberately distinguishable: an "
+            "INGEST job (booklet_ingest) reports checking, fetching, "
+            "rasterizing, segmenting, persisting; an EVALUATION job "
+            "(booklet_eval) reports loading, evaluating, persisting. Plus "
+            "queued, done and failed for both. A client showing 'persisting' "
+            "should read job_type to know whether that is answer_blocks or "
+            "ledger rows."
+        )
     )
     percent: float | None = Field(
         default=None,

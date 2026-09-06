@@ -27,7 +27,8 @@ import uuid
 
 import pytest
 
-from tests.test_api.conftest import COLLEGE_A, COLLEGE_B_ABSENT, REVIEWER_TEACHER
+from api.deps.identity import create_access_token
+from tests.test_api.conftest import COLLEGE_A, COLLEGE_B
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
@@ -39,6 +40,61 @@ GENERATE = "/api/v1/papers/generate"
 #: not about whatever else happens to be seeded.
 ODD_MARKS_LONG = 9.25
 ODD_MARKS_SHORT = 2.75
+
+
+# ═══════════════════════════════ GET /papers (list) ═════════════════════════
+
+async def test_papers_list_is_shared_across_colleges(make_client, make_pattern,
+                                                      make_question, college_b):
+    """A generated paper is visible under ANY college's credential — the list
+    endpoint over the same shared, non-tenanted table
+    test_generation_draws_from_the_shared_bank exercises for POST
+    /papers/generate. get_tenant_conn authenticates the caller; it does not
+    scope this query (migration 008 line 15 — no college_id, no RLS)."""
+    pattern_id = make_pattern(slots=(("Q1", ODD_MARKS_LONG, "long"),))
+    make_question(status="live", style="long", marks_max=ODD_MARKS_LONG)
+
+    async with make_client(COLLEGE_A) as client:
+        created = await client.post(GENERATE, json={
+            "pattern_id": pattern_id, "name": "Shared list paper",
+            "marks_tolerance": 0.0,
+        })
+    assert created.status_code == 201, created.text
+    paper_id = created.json()["paper_id"]
+
+    async with make_client(COLLEGE_B) as client:
+        theirs = await client.get("/api/v1/papers", params={"pattern_id": pattern_id})
+
+    assert theirs.status_code == 200, theirs.text
+    assert paper_id in {p["paper_id"] for p in theirs.json()["items"]}
+
+
+async def test_papers_list_filters_by_status_and_pattern(make_client, make_pattern,
+                                                          make_question):
+    pattern_id = make_pattern(slots=(("Q1", ODD_MARKS_LONG, "long"),))
+    other_pattern_id = make_pattern(slots=(("Q1", ODD_MARKS_SHORT, "short"),))
+    make_question(status="live", style="long", marks_max=ODD_MARKS_LONG)
+    make_question(status="live", style="short", marks_max=ODD_MARKS_SHORT)
+
+    async with make_client(COLLEGE_A) as client:
+        mine = await client.post(GENERATE, json={
+            "pattern_id": pattern_id, "name": "Pattern-filtered paper",
+            "marks_tolerance": 0.0,
+        })
+        await client.post(GENERATE, json={
+            "pattern_id": other_pattern_id, "name": "A different pattern's paper",
+            "marks_tolerance": 0.0,
+        })
+
+        for_pattern = await client.get("/api/v1/papers", params={"pattern_id": pattern_id})
+        finalized = await client.get("/api/v1/papers", params={"status": "finalized"})
+
+    assert for_pattern.status_code == 200, for_pattern.text
+    ids = {p["paper_id"] for p in for_pattern.json()["items"]}
+    assert mine.json()["paper_id"] in ids
+    assert all(p["pattern_id"] == pattern_id for p in for_pattern.json()["items"])
+    # Generation always leaves a paper 'draft' — see PaperGenerateResponse.
+    assert mine.json()["paper_id"] not in {p["paper_id"] for p in finalized.json()["items"]}
 
 
 async def test_generation_assigns_only_live_questions(make_client, make_pattern,
@@ -61,7 +117,6 @@ async def test_generation_assigns_only_live_questions(make_client, make_pattern,
         response = await client.post(GENERATE, json={
             "pattern_id": pattern_id,
             "name": "Only-live proof paper",
-            "generated_by": REVIEWER_TEACHER,
             "marks_tolerance": 0.0,
         })
 
@@ -106,6 +161,7 @@ async def test_a_paper_persists_its_full_structure(make_client, make_pattern,
     make_question(status="live", style="short", marks_max=ODD_MARKS_SHORT)
 
     async with make_client(COLLEGE_A) as client:
+        author = client.identity["reviewer_id"]
         response = await client.post(GENERATE, json={
             "pattern_id": pattern_id,
             "name": "Structure paper",
@@ -133,7 +189,10 @@ async def test_a_paper_persists_its_full_structure(make_client, make_pattern,
 
     assert paper[0] == "Structure paper"
     assert paper[1] == "draft"
-    assert paper[2] is None, "generated_by was not sent, so it must be null"
+    # RE-4: generated_by is no longer a request field. Every paper made over
+    # HTTP is attributed to the account that asked for it — the NULL branch
+    # ("system-generated", migration 008) stays reachable only from the CLI.
+    assert paper[2] == author, "the paper must be attributed to its caller"
     assert assigned_count == 2
 
 
@@ -223,23 +282,34 @@ async def test_a_retired_pattern_cannot_produce_a_paper(make_client, make_patter
     assert "retired" in response.json()["detail"].lower()
 
 
-async def test_an_unknown_generated_by_is_rejected(make_client, make_pattern,
-                                                   make_question, admin_conn):
-    """generated_by must name a real reviewer — a 400, and no paper written.
+async def test_a_token_naming_an_unknown_reviewer_cannot_generate_a_paper(
+    make_client, make_pattern, make_question, admin_conn, api_settings
+):
+    """A paper's author must be a real reviewer — a 400, and no paper written.
 
     Ownership of a paper is the record of who is accountable for it; accepting
     an unknown id would produce a paper attributed to nobody while looking
     attributed.
+
+    RE-4 changed how this scenario is reached, not whether it matters: the
+    author used to be `generated_by` in the request body, so an unknown one
+    was a client sending a bad uuid. It is now the caller's own `rid` claim,
+    so the only way here is a token whose reviewer no longer exists.
     """
     pattern_id = make_pattern(slots=(("Q1", ODD_MARKS_LONG, "long"),))
     make_question(status="live", style="long", marks_max=ODD_MARKS_LONG)
 
+    token, _ = create_access_token(
+        user_id=uuid.uuid4(), reviewer_id=uuid.uuid4(),
+        email="ghost@example.edu", role="teacher", college_id=COLLEGE_A,
+        settings=api_settings)
+
     async with make_client(COLLEGE_A) as client:
-        response = await client.post(GENERATE, json={
-            "pattern_id": pattern_id,
-            "name": "Ghost author",
-            "generated_by": str(uuid.uuid4()),
-        })
+        response = await client.post(
+            GENERATE,
+            json={"pattern_id": pattern_id, "name": "Ghost author"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
     assert response.status_code == 400, response.text
 
@@ -251,19 +321,19 @@ async def test_an_unknown_generated_by_is_rejected(make_client, make_pattern,
 
 
 async def test_generation_requires_a_credential(make_client, make_pattern):
-    """Blank identity header is a 401 before any generation happens."""
+    """A blank Authorization header is a 401 before any generation happens."""
     pattern_id = make_pattern(slots=(("Q1", ODD_MARKS_LONG, "long"),))
 
     async with make_client(COLLEGE_A) as client:
         response = await client.post(GENERATE,
-                                     headers={"X-Debug-College-Id": ""},
+                                     headers={"Authorization": ""},
                                      json={"pattern_id": pattern_id, "name": "no auth"})
 
     assert response.status_code == 401, response.text
 
 
 async def test_generation_draws_from_the_shared_bank(make_client, make_pattern,
-                                                     make_question):
+                                                     make_question, college_b):
     """College B can generate a paper from a pattern and questions created
     without reference to any college — because patterns, papers and the
     question bank have no college_id at all.
@@ -273,11 +343,16 @@ async def test_generation_draws_from_the_shared_bank(make_client, make_pattern,
     break a test that names where the decision was made. It is NOT a claim
     that tenant isolation is working — there is nothing here to isolate. The
     isolation proofs are in test_jobs.py and test_evaluation.py.
+
+    College B is seed_minimal.sql's real second college. It used to be an id
+    that existed nowhere, which get_tenant_conn now refuses with 401 — so this
+    test would have failed on authentication rather than telling us anything
+    about the bank.
     """
     pattern_id = make_pattern(slots=(("Q1", ODD_MARKS_LONG, "long"),))
     live_id = make_question(status="live", style="long", marks_max=ODD_MARKS_LONG)
 
-    async with make_client(COLLEGE_B_ABSENT) as client:
+    async with make_client(COLLEGE_B) as client:
         response = await client.post(GENERATE, json={
             "pattern_id": pattern_id,
             "name": "Paper for college B",

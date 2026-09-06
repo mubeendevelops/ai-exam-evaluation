@@ -30,6 +30,7 @@ from __future__ import annotations
 from typing import Any
 
 import core.paper_generator
+import core.papers
 
 
 class PatternNotFoundError(LookupError):
@@ -58,6 +59,19 @@ class UnfillableSlotsError(RuntimeError):
     raises before the caller commits, so the partially built paper rows roll
     back with the request's transaction.
     """
+
+
+def list_papers(cur, *, status=None, pattern_id=None,
+                limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+    """A page of generated papers plus the matching total. Straight through
+    to core/papers.py, which owns the SQL — same shape as
+    api/services/questions.py::list_bank. No tenant filter: see
+    core/papers.py's header."""
+    rows = core.papers.list_papers(
+        cur, status=status, pattern_id=pattern_id, limit=limit, offset=offset,
+    )
+    total = core.papers.count_papers(cur, status=status, pattern_id=pattern_id)
+    return rows, total
 
 
 def generate(cur, *, pattern_id, name: str, generated_by=None,

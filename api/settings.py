@@ -67,6 +67,60 @@ class Settings(BaseSettings):
     #: this defaults to false whenever api_env != "development".
     enable_debug_endpoints: bool | None = None
 
+    # ── Authentication (api/deps/identity.py, api/routers/auth.py) ──────
+    #: HMAC signing key for the ACCESS token. There is no default and there
+    #: must not be one: a committed fallback secret is a signing key every
+    #: checkout of this repo shares, and anyone holding it can mint a token
+    #: for any college. `jwt_signing_key` below refuses to run without it
+    #: outside development.
+    jwt_secret: str = ""
+    #: HS256 — one symmetric key, held by the one process that both signs and
+    #: verifies. RS256 becomes worth the key management the day something
+    #: OTHER than this API needs to verify a token (the job worker, a second
+    #: service); python-jose[cryptography] already supports it, so that is a
+    #: config change plus a keypair, not a rewrite.
+    jwt_algorithm: str = "HS256"
+    #: Access-token lifetime. SHORT on purpose: an access token is a bearer
+    #: credential that cannot be revoked before it expires (there is no
+    #: per-request database lookup to revoke it with), so its blast radius is
+    #: exactly this window. Revocation lives on the refresh token, which does
+    #: have a row — see migration 017 §2.
+    access_token_ttl_minutes: int = 15
+    #: Refresh-token lifetime, i.e. how long a client can stay signed in
+    #: without re-entering a password. Revocable at any point inside it.
+    refresh_token_ttl_days: int = 14
+    #: POST /auth/login rate limit: this many attempts per window, per client
+    #: IP and per email address, counted in-process (no Redis — see
+    #: api/deps/ratelimit.py for what that does and does not buy).
+    login_rate_limit_attempts: int = 10
+    login_rate_limit_window_seconds: int = 300
+
+    @property
+    def jwt_signing_key(self) -> str:
+        """The key used to sign and verify access tokens.
+
+        In development ONLY, an unset JWT_SECRET falls back to a key generated
+        fresh for this process: the API is usable on a bare checkout, and the
+        cost is that every restart invalidates outstanding access tokens
+        (clients just refresh). Anywhere else, an unset secret raises at
+        startup rather than being invented — a per-process key in a multi-
+        worker deployment would mean a token signed by worker 1 failing
+        verification on worker 2, i.e. intermittent 401s under load, which is
+        a far worse day than a refused boot.
+        """
+        if self.jwt_secret.strip():
+            return self.jwt_secret.strip()
+        if self.api_env == "development":
+            return _development_jwt_secret()
+        raise RuntimeError(
+            "JWT_SECRET is not set and API_ENV is not 'development'. Access "
+            "tokens are signed with it; there is deliberately no default, "
+            "because a committed fallback would be a signing key shared by "
+            "every checkout of this repo. Generate one with "
+            "`python -c \'import secrets; print(secrets.token_urlsafe(48))\'` "
+            "and put it in the environment."
+        )
+
     @property
     def debug_endpoints_enabled(self) -> bool:
         if self.enable_debug_endpoints is not None:
@@ -76,6 +130,24 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+
+@functools.lru_cache(maxsize=1)
+def _development_jwt_secret() -> str:
+    """One random key per process, for development with no JWT_SECRET set.
+
+    Cached so that every call within a process returns the SAME key —
+    otherwise a token would be signed with one secret and verified with
+    another, and every authenticated request would 401.
+    """
+    import logging
+    import secrets
+
+    logging.getLogger("api").warning(
+        "JWT_SECRET is unset; signing access tokens with a key generated for "
+        "this process. Every restart invalidates outstanding access tokens. "
+        "Set JWT_SECRET in .env to stop this.")
+    return secrets.token_urlsafe(48)
 
 
 @functools.lru_cache(maxsize=1)

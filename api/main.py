@@ -30,6 +30,15 @@ cannot be enabled in production by an environment variable.
 `Settings.debug_endpoints_enabled` still exists and still matters: it gates
 the `stub`/`stub_llm` request fields on /evaluate and /questions/generate,
 both of which write fabricated data into real tables.
+
+AUTHENTICATION (2026-09-06). Every route mounted here requires a bearer
+access token except `GET /health` and `POST /api/v1/auth/login`. That is not
+enforced router by router: it is enforced by `get_tenant_conn` /
+`get_current_user`, which every other endpoint depends on, and asserted over
+the app's own OpenAPI schema by
+tests/test_api/test_auth.py::test_no_endpoint_is_reachable_without_a_token —
+so a new router cannot quietly join the exempt list. See api/deps/identity.py
+for what is in a token and api/routers/auth.py for how one is obtained.
 """
 from __future__ import annotations
 
@@ -40,6 +49,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.deps.db import TenantContextError
+from api.deps.ratelimit import LoginRateLimiter
 from api.settings import Settings, get_settings, load_dotenv_once
 
 log = logging.getLogger("api")
@@ -59,13 +69,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
 
+    # Fails the BOOT, not the first login, if JWT_SECRET is missing outside
+    # development. A signing key resolved lazily per request would turn a
+    # deployment misconfiguration into a 500 on the one endpoint nobody can
+    # work around, discovered by a user rather than by the deploy.
+    settings.jwt_signing_key
+
+    # One limiter per app instance, holding the failed-login counters. On
+    # app.state rather than module-global so two apps in one process (which is
+    # every test module) do not share counters — see api/deps/ratelimit.py.
+    app.state.login_rate_limiter = LoginRateLimiter(
+        attempts=settings.login_rate_limit_attempts,
+        window_seconds=settings.login_rate_limit_window_seconds,
+    )
+
     _configure_cors(app, settings)
 
     _register_exception_handlers(app)
 
     # Business endpoints. Every one of these takes its DB connection from
     # api/deps/db.py — see that module's header before adding another.
-    from api.routers import evaluation, jobs, papers, questions, upload
+    from api.routers import (
+        auth, evaluation, exams, health, jobs, papers, questions, students, upload,
+    )
+
+    # The two routes that answer without a bearer token, and the only two:
+    # POST /auth/login (which IS the credential-granting endpoint) and
+    # GET /health. Everything mounted after this point requires one —
+    # tests/test_api/test_auth.py::test_no_endpoint_is_reachable_without_a_token
+    # derives that list from the app's own OpenAPI schema and fails if it
+    # grows.
+    app.include_router(health.router)
+    app.include_router(auth.router)
 
     app.include_router(upload.router)
     app.include_router(jobs.router)
@@ -75,6 +110,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # ever draw from questions that finished it.
     app.include_router(questions.router)
     app.include_router(papers.router)
+    app.include_router(exams.router)
+    app.include_router(students.router)
 
     # No conditional router registration below this line. See the module
     # docstring: the app's route table is the same in every environment, so

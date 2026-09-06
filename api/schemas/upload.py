@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -52,3 +53,30 @@ class UploadResponse(BaseModel):
         description="'dummy' or 'minio' — which core/storage.py path stored it."
     )
     uploaded_at: dt.datetime
+
+
+class UploadSummary(BaseModel):
+    """One row of GET /api/v1/uploads."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    upload_id: uuid.UUID
+    filename: str
+    size_bytes: int = Field(ge=0)
+    blob_url: str
+    storage_mode: str
+    uploaded_at: dt.datetime
+    bound: bool = Field(
+        description="Exam-binding state: true when at least one `answers` "
+                    "row was ingested from this upload, for any exam/student. "
+                    "See core/uploads.py::_BOUND_EXISTS.",
+    )
+
+
+def upload_to_summary(row: dict[str, Any]) -> UploadSummary:
+    return UploadSummary(
+        upload_id=row["upload_id"], filename=row["filename"],
+        size_bytes=row["size_bytes"], blob_url=row["blob_url"],
+        storage_mode=row["storage_mode"], uploaded_at=row["uploaded_at"],
+        bound=row["bound"],
+    )

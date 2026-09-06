@@ -26,6 +26,11 @@ The next stage (evaluation, orchestration, rate limiting, aggregation) is
 deliberately NOT in this script — regions have to be verified correct before
 anything scores them.
 
+THE PIPELINE ITSELF LIVES IN core/booklet_pipeline.py, not here. This file is
+argument parsing and the region report; the API's booklet_ingest job calls the
+same core function (CLAUDE_CONTEXT.md §11 rule 1). Anything you change about
+the ORDER of the passes, or about re-ingestion, belongs down there.
+
 Usage:
     # Segmentation report only, no DB and no network:
     python3 scripts/ingest_booklet.py media/booklets/sample_booklet.pdf --no-persist
@@ -40,108 +45,15 @@ Usage:
 """
 import argparse
 import json
-import os
 import sys
-import tempfile
-import uuid
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from core import booklet_ingest, booklet_persist, booklet_segmenter, storage  # noqa: E402
-from core import db as db_mod  # noqa: E402
+from core import booklet_ingest, booklet_segmenter  # noqa: E402
+from core.booklet_pipeline import ingest_booklet_file  # noqa: E402
 from core.plugins.persistence import RLSVisibilityError  # noqa: E402
-
-STORAGE_KEY_PREFIX_REGIONS = "booklets/regions"
-
-
-def _upload_region_crop(image, bbox, *, storage_mode: str) -> str:
-    """Crop one region out of its page and upload it. Returns a bucket/key ref."""
-    x, y, w, h = bbox
-    crop = image.crop((x, y, x + w, y + h))
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as handle:
-        temp_path = handle.name
-    try:
-        crop.save(temp_path, format="PNG")
-        return booklet_ingest._upload(
-            temp_path, STORAGE_KEY_PREFIX_REGIONS,
-            storage_mode=storage_mode, asset_id=str(uuid.uuid4()),
-        )
-    finally:
-        os.unlink(temp_path)
-
-
-def ingest_booklet_file(
-    pdf_path,
-    *,
-    student_id=None,
-    exam_id=None,
-    paper_id=None,
-    storage_mode="dummy",
-    dpi=booklet_ingest.DEFAULT_DPI,
-    min_confidence=booklet_segmenter.DEFAULT_MIN_CONFIDENCE,
-    persist=True,
-    dry_run=False,
-    stub=False,
-    skip_denoise=False,
-) -> dict:
-    """Ingest + segment + associate + (optionally) persist one booklet.
-
-    Module-level rather than buried in main() so a future API endpoint can
-    call it directly — the same convention scripts/evaluate_table_answer.py
-    follows.
-    """
-    ingested = booklet_ingest.ingest_booklet(
-        pdf_path, storage_mode=storage_mode, dpi=dpi, skip_denoise=skip_denoise)
-
-    segmented = booklet_segmenter.segment_booklet(
-        ingested["pages"], min_confidence=min_confidence, stub=stub)
-    regions = segmented["regions"]
-
-    report = {
-        "pdf": str(pdf_path),
-        "source_pdf_url": ingested["source_pdf_url"],
-        "page_count": ingested["page_count"],
-        "storage": storage_mode,
-        "pages": [{k: v for k, v in page.items() if k != "image"}
-                  for page in ingested["pages"]],
-        "markers": segmented["markers"],
-        "regions": regions,
-        "persisted": None,
-    }
-
-    if not persist:
-        return report
-
-    # Only assigned regions get a crop uploaded — an unassigned region has no
-    # answer to hang off, so its crop would be an orphan object in the bucket.
-    pages_by_number = {p["page_number"]: p["image"] for p in ingested["pages"]}
-    for region in regions:
-        if region.get("assigned_question"):
-            region["blob_url"] = _upload_region_crop(
-                pages_by_number[region["page_number"]], region["bbox"],
-                storage_mode=storage_mode)
-
-    conn = db_mod.get_connection()
-    cur = conn.cursor()
-    # Booklet ingestion is a system-level operation, not a tenant request.
-    cur.execute("SET LOCAL app.is_platform_admin = 'true'")
-    cur.close()
-    try:
-        report["persisted"] = booklet_persist.persist_regions(
-            conn,
-            regions=regions,
-            paper_id=paper_id,
-            student_id=student_id,
-            exam_id=exam_id,
-            source_scan_url=ingested["source_pdf_url"],
-            dry_run=dry_run,
-        )
-    finally:
-        conn.close()
-
-    return report
 
 
 def _print_report(report: dict) -> None:

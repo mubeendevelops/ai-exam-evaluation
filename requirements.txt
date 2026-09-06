@@ -119,3 +119,28 @@ pydantic-settings>=2.0
 # pinned directly here since tests import it.
 httpx>=0.27
 pytest-asyncio>=0.23
+
+# ──────────────────────────────────────────────
+# Authentication (api/deps/identity.py, api/routers/auth.py, core/users.py).
+# Migration 017 owns the schema; these two libraries own the two cryptographic
+# primitives the API needs and nothing else.
+# ──────────────────────────────────────────────
+# JWT encode/decode for the short-lived ACCESS token. [cryptography] rather
+# than bare python-jose so HS256 signing/verification uses the audited
+# `cryptography` backend instead of jose's pure-Python fallback, and so a
+# later move to RS256 (a public key the worker can verify without holding the
+# signing secret) needs no new dependency.
+python-jose[cryptography]>=3.3
+# Password hashing. passlib's CryptContext is what makes the stored string
+# self-describing and the scheme swappable: core/users.py hashes new passwords
+# with bcrypt and still verifies the scrypt hashes written before this pass
+# (see verify_password there), so no existing account is invalidated.
+passlib[bcrypt]>=1.7.4
+# bcrypt is pinned BELOW 5.0 deliberately, not lazily. passlib 1.7.4 reads
+# `bcrypt.__about__.__version__` to detect its backend; 4.1 removed that
+# attribute (passlib logs a traceback and carries on) and 5.0 removed the
+# automatic >72-byte truncation passlib relies on, which turns every
+# hash()/verify() into `ValueError: password cannot be longer than 72 bytes`.
+# Verified in this venv on 2026-09-06: bcrypt 5.0.0 raised on a 15-character
+# password; 4.3.0 works. Unpin when passlib ships a release that supports 5.x.
+bcrypt>=4.0,<5

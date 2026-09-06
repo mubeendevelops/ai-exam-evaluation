@@ -105,3 +105,4 @@ htmlcov/
 # also holds sample_booklet.pdf — the only PDF in this repo, and the only
 # input scripts/ingest_booklet.py can be verified on.
 .claude/
+rough_edges.txt

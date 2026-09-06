@@ -34,9 +34,10 @@ import uuid
 
 import pytest
 
+from api.deps.identity import create_access_token
 from tests.test_api.conftest import (
     COLLEGE_A,
-    COLLEGE_B_ABSENT,
+    COLLEGE_B,
     REVIEWER_SME,
     REVIEWER_TEACHER,
 )
@@ -59,10 +60,9 @@ async def test_promote_cannot_skip_the_review_gate(make_client, make_question,
     question_id = make_question(status="draft")
 
     async with make_client(COLLEGE_A) as client:
-        response = await client.post(
-            f"/api/v1/questions/{question_id}/promote",
-            json={"reviewer_id": REVIEWER_TEACHER},
-        )
+        # No body: RE-4 deleted `PromoteRequest`'s only field, so promote
+        # takes none at all.
+        response = await client.post(f"/api/v1/questions/{question_id}/promote")
 
     assert response.status_code == 409, response.text
 
@@ -84,10 +84,7 @@ async def test_a_rejected_question_can_never_be_promoted(make_client, make_quest
     question_id = make_question(status="rejected")
 
     async with make_client(COLLEGE_A) as client:
-        response = await client.post(
-            f"/api/v1/questions/{question_id}/promote",
-            json={"reviewer_id": REVIEWER_TEACHER},
-        )
+        response = await client.post(f"/api/v1/questions/{question_id}/promote")
 
     assert response.status_code == 409, response.text
     assert question_status(question_id) == "rejected"
@@ -106,7 +103,7 @@ async def test_review_fires_only_from_draft(make_client, make_question, question
     async with make_client(COLLEGE_A) as client:
         response = await client.post(
             f"/api/v1/questions/{question_id}/review",
-            json={"reviewer_id": REVIEWER_SME, "action": "reject"},
+            json={"action": "reject"},
         )
 
     assert response.status_code == 409, response.text
@@ -128,10 +125,13 @@ async def test_no_endpoint_moves_a_question_to_live_in_one_step(make_client,
     question_id = make_question(status="draft")
 
     bodies = [
-        {"reviewer_id": REVIEWER_TEACHER},
+        {},
+        {"action": "confirm"},
+        {"action": "confirm", "promote": True},
+        {"status": "live"},
+        # And the field RE-4 removed: a client still sending it must be
+        # refused (extra="forbid"), never quietly obeyed.
         {"reviewer_id": REVIEWER_TEACHER, "action": "confirm"},
-        {"reviewer_id": REVIEWER_TEACHER, "action": "confirm", "promote": True},
-        {"reviewer_id": REVIEWER_TEACHER, "status": "live"},
     ]
     paths = [
         f"/api/v1/questions/{question_id}/promote",
@@ -162,11 +162,18 @@ async def test_full_two_gate_flow_draft_to_confirmed_to_live(make_client, make_q
     """
     question_id = make_question(status="draft")
 
-    async with make_client(COLLEGE_A) as client:
+    # TWO callers, because the two gates are two decisions by two people —
+    # and because attribution now comes from the token, using one client for
+    # both would make the "each transition is attributed to whoever made it"
+    # assertion below vacuous.
+    async with make_client(COLLEGE_A, role="teacher") as client, \
+            make_client(COLLEGE_A, role="admin") as publisher:
+        reviewer_id = client.identity["reviewer_id"]
+        publisher_id = publisher.identity["reviewer_id"]
+
         confirmed = await client.post(
             f"/api/v1/questions/{question_id}/review",
-            json={"reviewer_id": REVIEWER_SME, "action": "confirm",
-                  "comment": "reads correctly"},
+            json={"action": "confirm", "comment": "reads correctly"},
         )
         assert confirmed.status_code == 200, confirmed.text
         assert confirmed.json()["old_status"] == "draft"
@@ -174,10 +181,7 @@ async def test_full_two_gate_flow_draft_to_confirmed_to_live(make_client, make_q
         assert confirmed.json()["review_id"] is not None
         assert question_status(question_id) == "confirmed"
 
-        promoted = await client.post(
-            f"/api/v1/questions/{question_id}/promote",
-            json={"reviewer_id": REVIEWER_TEACHER},
-        )
+        promoted = await publisher.post(f"/api/v1/questions/{question_id}/promote")
         assert promoted.status_code == 200, promoted.text
         assert promoted.json()["old_status"] == "confirmed"
         assert promoted.json()["new_status"] == "live"
@@ -198,14 +202,17 @@ async def test_full_two_gate_flow_draft_to_confirmed_to_live(make_client, make_q
 
     # Exactly one content review, by the reviewer who made it.
     assert len(reviews) == 1
-    assert str(reviews[0][0]) == REVIEWER_SME
+    assert reviews[0][0] == reviewer_id
     assert reviews[0][1] == "confirmed"
     assert reviews[0][2] == "reads correctly"
 
     # Both transitions audited, each attributed to whoever made it.
     assert [(h[0], h[1]) for h in history] == [("draft", "confirmed"), ("confirmed", "live")]
-    assert str(history[0][2]) == REVIEWER_SME
-    assert str(history[1][2]) == REVIEWER_TEACHER
+    assert history[0][2] == reviewer_id
+    assert history[1][2] == publisher_id, (
+        "the promotion must be attributed to the account that promoted it, "
+        "not to the one that reviewed it — which is the whole reason RE-4 "
+        "took reviewer_id out of the request body")
 
 
 async def test_reject_records_the_decision_and_stops_there(make_client, make_question,
@@ -216,8 +223,7 @@ async def test_reject_records_the_decision_and_stops_there(make_client, make_que
     async with make_client(COLLEGE_A) as client:
         response = await client.post(
             f"/api/v1/questions/{question_id}/review",
-            json={"reviewer_id": REVIEWER_SME, "action": "reject",
-                  "comment": "factually wrong"},
+            json={"action": "reject", "comment": "factually wrong"},
         )
 
     assert response.status_code == 200, response.text
@@ -232,18 +238,35 @@ async def test_reject_records_the_decision_and_stops_there(make_client, make_que
 
 # ═══════════════════════ attribution is enforced ════════════════════════════
 
-async def test_an_unknown_reviewer_cannot_move_a_question(make_client, make_question,
-                                                          question_status):
-    """Every status change is attributed, so an unknown reviewer_id is refused
-    rather than recorded — a 400 (the bad value is in the body), and the
-    question does not move."""
+async def test_a_token_naming_an_unknown_reviewer_cannot_move_a_question(
+    make_client, make_question, question_status, api_settings
+):
+    """Every status change is attributed, so an unattributable one is refused.
+
+    THIS TEST CHANGED DIRECTION WITH RE-4 AND IS STRONGER FOR IT. It used to
+    send a made-up `reviewer_id` in the request body and assert a 400 — which
+    tested the service's validation, but only existed as a scenario because
+    the body could name a reviewer at all. The body cannot any more, so the
+    only way to reach that validation is a TOKEN whose `rid` claim names no
+    reviewers row: an account whose reviewer was deleted, or a token from a
+    stale signing key's era.
+
+    Still a 400 and still refused: `question_status_history.changed_by` is a
+    foreign key, and a transition nobody can be held to is worth less than no
+    transition.
+    """
     question_id = make_question(status="draft")
-    ghost = str(uuid.uuid4())
+    ghost = uuid.uuid4()
+
+    token, _ = create_access_token(
+        user_id=uuid.uuid4(), reviewer_id=ghost, email="ghost@example.edu",
+        role="teacher", college_id=COLLEGE_A, settings=api_settings)
 
     async with make_client(COLLEGE_A) as client:
         response = await client.post(
             f"/api/v1/questions/{question_id}/review",
-            json={"reviewer_id": ghost, "action": "confirm"},
+            json={"action": "confirm"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
     assert response.status_code == 400, response.text
@@ -257,34 +280,53 @@ async def test_missing_question_is_404_on_both_gates(make_client):
 
     async with make_client(COLLEGE_A) as client:
         review = await client.post(
-            f"/api/v1/questions/{ghost}/review",
-            json={"reviewer_id": REVIEWER_SME, "action": "confirm"},
+            f"/api/v1/questions/{ghost}/review", json={"action": "confirm"},
         )
-        promote = await client.post(
-            f"/api/v1/questions/{ghost}/promote",
-            json={"reviewer_id": REVIEWER_TEACHER},
-        )
+        promote = await client.post(f"/api/v1/questions/{ghost}/promote")
 
     assert review.status_code == 404, review.text
     assert promote.status_code == 404, promote.text
 
 
-async def test_a_reviewer_id_is_required_not_defaulted(make_client, make_question):
-    """Omitting reviewer_id is a 422, never a transition attributed to the
-    calling tenant.
+async def test_a_reviewer_id_in_the_body_is_refused_and_the_caller_is_recorded(
+    make_client, make_question, admin_conn
+):
+    """RE-4, asserted from both sides.
 
-    Identity today is a college header, not a person (api/deps/identity.py).
-    Defaulting the reviewer from it would write an unverifiable name into an
-    audit trail whose only purpose is attribution.
+    Sending `reviewer_id` is a 422 — `extra="forbid"` on ReviewRequest — and
+    NOT a silently-ignored field. That distinction is the test: a client
+    upgraded from the old API must be told its attribution was refused, not
+    have it quietly replaced with a different name than it asked for.
+
+    And a review sent correctly is attributed to the authenticated account.
+    Before this pass a caller could name any reviewer in its own college
+    (migration 003's trigger only refuses reviewers from OTHER colleges), so
+    every teacher at a college could sign another teacher's name to a review.
     """
-    question_id = make_question(status="draft")
+    forbidden = make_question(status="draft")
+    accepted = make_question(status="draft")
 
     async with make_client(COLLEGE_A) as client:
-        response = await client.post(
-            f"/api/v1/questions/{question_id}/review", json={"action": "confirm"}
+        caller = client.identity["reviewer_id"]
+        rejected = await client.post(
+            f"/api/v1/questions/{forbidden}/review",
+            json={"action": "confirm",
+                  "reviewer_id": "55555555-5555-5555-5555-555555555555"},
+        )
+        ok = await client.post(
+            f"/api/v1/questions/{accepted}/review", json={"action": "confirm"},
         )
 
-    assert response.status_code == 422, response.text
+    assert rejected.status_code == 422, rejected.text
+    assert "reviewer_id" in rejected.text, (
+        "the 422 must name the field it refused, so an upgrading client knows "
+        "what to remove")
+    assert ok.status_code == 200, ok.text
+
+    with admin_conn.cursor() as cur:
+        cur.execute("SELECT reviewer_id FROM question_reviews WHERE question_id = %s",
+                    (accepted,))
+        assert [r[0] for r in cur.fetchall()] == [caller]
 
 
 # ═════════════════════════════ generation ═══════════════════════════════════
@@ -360,7 +402,7 @@ async def test_generation_404s_on_an_unknown_paragraph(make_client):
     assert response.status_code == 404, response.text
 
 
-async def test_stub_llm_is_refused_when_debug_is_off(make_paragraph):
+async def test_stub_llm_is_refused_when_debug_is_off(make_paragraph, sign_token):
     """Stub text is placeholder filler that enters the bank as an ordinary
     draft, where a hurried reviewer could confirm and promote it into a real
     paper. Same guard, and the same 403, as POST /api/v1/evaluate's.
@@ -372,18 +414,22 @@ async def test_stub_llm_is_refused_when_debug_is_off(make_paragraph):
     """
     import httpx
 
-    from api.deps.identity import DEBUG_COLLEGE_HEADER
     from api.main import create_app
     from api.settings import Settings
 
     paragraph_id = make_paragraph()
-    prod_app = create_app(Settings(api_env="production", enable_debug_endpoints=False,
-                                   storage_mode="dummy"))
+    # A production app needs a real signing key — create_app refuses to boot
+    # without one outside development, which is itself the behaviour under
+    # test in test_auth.py.
+    prod_settings = Settings(api_env="production", enable_debug_endpoints=False,
+                             storage_mode="dummy",
+                             jwt_secret="a signing key for this test's app")
+    prod_app = create_app(prod_settings)
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=prod_app),
         base_url="http://testserver",
-        headers={DEBUG_COLLEGE_HEADER: COLLEGE_A},
+        headers={"Authorization": f"Bearer {sign_token(prod_settings)}"},
     ) as client:
         response = await client.post(
             "/api/v1/questions/generate",
@@ -433,7 +479,7 @@ async def test_detail_shows_the_review_history_a_reviewer_needs(make_client,
     async with make_client(COLLEGE_A) as client:
         await client.post(
             f"/api/v1/questions/{question_id}/review",
-            json={"reviewer_id": REVIEWER_SME, "action": "confirm", "comment": "ok"},
+            json={"action": "confirm", "comment": "ok"},
         )
         response = await client.get(f"/api/v1/questions/{question_id}")
 
@@ -447,7 +493,8 @@ async def test_detail_shows_the_review_history_a_reviewer_needs(make_client,
 
 # ════════════════════════ the bank is shared, on purpose ════════════════════
 
-async def test_the_bank_is_shared_across_colleges(make_client, make_question):
+async def test_the_bank_is_shared_across_colleges(make_client, make_question,
+                                                 college_b):
     """A question is visible under ANY college's credential — by design.
 
     This test is the inverse of the cross-tenant 404 proofs in test_jobs.py,
@@ -461,12 +508,18 @@ async def test_the_bank_is_shared_across_colleges(make_client, make_question):
     which is a real possibility — must break a test that says exactly what the
     old behaviour was and where it was decided, instead of quietly changing
     what colleges can see.
+
+    "ANY college's credential" now means a REAL one. This test used to send a
+    college id that existed nowhere, which since api/deps/db.py's
+    get_tenant_conn began verifying the college would be a 401 — the test
+    would have failed for a reason that has nothing to do with the bank being
+    shared.
     """
     question_id = make_question(status="live")
 
     async with make_client(COLLEGE_A) as owner:
         mine = await owner.get(f"/api/v1/questions/{question_id}")
-    async with make_client(COLLEGE_B_ABSENT) as other:
+    async with make_client(COLLEGE_B) as other:
         theirs = await other.get(f"/api/v1/questions/{question_id}")
 
     assert mine.status_code == 200, mine.text
@@ -476,21 +529,22 @@ async def test_the_bank_is_shared_across_colleges(make_client, make_question):
 
 async def test_the_gates_still_require_a_credential(make_client, make_question,
                                                     question_status):
-    """Shared does not mean public: with no identity header every one of these
+    """Shared does not mean public: with no bearer token every one of these
     endpoints is a 401, exactly like the tenanted ones.
 
-    Sent as a blank header rather than an absent one, the convention the other
-    modules use — `make_client` always sets the header, and blank exercises the
-    same rejection branch in api/deps/identity.py.
+    Sent as a BLANK Authorization header rather than an absent one, because
+    httpx merges a client's default headers into every request — omitting the
+    key from a per-request dict does not remove it, it is merged straight back
+    in. Overriding it with an empty value is what actually clears it, and it
+    exercises the same rejection branch in api/deps/identity.py.
     """
     question_id = make_question(status="draft")
-    anonymous = {"X-Debug-College-Id": ""}
+    anonymous = {"Authorization": ""}
 
     async with make_client(COLLEGE_A) as client:
         listed = await client.get("/api/v1/questions", headers=anonymous)
         promoted = await client.post(f"/api/v1/questions/{question_id}/promote",
-                                     headers=anonymous,
-                                     json={"reviewer_id": REVIEWER_TEACHER})
+                                     headers=anonymous)
 
     assert listed.status_code == 401, listed.text
     assert promoted.status_code == 401, promoted.text

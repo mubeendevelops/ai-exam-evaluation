@@ -1,4 +1,5 @@
-"""api/routers/upload.py — POST /api/v1/upload: accept a booklet PDF.
+"""api/routers/upload.py — POST /api/v1/upload: accept a booklet PDF; GET
+/api/v1/uploads: list this college's uploaded booklets.
 
 The endpoint does three things and deliberately not a fourth:
 
@@ -33,16 +34,49 @@ import os
 import tempfile
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 
 import core.storage
 import core.uploads
 from api.deps.db import get_tenant_conn
-from api.deps.identity import CurrentUser, get_current_user
-from api.schemas.upload import UploadResponse
+from api.deps.identity import CurrentUser, require_college_user
+from api.deps.pagination import Pagination, get_pagination
+from api.schemas.pagination import Page
+from api.schemas.upload import UploadResponse, UploadSummary, upload_to_summary
 from api.settings import Settings, get_settings
 
 router = APIRouter(prefix="/api/v1", tags=["upload"])
+
+
+@router.get(
+    "/uploads",
+    response_model=Page[UploadSummary],
+    summary="List and filter this college's uploaded booklets",
+)
+def list_uploads(
+    bound: bool | None = Query(
+        default=None,
+        description="Exam-binding state: true = ingested against at least "
+                    "one exam/student; false = uploaded but not yet acted "
+                    "on. Null does not filter. See core/uploads.py.",
+    ),
+    user: CurrentUser = Depends(require_college_user),
+    conn=Depends(get_tenant_conn),
+    pagination: Pagination = Depends(get_pagination),
+) -> Page[UploadSummary]:
+    """This college's uploaded booklets, newest first — the "unbound
+    uploads" review queue is `?bound=false`."""
+    with conn.cursor() as cur:
+        uploads = core.uploads.list_uploads(
+            cur, college_id=user.college_id, bound=bound,
+            limit=pagination.limit, offset=pagination.offset,
+        )
+        total = core.uploads.count_uploads(cur, college_id=user.college_id, bound=bound)
+
+    return Page(
+        items=[upload_to_summary(u) for u in uploads],
+        total=total, limit=pagination.limit, offset=pagination.offset,
+    )
 
 #: PDF files begin with this signature. Checked because a filename extension
 #: and a client-supplied Content-Type are both trivially wrong — the worker
@@ -73,7 +107,7 @@ def _settings(request: Request) -> Settings:
 def upload_booklet(
     request: Request,
     file: UploadFile = File(..., description="The scanned answer booklet, as a PDF."),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_college_user),
     conn=Depends(get_tenant_conn),
 ) -> UploadResponse:
     """Stores the booklet and records it. Returns 201 with the upload_id.
@@ -192,20 +226,26 @@ def _store(tmp_path: str, storage_mode: str) -> str:
     URL" rule (CLAUDE_CONTEXT.md §10) is enforced in that one module, and a
     second uploader would be a second place to get it wrong.
     """
-    if storage_mode == "dummy":
-        # Deterministic on a fresh uuid, matching dummy_upload's contract of a
-        # stable placeholder that can be found later with
-        #   SELECT ... WHERE blob_url LIKE 'dummy-storage/%'
-        # and replaced by a real upload.
-        return core.storage.dummy_upload(tmp_path, "booklets", str(uuid.uuid4()))
-
-    if storage_mode == "minio":
-        return core.storage.upload_file(tmp_path, "booklets", content_type="application/pdf")
-
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=(
-            f"Unknown storage_mode {storage_mode!r}. Set STORAGE_MODE to "
-            f"'dummy' or 'minio' (see api/settings.py and .env.example)."
-        ),
-    )
+    try:
+        # store_file, not dummy_upload/upload_file directly: this booklet is
+        # FETCHED BACK, minutes later and in another process, by the
+        # booklet_ingest job that rasterizes it. dummy_upload returns a
+        # placeholder with no bytes behind it, which would make the whole
+        # upload -> ingest -> evaluate loop impossible in dummy mode — i.e. in
+        # exactly the mode a developer runs it in. store_file's dummy branch
+        # keeps the file under DUMMY_STORAGE_ROOT; the ref it returns is
+        # identical in shape, so nothing downstream can tell the difference.
+        return core.storage.store_file(
+            tmp_path, "booklets",
+            storage_mode=storage_mode,
+            asset_id=str(uuid.uuid4()),
+            content_type="application/pdf",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                f"{exc} Set STORAGE_MODE to 'dummy' or 'minio' (see "
+                f"api/settings.py and .env.example)."
+            ),
+        )

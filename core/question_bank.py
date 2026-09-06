@@ -29,6 +29,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import core.pagination
+
 #: Every value of the question_status enum (migration 001 line 30). Callers
 #: validate against this rather than hardcoding a subset, so a new status
 #: added by a migration is a one-line change here.
@@ -44,7 +46,11 @@ VALID_SOURCE_TYPES = ("sentence", "paragraph", "diagram", "table", "formula", "m
 #: Hard ceiling on rows per call. The bank is unbounded and shared, so an
 #: un-capped LIMIT is a way for one request to pull the entire question bank
 #: into memory (twice: once in psycopg2, once in the response model).
-MAX_LIMIT = 200
+#: Re-exported from core/pagination.py, which is now the single source of
+#: truth for this number across every list_*() in core/ — kept as a module
+#: attribute here too since this was the first module to define it and other
+#: code may still read `core.question_bank.MAX_LIMIT`.
+MAX_LIMIT = core.pagination.MAX_LIMIT
 
 
 def list_questions(
@@ -87,8 +93,11 @@ def list_questions(
         raise ValueError(
             f"source_type must be one of {VALID_SOURCE_TYPES}, got {source_type!r}"
         )
-    if limit < 1 or limit > MAX_LIMIT:
-        raise ValueError(f"limit must be between 1 and {MAX_LIMIT}, got {limit}")
+    # CLAMPED, not rejected — a limit above MAX_LIMIT is a client asking for
+    # more than one page hands back, not a malformed request. See
+    # core/pagination.py::clamp_limit. offset has no upper bound to clamp to,
+    # only a lower one.
+    limit = core.pagination.clamp_limit(limit)
     if offset < 0:
         raise ValueError(f"offset must be >= 0, got {offset}")
 

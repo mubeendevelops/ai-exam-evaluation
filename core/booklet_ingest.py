@@ -210,7 +210,12 @@ def _upload(local_path: str, key_prefix: str, *, storage_mode: str, asset_id: st
     sites in this module cannot drift apart.
     """
     if storage_mode == "dummy":
-        return storage.dummy_upload(local_path, key_prefix, asset_id)
+        # dummy_STORE, not dummy_upload: page images and region crops are
+        # fetched back later — by the evaluator's extractors, and by anyone
+        # reviewing a flagged region — and a placeholder ref with no bytes
+        # behind it would make that impossible in dev exactly where it is most
+        # needed. core/storage.py's tail explains the two dummy modes.
+        return storage.dummy_store(local_path, key_prefix, asset_id)
     if storage_mode == "minio":
         suffix = Path(local_path).suffix.lower()
         content_type = {
@@ -229,8 +234,13 @@ def ingest_booklet(
     storage_mode: str = "dummy",
     dpi: int = DEFAULT_DPI,
     skip_denoise: bool = False,
+    source_pdf_url: str | None = None,
 ) -> dict:
     """Rasterize, preprocess and store every page of a booklet PDF.
+
+    `source_pdf_url` names an ALREADY-STORED original; when given, the PDF is
+    not uploaded again and the given ref is what the returned pages and every
+    persisted row are attributed to.
 
     Returns:
         {
@@ -258,10 +268,18 @@ def ingest_booklet(
         raise ValueError(f"PDF not found: {pdf_path}")
 
     rendered = render_pdf_pages(pdf_path, dpi=dpi)
-    source_pdf_url = _upload(
-        pdf_path, STORAGE_KEY_PREFIX_SOURCE,
-        storage_mode=storage_mode, asset_id=str(uuid.uuid4()),
-    )
+
+    # `source_pdf_url` is supplied when the PDF is ALREADY in storage — the
+    # API path, where POST /upload stored it and recorded the ref in
+    # booklet_uploads. Re-uploading it here would put a second copy of the
+    # same bytes under a second key, and (worse) the answers.source_scan_url
+    # it produced would no longer match the upload the client asked to
+    # evaluate, so POST /evaluate could never find the regions again.
+    if source_pdf_url is None:
+        source_pdf_url = _upload(
+            pdf_path, STORAGE_KEY_PREFIX_SOURCE,
+            storage_mode=storage_mode, asset_id=str(uuid.uuid4()),
+        )
 
     pages = []
     for index, raw in enumerate(rendered, start=1):

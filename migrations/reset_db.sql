@@ -5,10 +5,25 @@
 --
 -- Run via scripts/reset_and_seed_db.sh, not directly — that wrapper backs
 -- up the DB first and sources connection details from .env.
+--
+-- THIS DESTROYS EVERY LOGIN, INCLUDING THE PLATFORM ADMIN. `users` and
+-- `refresh_tokens` (migration 017) are listed explicitly below rather than
+-- left to CASCADE from `colleges`/`reviewers` — they would be emptied either
+-- way, and a table that disappears by cascade is one nobody remembers is
+-- gone. After a reset, re-run:
+--
+--     python scripts/bootstrap_platform_admin.py --email ... --name ...
+--
+-- and re-create the college accounts. seed_minimal.sql deliberately does NOT
+-- seed a login: a password hash in a committed .sql file is a credential
+-- every checkout of this repo shares (the same objection migration 016 makes
+-- about APP_DB_PASSWORD).
 
 SET app.is_platform_admin = 'true';
 
 TRUNCATE TABLE
+    refresh_tokens,
+    users,
     answer_reviews,
     answer_status_history,
     answer_blocks,

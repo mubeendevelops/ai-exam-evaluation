@@ -24,14 +24,52 @@ that swaps an atomic failure for a compensating delete that can itself fail.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 import api.services.papers as papers_service
 from api.deps.db import get_tenant_conn
 from api.deps.identity import CurrentUser, get_current_user
-from api.schemas.papers import PaperGenerateRequest, PaperGenerateResponse, paper_to_response
+from api.deps.pagination import Pagination, get_pagination
+from api.schemas.pagination import Page
+from api.schemas.papers import (
+    PaperGenerateRequest,
+    PaperGenerateResponse,
+    PaperStatus,
+    PaperSummary,
+    paper_to_response,
+    paper_to_summary,
+)
 
 router = APIRouter(prefix="/api/v1/papers", tags=["papers"])
+
+
+@router.get(
+    "",
+    response_model=Page[PaperSummary],
+    summary="List and filter the shared bank of generated papers",
+)
+def list_papers(
+    status_filter: PaperStatus | None = Query(default=None, alias="status"),
+    pattern_id: uuid.UUID | None = Query(default=None),
+    user: CurrentUser = Depends(get_current_user),
+    conn=Depends(get_tenant_conn),
+    pagination: Pagination = Depends(get_pagination),
+) -> Page[PaperSummary]:
+    """generated_papers is SHARED across colleges, exactly like /questions —
+    see api/services/papers.py's header. get_tenant_conn authenticates the
+    caller; it does not scope this query."""
+    with conn.cursor() as cur:
+        rows, total = papers_service.list_papers(
+            cur, status=status_filter, pattern_id=pattern_id,
+            limit=pagination.limit, offset=pagination.offset,
+        )
+
+    return Page(
+        items=[paper_to_summary(r) for r in rows],
+        total=total, limit=pagination.limit, offset=pagination.offset,
+    )
 
 
 @router.post(
@@ -40,7 +78,10 @@ router = APIRouter(prefix="/api/v1/papers", tags=["papers"])
     status_code=status.HTTP_201_CREATED,
     summary="Generate an exam paper from a pattern using live questions",
     responses={
-        400: {"description": "generated_by names no known reviewer."},
+        400: {"description": "The caller's reviewer_id names no reviewers "
+                             "row. Only reachable if the account's reviewer "
+                             "was deleted out from under its login, which "
+                             "migration 017's ON DELETE RESTRICT prevents."},
         404: {"description": "No such paper pattern."},
         409: {
             "description": (
@@ -57,6 +98,9 @@ def generate_paper(
 ) -> PaperGenerateResponse:
     """Assigns a live question to every leaf slot the bank can fill.
 
+    The paper is attributed to the authenticated caller (`generated_by`), not
+    to a reviewer named in the body — see PaperGenerateRequest (RE-4).
+
     A successful response can still carry `warnings`: an OPTIONAL slot with no
     match leaves a real hole in a valid paper, and the caller is told which
     one rather than being handed a quietly shorter paper. A MANDATORY slot
@@ -70,7 +114,8 @@ def generate_paper(
                 cur,
                 pattern_id=body.pattern_id,
                 name=body.name,
-                generated_by=body.generated_by,
+                # RE-4: the paper is attributed to the authenticated caller.
+                generated_by=user.reviewer_id,
                 choose_count=body.choose_count,
                 marks_tolerance=body.marks_tolerance,
             )

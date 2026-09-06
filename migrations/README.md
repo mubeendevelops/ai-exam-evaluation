@@ -876,3 +876,179 @@ New: **the API cannot ingest.** An uploaded PDF is stored but never segmented
 into `answer_blocks` rows — that is still `scripts/ingest_booklet.py`'s job
 (§7C). `POST /api/v1/evaluate` therefore evaluates regions that must already
 exist, and fails loudly naming the missing step if they do not.
+
+---
+
+# The application role — migration notes
+
+`016_application_role.sql`. Creates no tables. It creates the database role
+that makes every policy written in 003, 014 and 015 actually execute.
+
+## What was wrong
+
+Postgres exempts `SUPERUSER` and `BYPASSRLS` roles from row-level security.
+`FORCE ROW LEVEL SECURITY` — which 003 applies, and whose comment explains it
+— closes the table-**owner** loophole, not that one. With `PGUSER=postgres`
+(the `.env.example` default until now, so every checkout) all nine
+`tenant_isolation` policies were inert: two different values of
+`app.current_college_id` returned identical rows, silently, with nothing in the
+log. Three migrations' worth of isolation had never run once.
+
+## What it creates
+
+One login role, `ai_eval_app` by default (`APP_DB_USER` overrides):
+
+* `NOSUPERUSER NOBYPASSRLS` — the entire point.
+* **Owns nothing.** Every table stays owned by the migration runner. An owner
+  can `ALTER TABLE ... NO FORCE ROW LEVEL SECURITY`, `DISABLE` it, or `DROP`
+  the policies — the application must not be able to switch off its own
+  isolation, and the migration RAISEs if the role owns any object in `public`.
+* **DML grants only**, plus `ALTER DEFAULT PRIVILEGES` so migration 017's
+  tables are reachable without anyone remembering. Deliberately withheld (and
+  actively `REVOKE`d, so a hand-made role is corrected on re-run): `TRUNCATE`
+  — which is **not** filtered by RLS, so one statement would empty every
+  tenant at once — plus `REFERENCES`, `TRIGGER`, `CREATE` on the schema, and
+  ownership.
+
+**The password comes from `APP_DB_PASSWORD` in the environment**, read with
+psql's `\getenv` before the transaction opens. A literal in this file would be
+a committed credential, and re-running the migration would silently reset the
+password back to it. `set_config(..., is_local => true)` holds it for the
+transaction only, and the statement that loads it selects `IS NOT NULL` rather
+than the value, so the password is not echoed to the operator's terminal or
+into a teed log.
+
+The closing assertions refuse to commit a role that still bypasses RLS, a role
+that owns anything, or a schema where one of the nine tenant tables is missing
+`ENABLE`/`FORCE ROW LEVEL SECURITY`.
+
+## What it changes elsewhere
+
+* **`.env.example`** points `PGUSER` at the app role and adds
+  `PGADMIN_USER`/`PGADMIN_PASSWORD` for owner work.
+* **`scripts/reset_and_seed_db.sh`** runs `pg_dump`, `TRUNCATE` and the seed as
+  the admin user. Not a convenience: the app role has no `TRUNCATE` grant, and
+  a `pg_dump` taken as it would **succeed** and produce a backup with zero rows
+  in all nine RLS-protected tables — no tenant context is set during a dump,
+  and RLS fails closed silently. A restorable-looking empty backup is the worst
+  outcome this script has available.
+* **`seed_minimal.sql`** seeds a second REAL college (with its own student and
+  exam) and a suspended one, because `api/deps/db.py::get_tenant_conn` now
+  refuses an unknown or inactive tenant with 401 — so "the other tenant" in a
+  cross-tenant test has to be a college that actually exists, or the test
+  proves only that an unknown caller is rejected.
+* **Two tests stopped skipping.**
+  `test_rls_isolation.py::test_rls_policies_isolate_tenants` and
+  `test_tenant_context.py::test_tenant_connection_is_actually_rls_scoped` now
+  FAIL under a bypassing role instead of skipping: since the fix exists, a
+  superuser `PGUSER` is a misconfiguration, and a skip would report green while
+  the property is untested.
+
+## Still open
+
+**The explicit `college_id` predicates are not redundant now.** They were the
+only isolation before 016 and they are the only isolation the moment anyone
+points `PGUSER` back at a superuser — one `.env` edit, no visible symptom. The
+tests that pin them (`test_the_isolating_predicate_is_not_only_rls`,
+`test_isolation_holds_at_the_query_layer_not_only_via_rls`) now drive the query
+on a **platform-admin** connection, where the permissive bypass policy makes
+every tenant's rows visible, so that the predicate is provably the thing
+refusing the row.
+
+**Roles are cluster-wide; grants are per-database.** Running 016 against a
+second database in the same cluster re-uses the role and issues that database's
+grants.
+
+**No stalled-job reaper** (unchanged, see 014).
+
+
+---
+
+# Migration 017 — `users` + `refresh_tokens` (authentication identity)
+
+Applied 2026-09-06. The migration file's own header carries the full argument;
+this is the summary and the parts a reader of THIS file needs.
+
+## `reviewers` is not modified. Not one column, not one policy.
+
+That is the whole design decision. `reviewers` is the ACTOR — shared between
+the answer and question schemas, referenced by six FKs, nullable `college_id`,
+no RLS. `users` is the CREDENTIAL + TENANCY for those actors who can log in,
+1:0..1 with `reviewers` via a `UNIQUE NOT NULL reviewer_id`, so there is
+exactly one login per human and it is still `reviewer_id` that appears in every
+provenance row.
+
+Putting the auth columns on `reviewers` was considered and rejected for four
+reasons; the one that decided it is worth repeating here because it is a
+security failure rather than a modelling preference:
+
+> `reviewers.college_id IS NULL` already means "platform-level reviewer", and
+> it is the PERMISSIVE branch of `fn_derive_and_check_answer_review_college()`
+> (003 §6). A `password_hash` column obliges us to put RLS on the table. The
+> moment we do, that trigger's `SELECT college_id FROM reviewers` becomes
+> policy-filtered, a College-B reviewer's row is invisible from a College-A
+> session, the lookup returns NULL, and **the cross-college review check
+> passes** — silently, in the direction that reads as "allowed". There is no
+> configuration of `reviewers` that both protects hashes and keeps that
+> trigger honest.
+
+§7's assertions fail the migration if `reviewers` ever acquires RLS, so that
+cannot be re-introduced by accident.
+
+## The login problem, and why it is not solved with a bypass
+
+Authentication happens BEFORE any tenant context exists — resolving the college
+is the OUTPUT of the login, not an input to it. Both obvious answers are wrong:
+leaving `users` unprotected puts password hashes in the one table with no
+isolation, and setting `app.is_platform_admin` for the login query flips the
+permissive bypass policy on all ELEVEN protected tables for the whole
+transaction, giving an UNAUTHENTICATED request cross-tenant read on every
+answer in the platform.
+
+Instead the login read is a **single-row window, opened two ways at once**:
+
+* **row access** — the `auth_lookup` policy matches exactly the row whose email
+  equals `app.auth_lookup_email`. Unset GUC ⇒ NULL ⇒ matches nothing.
+* **column access** — §4 REVOKEs table-wide SELECT from the application role
+  and re-grants it column by column, WITHOUT `password_hash`. The hash is not
+  readable by the application at all; it is only ever a return value of
+  `auth_lookup_user()`, which is SECURITY DEFINER and sets/restores the GUC
+  around one statement.
+
+`refresh_tokens` goes further: the application role has **no direct privilege
+on it whatsoever**, so the `auth_session_ops` policy is only ever traversed
+from inside the definer functions. A stray `SET app.auth_token_hash` in
+application code buys nothing, because the privilege check fails too.
+
+The five entry points (`auth_lookup_user`, `auth_user_by_id`,
+`auth_issue_refresh_token`, `auth_redeem_refresh_token`,
+`auth_revoke_refresh_token`, `auth_revoke_all_refresh_tokens`) each set their
+GUC transaction-locally, run ONE statement against ONE row (the last is bounded
+to one user), and restore it. `EXECUTE` is revoked from PUBLIC first — Postgres
+grants it by default, which on a SECURITY DEFINER function means every role in
+the cluster.
+
+## Why `auth_redeem_refresh_token` tests liveness itself
+
+`revoked_at IS NULL AND expires_at > now()` lives inside the function rather
+than in any caller's WHERE clause, so no call site can forget it. Forgetting it
+once would make logout cosmetic, which is the entire reason the table exists.
+
+## Assertions (§7)
+
+The migration fails if: RLS is not ENABLE+FORCE on both tables; the application
+role can SELECT `users.password_hash`; it cannot SELECT `users.email` (i.e. §4
+revoked more than it re-granted); it has direct SELECT on `refresh_tokens`;
+`auth_user_by_id` returns a `password_hash`; or `reviewers` has acquired RLS.
+
+## Still open
+
+* **No admin-invite endpoint.** Accounts other than the first are created by
+  `core/users.py::create_user`, called from a script. The first platform admin
+  comes from `scripts/bootstrap_platform_admin.py`.
+* **No password-change endpoint.** When one is written it must call
+  `auth_revoke_all_refresh_tokens()` in the same transaction.
+* **`reviewers.email` and `users.email` both exist and are not synced**, on
+  purpose: `users.email` is the citext UNIQUE credential, `reviewers.email` is
+  the display/contact field it has always been, and syncing them would make a
+  login rename rewrite a row six FKs point at.

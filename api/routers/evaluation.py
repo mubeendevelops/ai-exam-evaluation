@@ -24,18 +24,24 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 import api.services.evaluation as evaluation_service
+import api.services.ingestion as ingestion_service
 from api.deps.db import get_tenant_conn
-from api.deps.identity import CurrentUser, get_current_user
+from api.deps.identity import CurrentUser, require_college_user
+from api.deps.pagination import Pagination, get_pagination
 from api.schemas.evaluation import (
+    AnswerStatus,
     EvaluateRequest,
     EvaluateResponse,
     OverrideRequest,
     OverrideResponse,
     ResultResponse,
+    ResultSummary,
+    result_to_summary,
 )
+from api.schemas.pagination import Page
 from api.settings import Settings, get_settings
 
 router = APIRouter(prefix="/api/v1", tags=["evaluation"])
@@ -50,20 +56,35 @@ def _settings(request: Request) -> Settings:
     response_model=EvaluateResponse,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Queue a booklet for evaluation",
-    responses={404: {"description": "No such upload for this college."}},
+    responses={404: {"description": "No such upload, or no such paper."}},
 )
 def evaluate(
     body: EvaluateRequest,
     request: Request,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_college_user),
     conn=Depends(get_tenant_conn),
 ) -> EvaluateResponse:
-    """Queues one booklet_eval job and returns 202 with the job id.
+    """Queues the work this booklet needs and returns 202 with the job id.
 
     Nothing is scored inside this request. Booklet evaluation runs OCR, layout
     detection and LLM calls over every region and takes MINUTES (§7D) — past
     any sane HTTP timeout, and it would pin a worker thread and a DB
     connection for the duration.
+
+    TWO SHAPES, and the response says which one happened:
+
+      * booklet has no persisted regions -> one `booklet_ingest` job, which
+        segments the PDF into answer_blocks and then chains into the
+        `booklet_eval` job whose id appears in its `result`.
+      * booklet is already ingested      -> one `booklet_eval` job directly,
+        re-using the regions that exist.
+
+    The second case is what makes re-scoring cheap AND safe: ingestion is not
+    re-run, so a student's answer_blocks are written once and never rewritten
+    by a re-score (§7C, and core/booklet_pipeline.py on why a second ingestion
+    would duplicate rather than replace them). This endpoint used to require
+    that someone had run scripts/ingest_booklet.py by hand first; it no longer
+    does, and NoRegionsError is now a real failure rather than the normal path.
     """
     settings = _settings(request)
 
@@ -84,12 +105,13 @@ def evaluate(
 
     try:
         with conn.cursor() as cur:
-            job = evaluation_service.enqueue_booklet_evaluation(
+            queued = ingestion_service.enqueue_evaluation_pipeline(
                 cur,
                 college_id=user.college_id,
                 upload_id=body.upload_id,
                 exam_id=body.exam_id,
                 student_id=body.student_id,
+                paper_id=body.paper_id,
                 stub=body.stub,
                 stub_llm=body.stub_llm,
                 method=body.method,
@@ -101,14 +123,68 @@ def evaluate(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No upload {body.upload_id} for this college.",
         )
+    except ingestion_service.PaperNotFoundError as exc:
+        # NOT a tenant leak: the paper tables carry no college_id and are not
+        # under RLS (§11 — the bank is shared), so "no such paper" is the
+        # whole truth here and there is no existence oracle to protect.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
 
+    job = queued["job"]
     return EvaluateResponse(
         job_id=job["job_id"],
+        job_type=job["job_type"],
+        ingest_job_id=queued["ingest_job_id"],
         status=job["status"],
         upload_id=body.upload_id,
         exam_id=body.exam_id,
         student_id=body.student_id,
+        paper_id=body.paper_id,
         created_at=job["created_at"],
+    )
+
+
+@router.get(
+    "/results",
+    response_model=Page[ResultSummary],
+    summary="List and filter this college's answer results",
+)
+def list_results(
+    exam_id: uuid.UUID | None = Query(default=None),
+    student_id: uuid.UUID | None = Query(default=None),
+    status_filter: AnswerStatus | None = Query(
+        default=None, alias="status", description="Filter by answer_status.",
+    ),
+    needs_review: bool | None = Query(
+        default=None,
+        description="true = at least one region flagged for review; false = "
+                    "none are. Null does not filter.",
+    ),
+    user: CurrentUser = Depends(require_college_user),
+    conn=Depends(get_tenant_conn),
+    pagination: Pagination = Depends(get_pagination),
+) -> Page[ResultSummary]:
+    """One row per answer — score at a glance, not the full report.
+
+    `GET /results/{answer_id}` is the full per-answer report (ledger history,
+    every review, every region component); this is the review-queue /
+    dashboard view over many answers at once. Tenant-scoped like every other
+    answer-schema read — see api/services/evaluation.py::list_results and
+    core/results.py for the query and why `needs_review` is computed rather
+    than stored.
+    """
+    with conn.cursor() as cur:
+        rows, total = evaluation_service.list_results(
+            cur, college_id=user.college_id, exam_id=exam_id, student_id=student_id,
+            status=status_filter, needs_review=needs_review,
+            limit=pagination.limit, offset=pagination.offset,
+        )
+
+    return Page(
+        items=[result_to_summary(r) for r in rows],
+        total=total, limit=pagination.limit, offset=pagination.offset,
     )
 
 
@@ -120,7 +196,7 @@ def evaluate(
 )
 def get_result(
     answer_id: uuid.UUID,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_college_user),
     conn=Depends(get_tenant_conn),
 ) -> ResultResponse:
     """The current score, its per-signal breakdown, per-region components,
@@ -154,10 +230,14 @@ def get_result(
 def override_result(
     answer_id: uuid.UUID,
     body: OverrideRequest,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_college_user),
     conn=Depends(get_tenant_conn),
 ) -> OverrideResponse:
     """Appends an answer_reviews row and moves the answer to 'sme_reviewed'.
+
+    THE REVIEW IS ATTRIBUTED TO THE AUTHENTICATED CALLER — `reviewer_id` comes
+    from the access token and is not a request field (RE-4). An audit trail
+    whose subject the caller picks is not an audit trail.
 
     **Writes NOTHING to evaluation_results.** The ledger records what the AI
     computed; the model really did output that number, and overwriting it
@@ -176,7 +256,9 @@ def override_result(
                 cur,
                 answer_id=answer_id,
                 college_id=user.college_id,
-                reviewer_id=body.reviewer_id,
+                # RE-4: the reviewer is the authenticated caller, never a
+                # field the caller chose. See OverrideRequest's docstring.
+                reviewer_id=user.reviewer_id,
                 action=body.action,
                 final_marks=body.final_marks,
                 comment=body.comment,

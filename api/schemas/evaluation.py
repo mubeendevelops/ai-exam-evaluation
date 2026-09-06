@@ -9,21 +9,33 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from api.schemas.jobs import JobStatus
+from api.schemas.pagination import CappedList
 
 #: answer_reviews.action — the answer_review_action enum from migration 001.
 ReviewAction = Literal["confirmed", "overridden", "flagged"]
+
+#: answer_status enum (migration 001 line 34) — core/results.py::VALID_STATUSES.
+AnswerStatus = Literal["pending_evaluation", "ai_scored", "sme_reviewed", "finalized", "flagged"]
 
 
 class EvaluateRequest(BaseModel):
     """POST /api/v1/evaluate.
 
-    The three ids are what identifies a booklet in this schema. There is no
-    booklets table and no exams.paper_id column (§7C's open schema gap), so
+    The first three ids are what identifies a booklet in this schema. There is
+    no booklets table and no exams.paper_id column (§7C's open schema gap), so
     core/booklet_evaluator.load_booklet_tasks addresses a booklet as "the
     answers one student wrote for one exam", optionally narrowed to a single
     ingestion. upload_id supplies that narrowing by resolving to the stored
     scan's blob_url — which is why all three are required rather than
     exam+student alone.
+
+    paper_id is the fourth, and it is required for the same missing FK: the
+    question markers this booklet's regions carry ('Q1', 'Q2a') are resolved
+    against pattern_slots.slot_label through one specific generated paper,
+    labels repeat across papers, and the exam cannot name its paper. See
+    api/services/ingestion.py's docstring — this field is what replaces the
+    CLI's --paper-id, and it is what would become optional if
+    `exams.paper_id` were ever added (§10, a product decision).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -31,6 +43,16 @@ class EvaluateRequest(BaseModel):
     upload_id: uuid.UUID = Field(description="From POST /api/v1/upload.")
     exam_id: uuid.UUID
     student_id: uuid.UUID
+    paper_id: uuid.UUID = Field(
+        description=(
+            "generated_papers.paper_id whose slot labels the booklet's "
+            "question markers resolve against. Required because there is no FK "
+            "from exams to generated_papers (§7C). Still required when the "
+            "booklet is already ingested — it is validated either way, so a "
+            "wrong paper is a 404 now rather than a mis-associated re-ingest "
+            "later."
+        )
+    )
 
     stub: bool = Field(
         default=False,
@@ -66,10 +88,29 @@ class EvaluateResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     job_id: uuid.UUID = Field(description="Poll GET /api/v1/jobs/{job_id}.")
+    job_type: str = Field(
+        description=(
+            "What `job_id` actually is: 'booklet_ingest' when this booklet had "
+            "to be segmented first, 'booklet_eval' when it was already "
+            "ingested and is being re-scored. The client polls the same "
+            "endpoint either way, but an ingest job's `result` carries the "
+            "`evaluation_job_id` to poll next."
+        )
+    )
+    ingest_job_id: uuid.UUID | None = Field(
+        default=None,
+        description=(
+            "The ingestion job queued for this booklet, or null when its "
+            "regions already existed. Equal to job_id when it is not null — "
+            "named separately so a client can tell 'ingest then evaluate' from "
+            "'evaluate' without parsing job_type."
+        ),
+    )
     status: JobStatus = Field(description="Always 'queued' at this point.")
     upload_id: uuid.UUID
     exam_id: uuid.UUID
     student_id: uuid.UUID
+    paper_id: uuid.UUID
     created_at: dt.datetime
 
 
@@ -245,11 +286,13 @@ class ResultResponse(BaseModel):
         description="Text plugin per-signal breakdown. Null for table/diagram "
                     "answers, which have no signals — not an all-zero object.",
     )
-    components: list[dict[str, Any]] = Field(
-        default_factory=list,
+    components: CappedList[dict[str, Any]] = Field(
         description="Per-region scores that were aggregated into the single "
                     "question result — one ledger row per QUESTION is decision 1 "
-                    "in core/booklet_evaluator.py, and this is what it preserved.",
+                    "in core/booklet_evaluator.py, and this is what it preserved. "
+                    "Capped at core/pagination.py::NESTED_MAX — see that "
+                    "module's docstring on why an unbounded nested list still "
+                    "needs a cap even though it isn't a list endpoint.",
     )
     flags: list[str] = Field(default_factory=list)
     failures: list[dict[str, Any]] = Field(
@@ -259,29 +302,80 @@ class ResultResponse(BaseModel):
                     "abandoned because one region's OCR failed.",
     )
     confidence: ConfidenceBlock
-    history: list[LedgerEntry] = Field(default_factory=list)
-    reviews: list[ReviewEntry] = Field(default_factory=list)
+    history: CappedList[LedgerEntry] = Field(
+        description="The append-only ledger, newest first, capped at "
+                    "NESTED_MAX rows with the true total alongside — a booklet "
+                    "re-scored often enough must not make this response grow "
+                    "without bound.",
+    )
+    reviews: CappedList[ReviewEntry] = Field(
+        description="Every answer_reviews row, newest first, same cap-and-flag "
+                    "treatment as `history`.",
+    )
     final_marks: FinalMarks
+
+
+class ResultSummary(BaseModel):
+    """One row of GET /api/v1/results — NOT the full report.
+
+    GET /results/{answer_id} (ResultResponse above) carries the whole ledger
+    history, every review and every region component; a list of dozens of
+    answers must not repeat that per row. This is the "which answers match
+    these filters, and what is their state right now" view — a client that
+    needs one row's full report still calls GET /results/{answer_id}.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    answer_id: uuid.UUID
+    question_id: uuid.UUID
+    student_id: uuid.UUID
+    exam_id: uuid.UUID
+    status: AnswerStatus
+    submitted_at: dt.datetime
+    score: float | None = Field(
+        default=None,
+        description="The CURRENT ledger score, or null if this answer has "
+                    "not been evaluated yet — not the same as scoring zero.",
+    )
+    evaluated_at: dt.datetime | None = None
+    needs_review: bool = Field(
+        description="True when at least one of this answer's answer_blocks "
+                    "carries needs_review — a region-level flag (migration "
+                    "013), rolled up to the answer for this filter/summary. "
+                    "See core/results.py's docstring.",
+    )
+
+
+def result_to_summary(row: dict[str, Any]) -> ResultSummary:
+    return ResultSummary(
+        answer_id=row["answer_id"], question_id=row["question_id"],
+        student_id=row["student_id"], exam_id=row["exam_id"], status=row["status"],
+        submitted_at=row["submitted_at"],
+        score=float(row["score"]) if row["score"] is not None else None,
+        evaluated_at=row["evaluated_at"], needs_review=row["needs_review"],
+    )
 
 
 class OverrideRequest(BaseModel):
     """POST /api/v1/results/{answer_id}/override.
 
-    `reviewer_id` is in the BODY, which is a temporary shape and marked as
-    such: identity is still stubbed (api/deps/identity.py) and cannot say
-    which reviewer is calling. When real auth lands this field is deleted and
-    the reviewer comes from the verified claims — a client must not be able to
-    attribute a review to someone else. Until then migration 003's
-    trg_answer_reviews_derive_and_check_college is the only guard, and it does
-    at least refuse a reviewer from a different college.
+    THERE IS NO `reviewer_id` FIELD, and there must never be one again. It was
+    here while identity was a stub that knew a college but not a person, and
+    it meant a client could attribute a review to any reviewer in its own
+    college — migration 003's trg_answer_reviews_derive_and_check_college
+    refuses only reviewers from OTHER colleges, so the whole of one college's
+    staff was impersonable by any of them. The reviewer is now
+    `CurrentUser.reviewer_id`, out of the signed token
+    (api/deps/identity.py, RE-4).
+
+    `extra="forbid"` is what makes that stick: a client still sending the old
+    field gets a 422 naming it, rather than having it silently ignored while
+    the review is attributed to someone else than they asked for.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    reviewer_id: uuid.UUID = Field(
-        description="TEMPORARY — replaced by the authenticated user. See this "
-                    "model's docstring."
-    )
     action: ReviewAction = Field(
         default="overridden",
         description="'overridden' changes the mark, 'confirmed' agrees with the "

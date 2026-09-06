@@ -13,47 +13,122 @@ set -a && source .env && set +a
 
 | method | path | |
 |---|---|---|
+| `GET` | `/health` | liveness probe — **no credential, no database** |
+| `POST` | `/api/v1/auth/login` | email + password → access token + refresh token |
+| `POST` | `/api/v1/auth/refresh` | refresh token → a NEW pair; the old one is revoked |
+| `POST` | `/api/v1/auth/logout` | revoke a refresh token (`all_sessions` for every one) |
+| `GET` | `/api/v1/auth/me` | the account behind the presented token — no DB read |
 | `POST` | `/api/v1/upload` | multipart booklet PDF → storage → one `booklet_uploads` row. Queues nothing. |
-| `POST` | `/api/v1/evaluate` | `{upload_id, exam_id, student_id}` → one queued `booklet_eval` job → 202 |
+| `GET` | `/api/v1/uploads` | list/filter this college's uploads by exam-binding state (`bound`) |
+| `POST` | `/api/v1/evaluate` | `{upload_id, exam_id, student_id, paper_id}` → one queued job → 202 |
+| `GET` | `/api/v1/jobs` | list/filter this college's jobs by status, job_type, created-after |
 | `GET` | `/api/v1/jobs/{job_id}` | status, stage progress, error — another college's job is **404** |
+| `GET` | `/api/v1/results` | list/filter this college's answers by exam, student, status, needs-review |
 | `GET` | `/api/v1/results/{answer_id}` | score, per-signal breakdown, components, confidence, ledger history, reviews |
 | `POST` | `/api/v1/results/{answer_id}/override` | teacher override → `answer_reviews`, **never** the ledger |
+| `GET` | `/api/v1/exams` | list/filter this college's exams by status |
+| `GET` | `/api/v1/students` | list this college's students, optionally filtered to one exam |
 | `GET` | `/api/v1/questions` | list/filter the shared bank by status, style, source, AI-flag, paper |
 | `GET` | `/api/v1/questions/{id}` | one question + its source paragraph + review history |
 | `POST` | `/api/v1/questions/generate` | paragraph → N **draft** questions → 201 |
 | `POST` | `/api/v1/questions/{id}/review` | **gate 1 (quality)** — draft → confirmed \| rejected |
 | `POST` | `/api/v1/questions/{id}/promote` | **gate 2 (publish)** — confirmed → live |
+| `GET` | `/api/v1/papers` | list/filter the shared bank of generated papers by status, pattern |
 | `POST` | `/api/v1/papers/generate` | pattern → paper filled with **live** questions → 201 |
 
-Eleven endpoints, and that is the complete list in **every** environment —
+Twenty-two endpoints, and that is the complete list in **every** environment —
 there are no env-gated routes. `tests/test_api/test_rls_isolation.py` derives
 its endpoint matrix from the app's own OpenAPI schema and fails if this table
 and the app disagree.
 
+**Every one of them requires `Authorization: Bearer <access token>` except
+`GET /health` and the three `/auth` entry points**, and that is asserted the
+same way — `test_auth.py::test_no_endpoint_is_reachable_without_a_token`
+enumerates the OpenAPI schema and calls each route with no credential. The four
+exemptions are listed by name in that test with a reason each; adding a fifth
+means editing a test that asks you to justify it.
+
+Endpoints that pass the caller's `college_id` into a query (`/upload`,
+`/uploads`, `/evaluate`, `/jobs`, `/results`, `/exams`, `/students`) also
+require a COLLEGE-SCOPED role — `teacher` or `admin` — and answer **403** to a
+`platform_admin`, who has no college by construction. See
+`api/deps/identity.py::require_college_user`; that 403 is about the caller, not
+about a resource, so it does not contradict Rule 3 below.
+
+## Pagination
+
+Every list endpoint above shares ONE limit/offset dependency
+(`api/deps/pagination.py::get_pagination`) and returns the same shape:
+`{items, total, limit, offset}` (`api/schemas/pagination.py::Page`). `total`
+ignores limit/offset — it is the count of everything the filters match, so a
+client can page without guessing when it has reached the end.
+
+A `limit` above `MAX_LIMIT` (200) is **clamped, not rejected** — a request for
+more rows than one page holds is not malformed, and clamping lets `total` do
+the talking instead of forcing every such client through a 422/retry cycle.
+`GET /api/v1/questions` used to reject with 422 above 200; it now uses the
+same shared dependency as everything else. Every `core.<x>.list_*()` clamps
+the same `MAX_LIMIT` independently (`core/pagination.py`), so a caller that
+reaches one directly, bypassing the API, still cannot pull an unbounded
+result set.
+
+Every list query orders by a real timestamp column plus its primary key as a
+tiebreaker (e.g. `created_at DESC, job_id DESC`) — required because two rows
+written in the same transaction can share a timestamp down to database
+precision, and without the tiebreak `LIMIT`/`OFFSET` paging can show one row
+twice and skip another.
+
+Nested collections inside a SINGLE-resource response are a different case:
+`GET /results/{id}`'s ledger history, review log and per-region components
+have no limit/offset request behind them, just an unbounded list embedded in
+one report. Those are capped at `core/pagination.py::NESTED_MAX` (50) and
+reported as `{items, total, truncated}` (`CappedList`) instead — `total` is
+the true count, `truncated` says whether `items` is everything.
+
+`/api/v1/questions` and `/api/v1/papers` are the two SHARED, non-tenanted
+lists — see "The question bank is SHARED" below; their list endpoints take
+`get_tenant_conn()` to authenticate the caller, and filter on nothing
+tenant-shaped because there is no tenant column to filter on.
+
 End to end (stub mode — no models, no Groq):
 
 ```bash
-H='X-Debug-College-Id: 11111111-1111-1111-1111-111111111111'
 API=http://127.0.0.1:8000
+
+# 0. sign in. Create the first account with
+#    scripts/bootstrap_platform_admin.py (platform admin), which is the only
+#    account not created by another account — there is no open signup.
+TOKEN=$(curl -s -H 'Content-Type: application/json' \
+        -d '{"email":"teacher@demo.edu","password":"..."}' \
+        $API/api/v1/auth/login | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+H="Authorization: Bearer $TOKEN"
 
 # 1. store the PDF
 UPLOAD=$(curl -s -H "$H" -F file=@media/booklets/sample_booklet.pdf \
          $API/api/v1/upload | python3 -c 'import sys,json;print(json.load(sys.stdin)["upload_id"])')
 
-# 2. queue an evaluation for it  (the booklet must ALREADY be ingested —
-#    scripts/ingest_booklet.py; the API does not ingest, see below)
+# 2. ask for an evaluation. paper_id is required: the booklet's question
+#    markers resolve against that paper's slot labels (there is no
+#    exams -> generated_papers FK, §7C).
 JOB=$(curl -s -H "$H" -H 'Content-Type: application/json' \
-       -d "{\"upload_id\":\"$UPLOAD\",\"exam_id\":\"<uuid>\",\"student_id\":\"<uuid>\",\"stub\":true}" \
+       -d "{\"upload_id\":\"$UPLOAD\",\"exam_id\":\"<uuid>\",\"student_id\":\"<uuid>\",\"paper_id\":\"<uuid>\",\"stub\":true}" \
        $API/api/v1/evaluate | python3 -c 'import sys,json;print(json.load(sys.stdin)["job_id"])')
 
+# A booklet with no regions yet gets a booklet_ingest job (job_type says so);
+# an already-ingested one gets a booklet_eval job directly.
 curl -s -H "$H" $API/api/v1/jobs/$JOB        # -> queued, stage "queued"
-python scripts/run_job_worker.py --once --stub
-curl -s -H "$H" $API/api/v1/jobs/$JOB        # -> succeeded, stage "done"
+python scripts/run_job_worker.py --once --stub   # runs the ingestion
+curl -s -H "$H" $API/api/v1/jobs/$JOB        # -> succeeded; result.evaluation_job_id
+
+EVAL=$(curl -s -H "$H" $API/api/v1/jobs/$JOB \
+       | python3 -c 'import sys,json;print(json.load(sys.stdin)["result"]["evaluation_job_id"])')
+python scripts/run_job_worker.py --once --stub   # runs the evaluation
+curl -s -H "$H" $API/api/v1/jobs/$EVAL       # -> succeeded, stage "done"
 
 # 3. the per-answer report, then a teacher override
 curl -s -H "$H" $API/api/v1/results/<answer_id>
 curl -s -H "$H" -H 'Content-Type: application/json' \
-     -d '{"reviewer_id":"<uuid>","action":"overridden","final_marks":9.0}' \
+     -d '{"action":"overridden","final_marks":9.0}' \
      $API/api/v1/results/<answer_id>/override
 ```
 
@@ -64,20 +139,37 @@ api/
 ├── main.py         # create_app(): CORS, exception handlers, router mounting
 ├── settings.py     # pydantic-settings over the SAME .env keys the CLI uses
 ├── deps/
-│   ├── db.py       # get_tenant_conn() / get_admin_conn() — the ONLY DB entry points
-│   └── identity.py # STUBBED get_current_user() — replaced wholesale by real auth
+│   ├── db.py         # get_tenant_conn() / get_admin_conn() / get_auth_conn()
+│   │                 #   — the ONLY DB entry points
+│   ├── identity.py   # get_current_user(), require_role() — THE only file that
+│   │                 #   knows how a caller is identified
+│   ├── ratelimit.py  # the login rate limiter (in-process, no Redis)
+│   └── pagination.py # get_pagination() — the ONE shared limit/offset dependency
 ├── routers/
-│   ├── upload.py     # POST /api/v1/upload
-│   ├── evaluation.py # POST /evaluate, GET /results/{id}, POST /results/{id}/override
-│   ├── jobs.py       # GET  /api/v1/jobs/{job_id}
+│   ├── auth.py       # login / refresh / logout / me
+│   ├── health.py     # GET /health
+│   ├── upload.py     # POST /api/v1/upload, GET /api/v1/uploads
+│   ├── evaluation.py # POST /evaluate, GET /results (list) + /results/{id}, POST .../override
+│   ├── jobs.py       # GET  /api/v1/jobs (list) + /api/v1/jobs/{job_id}
 │   ├── questions.py  # the bank + the TWO MANDATORY REVIEW GATES
-│   └── papers.py     # POST /api/v1/papers/generate
-├── schemas/          # upload, evaluation, jobs, questions, papers — pydantic v2
+│   ├── papers.py     # GET /api/v1/papers (list), POST /api/v1/papers/generate
+│   ├── exams.py      # GET /api/v1/exams
+│   └── students.py   # GET /api/v1/students
+├── schemas/          # upload, evaluation, jobs, questions, papers, exams,
+│                      #   students, pagination — pydantic v2
 └── services/
     ├── evaluation.py # router <-> core/ adapter. TRANSLATION ONLY, no scoring.
     ├── questions.py  # adapter onto scripts/review_question.py's two gates
-    └── papers.py     # adapter onto core/paper_generator.py
+    └── papers.py     # adapter onto core/paper_generator.py + core/papers.py
 ```
+
+`core/exams.py`, `core/students.py`, `core/results.py`, `core/papers.py` (the
+read side) hold the SQL for the list endpoints that have no real translation
+to do — `api/routers/exams.py` and `api/routers/students.py` call them
+directly, the same pattern `jobs.py` and `upload.py` already used for
+`core/jobs.py`/`core/uploads.py`'s single-row reads. A service-layer adapter
+earns its place only where there is real translation or error classification
+(questions, papers, evaluation) — see Rule 1 below.
 
 `core/question_bank.py` holds the one query the question endpoints needed that
 did not already exist — a filtered read over the bank. It is in `core/` and not
@@ -161,36 +253,156 @@ and equally easy to forget once.
 
 ## Rule 4 — identity lives in one file
 
-`api/deps/identity.py` is currently a stub that reads an `X-Debug-College-Id`
-header. It is the only file in the codebase that knows that header exists, and
-it gets replaced wholesale when real auth is built. Endpoints depend on
-`CurrentUser`, never on how it was resolved.
+`api/deps/identity.py` is the only file in this codebase that knows how a
+caller is identified. Endpoints depend on `CurrentUser`; none of them knows
+what a token is, and none may learn.
 
-## Known gap — RLS is not enforced when `PGUSER` is a superuser
+That rule is what made real authentication a one-file change on 2026-09-06.
+The module used to read an `X-Debug-College-Id` header; it now verifies a
+signed JWT. Not one router, schema or service changed as a result — the only
+edits outside `identity.py`, `db.py` and the new `auth.py`/`ratelimit.py` were
+RE-4's (below), which were about a request FIELD rather than about identity
+resolution.
+
+### The credential
+
+`Authorization: Bearer <access token>`, a JWT signed with `JWT_SECRET`
+(HS256). The claims, and why each is there:
+
+| claim | value | why |
+|---|---|---|
+| `sub` | `users.user_id` | the account |
+| `rid` | `users.reviewer_id` | the ACTOR — every provenance row is attributed to this, and after RE-4 it comes only from here |
+| `email` | `users.email` | for `/auth/me` and logs; never a key |
+| `role` | `teacher` \| `admin` \| `platform_admin` | drives the session variable, below |
+| `cid` | `users.college_id` | **the hinge of tenant isolation**; NULL iff `platform_admin` |
+| `typ` | `"access"` | so nothing else this key ever signs can be presented as a login |
+| `jti` | random | names a token in a log without logging the token |
+
+### Role → session variable, and that is the whole permission model
+
+`api/deps/db.py::get_tenant_conn` does exactly this, and nothing else:
+
+```
+teacher, admin  ->  SET LOCAL app.current_college_id = <cid>
+platform_admin  ->  SET LOCAL app.is_platform_admin  = 'true'
+```
+
+Both branches read the GUC back and raise `TenantContextError` if it did not
+take. `require_role("admin")` exists as a dependency factory for endpoint-level
+checks; the one place it is currently applied is `require_college_user`
+(= `require_role("teacher", "admin")`), on the endpoints whose queries carry a
+`college_id` predicate — see the endpoint table above.
+
+### Two tokens, two jobs
+
+* **Access token** — short (15 min, `ACCESS_TOKEN_TTL_MINUTES`), signed, and
+  **not revocable**: `get_current_user` does no database lookup, deliberately,
+  so there is no revocation list to consult. Its lifetime IS its blast radius,
+  which is why it is short.
+* **Refresh token** — opaque random text, long-lived, with a row in
+  `refresh_tokens` (migration 017 §2). It is the half that CAN be revoked, so
+  it is the half logout acts on, and it is **rotated on every refresh**: the
+  presented token is revoked in the same transaction that issues its
+  replacement, so a stolen refresh token cannot quietly become a permanent
+  second session.
+
+`POST /auth/refresh` RE-READS the account (`auth_user_by_id()`, migration 017
+§5) instead of copying the old token's claims forward, so a deactivated or
+demoted account stops minting usable access tokens immediately rather than
+whenever its refresh token happens to expire.
+
+### Login is the one unauthenticated endpoint that touches the database
+
+It runs on `get_auth_conn()` — **no tenant context and no admin bypass**,
+because resolving the tenant is the OUTPUT of authentication, not an input to
+it. Setting `app.is_platform_admin` for the login query would hand an
+unauthenticated request cross-tenant read on all eleven RLS-protected tables
+for the duration of the transaction; leaving `users` unprotected would put
+password hashes in the one table with no isolation. Migration 017 §3 argues
+this at length and resolves it with SECURITY DEFINER functions that open a
+ONE-ROW window each. `test_auth.py::test_the_auth_connection_can_see_nothing_else`
+asserts that connection can read no answers, no users, and no refresh tokens.
+
+**Wrong password and unknown email are indistinguishable**, in the response
+(one status, one string, no field naming which half failed) and in the TIME
+TAKEN — when no user row exists the presented password is verified against a
+decoy hash, so both branches pay for exactly one bcrypt verification.
+`test_an_unknown_email_costs_the_same_time_as_a_wrong_password` measures it.
+
+Login is rate-limited per client IP and per email address, in process, with no
+Redis. `api/deps/ratelimit.py` states plainly what that does and does not buy:
+the counters are per-worker and vanish on restart, so a genuinely global limit
+belongs in front of the app (nginx `limit_req`, a gateway). What it does buy
+completely is that one client cannot mount an unbounded guessing loop through
+one worker, and that a flood of bad passwords cannot exhaust this process's CPU
+— the check happens BEFORE the bcrypt verification.
+
+### There is no signup endpoint
+
+Accounts are created by an admin. The first one — the platform admin — comes
+from `scripts/bootstrap_platform_admin.py`, run by someone with database
+credentials, which is the only authority that exists before the first account
+does. Open self-registration on a platform where an account IS a tenant
+membership would let anyone mint themselves a login; the question that matters
+is not "do you own this mailbox" but "which college are you a teacher at",
+which only that college can answer.
+
+## Rule 5 (RE-4) — a review's author is the caller, never a request field
+
+`OverrideRequest`, `ReviewRequest` and `PromoteRequest` each used to carry a
+`reviewer_id`, because identity knew a college but not a person. That meant any
+teacher could attribute a review to any colleague: migration 003's
+cross-college trigger refuses reviewers from OTHER colleges, so the whole of
+one college's staff was impersonable by any of them.
+
+Those fields are gone. `CurrentUser.reviewer_id` is what the endpoints pass to
+the services, `PromoteRequest` no longer exists at all (it had exactly one
+field, and a body model with no fields is worse than no body), and
+`PaperGenerateRequest.generated_by` went the same way for the same reason. All
+four models are `extra="forbid"`, so a client still sending the old field gets
+a 422 naming it rather than having its attribution silently replaced.
+
+## RLS is enforced — but only for a non-superuser role (migration 016)
 
 Postgres exempts superusers and `BYPASSRLS` roles from row-level security.
 `FORCE ROW LEVEL SECURITY` (applied in migration 003) closes the table-*owner*
-loophole but not the superuser one. With `PGUSER=postgres` — the value in
-`.env.example`, so most local setups — **every policy in migration 003 is
-inert**: two different `app.current_college_id` values see the same rows.
+loophole but not the superuser one. With `PGUSER=postgres` — the old
+`.env.example` value, so every setup — **every policy in migrations 003/014/015
+was inert**: two different `app.current_college_id` values saw the same rows.
 
-The API sets the context correctly either way, and
-`tests/test_api/test_tenant_context.py` asserts that against the live DB. The
-one test that checks isolation *behaviour* skips with a loud message under such
-a role rather than pretending to pass.
+`migrations/016_application_role.sql` creates the role that was missing:
+`ai_eval_app`, `NOSUPERUSER NOBYPASSRLS`, owning nothing, with DML grants only
+and no `TRUNCATE`. Its password comes from `APP_DB_PASSWORD` in the
+environment, never from the file. `.env.example` now points `PGUSER` at it, and
+`PGADMIN_USER` carries the owner credentials that migrations, `pg_dump` and
+`scripts/reset_and_seed_db.sh` still need.
 
-Before anything resembling production, create a non-superuser application role
-that owns nothing and has `NOBYPASSRLS`, grant it DML on the answer schema, and
-point `PGUSER` at it. Then that test enforces the isolation for real.
+    set -a && source .env && set +a
+    psql -U "$PGADMIN_USER" -v ON_ERROR_STOP=1 -f migrations/016_application_role.sql
 
-**Until then, the explicit `college_id` predicate is what isolates tenants.**
-`core/jobs.py::get_job()` filters on `college_id` in its own `WHERE` clause as
-well as relying on the policy. That is not redundancy today — it is the only
-mechanism actually running.
-`tests/test_api/test_jobs.py::test_isolation_holds_at_the_query_layer_not_only_via_rls`
-drives the query under a deliberately wrong RLS context to pin this down, so
-"simplifying" the predicate away fails a test instead of quietly removing
-isolation on every superuser deployment.
+Two tests used to skip under a bypassing role. They now **fail** under one,
+because it is a misconfiguration rather than a tolerated state — a skip would
+report green while the property is untested:
+
+* `test_rls_isolation.py::test_rls_policies_isolate_tenants` — two real
+  colleges, one answer each, one query under two values of
+  `app.current_college_id`, two different result sets; plus a connection with
+  no context at all seeing zero rows.
+* `test_tenant_context.py::test_tenant_connection_is_actually_rls_scoped` —
+  the same at the `students` table.
+
+**The explicit `college_id` predicates stay, and are still tested.**
+`core/jobs.py::get_job()`, `core/uploads.py` and `api/services/evaluation.py`
+filter on `college_id` in their own `WHERE` clauses. That is not redundancy: it
+was the *only* mechanism running before 016, and it is the only one left the
+moment anyone points `PGUSER` back at a superuser — a one-line `.env` edit with
+no visible symptom.
+`test_jobs.py::test_isolation_holds_at_the_query_layer_not_only_via_rls` and
+`test_rls_isolation.py::test_the_isolating_predicate_is_not_only_rls` now drive
+those queries on a **platform-admin connection**, where the permissive bypass
+policy makes every tenant's rows visible — so whatever refuses the row can only
+be the predicate. Deleting one as "redundant with the policy" fails a test.
 
 ## The append-only ledger — the rule this API must not break
 
@@ -251,10 +463,37 @@ marker, not a measured fraction — `evaluate_booklet` runs its thread pools wit
 no progress callback, so within-stage completion is genuinely unknown and is not
 invented.
 
-**Ingestion is not part of an evaluation job.** The regions must already exist
-as `answer_blocks` rows, from `scripts/ingest_booklet.py`. A booklet with none
-fails naming that step rather than succeeding with an empty report that
+**Ingestion is a SEPARATE JOB TYPE, not a phase of evaluation.** A
+`booklet_ingest` job runs §7C's pass —
+`api/services/ingestion.py::run_booklet_ingest` →
+`core/booklet_pipeline.ingest_booklet_file` → rasterize, segment, classify,
+assign, persist — and then CHAINS into the `booklet_eval` job for the same
+booklet, whose id it returns as `result.evaluation_job_id`.
+
+Two job types rather than one because **ingestion writes a student's
+`answer_blocks` and evaluation only reads them.** Folding them together would
+re-segment on every re-score, and since `insert_region_block` is an
+unconditional INSERT that would DOUBLE the regions rather than replace them —
+with no version history to recover the first segmentation from
+(PROJECT_CONTEXT.md §7 open decision 2). So:
+
+  * `POST /evaluate` on a booklet with no regions → one `booklet_ingest` job
+    that chains into the evaluation. `job_type` and `ingest_job_id` in the 202
+    say which shape happened.
+  * `POST /evaluate` on an ingested booklet → one `booklet_eval` job directly.
+    Nothing is re-segmented; a re-score reuses the regions that exist.
+  * A re-run of an ingest job (`--requeue-stalled`) skips an already-ingested
+    booklet (`result.skipped == "already_ingested"`) and finds the evaluation
+    job it queued the first time rather than queueing a second one.
+
+**`booklet_eval` still fails, by name, on a booklet with no regions.** That is
+no longer the normal path, but it must never become an empty report that
 aggregates to zero and reads like a student who wrote nothing.
+
+**Progress distinguishes the two passes.** An ingest job reports `checking`,
+`fetching`, `rasterizing`, `segmenting`, `persisting`; an evaluation job
+reports `loading`, `evaluating`, `persisting`. A client seeing `persisting`
+reads `job_type` to know whether that means `answer_blocks` or ledger rows.
 
 **A `--stub` score is FABRICATED and is still appended to the ledger.** Never
 point a `--stub` worker at a production queue, and note that `stub` on
@@ -318,14 +557,32 @@ skipped a gate can reach an exam paper —
 draft and a confirmed question that match the slot perfectly and must both be
 passed over.
 
-## Known gap — the API cannot ingest
+## The API ingests (closed 2026-09-05) — and what it cost
 
-An uploaded PDF is stored but never segmented into `answer_blocks` rows. That is
-still `scripts/ingest_booklet.py`'s job (§7C), so the upload → evaluate loop
-works end to end only for a booklet the CLI has already ingested. This is the
-largest remaining hole in the wiring; closing it means either an ingestion job
-type or an ingest step inside `booklet_eval` (which would rewrite a student's
-blocks on every re-score, so it needs thought, not just plumbing).
+The upload → evaluate loop no longer needs a CLI step. The decision was between
+a separate `booklet_ingest` job type and an ingest phase inside `booklet_eval`;
+the separate job type was chosen, for the reasons in
+`api/services/ingestion.py`'s docstring and in the job-queue section above.
+`scripts/ingest_booklet.py` still exists and is still the way to debug a
+segmentation — it now imports the same `core/booklet_pipeline.py` the job does.
+
+Two things changed underneath to make it work, and both are worth knowing:
+
+1. **`paper_id` is now a required field on `POST /evaluate`.** Question markers
+   ('Q1', 'Q2a') resolve against `pattern_slots.slot_label` through one
+   specific generated paper, labels repeat across papers, and there is still no
+   FK from `exams` to `generated_papers` (§7C). The CLI's `--paper-id` had the
+   same problem and solved it the same way. `exams.paper_id` would close it
+   properly and is a §10 product decision, not a migration to write on the way
+   past.
+2. **Dummy storage now keeps its bytes** — `core/storage.py::dummy_store()` and
+   `fetch_to_path()`. `dummy_upload()` does no I/O at all, which was fine while
+   nothing read a file back; the ingest job reads the uploaded PDF back in
+   another process, minutes later, so the API's upload path stores it under
+   `DUMMY_STORAGE_ROOT` (default: a directory in the system temp dir). The ref
+   is identical in shape, `dummy_upload()` is unchanged for the loaders that
+   populate placeholder rows, and the two processes must agree on
+   `STORAGE_MODE` and `DUMMY_STORAGE_ROOT`.
 
 ## Hardening pass — what changed and why
 
@@ -396,19 +653,38 @@ injection into the GUC, case variation). `SET LOCAL` cannot take a bind
 parameter, so `uuid.UUID()` in `api/deps/identity.py` is the only thing
 between a header and a SET statement; those cases are what keep it honest.
 
-### Known rough edge — a valid-but-unknown college id
+### A valid-but-unknown college id is a 401 (it used to be a 500)
 
-`api/deps/identity.py` only *parses* the uuid; it does not check that the
-college exists. A well-formed id for a nonexistent college therefore sets a
-tenant context that owns nothing: reads 404 (correct and indistinguishable
-from any other miss) but `POST /api/v1/upload` **500s** on the
-`booklet_uploads_college_id_fkey` violation. Loud, and it writes nothing — so
-the safety property holds — but a 401 naming the unknown tenant would be
-better. `test_no_usable_context_is_a_loud_refusal_on_every_endpoint[nil-uuid]`
-asserts the current behaviour explicitly rather than smoothing over it.
+`api/deps/identity.py` only *validates the claim*. It cannot do more — checking
+a college exists needs a database connection — so a token naming a
+nonexistent college would establish a tenant context that owns nothing: reads
+404ed (correct, and indistinguishable from any other miss) while
+`POST /api/v1/upload` **500ed** on the `booklet_uploads_college_id_fkey`
+violation. Loud, and it wrote nothing, so the safety property held; it was
+still the wrong answer to "who are you?", and it made upload the one endpoint
+where an unknown tenant behaved differently from every other.
 
-Fixing it means verifying the college in `get_tenant_conn`, which changes what
-every existing cross-tenant test means (they use a nonexistent college id as
-"the other tenant" and would all need a real second college). That is a
-deliberate change, not a test-file tidy-up, and is left for whoever decides to
-make it.
+`api/deps/db.py::get_tenant_conn` now runs **one SELECT against `colleges`
+before `SET LOCAL`** (`_require_known_college`). Unknown → 401. Not `active`
+(migration 003's `college_status` is `('active','suspended')`) → 401, for the
+same reason: a suspended college still owns rows, and admitting it would hand
+out a working tenant context for a tenant the platform has deliberately
+switched off. `colleges` carries no `college_id` column and no policy, so the
+read is correct with or without a context; doing it first means a rejected
+request never establishes one. The 401's wording lives in
+`api/deps/identity.py::unknown_tenant_error()`, so Rule 4 holds — the
+vocabulary of "who are you and why were you refused" stays in one file.
+
+**This changed what every cross-tenant test means, which is why the tests
+changed with it.** They all used a nonexistent college as "the other tenant";
+against a verified `get_tenant_conn` that is a 401 at the edge, so a "404 for
+the other tenant" assertion would have been proving that an unknown caller is
+rejected — and would have kept passing with tenant isolation entirely removed.
+`seed_minimal.sql` now seeds a second REAL college (`22222222-…`, with its own
+student and exam) and a suspended one (`33333333-…`); `tests/test_api/
+conftest.py` exposes them as `COLLEGE_B` / `COLLEGE_SUSPENDED` with fixtures
+that guarantee the rows exist. Where it is cheap, the cross-tenant tests now
+also assert that the SAME credential succeeds on college B's OWN row — which
+is what makes the 404 evidence of isolation rather than of rejection.
+`COLLEGE_ABSENT` still exists, but only where the 401 itself is the property
+under test.

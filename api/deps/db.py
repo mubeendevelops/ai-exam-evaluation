@@ -64,7 +64,7 @@ import psycopg2.extensions
 from fastapi import Depends
 
 import core.db
-from api.deps.identity import CurrentUser, get_current_user
+from api.deps.identity import CurrentUser, get_current_user, unknown_tenant_error
 
 
 class TenantContextError(RuntimeError):
@@ -121,6 +121,44 @@ def _require_college_id(college_id) -> str:
             f"table — a confusing place to discover a bad id."
         )
     return text
+
+
+def _require_known_college(cur, college_id: str) -> None:
+    """Refuses a well-formed college_id that names no usable tenant, with 401.
+
+    ONE SELECT, and it runs BEFORE `SET LOCAL app.current_college_id`.
+    `colleges` is the tenant table itself: it carries no college_id column and
+    has no RLS policy (migration 003 §0), so this read is correct with or
+    without a tenant context — and doing it first means a rejected request
+    never establishes a context at all.
+
+    WHY THIS IS NOT A TIDY-UP. Before this check, identity.py only PARSED the
+    uuid, so any well-formed id established a tenant context that owns
+    nothing. Reads then 404ed (correct, and indistinguishable from any other
+    miss) but POST /api/v1/upload 500ed on
+    `booklet_uploads_college_id_fkey` — the database catching, at the last
+    possible moment, something the API never checked. A 500 is a loud failure
+    that writes nothing, so the safety property held; it was still the wrong
+    answer to "who are you?".
+
+    `status <> 'active'` is refused for the same reason as a missing row.
+    Migration 003 defines college_status as ('active', 'suspended'), and a
+    suspended college is one the platform has deliberately switched off; it
+    still owns rows, so admitting it would hand out a working tenant context
+    for a tenant that is supposed to be dark. This is the ONE place that
+    decision can be made once for every endpoint.
+
+    Costs one indexed primary-key lookup per request, on a table with one row
+    per college.
+    """
+    cur.execute("SELECT status FROM colleges WHERE college_id = %s", (college_id,))
+    row = cur.fetchone()
+    if row is None:
+        raise unknown_tenant_error(
+            college_id, reason="no college with that id exists")
+    if row[0] != "active":
+        raise unknown_tenant_error(
+            college_id, reason=f"that college is {row[0]}, not active")
 
 
 def _verify_guc(cur, name: str, expected: str) -> None:
@@ -205,17 +243,99 @@ def _open(configure) -> Iterator[psycopg2.extensions.connection]:
 def get_tenant_conn(
     user: CurrentUser = Depends(get_current_user),
 ) -> Iterator[psycopg2.extensions.connection]:
-    """FastAPI dependency: a connection scoped to the caller's college by RLS.
+    """FastAPI dependency: a connection whose RLS context matches the CALLER'S
+    ROLE. This is the default for every business endpoint.
 
-    This is the default for every business endpoint. The tenant comes from the
-    authenticated user and NEVER from a request body, query parameter, or path
-    parameter — otherwise any caller could read any college's answers by
-    typing a different UUID, and RLS would happily comply.
+    ROLE → SESSION VARIABLE. This mapping is the whole of the permission model
+    that touches the database, and it lives here, once:
+
+        teacher, admin  ->  SET LOCAL app.current_college_id = <user.college_id>
+        platform_admin  ->  SET LOCAL app.is_platform_admin  = 'true'
+
+    Both branches read the GUC back and raise TenantContextError if it did not
+    take (`_verify_guc`), because a context that did not stick is invisible:
+    every query returns zero rows and reads as "no data".
+
+    The tenant comes from the authenticated user's signature-verified `cid`
+    claim and NEVER from a request body, query parameter, or path parameter —
+    otherwise any caller could read any college's answers by typing a
+    different UUID, and RLS would happily comply.
+
+    THE platform_admin BRANCH IS A CROSS-TENANT CONTEXT, and endpoints that
+    pass `user.college_id` into an explicit predicate must not be reachable
+    with it — a NULL college_id there matches nothing and answers 404 for data
+    that exists. Those endpoints declare
+    `api/deps/identity.py::require_college_user` alongside this dependency;
+    that function's docstring is where the reasoning lives.
 
     Raises TenantContextError (→ 500) rather than yielding a context-less
-    connection if the user has no college_id.
+    connection if a college-scoped user has no college_id, and HTTP 401 if the
+    college_id is well-formed but names no active college
+    (`_require_known_college`). Both happen before the connection is yielded,
+    so an endpoint body never runs under a tenant that does not exist.
     """
-    yield from _open(lambda cur: set_tenant_context(cur, user.college_id))
+    def configure(cur):
+        if user.is_platform_admin:
+            # No `_require_known_college` here: there is no college to check.
+            # A platform_admin's account is verified at login, and its token
+            # cannot carry a college at all (api/deps/identity.py refuses
+            # one), so there is no id in play that could name a dead tenant.
+            set_admin_context(cur)
+            return
+
+        college_id = _require_college_id(user.college_id)
+        # Order matters: verify the tenant, THEN establish its context. A
+        # rejected caller must never have had `app.current_college_id` set.
+        _require_known_college(cur, college_id)
+        set_tenant_context(cur, college_id)
+
+    yield from _open(configure)
+
+
+def get_auth_conn() -> Iterator[psycopg2.extensions.connection]:
+    """FastAPI dependency: a connection with NO RLS context, for /auth only.
+
+    ════════════════════════════════════════════════════════════════════════
+    READ THIS BEFORE USING IT ANYWHERE ELSE. THE ANSWER IS: DO NOT.
+    ════════════════════════════════════════════════════════════════════════
+
+    Authentication is the one operation that CANNOT have a tenant context,
+    because resolving the tenant is its OUTPUT, not its input. At the moment
+    `POST /auth/login` reads the `users` row, nobody has been identified yet.
+
+    The two obvious ways to give it a context are both wrong, and migration
+    017 §3 says so at length:
+
+      * `set_admin_context()` would flip the permissive platform_admin_bypass
+        policy on all ELEVEN RLS-protected tables for the whole transaction —
+        an UNAUTHENTICATED request briefly holding cross-tenant read on every
+        answer in the platform. Absolutely not.
+      * a tenant context cannot be set, because there is no tenant yet.
+
+    So this connection carries neither, and it is safe ONLY because the
+    database refuses to let it read anything: with no GUC set, every
+    `tenant_isolation` policy matches nothing, and the login path reaches the
+    two rows it needs exclusively through migration 017's SECURITY DEFINER
+    `auth_*` functions, each of which opens a ONE-ROW window (by email, by
+    token hash, or by user id) and closes it again. `core/users.py` wraps
+    those functions and is the only module that calls them.
+
+    Concretely, on this connection:
+
+        SELECT * FROM answers;              -->  0 rows (no context)
+        SELECT * FROM users;                -->  0 rows, and it cannot even
+                                                 name password_hash (017 §4
+                                                 revokes column SELECT)
+        SELECT * FROM refresh_tokens;       -->  permission denied (017 §4)
+        SELECT * FROM auth_lookup_user(%s); -->  the one row for that email
+
+    An endpoint that took this dependency for anything but authentication
+    would therefore not leak data — it would silently see none, which is the
+    §6 failure this whole package exists to prevent. Hence: `/auth` only, and
+    `tests/test_api/test_auth.py::test_the_auth_connection_can_see_nothing_else`
+    holds that line by asserting the emptiness above rather than trusting it.
+    """
+    yield from _open(lambda cur: None)
 
 
 def get_admin_conn() -> Iterator[psycopg2.extensions.connection]:

@@ -13,6 +13,7 @@ Two things are under test, and they fail in opposite directions:
 """
 from __future__ import annotations
 
+import datetime as dt
 import threading
 import uuid
 
@@ -21,38 +22,183 @@ import pytest
 import core.db
 import core.jobs
 from api.deps.db import set_admin_context, set_tenant_context
-from tests.test_api.conftest import COLLEGE_A, COLLEGE_B_ABSENT
+from tests.test_api.conftest import COLLEGE_A, COLLEGE_B
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
 
+# ─────────────────────────────── GET /jobs (list) ────────────────────────────
+
+async def test_jobs_list_is_isolated_by_tenant(make_client, make_job, college_b):
+    """A's job list must not include B's jobs, and B's own list must include
+    B's — the same "own row visible, other tenant's is not" pairing every
+    isolation test in this package uses."""
+    a_job = make_job(college_id=COLLEGE_A)
+    b_job = make_job(college_id=college_b["college_id"])
+
+    async with make_client(COLLEGE_A) as client:
+        mine = await client.get("/api/v1/jobs")
+    async with make_client(COLLEGE_B) as client:
+        theirs = await client.get("/api/v1/jobs")
+
+    assert mine.status_code == theirs.status_code == 200
+
+    mine_ids = {j["job_id"] for j in mine.json()["items"]}
+    theirs_ids = {j["job_id"] for j in theirs.json()["items"]}
+
+    assert a_job["job_id"] in mine_ids
+    assert a_job["job_id"] not in theirs_ids
+    assert b_job["job_id"] in theirs_ids
+    assert b_job["job_id"] not in mine_ids
+
+
+async def test_jobs_list_filters_by_status_and_job_type(make_client, make_job,
+                                                         unique_job_type):
+    """A job_type nobody else uses makes this filter proof rather than a
+    fluke of whatever else is queued."""
+    matching = make_job(college_id=COLLEGE_A, job_type=unique_job_type)
+    other_type = make_job(college_id=COLLEGE_A, job_type=f"{unique_job_type}_other")
+
+    async with make_client(COLLEGE_A) as client:
+        response = await client.get(
+            "/api/v1/jobs", params={"job_type": unique_job_type, "status": "queued"}
+        )
+
+    assert response.status_code == 200, response.text
+    ids = {j["job_id"] for j in response.json()["items"]}
+    assert ids == {matching["job_id"]}
+    assert other_type["job_id"] not in ids
+
+
+async def test_jobs_list_filters_by_created_after(make_client, make_job, admin_conn,
+                                                   unique_job_type, track_jobs):
+    """`created_after` is EXCLUSIVE — a client polling with the newest id it
+    already has must not see that same row again."""
+    old = make_job(college_id=COLLEGE_A, job_type=unique_job_type)
+
+    with admin_conn.cursor() as cur:
+        set_admin_context(cur)
+        cur.execute("SELECT created_at FROM evaluation_jobs WHERE job_id = %s",
+                    (old["job_id"],))
+        (cutoff,) = cur.fetchone()
+
+    new_job_id = str(uuid.uuid4())
+    with admin_conn.cursor() as cur:
+        set_admin_context(cur)
+        cur.execute(
+            """
+            INSERT INTO evaluation_jobs (job_id, college_id, job_type, status,
+                                         payload, created_at)
+            VALUES (%s, %s, %s, 'queued', '{}'::jsonb, %s)
+            """,
+            (new_job_id, COLLEGE_A, unique_job_type, cutoff + dt.timedelta(seconds=1)),
+        )
+    admin_conn.commit()
+    track_jobs(new_job_id)
+
+    async with make_client(COLLEGE_A) as client:
+        response = await client.get(
+            "/api/v1/jobs",
+            params={"job_type": unique_job_type, "created_after": cutoff.isoformat()},
+        )
+
+    ids = {j["job_id"] for j in response.json()["items"]}
+    assert ids == {new_job_id}
+    assert old["job_id"] not in ids
+
+
+async def test_jobs_list_limit_above_max_is_clamped_not_rejected(make_client, make_job):
+    """A limit far above MAX_LIMIT (200) is CLAMPED, not answered with 422 —
+    see api/deps/pagination.py."""
+    make_job(college_id=COLLEGE_A)
+
+    async with make_client(COLLEGE_A) as client:
+        response = await client.get("/api/v1/jobs", params={"limit": 100_000})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["limit"] == 200
+
+
+async def test_jobs_list_orders_stably_under_tied_timestamps(
+    make_client, admin_conn, track_jobs, unique_job_type
+):
+    """Two jobs with the IDENTICAL created_at must still page without
+    skipping or repeating a row — the job_id tiebreak in core/jobs.py::
+    list_jobs is what LIMIT/OFFSET paging needs to be safe under ties.
+    """
+    job_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+    with admin_conn.cursor() as cur:
+        set_admin_context(cur)
+        for job_id in job_ids:
+            cur.execute(
+                """
+                INSERT INTO evaluation_jobs (job_id, college_id, job_type, status,
+                                             payload, created_at)
+                VALUES (%s, %s, %s, 'queued', '{}'::jsonb, '2026-01-01T00:00:00Z')
+                """,
+                (job_id, COLLEGE_A, unique_job_type),
+            )
+    admin_conn.commit()
+    for job_id in job_ids:
+        track_jobs(job_id)
+
+    async with make_client(COLLEGE_A) as client:
+        page1 = await client.get(
+            "/api/v1/jobs", params={"job_type": unique_job_type, "limit": 1, "offset": 0}
+        )
+        page2 = await client.get(
+            "/api/v1/jobs", params={"job_type": unique_job_type, "limit": 1, "offset": 1}
+        )
+
+    seen = {page1.json()["items"][0]["job_id"], page2.json()["items"][0]["job_id"]}
+    assert seen == set(job_ids), (
+        "tied created_at values caused a row to repeat or be skipped across pages"
+    )
+
+
 # ───────────────────────────── tenant isolation ─────────────────────────────
 
-async def test_job_from_another_college_is_404_not_the_job(make_client, make_job):
+async def test_job_from_another_college_is_404_not_the_job(make_client, make_job,
+                                                           college_b):
     """TODAY'S CROSS-TENANT PROOF.
 
-    A job is created under college A. College B asks for it by its exact id
-    and must get 404 — not the job, and not a 403.
+    A job is created under college A. College B — a REAL, active college with
+    jobs of its own — asks for it by its exact id and must get 404: not the
+    job, and not a 403.
 
     403 would be a leak: it distinguishes "exists but not yours" from "does
     not exist", which lets a caller enumerate other colleges' job ids and
     count their activity. The assertion that B's response is byte-identical to
     the response for a completely made-up id is the part that pins this down.
+
+    B FETCHES ITS OWN JOB TOO, and that half is not decoration. Until college
+    B was a real tenant this test used an id that existed nowhere, so a 404
+    proved only "an unknown caller gets nothing" — it would have passed
+    against an API that refused every request B ever made (which, since
+    get_tenant_conn started verifying the college, is exactly what happens to
+    an absent id: 401). Showing that the SAME credential succeeds on B's own
+    job is what makes the 404 evidence of isolation rather than of rejection.
     """
     job = make_job(college_id=COLLEGE_A)
     job_id = job["job_id"]
+    b_job_id = make_job(college_id=college_b["college_id"])["job_id"]
 
     async with make_client(COLLEGE_A) as owner:
         mine = await owner.get(f"/api/v1/jobs/{job_id}")
-    async with make_client(COLLEGE_B_ABSENT) as stranger:
+    async with make_client(COLLEGE_B) as stranger:
         theirs = await stranger.get(f"/api/v1/jobs/{job_id}")
         made_up = await stranger.get(f"/api/v1/jobs/{uuid.uuid4()}")
+        own = await stranger.get(f"/api/v1/jobs/{b_job_id}")
 
     # A owns it and sees it.
     assert mine.status_code == 200, mine.text
     assert mine.json()["job_id"] == job_id
 
-    # B does not, and cannot tell it apart from a nonexistent id.
+    # B's credential works — it is a real tenant, not a rejected one.
+    assert own.status_code == 200, own.text
+    assert own.json()["job_id"] == b_job_id
+
+    # B does not own A's job, and cannot tell it apart from a nonexistent id.
     assert theirs.status_code == 404, theirs.text
     assert made_up.status_code == 404
     assert theirs.json()["detail"].replace(job_id, "X") == \
@@ -64,14 +210,17 @@ async def test_job_from_another_college_is_404_not_the_job(make_client, make_job
     assert "booklet_evaluation" not in body
 
 
-async def test_isolation_holds_at_the_query_layer_not_only_via_rls(make_job):
+async def test_isolation_holds_at_the_query_layer_not_only_via_rls(make_job,
+                                                                   college_b):
     """core/jobs.py::get_job() filters on college_id itself.
 
-    This matters because RLS is currently INERT: PGUSER=postgres is a
-    superuser, and Postgres exempts superusers from row-level security even
-    with FORCE (see api/README.md's "Known gap"). So this test drives the
-    query directly under a DELIBERATELY WRONG tenant context and asserts the
-    explicit predicate — not the policy — is what excludes the row.
+    Migration 016 gave the deployment a NOBYPASSRLS application role, so the
+    policies now run too — but only for a role that does not bypass them, and
+    "PGUSER is a superuser again" is one .env edit away (it was the default
+    until 016). The predicate is the layer that holds regardless of role, so
+    it is tested regardless of role: this drives the query directly under a
+    DELIBERATELY WRONG tenant context and asserts the explicit predicate — not
+    the policy — is what excludes the row.
 
     If someone ever "simplifies" get_job() by deleting the college_id
     predicate on the grounds that RLS covers it, this test fails immediately
@@ -83,16 +232,33 @@ async def test_isolation_holds_at_the_query_layer_not_only_via_rls(make_job):
     conn = core.db.get_connection()
     try:
         with conn.cursor() as cur:
-            set_tenant_context(cur, COLLEGE_B_ABSENT)
-            as_b = core.jobs.get_job(cur, job_id=job["job_id"], college_id=COLLEGE_B_ABSENT)
-            # Same connection, same (wrong) RLS context, but asking as the
-            # true owner: this is what isolates on a superuser role.
+            # PLATFORM-ADMIN context, deliberately: it activates migration
+            # 014's permissive bypass policy, so RLS is not filtering anything
+            # here and the row IS reachable on this connection. Whatever
+            # refuses the next line can only be the predicate.
+            set_admin_context(cur)
+            as_b = core.jobs.get_job(cur, job_id=job["job_id"], college_id=COLLEGE_B)
+            # Same connection, same context, asking as the true owner — this
+            # is what proves the line above failed for the right reason, and
+            # not because the row was unreachable to begin with.
             as_a = core.jobs.get_job(cur, job_id=job["job_id"], college_id=COLLEGE_A)
+
+            # And once more under a WRONG tenant context, where RLS and the
+            # predicate agree. Under the pre-016 superuser role this was the
+            # only leg that ran at all; it is kept because "PGUSER is a
+            # superuser again" is one .env edit away.
+            set_tenant_context(cur, COLLEGE_B)
+            as_b_scoped = core.jobs.get_job(cur, job_id=job["job_id"],
+                                            college_id=COLLEGE_B)
     finally:
         conn.rollback()
         conn.close()
 
-    assert as_b is None
+    assert as_b is None, (
+        "get_job returned another college's job on a connection where RLS was "
+        "bypassed — its college_id predicate is not filtering"
+    )
+    assert as_b_scoped is None
     assert as_a is not None and as_a["job_id"] == job["job_id"]
 
 
@@ -113,7 +279,7 @@ async def test_job_endpoint_requires_credentials(make_client, make_job):
 
     async with make_client(COLLEGE_A) as ac:
         response = await ac.get(
-            f"/api/v1/jobs/{job['job_id']}", headers={"X-Debug-College-Id": ""}
+            f"/api/v1/jobs/{job['job_id']}", headers={"Authorization": ""}
         )
 
     assert response.status_code == 401, response.text
@@ -258,6 +424,7 @@ async def test_worker_reports_real_progress_and_reaches_succeeded(
             "upload_id": booklet["upload_id"],
             "exam_id": booklet["exam_id"],
             "student_id": booklet["student_id"],
+            "paper_id": booklet["paper_id"],
             "stub": True,
         })
         assert queued.status_code == 202, queued.text
@@ -269,7 +436,10 @@ async def test_worker_reports_real_progress_and_reaches_succeeded(
 
         processed = worker.process_one(
             stub=True, stub_seconds=0.0, dry_run=False,
-            job_types=[worker.HANDLED_JOB_TYPES[0]],
+            # Named, not indexed: HANDLED_JOB_TYPES now lists the ingest
+            # type first, and a worker told to claim "the first type" would
+            # quietly stop testing what this test is about.
+            job_types=["booklet_eval"],
         )
         assert processed is not None and processed["job_id"] == job_id
 

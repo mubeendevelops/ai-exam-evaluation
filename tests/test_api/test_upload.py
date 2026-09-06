@@ -10,11 +10,12 @@ import uuid
 
 import pytest
 
-from tests.test_api.conftest import COLLEGE_A, MINIMAL_PDF
+from tests.test_api.conftest import COLLEGE_A, COLLEGE_B, MINIMAL_PDF
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
 UPLOAD = "/api/v1/upload"
+UPLOADS = "/api/v1/uploads"
 
 
 def _pdf(name: str = "booklet.pdf", data: bytes = MINIMAL_PDF):
@@ -176,34 +177,90 @@ async def test_upload_without_credentials_is_rejected(make_client, admin_conn):
     before = _upload_count(admin_conn)
 
     async with make_client(COLLEGE_A) as ac:
-        response = await ac.post(UPLOAD, files=_pdf(), headers={"X-Debug-College-Id": ""})
+        response = await ac.post(UPLOAD, files=_pdf(), headers={"Authorization": ""})
 
     assert response.status_code == 401, response.text
     assert _upload_count(admin_conn) == before
 
 
-async def test_upload_for_an_unknown_college_fails_and_writes_nothing(
+async def test_upload_for_an_unknown_college_is_401_and_writes_nothing(
     make_client, admin_conn
 ):
-    """A well-formed credential naming a college that does not exist must not
-    create a job.
+    """A well-formed credential naming a college that does not exist is a 401,
+    and writes nothing.
 
-    booklet_uploads.college_id is a FK to colleges (migration 015), so this is
-    caught by the DB rather than by a check the API could forget. The point of
-    the test is the SECOND assertion: the request's transaction is rolled back
-    by get_tenant_conn, so no partial row survives.
+    IT USED TO BE A 500. booklet_uploads.college_id is a FK to colleges
+    (migration 015), and api/deps/identity.py only PARSED the uuid, so the
+    request established a tenant context that owns nothing and then died on
+    `booklet_uploads_college_id_fkey` — the database catching, at the last
+    possible moment, something the API had never checked. Loud, and it wrote
+    nothing, so the safety property held; it was still the wrong answer to
+    "who are you?", and it made this the one endpoint where an unknown tenant
+    behaved differently from every other.
+
+    `get_tenant_conn` now verifies the college before `SET LOCAL`. Both
+    assertions still matter: the second one is what says the refusal is a
+    no-op, which was the original point of this test and does not become less
+    interesting because the status changed.
     """
     ghost = str(uuid.uuid4())
     before = _upload_count(admin_conn)
 
-    # raise_app_exceptions=False so the app's own error response is returned
-    # rather than the psycopg2 exception being re-raised into the test — the
-    # 500 is what a real client would see, and it is what is under test here.
-    async with make_client(ghost, raise_app_exceptions=False) as ac:
+    async with make_client(ghost) as ac:
         response = await ac.post(UPLOAD, files=_pdf())
 
-    assert response.status_code == 500, response.text
+    assert response.status_code == 401, response.text
+    assert "no college with that id exists" in response.json()["detail"].lower()
     assert _upload_count(admin_conn) == before
+
+
+# ═══════════════════════════════ GET /uploads (list) ═════════════════════════
+
+async def test_uploads_list_is_isolated_by_tenant(make_client, make_booklet, college_b):
+    a = make_booklet(college_id=COLLEGE_A)
+    b = make_booklet(college_id=college_b["college_id"],
+                     student_id=college_b["student_id"],
+                     exam_id=college_b["exam_id"])
+
+    async with make_client(COLLEGE_A) as client:
+        mine = await client.get(UPLOADS)
+    async with make_client(COLLEGE_B) as client:
+        theirs = await client.get(UPLOADS)
+
+    assert mine.status_code == theirs.status_code == 200
+    mine_ids = {u["upload_id"] for u in mine.json()["items"]}
+    theirs_ids = {u["upload_id"] for u in theirs.json()["items"]}
+
+    assert a["upload_id"] in mine_ids
+    assert a["upload_id"] not in theirs_ids
+    assert b["upload_id"] in theirs_ids
+    assert b["upload_id"] not in mine_ids
+
+
+async def test_uploads_list_filters_by_exam_binding_state(make_client, make_booklet):
+    """`bound` reflects whether the upload has ever been ingested against an
+    exam/student, not the booklet_uploads row itself — see
+    core/uploads.py::_BOUND_EXISTS. `ingested=True` writes the `answers` row
+    that binding is computed from; `ingested=False` is what POST /upload
+    alone leaves behind."""
+    bound = make_booklet(ingested=True)
+    unbound = make_booklet(ingested=False)
+
+    async with make_client(COLLEGE_A) as client:
+        bound_resp = await client.get(UPLOADS, params={"bound": "true"})
+        unbound_resp = await client.get(UPLOADS, params={"bound": "false"})
+
+    bound_ids = {u["upload_id"] for u in bound_resp.json()["items"]}
+    unbound_ids = {u["upload_id"] for u in unbound_resp.json()["items"]}
+
+    assert bound["upload_id"] in bound_ids
+    assert bound["upload_id"] not in unbound_ids
+    assert unbound["upload_id"] in unbound_ids
+    assert unbound["upload_id"] not in bound_ids
+
+    bound_row = next(u for u in bound_resp.json()["items"]
+                     if u["upload_id"] == bound["upload_id"])
+    assert bound_row["bound"] is True
 
 
 def _upload_count(conn) -> int:

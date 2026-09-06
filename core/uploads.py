@@ -10,15 +10,18 @@ core/plugins/persistence.py): the CALLER owns the connection and MUST have set
 the RLS context on the transaction already. Nothing here sets it.
 
 EXPLICIT college_id PREDICATES: get_upload() filters on college_id in its own
-WHERE clause even though the RLS policy filters the same column, because
-Postgres exempts SUPERUSER and BYPASSRLS roles from row-level security
-entirely — with PGUSER=postgres (the .env.example default) migration 015's
-policies are inert and this predicate is the only thing isolating tenants.
-Same argument, in full, at the top of core/jobs.py.
+WHERE clause even though the RLS policy filters the same column. Migration 016
+gave the deployment a NOBYPASSRLS application role, so the policy runs now —
+but Postgres exempts SUPERUSER and BYPASSRLS roles from row-level security
+entirely, and pointing PGUSER back at one (it was the .env.example default
+until 016) makes this predicate the only thing isolating tenants again, with no
+visible symptom. Same argument, in full, at the top of core/jobs.py.
 """
 from __future__ import annotations
 
 from typing import Any
+
+import core.pagination
 
 UPLOAD_COLUMNS = (
     "upload_id", "college_id", "blob_url", "filename", "content_type",
@@ -85,3 +88,74 @@ def get_upload(cur, *, upload_id, college_id) -> dict[str, Any] | None:
     )
     row = cur.fetchone()
     return _row_to_dict(row) if row else None
+
+
+#: The predicate an upload's blob_url is "bound" (exam-binding state) by:
+#: at least one `answers` row was ingested from it, for ANY exam/student —
+#: booklet ingestion is what writes that row (core/booklet_pipeline.py), and
+#: it is the only thing that connects an upload to an exam at all (there is
+#: no exams.paper_id / no booklets table — CLAUDE_CONTEXT.md §7C). An upload
+#: can be bound more than once (a re-ingestion under a different
+#: exam/student), so this is existence, not a count.
+_BOUND_EXISTS = """
+    EXISTS (
+        SELECT 1 FROM answers a
+        WHERE a.source_scan_url = u.blob_url AND a.college_id = u.college_id
+    )
+"""
+
+
+def list_uploads(
+    cur, *, college_id, bound: bool | None = None, limit: int = 50, offset: int = 0,
+) -> list[dict[str, Any]]:
+    """A tenant-scoped, filtered page of uploads, newest first.
+
+    `bound` filters by exam-binding state: True for uploads that have been
+    ingested against at least one exam/student, False for uploads still
+    sitting unbound (POST /upload happened, nothing has evaluated them yet —
+    the review queue for "uploads nobody has acted on").
+    """
+    limit = core.pagination.clamp_limit(limit)
+    if offset < 0:
+        raise ValueError(f"offset must be >= 0, got {offset}")
+
+    where, params = _list_filters(college_id, bound)
+
+    cur.execute(
+        f"""
+        SELECT u.upload_id, u.college_id, u.blob_url, u.filename, u.content_type,
+               u.size_bytes, u.storage_mode, u.uploaded_at, {_BOUND_EXISTS} AS bound
+        FROM   booklet_uploads u
+        WHERE  {' AND '.join(where)}
+        ORDER  BY u.uploaded_at DESC, u.upload_id DESC
+        LIMIT  %s OFFSET %s
+        """,
+        (*params, limit, offset),
+    )
+    rows = []
+    for r in cur.fetchall():
+        upload = _row_to_dict(r[:8])
+        upload["bound"] = r[8]
+        rows.append(upload)
+    return rows
+
+
+def count_uploads(cur, *, college_id, bound: bool | None = None) -> int:
+    """Total matching `list_uploads`'s filters, ignoring limit/offset."""
+    where, params = _list_filters(college_id, bound)
+    cur.execute(
+        f"SELECT COUNT(*) FROM booklet_uploads u WHERE {' AND '.join(where)}",
+        tuple(params),
+    )
+    (total,) = cur.fetchone()
+    return int(total)
+
+
+def _list_filters(college_id, bound):
+    where = ["u.college_id = %s"]
+    params: list[Any] = [str(college_id)]
+    if bound is True:
+        where.append(_BOUND_EXISTS)
+    elif bound is False:
+        where.append(f"NOT {_BOUND_EXISTS}")
+    return where, params

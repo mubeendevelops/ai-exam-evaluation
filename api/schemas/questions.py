@@ -185,17 +185,20 @@ class GenerateQuestionsResponse(BaseModel):
 class ReviewRequest(BaseModel):
     """POST /api/v1/questions/{id}/review — the QUALITY gate.
 
-    reviewer_id is required, exactly as `--reviewer-id` is required on the
-    CLI, and is validated against the reviewers table. It is deliberately NOT
-    defaulted from the authenticated caller: identity today is a debug header
-    carrying a college, not a person (api/deps/identity.py), so defaulting it
-    would put an unverified or invented reviewer into an audit trail whose
-    only purpose is attribution.
+    NO `reviewer_id` FIELD (RE-4). It was required here, exactly as
+    `--reviewer-id` is required on the CLI, because identity was a header
+    carrying a college rather than a person. It now comes from the access
+    token: `CurrentUser.reviewer_id`, which is `users.reviewer_id` for the
+    account that authenticated, so the reviewer recorded in question_reviews
+    and question_status_history is the human who actually clicked.
+
+    The CLI keeps its flag, and that is not an inconsistency: `--reviewer-id`
+    is how an operator at a terminal, holding database credentials, says who
+    they are. A CLIENT saying who it is over HTTP is the thing that was wrong.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    reviewer_id: uuid.UUID
     action: ReviewAction
     comment: str | None = Field(
         default=None,
@@ -204,18 +207,15 @@ class ReviewRequest(BaseModel):
     )
 
 
-class PromoteRequest(BaseModel):
-    """POST /api/v1/questions/{id}/promote — the PUBLISH gate.
-
-    No `action`: promotion has exactly one direction (confirmed -> live). It
-    takes a reviewer_id for the same reason review does — the transition is
-    recorded in question_status_history and an unattributable status change is
-    not worth recording.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    reviewer_id: uuid.UUID
+# THERE IS NO `PromoteRequest`. POST /questions/{id}/promote TAKES NO BODY.
+#
+# It used to carry exactly one field, `reviewer_id`, and RE-4 deleted that:
+# the transition is recorded in question_status_history and attributed to the
+# authenticated caller, not to whoever the caller named. With that field gone
+# the model had no fields left, and a body model with no fields is worse than
+# no body — it obliges every client to send `{}` and gives a 422 to the ones
+# that reasonably send nothing. There is no `action` either: promotion has
+# exactly one direction (confirmed -> live).
 
 
 class TransitionResponse(BaseModel):

@@ -27,9 +27,31 @@ SET app.is_platform_admin = 'true';
 INSERT INTO colleges (college_id, name, short_code, status) VALUES
     ('11111111-1111-1111-1111-111111111111', 'Demo Engineering College', 'demo', 'active');
 
+-- A SECOND, REAL college. Not decoration: every cross-tenant test in
+-- tests/test_api/ used to use a college id that existed nowhere as "the other
+-- tenant", which since migration 016 made RLS load-bearing (and
+-- api/deps/db.py::get_tenant_conn started refusing unknown tenants with 401)
+-- would test a strictly weaker thing — "an unknown caller is refused" instead
+-- of "a real caller is isolated". It gets its own student and exam so it can
+-- own rows of its own, which is what makes "A cannot see B's row, and B CAN
+-- see B's row" provable rather than half-provable.
+INSERT INTO colleges (college_id, name, short_code, status) VALUES
+    ('22222222-2222-2222-2222-222222222222', 'Second Demo College', 'demo2', 'active');
+
+-- A suspended college, so the 'status <> active' branch of
+-- api/deps/db.py::_require_known_college has something real to refuse. It
+-- deliberately owns nothing.
+INSERT INTO colleges (college_id, name, short_code, status) VALUES
+    ('33333333-3333-3333-3333-333333333333', 'Suspended College', 'suspended', 'suspended');
+
 INSERT INTO students (student_id, name, roll_number, email, college_id) VALUES
     ('cccccccc-0001-0001-0001-cccccccccccc', 'Alice Sharma', 'DEMO2024001', 'alice@demo.edu', '11111111-1111-1111-1111-111111111111'),
-    ('cccccccc-0002-0002-0002-cccccccccccc', 'Bob Patel',    'DEMO2024002', 'bob@demo.edu',   '11111111-1111-1111-1111-111111111111');
+    ('cccccccc-0002-0002-0002-cccccccccccc', 'Bob Patel',    'DEMO2024002', 'bob@demo.edu',   '11111111-1111-1111-1111-111111111111'),
+    -- College B's own student. Same roll_number series as A's on purpose:
+    -- migration 003 scoped roll_number uniqueness to (college_id,
+    -- roll_number), and a seed that never exercised that would let the
+    -- constraint regress unnoticed.
+    ('cccccccc-0003-0003-0003-cccccccccccc', 'Chandra Nair', 'DEMO2024001', 'chandra@demo2.edu', '22222222-2222-2222-2222-222222222222');
 
 INSERT INTO reviewers (reviewer_id, name, role, email, college_id) VALUES
     ('44444444-4444-4444-4444-444444444444', 'Dr. Rao',    'teacher', 'rao@example.edu',  NULL),
@@ -37,7 +59,9 @@ INSERT INTO reviewers (reviewer_id, name, role, email, college_id) VALUES
 
 INSERT INTO exams (exam_id, name, conducted_at, status, college_id) VALUES
     ('dddddddd-0001-0001-0001-dddddddddddd', 'AIML CIA-2 Mid-Term Aug 2026',
-     '2026-08-22 18:42:50+05:30', 'live', '11111111-1111-1111-1111-111111111111');
+     '2026-08-22 18:42:50+05:30', 'live', '11111111-1111-1111-1111-111111111111'),
+    ('dddddddd-0002-0002-0002-dddddddddddd', 'Second College CIA-1 Aug 2026',
+     '2026-08-22 18:42:50+05:30', 'live', '22222222-2222-2222-2222-222222222222');
 
 -- ── Topics (only the two actually exercised by the fixtures below) ─────
 INSERT INTO topics (topic_id, name) VALUES

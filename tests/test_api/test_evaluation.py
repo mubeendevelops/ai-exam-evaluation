@@ -21,14 +21,14 @@ import uuid
 
 import pytest
 
+import api.services.evaluation as evaluation_service
 import core.db
 import core.jobs
 from api.deps.db import set_admin_context
 from tests.test_api.conftest import (
     COLLEGE_A,
-    COLLEGE_B_ABSENT,
+    COLLEGE_B,
     MINIMAL_PDF,
-    REVIEWER_TEACHER,
 )
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
@@ -75,6 +75,7 @@ async def test_evaluate_enqueues_a_job_whose_payload_round_trips(
             "upload_id": booklet["upload_id"],
             "exam_id": booklet["exam_id"],
             "student_id": booklet["student_id"],
+            "paper_id": booklet["paper_id"],
             "stub": True,
         })
 
@@ -86,6 +87,11 @@ async def test_evaluate_enqueues_a_job_whose_payload_round_trips(
     assert body["upload_id"] == booklet["upload_id"]
     assert body["exam_id"] == booklet["exam_id"]
     assert body["student_id"] == booklet["student_id"]
+    assert body["paper_id"] == booklet["paper_id"]
+    # This booklet's regions already exist, so no ingestion was queued and
+    # the job the client polls IS the evaluation.
+    assert body["job_type"] == "booklet_eval"
+    assert body["ingest_job_id"] is None
 
     conn = _admin_conn()
     try:
@@ -105,7 +111,8 @@ async def test_evaluate_enqueues_a_job_whose_payload_round_trips(
     assert payload["options"]["stub"] is True
 
 
-async def test_evaluate_for_another_colleges_upload_is_404(make_client, make_booklet):
+async def test_evaluate_for_another_colleges_upload_is_404(make_client, make_booklet,
+                                                          college_b, track_jobs):
     """An upload_id belonging to college A must be 404 for college B — the
     same 404 as an id that exists nowhere, so the endpoint cannot be used to
     discover which upload ids are real elsewhere on the platform.
@@ -114,19 +121,30 @@ async def test_evaluate_for_another_colleges_upload_is_404(make_client, make_boo
     no FK from evaluation_jobs.payload to booklet_uploads, so without the
     tenant-scoped resolution in the service a client could queue a job against
     any uuid at all.
+
+    College B is a REAL college here (it used to be an id that existed
+    nowhere), and the last leg makes that matter: B successfully queues a job
+    against ITS OWN upload with the same credential. Without it, all three
+    404s would be equally explained by "B is refused everywhere", which is
+    what an absent college id would now actually produce — a 401.
     """
     booklet = make_booklet(college_id=COLLEGE_A)
+    b_booklet = make_booklet(college_id=college_b["college_id"],
+                             student_id=college_b["student_id"],
+                             exam_id=college_b["exam_id"])
 
-    async with make_client(COLLEGE_B_ABSENT) as stranger:
+    async with make_client(COLLEGE_B) as stranger:
         theirs = await stranger.post(EVALUATE, json={
             "upload_id": booklet["upload_id"],
             "exam_id": booklet["exam_id"],
             "student_id": booklet["student_id"],
+            "paper_id": booklet["paper_id"],
         })
         made_up = await stranger.post(EVALUATE, json={
             "upload_id": str(uuid.uuid4()),
             "exam_id": booklet["exam_id"],
             "student_id": booklet["student_id"],
+            "paper_id": booklet["paper_id"],
         })
 
     assert theirs.status_code == 404, theirs.text
@@ -134,31 +152,50 @@ async def test_evaluate_for_another_colleges_upload_is_404(make_client, make_boo
     # Nothing about the real upload leaked into the 404 body.
     assert booklet["blob_url"] not in theirs.text
 
+    # The same credential, on B's own upload, works — so the 404 above is
+    # isolation and not rejection.
+    async with make_client(COLLEGE_B) as owner:
+        own = await owner.post(EVALUATE, json={
+            "upload_id": b_booklet["upload_id"],
+            "exam_id": b_booklet["exam_id"],
+            "student_id": b_booklet["student_id"],
+            "paper_id": b_booklet["paper_id"],
+            "stub": True,
+        })
+    assert own.status_code == 202, own.text
+    track_jobs(own.json()["job_id"])
 
-async def test_evaluate_rejects_stub_when_debug_is_off(make_booklet, _dotenv):
+
+async def test_evaluate_rejects_stub_when_debug_is_off(make_booklet, sign_token,
+                                                      _dotenv):
     """A stub score is FABRICATED and is appended to the append-only ledger
     exactly like a real one, so a production client must not be able to ask
     for one. 403 outside development.
     """
     import httpx
 
-    from api.deps.identity import DEBUG_COLLEGE_HEADER
     from api.main import create_app
     from api.settings import Settings
 
     booklet = make_booklet()
-    prod_app = create_app(Settings(api_env="production", enable_debug_endpoints=False,
-                                   storage_mode="dummy"))
+    # A production app needs a real signing key — create_app refuses to boot
+    # without one outside development, which is itself the behaviour under
+    # test in test_auth.py.
+    prod_settings = Settings(api_env="production", enable_debug_endpoints=False,
+                             storage_mode="dummy",
+                             jwt_secret="a signing key for this test's app")
+    prod_app = create_app(prod_settings)
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=prod_app),
         base_url="http://testserver",
-        headers={DEBUG_COLLEGE_HEADER: COLLEGE_A},
+        headers={"Authorization": f"Bearer {sign_token(prod_settings)}"},
     ) as ac:
         response = await ac.post(EVALUATE, json={
             "upload_id": booklet["upload_id"],
             "exam_id": booklet["exam_id"],
             "student_id": booklet["student_id"],
+            "paper_id": booklet["paper_id"],
             "stub": True,
         })
 
@@ -169,17 +206,19 @@ async def test_evaluate_rejects_stub_when_debug_is_off(make_booklet, _dotenv):
 async def test_evaluate_requires_credentials(make_client, make_booklet):
     booklet = make_booklet()
     async with make_client(COLLEGE_A) as ac:
-        response = await ac.post(EVALUATE, headers={"X-Debug-College-Id": ""}, json={
+        response = await ac.post(EVALUATE, headers={"Authorization": ""}, json={
             "upload_id": booklet["upload_id"],
             "exam_id": booklet["exam_id"],
             "student_id": booklet["student_id"],
+            "paper_id": booklet["paper_id"],
         })
     assert response.status_code == 401, response.text
 
 
 # ═══════════════════════════ GET /results/{id} ══════════════════════════════
 
-async def test_results_for_another_colleges_answer_is_404(make_client, make_booklet):
+async def test_results_for_another_colleges_answer_is_404(make_client, make_booklet,
+                                                         college_b):
     """THE CROSS-TENANT PROOF for this endpoint.
 
     College B asks for college A's answer by its exact id and gets 404 —
@@ -189,15 +228,24 @@ async def test_results_for_another_colleges_answer_is_404(make_client, make_book
     """
     booklet = make_booklet(college_id=COLLEGE_A)
     answer_id = booklet["answer_id"]
+    b_booklet = make_booklet(college_id=college_b["college_id"],
+                             student_id=college_b["student_id"],
+                             exam_id=college_b["exam_id"])
 
     async with make_client(COLLEGE_A) as owner:
         mine = await owner.get(f"/api/v1/results/{answer_id}")
-    async with make_client(COLLEGE_B_ABSENT) as stranger:
+    async with make_client(COLLEGE_B) as stranger:
         theirs = await stranger.get(f"/api/v1/results/{answer_id}")
         made_up = await stranger.get(f"/api/v1/results/{uuid.uuid4()}")
+        # B's own answer, same credential: 200. This is what makes the 404
+        # above isolation rather than a rejected caller — college B is a real,
+        # active tenant with rows of its own.
+        own = await stranger.get(f"/api/v1/results/{b_booklet['answer_id']}")
 
     assert mine.status_code == 200, mine.text
     assert mine.json()["answer_id"] == answer_id
+    assert own.status_code == 200, own.text
+    assert own.json()["answer_id"] == b_booklet["answer_id"]
 
     assert theirs.status_code == 404, theirs.text
     assert made_up.status_code == 404
@@ -222,7 +270,9 @@ async def test_results_for_an_unscored_answer_is_null_not_zero(make_client, make
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["evaluation"] is None
-    assert body["history"] == []
+    assert body["history"]["items"] == []
+    assert body["history"]["total"] == 0
+    assert body["history"]["truncated"] is False
     assert body["final_marks"]["marks"] is None
     assert body["final_marks"]["source"] is None
     assert body["status"] == "pending_evaluation"
@@ -235,6 +285,101 @@ async def test_malformed_answer_id_is_422(make_client):
     async with make_client(COLLEGE_A) as ac:
         response = await ac.get("/api/v1/results/not-a-uuid")
     assert response.status_code == 422, response.text
+
+
+# ═══════════════════════════════ GET /results (list) ════════════════════════
+
+async def test_results_list_is_isolated_by_tenant(make_client, make_booklet, college_b):
+    a = make_booklet(college_id=COLLEGE_A)
+    b = make_booklet(college_id=college_b["college_id"],
+                     student_id=college_b["student_id"],
+                     exam_id=college_b["exam_id"])
+
+    async with make_client(COLLEGE_A) as client:
+        mine = await client.get("/api/v1/results")
+    async with make_client(COLLEGE_B) as client:
+        theirs = await client.get("/api/v1/results")
+
+    assert mine.status_code == theirs.status_code == 200
+    mine_ids = {r["answer_id"] for r in mine.json()["items"]}
+    theirs_ids = {r["answer_id"] for r in theirs.json()["items"]}
+
+    assert a["answer_id"] in mine_ids
+    assert a["answer_id"] not in theirs_ids
+    assert b["answer_id"] in theirs_ids
+    assert b["answer_id"] not in mine_ids
+
+
+async def test_results_list_filters_by_exam_student_and_status(make_client, make_booklet):
+    booklet = make_booklet()
+
+    async with make_client(COLLEGE_A) as client:
+        matching = await client.get("/api/v1/results", params={
+            "exam_id": booklet["exam_id"],
+            "student_id": booklet["student_id"],
+            "status": "pending_evaluation",
+        })
+        mismatched_status = await client.get("/api/v1/results",
+                                             params={"status": "finalized"})
+
+    assert matching.status_code == 200, matching.text
+    ids = {r["answer_id"] for r in matching.json()["items"]}
+    assert booklet["answer_id"] in ids
+
+    other_ids = {r["answer_id"] for r in mismatched_status.json()["items"]}
+    assert booklet["answer_id"] not in other_ids
+
+
+async def test_results_list_filters_by_needs_review(make_client, make_booklet, admin_conn):
+    """needs_review is rolled up from answer_blocks, not a column on answers
+    itself — see core/results.py."""
+    booklet = make_booklet()
+    with admin_conn.cursor() as cur:
+        set_admin_context(cur)
+        cur.execute("UPDATE answer_blocks SET needs_review = true WHERE block_id = %s",
+                    (booklet["block_id"],))
+    admin_conn.commit()
+
+    async with make_client(COLLEGE_A) as client:
+        flagged = await client.get("/api/v1/results", params={"needs_review": "true"})
+        clean = await client.get("/api/v1/results", params={"needs_review": "false"})
+
+    flagged_ids = {r["answer_id"] for r in flagged.json()["items"]}
+    assert booklet["answer_id"] in flagged_ids
+    assert booklet["answer_id"] not in {r["answer_id"] for r in clean.json()["items"]}
+    flagged_row = next(r for r in flagged.json()["items"]
+                       if r["answer_id"] == booklet["answer_id"])
+    assert flagged_row["needs_review"] is True
+
+
+async def test_results_list_orders_stably_under_tied_timestamps(
+    make_client, admin_conn, make_booklet
+):
+    """Two answers submitted at the IDENTICAL timestamp must still page
+    without skipping or repeating a row — the answer_id tiebreak in
+    core/results.py::list_results is what makes that safe."""
+    first = make_booklet()
+    second = make_booklet()
+
+    with admin_conn.cursor() as cur:
+        set_admin_context(cur)
+        cur.execute("SELECT submitted_at FROM answers WHERE answer_id = %s",
+                    (first["answer_id"],))
+        (tied_at,) = cur.fetchone()
+        cur.execute("UPDATE answers SET submitted_at = %s WHERE answer_id = ANY(%s::uuid[])",
+                    (tied_at, [first["answer_id"], second["answer_id"]]))
+    admin_conn.commit()
+
+    async with make_client(COLLEGE_A) as client:
+        page1 = await client.get("/api/v1/results", params={
+            "exam_id": first["exam_id"], "limit": 1, "offset": 0})
+        page2 = await client.get("/api/v1/results", params={
+            "exam_id": first["exam_id"], "limit": 1, "offset": 1})
+
+    seen = {page1.json()["items"][0]["answer_id"], page2.json()["items"][0]["answer_id"]}
+    assert seen == {first["answer_id"], second["answer_id"]}, (
+        "tied submitted_at values caused a row to repeat or be skipped across pages"
+    )
 
 
 # ════════════════════════ POST /results/{id}/override ═══════════════════════
@@ -258,10 +403,12 @@ async def test_override_writes_answer_reviews_and_never_touches_the_ledger(
     booklet = make_booklet()
 
     async with make_client(COLLEGE_A) as ac:
+        caller_reviewer_id = ac.identity["reviewer_id"]
         queued = await ac.post(EVALUATE, json={
             "upload_id": booklet["upload_id"],
             "exam_id": booklet["exam_id"],
             "student_id": booklet["student_id"],
+            "paper_id": booklet["paper_id"],
             "stub": True,
         })
         assert queued.status_code == 202, queued.text
@@ -279,7 +426,8 @@ async def test_override_writes_answer_reviews_and_never_touches_the_ledger(
         override = await ac.post(
             f"/api/v1/results/{booklet['answer_id']}/override",
             json={
-                "reviewer_id": "44444444-4444-4444-4444-444444444444",  # seeded Dr. Rao
+                # NO reviewer_id (RE-4): the review is attributed to the
+                # authenticated caller, and sending one is now a 422.
                 "action": "overridden",
                 "final_marks": 9.0,
                 "comment": "Student's phrasing differs but the content is correct.",
@@ -317,6 +465,10 @@ async def test_override_writes_answer_reviews_and_never_touches_the_ledger(
 
     assert len(rows) == 1
     reviewer_id, action, final_marks, comment, college_id = rows[0]
+    # RE-4: attributed to the AUTHENTICATED caller. This is the assertion that
+    # would fail if `reviewer_id` were ever read from the body again — and the
+    # one that proves the value is not merely "some reviewer that exists".
+    assert reviewer_id == caller_reviewer_id
     assert action == "overridden"
     assert final_marks == 9.0
     assert comment.startswith("Student's phrasing")
@@ -329,7 +481,8 @@ async def test_override_writes_answer_reviews_and_never_touches_the_ledger(
     assert report["final_marks"]["marks"] == 9.0
     assert report["final_marks"]["source"] == "sme_override"
     assert report["final_marks"]["ai_score"] == pytest.approx(before[0][1], rel=1e-6)
-    assert len(report["reviews"]) == 1
+    assert len(report["reviews"]["items"]) == 1
+    assert report["reviews"]["total"] == 1
     assert report["status"] == "sme_reviewed"
 
 
@@ -348,8 +501,7 @@ async def test_override_on_an_unscored_answer_still_records_the_review(
     async with make_client(COLLEGE_A) as ac:
         response = await ac.post(
             f"/api/v1/results/{booklet['answer_id']}/override",
-            json={"reviewer_id": "44444444-4444-4444-4444-444444444444",
-                  "action": "overridden", "final_marks": 4.0},
+            json={"action": "overridden", "final_marks": 4.0},
         )
         report = await ac.get(f"/api/v1/results/{booklet['answer_id']}")
 
@@ -380,11 +532,9 @@ async def test_second_override_appends_rather_than_replacing(
 
     async with make_client(COLLEGE_A) as ac:
         first = await ac.post(f"/api/v1/results/{booklet['answer_id']}/override",
-                              json={"reviewer_id": "44444444-4444-4444-4444-444444444444",
-                                    "action": "overridden", "final_marks": 5.0})
+                              json={"action": "overridden", "final_marks": 5.0})
         second = await ac.post(f"/api/v1/results/{booklet['answer_id']}/override",
-                               json={"reviewer_id": "55555555-5555-5555-5555-555555555555",
-                                     "action": "overridden", "final_marks": 7.5})
+                               json={"action": "overridden", "final_marks": 7.5})
         report = await ac.get(f"/api/v1/results/{booklet['answer_id']}")
 
     assert first.status_code == second.status_code == 201
@@ -401,7 +551,8 @@ async def test_second_override_appends_rather_than_replacing(
         assert cur.fetchone()[0] == 2
 
     body = report.json()
-    assert len(body["reviews"]) == 2
+    assert len(body["reviews"]["items"]) == 2
+    assert body["reviews"]["total"] == 2
     assert body["final_marks"]["marks"] == 7.5, "the newest override stands"
 
 
@@ -412,15 +563,12 @@ async def test_flagged_override_carries_no_marks(make_client, make_booklet):
 
     async with make_client(COLLEGE_A) as ac:
         bad = await ac.post(f"/api/v1/results/{booklet['answer_id']}/override",
-                            json={"reviewer_id": "44444444-4444-4444-4444-444444444444",
-                                  "action": "flagged", "final_marks": 3.0})
+                            json={"action": "flagged", "final_marks": 3.0})
         missing_marks = await ac.post(
             f"/api/v1/results/{booklet['answer_id']}/override",
-            json={"reviewer_id": "44444444-4444-4444-4444-444444444444",
-                  "action": "overridden"})
+            json={"action": "overridden"})
         good = await ac.post(f"/api/v1/results/{booklet['answer_id']}/override",
-                             json={"reviewer_id": "44444444-4444-4444-4444-444444444444",
-                                   "action": "flagged", "comment": "Illegible."})
+                             json={"action": "flagged", "comment": "Illegible."})
 
     assert bad.status_code == 422, bad.text
     assert missing_marks.status_code == 422, missing_marks.text
@@ -429,16 +577,21 @@ async def test_flagged_override_carries_no_marks(make_client, make_booklet):
 
 
 async def test_override_on_another_colleges_answer_is_404(make_client, make_booklet,
-                                                          admin_conn):
+                                                          college_b, admin_conn):
     """And writes nothing — an override that 404s must not leave a review row
-    behind under either college."""
+    behind under either college.
+
+    The caller is a real, active second college (it used to be an id that
+    existed nowhere, which since get_tenant_conn started verifying the college
+    would be refused at the edge with 401 and prove nothing about the
+    override path at all).
+    """
     booklet = make_booklet(college_id=COLLEGE_A)
 
-    async with make_client(COLLEGE_B_ABSENT) as stranger:
+    async with make_client(COLLEGE_B) as stranger:
         response = await stranger.post(
             f"/api/v1/results/{booklet['answer_id']}/override",
-            json={"reviewer_id": "44444444-4444-4444-4444-444444444444",
-                  "action": "overridden", "final_marks": 10.0},
+            json={"action": "overridden", "final_marks": 10.0},
         )
 
     assert response.status_code == 404, response.text
@@ -471,12 +624,12 @@ async def test_full_loop_upload_evaluate_poll_results_override_in_stub_mode(
     stopped short-circuiting the LLM path this test fails loudly instead of
     quietly making a paid API call from the test suite.
 
-    The upload posted here and the booklet fixture are separate on purpose —
-    the API cannot ingest a PDF into answer_blocks rows yet (that is
-    scripts/ingest_booklet.py's job, §7C), so the loop uploads a real file AND
-    evaluates a booklet whose regions already exist. That gap is the honest
-    state of the wiring today, and this test documents it rather than hiding it
-    behind a fixture that pretends ingestion happened.
+    The upload posted here and the booklet fixture are separate on purpose:
+    this test covers the RE-SCORE path, where the regions already exist and
+    POST /evaluate queues a booklet_eval directly. The path where they do not
+    — upload, ingest, then score, with no CLI step — is
+    test_upload_then_evaluate_ingests_and_scores_with_no_cli_step below. Both
+    are real now; until the booklet_ingest job existed only this one was.
     """
     def _explode(*args, **kwargs):
         raise AssertionError(
@@ -501,6 +654,7 @@ async def test_full_loop_upload_evaluate_poll_results_override_in_stub_mode(
             "upload_id": booklet["upload_id"],
             "exam_id": booklet["exam_id"],
             "student_id": booklet["student_id"],
+            "paper_id": booklet["paper_id"],
             "stub": True,
         })
         assert queued.status_code == 202, queued.text
@@ -527,7 +681,6 @@ async def test_full_loop_upload_evaluate_poll_results_override_in_stub_mode(
         override = await ac.post(
             f"/api/v1/results/{booklet['answer_id']}/override",
             json={
-                "reviewer_id": REVIEWER_TEACHER,
                 "action": "overridden",
                 "final_marks": 7.5,
                 "comment": "Correct method, arithmetic slip in the last step.",
@@ -552,9 +705,10 @@ async def test_full_loop_upload_evaluate_poll_results_override_in_stub_mode(
     assert report["evaluation"]["plugin"], "the ledger row must name what produced it"
     # Aggregated from the regions — one ledger row per QUESTION, with every
     # region's own result preserved underneath it.
-    assert len(report["components"]) >= 1
+    assert len(report["components"]["items"]) >= 1
     assert report["confidence"]["question"] is not None
-    assert len(report["history"]) == 1
+    assert len(report["history"]["items"]) == 1
+    assert report["history"]["total"] == 1
     assert report["final_marks"]["source"] == "ai"
     # Scoring moved the answer out of pending_evaluation.
     assert report["status"] == "ai_scored"
@@ -581,20 +735,30 @@ async def test_full_loop_upload_evaluate_poll_results_override_in_stub_mode(
     assert final["final_marks"]["ai_score"] == pytest.approx(
         report["evaluation"]["score"], rel=1e-6)
     assert final["status"] == "sme_reviewed"
-    assert len(final["reviews"]) == 1
+    assert len(final["reviews"]["items"]) == 1
     # Still exactly one ledger row: an override is not a re-score.
-    assert len(final["history"]) == 1
+    assert len(final["history"]["items"]) == 1
 
 
 async def test_evaluating_a_booklet_with_no_regions_fails_loudly(
     make_client, make_booklet, track_jobs
 ):
-    """A booklet nobody has ingested must FAIL, not succeed with an empty
-    report.
+    """A booklet_eval job whose booklet has no regions must FAIL, not succeed
+    with an empty report.
 
     An empty report would aggregate to a total of zero and read, to a teacher,
     exactly like a student who wrote nothing. The failure names the missing
-    step (scripts/ingest_booklet.py) instead.
+    step instead.
+
+    THE JOB IS QUEUED DIRECTLY, not through POST /api/v1/evaluate, and that is
+    the point of this test now rather than a shortcut. Since the booklet_ingest
+    job exists, the endpoint checks for regions and queues an INGESTION when
+    there are none — so it can no longer produce this state, and a test that
+    went through it would silently stop testing the failure posture and start
+    testing the ingest path instead. The state is still reachable (regions
+    deleted between the check and the claim, a hand-queued job, a requeue after
+    the answer was cleaned up), so the guard still has to hold, and it has to
+    keep naming ingestion as the missing step.
     """
     worker = _load_worker()
     booklet = make_booklet()
@@ -609,21 +773,322 @@ async def test_evaluating_a_booklet_with_no_regions_fails_loudly(
     finally:
         conn.close()
 
-    async with make_client(COLLEGE_A) as ac:
-        queued = await ac.post(EVALUATE, json={
-            "upload_id": booklet["upload_id"],
-            "exam_id": booklet["exam_id"],
-            "student_id": booklet["student_id"],
-            "stub": True,
-        })
-        job_id = queued.json()["job_id"]
-        track_jobs(job_id)
+    conn = _admin_conn()
+    try:
+        with conn.cursor() as cur:
+            job = evaluation_service.enqueue_booklet_evaluation(
+                cur,
+                college_id=COLLEGE_A,
+                upload_id=booklet["upload_id"],
+                exam_id=booklet["exam_id"],
+                student_id=booklet["student_id"],
+                stub=True,
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    job_id = job["job_id"]
+    track_jobs(job_id)
 
-        worker.process_one(stub=True, stub_seconds=0.0, dry_run=False,
-                           job_types=["booklet_eval"])
+    worker.process_one(stub=True, stub_seconds=0.0, dry_run=False,
+                       job_types=["booklet_eval"])
+
+    async with make_client(COLLEGE_A) as ac:
         done = await ac.get(f"/api/v1/jobs/{job_id}")
 
     body = done.json()
     assert body["status"] == "failed", body
     assert "ingest" in body["error"].lower()
     assert body["result"] is None
+
+
+# ═══════════════ upload -> ingest -> evaluate, with no CLI step ═════════════
+
+async def test_upload_then_evaluate_ingests_and_scores_with_no_cli_step(
+    make_client, make_booklet, track_uploads, track_jobs, monkeypatch,
+    sample_booklet_bytes,
+):
+    """THE GAP THIS DAY CLOSED: upload a PDF, ask for an evaluation, and get a
+    score — without anyone running scripts/ingest_booklet.py in between.
+
+    Until the booklet_ingest job existed, POST /upload stored a file that
+    nothing segmented, and POST /evaluate then failed with NoRegionsError
+    unless a human had run the CLI by hand. Both halves now run in the worker:
+    an ingest job writes the answer_blocks, and chains into the evaluation job
+    that scores them.
+
+    Stub mode throughout, and no network: the segmenter's stub path replaces
+    the layout model and the OCR ensemble, the plugins' stub paths replace the
+    extractors and Groq, and core.llm._generate is monkeypatched to blow up so
+    that a stub run which quietly stopped being a stub run fails here instead
+    of spending money.
+
+    The PDF is REAL (the 4-page benchmark booklet) even though segmentation is
+    stubbed, because everything before segmentation is not stubbed at all —
+    the file really is fetched back out of storage and really is rasterized by
+    pypdfium2. That is the half of this wiring that a fake PDF would skip.
+    """
+    def _explode(*args, **kwargs):
+        raise AssertionError(
+            "core.llm._generate was called during a stub-mode run — stub mode "
+            "must not reach Groq."
+        )
+
+    monkeypatch.setattr("core.llm._generate", _explode)
+
+    worker = _load_worker()
+
+    # A booklet that has been uploaded but NOT ingested: a paper whose 'Q1'
+    # slot holds a live question, and no answers or answer_blocks at all.
+    booklet = make_booklet(ingested=False)
+
+    async with make_client(COLLEGE_A) as ac:
+        uploaded = await ac.post("/api/v1/upload", files={
+            "file": ("booklet.pdf", sample_booklet_bytes, "application/pdf")})
+        assert uploaded.status_code == 201, uploaded.text
+        upload_id = uploaded.json()["upload_id"]
+        track_uploads(upload_id)
+
+        queued = await ac.post(EVALUATE, json={
+            "upload_id": upload_id,
+            "exam_id": booklet["exam_id"],
+            "student_id": booklet["student_id"],
+            "paper_id": booklet["paper_id"],
+            "stub": True,
+        })
+        assert queued.status_code == 202, queued.text
+        body = queued.json()
+        ingest_job_id = body["job_id"]
+        track_jobs(ingest_job_id)
+
+        # An INGESTION was queued, and the response says so rather than
+        # leaving the client to discover it from a job that is not what it
+        # asked for.
+        assert body["job_type"] == "booklet_ingest"
+        assert body["ingest_job_id"] == ingest_job_id
+
+        # ── the ingest pass ────────────────────────────────────────────────
+        processed = worker.process_one(stub=True, stub_seconds=0.0, dry_run=False,
+                                       job_types=["booklet_ingest"])
+        assert processed is not None and processed["job_id"] == ingest_job_id
+
+        ingested = (await ac.get(f"/api/v1/jobs/{ingest_job_id}")).json()
+        assert ingested["status"] == "succeeded", ingested
+        assert ingested["job_type"] == "booklet_ingest"
+        assert ingested["result"]["counts"]["blocks_written"] >= 1
+        assert ingested["result"]["counts"]["pages"] >= 1
+        assert ingested["result"]["skipped"] is None
+
+        # ── which chained into the evaluation pass ─────────────────────────
+        eval_job_id = ingested["result"]["evaluation_job_id"]
+        assert eval_job_id, "a successful ingestion must queue the evaluation"
+        track_jobs(eval_job_id)
+
+        processed = worker.process_one(stub=True, stub_seconds=0.0, dry_run=False,
+                                       job_types=["booklet_eval"])
+        assert processed is not None and processed["job_id"] == eval_job_id
+
+        scored = (await ac.get(f"/api/v1/jobs/{eval_job_id}")).json()
+        assert scored["status"] == "succeeded", scored
+        assert scored["result"]["counts"]["questions"] >= 1
+
+    # And the regions the ingestion wrote are really there, attributed to the
+    # upload the client asked about — which is what makes them findable again
+    # when this booklet is re-scored.
+    conn = _admin_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT count(*)
+                  FROM answers a
+                  JOIN answer_blocks ab ON ab.answer_id = a.answer_id
+                 WHERE a.student_id = %s AND a.exam_id = %s
+                   AND a.source_scan_url = %s
+                """,
+                (booklet["student_id"], booklet["exam_id"],
+                 uploaded.json()["blob_url"]),
+            )
+            assert cur.fetchone()[0] >= 1
+    finally:
+        conn.close()
+
+
+async def test_re_evaluating_an_ingested_booklet_does_not_duplicate_blocks(
+    make_client, make_booklet, track_uploads, track_jobs, monkeypatch,
+    sample_booklet_bytes,
+):
+    """A re-score reads the regions that exist. It does not re-segment.
+
+    This is the whole reason ingestion is its own job type rather than a phase
+    of booklet_eval. answer_blocks rows carry region provenance (migration 013)
+    and have no version history (PROJECT_CONTEXT.md §7 open decision 2), and
+    core/booklet_persist.py::insert_region_block is an unconditional INSERT —
+    so an ingestion that ran a second time would not replace a student's
+    regions, it would DOUBLE them, and every region would then be scored
+    twice.
+
+    Asserted at two levels, because either alone would pass for the wrong
+    reason: the block ids are byte-identical before and after (a count alone
+    would miss a delete-and-rewrite that happened to produce the same number),
+    and the second /evaluate queues a booklet_eval directly with no ingestion
+    job at all.
+    """
+    monkeypatch.setattr("core.llm._generate", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("stub mode must not reach Groq")))
+
+    worker = _load_worker()
+    booklet = make_booklet(ingested=False)
+
+    def block_rows():
+        conn = _admin_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT ab.block_id, ab.page_number, ab.region_bbox,
+                           ab.sequence_order
+                      FROM answers a
+                      JOIN answer_blocks ab ON ab.answer_id = a.answer_id
+                     WHERE a.student_id = %s AND a.exam_id = %s
+                       AND a.source_scan_url = %s
+                     ORDER BY ab.block_id
+                    """,
+                    (booklet["student_id"], booklet["exam_id"], blob_url),
+                )
+                return cur.fetchall()
+        finally:
+            conn.close()
+
+    async with make_client(COLLEGE_A) as ac:
+        uploaded = await ac.post("/api/v1/upload", files={
+            "file": ("booklet.pdf", sample_booklet_bytes, "application/pdf")})
+        upload_id = uploaded.json()["upload_id"]
+        blob_url = uploaded.json()["blob_url"]
+        track_uploads(upload_id)
+
+        request = {
+            "upload_id": upload_id,
+            "exam_id": booklet["exam_id"],
+            "student_id": booklet["student_id"],
+            "paper_id": booklet["paper_id"],
+            "stub": True,
+        }
+
+        first = (await ac.post(EVALUATE, json=request)).json()
+        track_jobs(first["job_id"])
+        assert first["job_type"] == "booklet_ingest"
+
+        worker.process_one(stub=True, stub_seconds=0.0, dry_run=False,
+                           job_types=["booklet_ingest"])
+        ingested = (await ac.get(f"/api/v1/jobs/{first['job_id']}")).json()
+        assert ingested["status"] == "succeeded", ingested
+        track_jobs(ingested["result"]["evaluation_job_id"])
+        worker.process_one(stub=True, stub_seconds=0.0, dry_run=False,
+                           job_types=["booklet_eval"])
+
+        after_first = block_rows()
+        assert after_first, "the first pass should have written some regions"
+
+        # ── ask for the very same evaluation again ─────────────────────────
+        second = (await ac.post(EVALUATE, json=request)).json()
+        track_jobs(second["job_id"])
+
+        # No ingestion this time: the regions exist, so the endpoint queues
+        # the evaluation directly.
+        assert second["job_type"] == "booklet_eval"
+        assert second["ingest_job_id"] is None
+
+        worker.process_one(stub=True, stub_seconds=0.0, dry_run=False,
+                           job_types=["booklet_eval"])
+        rescored = (await ac.get(f"/api/v1/jobs/{second['job_id']}")).json()
+        assert rescored["status"] == "succeeded", rescored
+
+    assert block_rows() == after_first, (
+        "re-evaluating must not touch answer_blocks — same rows, same ids, "
+        "same bboxes, same order"
+    )
+
+
+async def test_a_requeued_ingest_job_neither_re_ingests_nor_double_queues(
+    make_client, make_booklet, track_uploads, track_jobs, sample_booklet_bytes
+):
+    """Running the SAME ingest job twice is safe on both halves.
+
+    This is the worker's known crash window (scripts/run_job_worker.py: killed
+    between finishing the work and marking the row terminal, recovered with
+    --requeue-stalled). The second run must not duplicate the student's
+    regions, and must not queue a second evaluation of the same booklet.
+    """
+    worker = _load_worker()
+    booklet = make_booklet(ingested=False)
+
+    async with make_client(COLLEGE_A) as ac:
+        uploaded = await ac.post("/api/v1/upload", files={
+            "file": ("booklet.pdf", sample_booklet_bytes, "application/pdf")})
+        track_uploads(uploaded.json()["upload_id"])
+        queued = (await ac.post(EVALUATE, json={
+            "upload_id": uploaded.json()["upload_id"],
+            "exam_id": booklet["exam_id"],
+            "student_id": booklet["student_id"],
+            "paper_id": booklet["paper_id"],
+            "stub": True,
+        })).json()
+    ingest_job_id = queued["job_id"]
+    track_jobs(ingest_job_id)
+
+    worker.process_one(stub=True, stub_seconds=0.0, dry_run=False,
+                       job_types=["booklet_ingest"])
+
+    conn = _admin_conn()
+    try:
+        with conn.cursor() as cur:
+            job = core.jobs.get_job(cur, job_id=ingest_job_id, college_id=COLLEGE_A)
+            first_eval_id = job["result"]["evaluation_job_id"]
+            track_jobs(first_eval_id)
+            blocks_after_first = _block_count(cur, booklet, uploaded.json()["blob_url"])
+            # Put it back in the queue exactly as --requeue-stalled would.
+            core.jobs.requeue(cur, job_id=ingest_job_id, error="simulated stall")
+        conn.commit()
+    finally:
+        conn.close()
+
+    worker.process_one(stub=True, stub_seconds=0.0, dry_run=False,
+                       job_types=["booklet_ingest"])
+
+    conn = _admin_conn()
+    try:
+        with conn.cursor() as cur:
+            job = core.jobs.get_job(cur, job_id=ingest_job_id, college_id=COLLEGE_A)
+            assert job["status"] == "succeeded", job
+            # The re-run recognised the booklet as already ingested...
+            assert job["result"]["skipped"] == "already_ingested"
+            # ...wrote nothing...
+            assert _block_count(cur, booklet, uploaded.json()["blob_url"]) == \
+                blocks_after_first
+            # ...and pointed at the evaluation job it queued the first time
+            # rather than queueing a second one.
+            assert job["result"]["evaluation_job_id"] == first_eval_id
+            cur.execute(
+                """
+                SELECT count(*) FROM evaluation_jobs
+                 WHERE job_type = 'booklet_eval' AND payload->>'upload_id' = %s
+                """,
+                (uploaded.json()["upload_id"],),
+            )
+            assert cur.fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def _block_count(cur, booklet, blob_url) -> int:
+    cur.execute(
+        """
+        SELECT count(*)
+          FROM answers a
+          JOIN answer_blocks ab ON ab.answer_id = a.answer_id
+         WHERE a.student_id = %s AND a.exam_id = %s AND a.source_scan_url = %s
+        """,
+        (booklet["student_id"], booklet["exam_id"], blob_url),
+    )
+    return int(cur.fetchone()[0])

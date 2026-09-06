@@ -16,13 +16,21 @@ through api/services/evaluation.py, which appends one evaluation_results row
 per question. `--stub` and the job payload's own stub flags select the
 plugins' stub paths so the whole loop can run with no models and no network.
 
-INGESTION IS NOT PART OF THIS. The regions must already exist as answer_blocks
-rows, put there by scripts/ingest_booklet.py. §7C and §7D are separate passes
-so segmentation can be verified before anything scores on top of it, and
-re-running ingestion inside an evaluation job would rewrite a student's blocks
-every time their booklet is re-scored. A booklet with no persisted regions
-fails with a message naming the missing step rather than succeeding with an
-empty report that reads like a zero.
+INGESTION IS A SEPARATE JOB TYPE, not a phase of evaluation. A `booklet_ingest`
+job runs §7C's pass — rasterize, segment, classify, assign, persist — through
+api/services/ingestion.py -> core/booklet_pipeline.py, and then CHAINS into the
+`booklet_eval` job for the same booklet. Two job types rather than one because
+ingestion writes a student's answer_blocks and evaluation only reads them:
+folding them together would rewrite those blocks on every re-score, and there
+is no version history for them (PROJECT_CONTEXT.md §7 open decision 2). A
+booklet that already has regions is NOT re-ingested — the ingest job checks and
+skips, and POST /api/v1/evaluate skips queuing one at all.
+
+`booklet_eval` still fails, loudly and by name, on a booklet with no persisted
+regions. That used to be the normal path (someone had to run
+scripts/ingest_booklet.py first); it is now a real failure, and it still must
+never succeed with an empty report that reads like a student who wrote
+nothing.
 
 RLS: this is a SYSTEM-LEVEL job, not a tenant request, so every transaction
 runs as platform admin — the same posture evaluate_pending.py,
@@ -69,6 +77,7 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import api.services.evaluation as evaluation_service
+import api.services.ingestion as ingestion_service
 import core.db
 import core.jobs
 from api.deps.db import set_admin_context
@@ -76,7 +85,10 @@ from api.deps.db import set_admin_context
 #: Job types this worker handles. A job of any other type is left alone rather
 #: than claimed and failed — a queue shared by several worker kinds must not
 #: have one of them eat and reject everyone else's work.
-HANDLED_JOB_TYPES = [evaluation_service.JOB_TYPE_BOOKLET_EVAL]
+HANDLED_JOB_TYPES = [
+    ingestion_service.JOB_TYPE_BOOKLET_INGEST,
+    evaluation_service.JOB_TYPE_BOOKLET_EVAL,
+]
 
 _shutdown = False
 
@@ -191,6 +203,9 @@ def _run_job(job: dict, *, stub: bool, stub_seconds: float, dry_run: bool = Fals
     if job["job_type"] == evaluation_service.JOB_TYPE_BOOKLET_EVAL:
         return _run_booklet_eval(job, stub=stub, dry_run=dry_run)
 
+    if job["job_type"] == ingestion_service.JOB_TYPE_BOOKLET_INGEST:
+        return _run_booklet_ingest(job, stub=stub, dry_run=dry_run)
+
     raise ValueError(
         f"No handler for job_type {job['job_type']!r}. This worker handles "
         f"{HANDLED_JOB_TYPES}; --job-type should have kept it from claiming this "
@@ -241,6 +256,118 @@ def _run_booklet_eval(job: dict, *, stub: bool, dry_run: bool) -> dict:
     # of account, and duplicating it into a JSONB column would create a second
     # copy that can disagree with it.
     return _summarize(report, stub=effective_stub, dry_run=dry_run)
+
+
+def _run_booklet_ingest(job: dict, *, stub: bool, dry_run: bool) -> dict:
+    """Segments the booklet into answer_blocks, then queues its evaluation.
+
+    Platform admin, like every system-level job here (§6) and like
+    scripts/ingest_booklet.py, which does the same thing for the same reason:
+    a worker serves every college and has no single current_college_id.
+
+    THE CHAIN IS A SEPARATE TRANSACTION from the ingestion, and it has to be:
+    core/booklet_persist.py::persist_regions owns its own commit (its
+    documented contract), so by the time this returns the blocks are already
+    durable. Enqueuing the evaluation is therefore its own short transaction
+    afterwards — and it is IDEMPOTENT (enqueue_chained_evaluation matches an
+    existing job on the three ids that identify the booklet), because a worker
+    killed between here and finish() leaves the ingest job 'running' and a
+    --requeue-stalled would run it again. Re-running is then cheap and safe on
+    both halves: the ingestion skips an already-ingested booklet, and the
+    chain finds the evaluation job it already queued.
+
+    A DRY RUN CHAINS NOTHING. persist_regions rolled its writes back, so there
+    are no regions for an evaluation to read; queuing one would produce a job
+    guaranteed to fail with NoRegionsError.
+    """
+    payload = job["payload"]
+    options = payload.get("options") or {}
+    effective_stub = stub or bool(options.get("stub"))
+
+    conn = _admin_transaction()
+    try:
+        report = ingestion_service.run_booklet_ingest(
+            conn,
+            {**payload, "options": {**options, "stub": effective_stub}},
+            on_progress=_progress_reporter(job["job_id"]),
+            dry_run=dry_run,
+        )
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    evaluation_job = None
+    if not dry_run:
+        conn = _admin_transaction()
+        try:
+            with conn.cursor() as cur:
+                evaluation_job = ingestion_service.enqueue_chained_evaluation(
+                    cur, college_id=job["college_id"], payload=payload)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    return _summarize_ingestion(report, evaluation_job,
+                                stub=effective_stub, dry_run=dry_run)
+
+
+def _summarize_ingestion(report: dict, evaluation_job: dict | None, *,
+                         stub: bool, dry_run: bool) -> dict:
+    """The ingest job's result: what was written, what was not, and what next.
+
+    Every region the ingestion refused to place is carried here with its
+    reason. That list is the ONLY surface those regions have — an unassigned
+    region is persisted nowhere, because answer_blocks.answer_id is NOT NULL
+    and an orphan region has no answer to hang off (§7C). Dropping it from the
+    summary would make "the segmenter found 12 regions and wrote 9" invisible,
+    which is exactly the number a teacher reviewing a booklet needs.
+    """
+    persisted = report.get("persisted") or {}
+    regions = report.get("regions") or []
+    unplaced = [
+        {
+            "page_number": item["page_number"],
+            "bbox": item["bbox"],
+            "block_type": item["block_type"],
+            "assigned_question": item["assigned_question"],
+            "reason": item["skip_reason"],
+        }
+        for item in (persisted.get("results") or [])
+        if item.get("skip_reason")
+    ]
+
+    return {
+        "stub": stub,
+        "dry_run": dry_run,
+        # None until the chain runs; the id a client polls next.
+        "evaluation_job_id": evaluation_job["job_id"] if evaluation_job else None,
+        # Set when this booklet already had regions: nothing was re-segmented
+        # and nothing was rewritten. NOT an error, and NOT "nothing to score".
+        "skipped": report.get("skipped"),
+        "source_scan_url": report.get("source_pdf_url"),
+        "storage": report.get("storage"),
+        "counts": {
+            "pages": report.get("page_count"),
+            "regions": len(regions),
+            "markers": len(report.get("markers") or []),
+            "blocks_written": persisted.get("persisted"),
+            "regions_skipped": persisted.get("skipped"),
+            "answers_touched": len(persisted.get("answers") or {}),
+            "flagged_for_review": sum(1 for r in regions if r.get("needs_review")),
+        },
+        "unplaced_regions": unplaced,
+        "detail": (
+            "Region provenance (page, bbox, classification, confidence) is on "
+            "the answer_blocks rows themselves — migration 013. Unplaced "
+            "regions are persisted NOWHERE and appear only in this list."
+        ),
+        "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    }
 
 
 def _summarize(report: dict, *, stub: bool, dry_run: bool) -> dict:
