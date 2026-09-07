@@ -1,0 +1,15 @@
+{
+  "name": "Demo Single-Question Pattern",
+  "description": "One mandatory slot (long/8) matched to a demo question whose reference answer content actually corresponds to sample_booklet.pdf's page 1 prose, so the demo shows a real, meaningful AI score instead of a content mismatch.",
+  "course_code": "DEMO",
+  "sections": [
+    {
+      "section_label": "Part A — Demo",
+      "section_order": 1,
+      "is_mandatory": true,
+      "slots": [
+        {"slot_label": "Q1", "slot_order": 1, "marks": 8, "style": "long"}
+      ]
+    }
+  ]
+}

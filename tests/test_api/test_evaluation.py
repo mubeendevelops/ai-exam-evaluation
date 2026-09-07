@@ -30,6 +30,7 @@ from api.deps.db import set_admin_context
 from tests.test_api.conftest import (
     COLLEGE_A,
     COLLEGE_B,
+    COLLEGE_B_OWNER,
     MINIMAL_PDF,
 )
 
@@ -398,6 +399,131 @@ async def test_results_list_orders_stably_under_tied_timestamps(
     assert seen == {first["answer_id"], second["answer_id"]}, (
         "tied submitted_at values caused a row to repeat or be skipped across pages"
     )
+
+
+# ══════════════════════════ GET /results/booklets ════════════════════════
+
+def _score(admin_conn, booklet, *, score, status):
+    """Directly inserts a current evaluation_results row and sets the
+    answer's status — these tests only need the resulting DB state, not a
+    real evaluation run."""
+    with admin_conn.cursor() as cur:
+        set_admin_context(cur)
+        cur.execute(
+            """
+            INSERT INTO evaluation_results
+                (answer_id, reference_answer_variant_id, evaluator_type, score, is_current)
+            VALUES (%s, %s, 'ai', %s, true)
+            """,
+            (booklet["answer_id"], booklet["variant_id"], score),
+        )
+        cur.execute("UPDATE answers SET status = %s WHERE answer_id = %s",
+                    (status, booklet["answer_id"]))
+    admin_conn.commit()
+
+
+async def test_booklets_list_collapses_a_students_answers_into_one_row(
+    make_client, make_booklet, admin_conn, college_b
+):
+    """Two answers for the same student+exam are one booklet: answer_count/
+    scored_count reflect both, but total_score/max_score only cover the
+    SCORED one — see core/booklet_summary.py.
+
+    Uses college_b's dedicated (student_id, exam_id) rather than
+    make_booklet()'s COLLEGE_A defaults — those default ids are also
+    seed_minimal.sql's demo student/exam, which a developer's own manual
+    testing against the same local DB can be adding answers to concurrently,
+    making an exact answer_count/len(items) assertion flaky. college_b is
+    synthetic reference data nothing else writes to."""
+    owner = dict(college_id=COLLEGE_B, **COLLEGE_B_OWNER)
+    first = make_booklet(marks_max=10.0, **owner)
+    second = make_booklet(marks_max=6.0, **owner)
+    _score(admin_conn, first, score=8.0, status="ai_scored")
+    # second stays pending_evaluation / unscored.
+
+    async with make_client(COLLEGE_B) as client:
+        response = await client.get("/api/v1/results/booklets", params={
+            "exam_id": first["exam_id"], "student_id": first["student_id"],
+        })
+
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert len(items) == 1
+    row = items[0]
+    assert row["student_id"] == first["student_id"]
+    assert row["exam_id"] == first["exam_id"]
+    assert row["answer_count"] == 2
+    assert row["scored_count"] == 1
+    assert row["total_score"] == 8.0
+    assert row["max_score"] == 10.0  # only the scored answer's marks_max
+    assert row["status"] == "pending_evaluation"  # least-progressed answer wins
+    assert row["needs_review"] is False
+
+
+async def test_booklets_list_status_rollup_prefers_flagged_over_anything_else(
+    make_client, make_booklet, admin_conn, college_b
+):
+    """Uses college_b's dedicated ids for the same reason as the collapsing
+    test above — an exact single-row assertion needs a pair nothing else is
+    concurrently writing to."""
+    owner = dict(college_id=COLLEGE_B, **COLLEGE_B_OWNER)
+    first = make_booklet(**owner)
+    second = make_booklet(**owner)
+    _score(admin_conn, first, score=9.0, status="finalized")
+    _score(admin_conn, second, score=3.0, status="flagged")
+
+    async with make_client(COLLEGE_B) as client:
+        response = await client.get("/api/v1/results/booklets", params={
+            "exam_id": first["exam_id"], "student_id": first["student_id"],
+        })
+
+    row = response.json()["items"][0]
+    assert row["status"] == "flagged", (
+        "one flagged answer must win the booklet's rolled-up status even "
+        "when every other answer is finalized"
+    )
+
+
+async def test_booklets_list_needs_review_rolls_up_from_any_answer(
+    make_client, make_booklet, admin_conn
+):
+    booklet = make_booklet()
+    with admin_conn.cursor() as cur:
+        set_admin_context(cur)
+        cur.execute("UPDATE answer_blocks SET needs_review = true WHERE block_id = %s",
+                    (booklet["block_id"],))
+    admin_conn.commit()
+
+    async with make_client(COLLEGE_A) as client:
+        flagged = await client.get("/api/v1/results/booklets", params={"needs_review": "true"})
+        clean = await client.get("/api/v1/results/booklets", params={"needs_review": "false"})
+
+    key = (booklet["student_id"], booklet["exam_id"])
+    flagged_keys = {(r["student_id"], r["exam_id"]) for r in flagged.json()["items"]}
+    clean_keys = {(r["student_id"], r["exam_id"]) for r in clean.json()["items"]}
+    assert key in flagged_keys
+    assert key not in clean_keys
+
+
+async def test_booklets_list_is_isolated_by_tenant(make_client, make_booklet, college_b):
+    a = make_booklet(college_id=COLLEGE_A)
+    b = make_booklet(college_id=college_b["college_id"],
+                     student_id=college_b["student_id"],
+                     exam_id=college_b["exam_id"])
+
+    async with make_client(COLLEGE_A) as client:
+        mine = await client.get("/api/v1/results/booklets")
+    async with make_client(COLLEGE_B) as client:
+        theirs = await client.get("/api/v1/results/booklets")
+
+    assert mine.status_code == theirs.status_code == 200
+    mine_keys = {(r["student_id"], r["exam_id"]) for r in mine.json()["items"]}
+    theirs_keys = {(r["student_id"], r["exam_id"]) for r in theirs.json()["items"]}
+
+    assert (a["student_id"], a["exam_id"]) in mine_keys
+    assert (a["student_id"], a["exam_id"]) not in theirs_keys
+    assert (b["student_id"], b["exam_id"]) in theirs_keys
+    assert (b["student_id"], b["exam_id"]) not in mine_keys
 
 
 # ════════════════════════ POST /results/{id}/override ═══════════════════════
@@ -1170,6 +1296,33 @@ def _add_region(admin_conn, answer_id, *, page, sequence, bbox, content=None,
     return block_id
 
 
+def _add_extraction(admin_conn, block_id, *, text, ocr_confidence=None,
+                    plugin="text_extraction", plugin_version="0.2.0",
+                    mode="ocr", engines=None):
+    """One current answer_block_extractions row (migration 019) — the shape
+    core/booklet_evaluator.py's persist_extractions() writes after a real
+    evaluation run, built directly here so a test can set up the READ side
+    (GET /results/{answer_id}) without running a real OCR pipeline. Cleaned
+    up by tests/test_api/conftest.py's make_booklet teardown, which deletes
+    answer_block_extractions by block_id BEFORE deleting answer_blocks
+    (migration 019's FK has no ON DELETE CASCADE)."""
+    extraction_id = str(uuid.uuid4())
+    with admin_conn.cursor() as cur:
+        set_admin_context(cur)
+        cur.execute(
+            """
+            INSERT INTO answer_block_extractions
+                (extraction_id, block_id, text, ocr_confidence, plugin,
+                 plugin_version, mode, engines, is_current)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, TRUE)
+            """,
+            (extraction_id, block_id, text, ocr_confidence, plugin,
+             plugin_version, mode, json.dumps(engines) if engines is not None else None),
+        )
+    admin_conn.commit()
+    return extraction_id
+
+
 def _set_page_images(admin_conn, answer_id, ref):
     with admin_conn.cursor() as cur:
         set_admin_context(cur)
@@ -1244,12 +1397,17 @@ async def test_results_carry_per_region_text_and_bbox_for_a_multi_region_questio
 async def test_a_region_with_no_persisted_extraction_says_so_rather_than_lying(
     make_client, make_booklet, admin_conn
 ):
-    """The honest half, and the reason migration 019 is proposed.
+    """The "never tried" half of migration 019's two-state distinction.
 
-    A region cut out of a scan has `content` NULL — ingestion writes it that
-    way and the OCR output is never persisted (core/answer_regions.py's
-    docstring). The response must report that as "no text stored", not as an
-    empty answer, and must refuse to show a merged answer with a hole in it.
+    A region cut out of a scan has `content` NULL (ingestion writes it that
+    way), and NO answer_block_extractions row exists for it yet — the
+    booklet has never been evaluated, or the region's extraction failed
+    before anything was written (core/booklet_evaluator.persist_extractions
+    only writes a row for extraction.ok). The response must report that as
+    "never extracted", not as an empty answer, and must refuse to show a
+    merged answer with a hole in it. See the test right after this one for
+    the OTHER half: a row that exists but whose extraction genuinely found
+    nothing.
     """
     booklet = make_booklet()
     scanned = _add_region(admin_conn, booklet["answer_id"], page=2, sequence=1,
@@ -1262,6 +1420,7 @@ async def test_a_region_with_no_persisted_extraction_says_so_rather_than_lying(
     assert region["text"] is None
     assert region["text_source"] is None, \
         "a null text_source is what tells a client 'not stored' from 'blank'"
+    assert region["extraction_available"] is False
     assert region["needs_review"] is True
     assert region["ingestion_flags"] == ["needs_review_at_ingestion"]
 
@@ -1269,6 +1428,72 @@ async def test_a_region_with_no_persisted_extraction_says_so_rather_than_lying(
     assert merged["available"] is False
     assert merged["text"] is None, "a partial merge would read as a complete answer"
     assert "no persisted extraction" in merged["reason"]
+
+
+async def test_a_region_with_a_persisted_extraction_returns_the_real_text(
+    make_client, make_booklet, admin_conn
+):
+    """The other half: once core/booklet_evaluator.py has written a current
+    answer_block_extractions row for a scanned region (migration 019), the
+    API returns its actual text, confidence and provenance instead of null —
+    this is what lets RegionCard.tsx show a real OCR read next to the score
+    instead of the old hardcoded "not stored" placeholder.
+    """
+    booklet = make_booklet()
+    scanned = _add_region(admin_conn, booklet["answer_id"], page=2, sequence=1,
+                          bbox=[0, 0, 100, 50], content=None, needs_review=True)
+    _add_extraction(admin_conn, scanned, text="Handwritten answer, OCR'd.",
+                    ocr_confidence=0.82, mode="ocr", engines=["paddleocr"])
+
+    async with make_client(COLLEGE_A) as ac:
+        body = (await ac.get(f"/api/v1/results/{booklet['answer_id']}")).json()
+
+    region = next(r for r in body["regions"]["items"] if r["block_id"] == scanned)
+    assert region["text"] == "Handwritten answer, OCR'd."
+    assert region["text_source"] == "answer_block_extractions"
+    assert region["extraction_available"] is True
+    assert region["ocr_confidence"] == pytest.approx(0.82, abs=1e-3)
+    assert region["ocr_confidence_source"] == "answer_block_extractions"
+    assert region["extraction_plugin"] == "text_extraction"
+    assert region["extraction_plugin_version"] == "0.2.0"
+    assert region["extraction_mode"] == "ocr"
+    assert region["extraction_engines"] == ["paddleocr"]
+
+    # Both this region and the booklet fixture's own first region have real
+    # text now, so the merge that §7D scored is fully reconstructable.
+    merged = body["merged_text"]
+    assert merged["available"] is True
+    assert merged["text"].endswith("Handwritten answer, OCR'd.")
+
+
+async def test_a_persisted_extraction_that_found_nothing_is_not_a_blank_region(
+    make_client, make_booklet, admin_conn
+):
+    """migration 019's COMMENT ON COLUMN text: NULL is legitimate when an
+    extraction genuinely ran and found nothing — a real, recorded outcome,
+    distinct from never having tried at all (the test two above this one).
+    text_source must say the row exists even though `text` itself is null.
+    """
+    booklet = make_booklet()
+    scanned = _add_region(admin_conn, booklet["answer_id"], page=2, sequence=1,
+                          bbox=[0, 0, 100, 50], content=None, needs_review=True)
+    _add_extraction(admin_conn, scanned, text=None, ocr_confidence=0.05,
+                    mode="ocr", engines=["tesseract"])
+
+    async with make_client(COLLEGE_A) as ac:
+        body = (await ac.get(f"/api/v1/results/{booklet['answer_id']}")).json()
+
+    region = next(r for r in body["regions"]["items"] if r["block_id"] == scanned)
+    assert region["text"] is None
+    assert region["text_source"] == "answer_block_extractions", \
+        "a row exists (extraction ran) even though its text is null"
+    assert region["extraction_available"] is True
+    assert region["ocr_confidence"] == pytest.approx(0.05, abs=1e-3)
+
+    # The merge still refuses to show a partial answer — an empty part is
+    # still a missing part.
+    merged = body["merged_text"]
+    assert merged["available"] is False
 
 
 async def test_page_image_returns_a_short_lived_presigned_url(

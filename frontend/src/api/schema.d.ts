@@ -308,6 +308,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/results/booklets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One row per student+exam booklet, rolled up from its answers
+         * @description One row per (student, exam) — a whole booklet's progress at a glance.
+         *
+         *     Declared before `/results/{answer_id}` so this literal path is matched
+         *     first. There is no `booklets` table (§7C) so this groups on the only pair
+         *     that identifies one; see core/booklet_summary.py for the score/max-score
+         *     and status-rollup rules.
+         */
+        get: operations["list_booklets_api_v1_results_booklets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/results/{answer_id}": {
         parameters: {
             query?: never;
@@ -681,6 +706,64 @@ export interface components {
              * @description The scanned answer booklet, as a PDF.
              */
             file: string;
+        };
+        /**
+         * BookletSummary
+         * @description One row of GET /api/v1/results/booklets — a student's whole exam,
+         *     rolled up from its answers.
+         *
+         *     There is no `booklets` table (§7C), so this is grouped on the only pair
+         *     that identifies one: (student_id, exam_id). See core/booklet_summary.py
+         *     for the score/max-score and status-rollup rules — this schema just
+         *     carries their output.
+         */
+        BookletSummary: {
+            /**
+             * Student Id
+             * Format: uuid
+             */
+            student_id: string;
+            /**
+             * Exam Id
+             * Format: uuid
+             */
+            exam_id: string;
+            /**
+             * Status
+             * @description Rolled up from every answer in this booklet — any flagged answer wins, otherwise the least-progressed status present. See core/booklet_summary.py.
+             * @enum {string}
+             */
+            status: "pending_evaluation" | "ai_scored" | "sme_reviewed" | "finalized" | "flagged";
+            /**
+             * Needs Review
+             * @description True when at least one answer in this booklet has needs_review true (see ResultSummary.needs_review).
+             */
+            needs_review: boolean;
+            /**
+             * Answer Count
+             * @description Distinct answers (questions) in this booklet.
+             */
+            answer_count: number;
+            /**
+             * Scored Count
+             * @description Of answer_count, how many currently have a score.
+             */
+            scored_count: number;
+            /**
+             * Total Score
+             * @description Sum of the CURRENT score across scored answers, or null if none are scored yet.
+             */
+            total_score?: number | null;
+            /**
+             * Max Score
+             * @description Sum of marks_max across the SAME scored answers total_score covers — not every answer in the booklet, so a partially-graded booklet's ratio stays meaningful.
+             */
+            max_score?: number | null;
+            /**
+             * Latest Submitted At
+             * Format: date-time
+             */
+            latest_submitted_at: string;
         };
         /** CappedList[LedgerEntry] */
         CappedList_LedgerEntry_: {
@@ -1410,6 +1493,20 @@ export interface components {
              */
             needs_review: boolean;
         };
+        /** Page[BookletSummary] */
+        Page_BookletSummary_: {
+            /** Items */
+            items: components["schemas"]["BookletSummary"][];
+            /**
+             * Total
+             * @description Rows matching the filters, ignoring limit/offset — lets a client page without guessing when it has reached the end.
+             */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
         /** Page[ExamSummary] */
         Page_ExamSummary_: {
             /** Items */
@@ -1793,8 +1890,9 @@ export interface components {
          *     from it lands where the region actually is.
          *
          *     `extra="allow"` unlike most models here: the region row gains fields as
-         *     the pipeline records more per region (019's extraction provenance is next),
-         *     and a client should not 500 on a field the server added.
+         *     the pipeline records more per region (migration 019's extraction
+         *     provenance — text/text_source/ocr_confidence/extraction_* below — is the
+         *     most recent one), and a client should not 500 on a field the server added.
          */
         RegionDetail: {
             /**
@@ -1846,21 +1944,47 @@ export interface components {
             ingestion_flags?: string[];
             /**
              * Text
-             * @description What this region says — READ `text_source` BEFORE TRUSTING A NULL. Null does NOT mean the region is empty: the text a plugin OCRs out of a scanned region is not persisted anywhere today (ingestion writes answer_blocks.content as NULL and the extraction is dropped after scoring), so a scanned region has no text to return. Only a block whose text was already digital carries one. See core/answer_regions.py's docstring and migrations/019_answer_block_extractions.sql.proposed.
+             * @description What this region says — READ `text_source` BEFORE TRUSTING A NULL. Null does NOT necessarily mean the region is empty: it means either 'this block's text was never digital AND no extraction has run yet' (text_source is null) OR 'an extraction ran and genuinely found nothing' (text_source='answer_block_extractions', text is still null — migration 019's COMMENT ON COLUMN text spells out why that is a legitimate, recorded outcome and not the same as never having tried). A block whose text was already digital, or a scanned region that has been through evaluation at least once, carries a real string here. See core/answer_regions.py's docstring.
              */
             text?: string | null;
             /**
              * Text Source
-             * @description Where `text` came from — 'answer_blocks.content' today. Null means no text is persisted for this region, NOT that the region is blank.
+             * @description Where `text` came from: 'answer_blocks.content' (already digital when ingested) or 'answer_block_extractions' (OCR'd by core/booklet_evaluator.py during evaluation, migration 019). Null means NEITHER exists — this region has never been extracted, not that it is blank.
              */
             text_source?: string | null;
             /**
              * Ocr Confidence
-             * @description Extraction confidence for THIS region, when one is attributable. Null for a region merged with others: the merged component's confidence is the MINIMUM across its parts (§7D decision 4), and attributing that minimum to each part would misreport every part but the worst.
+             * @description Extraction confidence for THIS region, when one is attributable — normally this region's own current answer_block_extractions row (migration 019), independent of how its question was later scored. Null only when no extraction row exists for this block at all.
              */
             ocr_confidence?: number | null;
-            /** Ocr Confidence Source */
+            /**
+             * Ocr Confidence Source
+             * @description Where `ocr_confidence` came from: 'answer_blocks.confidence_score', 'answer_block_extractions', or (a rare fallback — see core/answer_regions.py::attach_evaluation_detail) 'component_extraction'.
+             */
             ocr_confidence_source?: string | null;
+            /**
+             * Extraction Available
+             * @description Whether a current answer_block_extractions row (migration 019) exists for this block — true even when its `text` is null (an extraction that ran and found nothing). False means extraction has never been attempted for this region.
+             * @default false
+             */
+            extraction_available: boolean;
+            /**
+             * Extraction Plugin
+             * @description Which plugin produced the current extraction (e.g. 'text_extraction') — attribution, so a bad read can be traced to the module that produced it.
+             */
+            extraction_plugin?: string | null;
+            /** Extraction Plugin Version */
+            extraction_plugin_version?: string | null;
+            /**
+             * Extraction Mode
+             * @description The plugin's own extraction mode: 'plain_text' (already digital, passed through), 'ocr'/'image'/'region' (read off a scan), 'merged' (several regions combined for scoring — not expected here, since this column is written per region before that merge), or 'stub'.
+             */
+            extraction_mode?: string | null;
+            /**
+             * Extraction Engines
+             * @description Which OCR engine(s) won this region's read (core/plugins/text_extraction.py's per-region 'engines' metric), so a bad read can be blamed on a specific engine rather than on the scoring model.
+             */
+            extraction_engines?: string[] | null;
             /**
              * Question
              * @description The question label ingestion assigned this region ('Q2a'), from the paper's slot labels. Not derivable from the answer row alone — there is no FK from exams to generated_papers (§7C).
@@ -2779,6 +2903,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_ResultSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_booklets_api_v1_results_booklets_get: {
+        parameters: {
+            query?: {
+                exam_id?: string | null;
+                student_id?: string | null;
+                /** @description true = at least one answer in the booklet needs review; false = none do. Null does not filter. */
+                needs_review?: boolean | null;
+                /** @description Rows per page. Values above 200 are CLAMPED to 200, not rejected — see this module's docstring. `total` in the response reports the real count so a client can tell it is seeing a partial page. */
+                limit?: number;
+                /** @description Rows to skip, for the next page. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_BookletSummary_"];
                 };
             };
             /** @description Validation Error */

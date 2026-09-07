@@ -1,0 +1,19 @@
+{
+  "name": "Demo Full-Booklet Pattern",
+  "description": "5 flat slots — Q1, Q2, Q2a, Q2b, Q3 — matched one-for-one to sample_booklet.pdf's markers, each mapped to a live question whose reference content (text/table/diagram) actually corresponds to that marker's real content. Q2a/Q2b are deliberately NOT nested under Q2 as sub_parts: core/paper_generator.py only assigns a question to LEAF slots, and Q2 itself has its own real content (the table) that needs a question too, so all five have to be independent top-level slots.",
+  "course_code": "DEMO",
+  "sections": [
+    {
+      "section_label": "Part A — Demo (full booklet)",
+      "section_order": 1,
+      "is_mandatory": true,
+      "slots": [
+        {"slot_label": "Q1", "slot_order": 1, "marks": 8, "style": "long"},
+        {"slot_label": "Q2", "slot_order": 2, "marks": 12, "style": "long"},
+        {"slot_label": "Q2a", "slot_order": 3, "marks": 3, "style": "short"},
+        {"slot_label": "Q2b", "slot_order": 4, "marks": 6, "style": "long"},
+        {"slot_label": "Q3", "slot_order": 5, "marks": 9, "style": "long"}
+      ]
+    }
+  ]
+}

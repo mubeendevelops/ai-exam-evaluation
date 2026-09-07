@@ -245,15 +245,36 @@ def evaluate_persisted_booklet(conn, *, student_id=None, exam_id=None, answer_id
             "tenant context set (CLAUDE_CONTEXT.md §6)."
         )
 
+    # migrations/019_answer_block_extractions.sql: written the moment each
+    # region's raw text exists (evaluate_booklet's `on_extracted` hook, right
+    # after extraction and before text regions are merged for scoring — see
+    # core/booklet_evaluator.persist_extractions()'s docstring). Gated by
+    # `persist`/`dry_run` exactly like the ledger write below.
+    extraction_persistence: dict = {}
+
+    def _persist_extractions(extractions: list) -> None:
+        extraction_persistence.update(
+            booklet_evaluator.persist_extractions(conn, extractions, dry_run=dry_run)
+        )
+
     report = booklet_evaluator.evaluate_booklet(
         tasks,
         booklet={**(booklet_meta or {}), "mode": "persisted",
                  "student_id": student_id, "exam_id": exam_id, "paper_id": paper_id,
                  "source_scan_url": source_scan_url},
+        on_extracted=_persist_extractions if persist else None,
         **evaluate_kwargs,
     )
+    report["extraction_persistence"] = extraction_persistence or {
+        "written": 0, "skipped": len(tasks), "failed": 0, "dry_run": dry_run,
+        "reason": "--no-persist" if not persist else None,
+    }
 
     if persist:
+        # persist_question_results() re-issues app.is_platform_admin itself,
+        # per question — see its own docstring for why relying on main()'s
+        # single upfront SET LOCAL isn't enough once persist_extractions()
+        # above has already committed (or rolled back) at least once.
         booklet_evaluator.persist_question_results(conn, report, dry_run=dry_run)
     else:
         report["persistence"] = {"written": 0, "skipped": len(report["questions"]),

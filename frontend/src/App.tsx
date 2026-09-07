@@ -7,6 +7,7 @@ import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth } from "./auth/RequireAuth";
 import { RequireCollegeUser } from "./auth/RequireCollegeUser";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { BookletSummaries } from "./routes/BookletSummaries";
 import { Classes } from "./routes/Classes";
 import { Home } from "./routes/Home";
 import { Login } from "./routes/Login";
@@ -31,6 +32,7 @@ function App() {
                   <Route element={<RequireCollegeUser />}>
                     <Route path="/upload" element={<Upload />} />
                     <Route path="/results" element={<Results />} />
+                    <Route path="/results/summary" element={<BookletSummaries />} />
                     <Route path="/results/:answerId" element={<ResultDetail />} />
                     <Route path="/questions" element={<QuestionBank />} />
                     <Route path="/papers" element={<PaperGeneration />} />

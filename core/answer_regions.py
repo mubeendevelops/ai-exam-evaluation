@@ -23,28 +23,31 @@ THROUGH its answer — never by block_id alone — so another college's region i
 not addressable here at all.
 
 ═══════════════════════════════════════════════════════════════════════════
-WHAT IS NOT HERE, AND WHY (read before adding it)
+WHERE `text` COMES FROM (two sources, one field)
 ═══════════════════════════════════════════════════════════════════════════
 
-**The text a plugin extracted from a scanned region is not persisted.**
-`answer_blocks.content` holds text that was ALREADY DIGITAL when the block was
-created; core/booklet_persist.py::insert_region_block writes it as a literal
-NULL for every region cut out of a scanned page, and nothing ever comes back
-to fill it in (`answer_blocks` has exactly one writer and no UPDATE anywhere).
-The OCR output lives in core/booklet_evaluator.py's Extraction objects for the
-duration of one run and is dropped: _component_row() records a region's ids,
-page, bbox and scores but not `extraction.content`, and the merged text built
-in build_components() survives only as a character count.
+`answer_blocks.content` holds text that was ALREADY DIGITAL when the block
+was created; core/booklet_persist.py::insert_region_block writes it as a
+literal NULL for every region cut out of a scanned page (`answer_blocks` has
+exactly one writer and no UPDATE anywhere — that has not changed). For a
+scanned region, the text instead comes from
+migrations/019_answer_block_extractions.sql: core/booklet_evaluator.py's
+`evaluate_booklet(..., on_extracted=persist_extractions_bound_to_a_conn)`
+writes one row per region the moment extraction finishes (see
+persist_extractions()'s docstring for exactly when, and why before the
+merge that build_components() does for scoring purposes). This module reads
+that table back via a LEFT JOIN on `block_id` + `is_current`.
 
-So `text` below is populated from `answer_blocks.content` when it is there,
-and is None — with `text_source` saying so — when it is not. It is NOT faked,
-and nothing is reconstructed from the score. Filling that gap needs
-migrations/019_answer_block_extractions.sql.proposed, which is append-only by
-construction (new row + is_current flip) because overwriting a prior
-extraction would settle CLAUDE_CONTEXT.md §10's open decision 2 by accident.
-When 019 lands, the ONLY change here is the LEFT JOIN marked TODO(019) below
-plus the two `text_source` values it adds; every caller and every response
-field already carries the shape.
+`answer_blocks.content` wins when both exist (it means the block was never a
+scan to begin with, so there is nothing to OCR); otherwise the current
+extraction row's `text` is used. `text_source` says which, or is None when
+NEITHER exists — genuinely never having tried, as opposed to an extraction
+that ran and found nothing (a real answer_block_extractions row whose `text`
+is itself NULL — see that migration's COMMENT ON COLUMN text). Distinguishing
+those two cases is why `text_source` is set from ROW EXISTENCE (the join
+matched a row at all), not from whether the joined `text` happens to be
+NULL — the extraction_id column (never NULL when the join matched) is what
+the row-existence check reads.
 
 **Unassigned regions are not here either.** `answer_blocks.answer_id` is NOT
 NULL, so a region the segmenter could not assign to a question is persisted
@@ -82,13 +85,13 @@ def list_answer_regions(cur, *, answer_id, college_id) -> list[dict[str, Any]]:
                ab.classification_confidence, ab.needs_review,
                ab.content, ab.confidence_score,
                ab.page_image_url IS NOT NULL AS has_page_image,
-               ab.blob_url      IS NOT NULL AS has_region_image
-          -- TODO(019): LEFT JOIN answer_block_extractions abe
-          --                 ON abe.block_id = ab.block_id AND abe.is_current
-          --            and select abe.text / abe.ocr_confidence / abe.plugin.
-          --            Nothing else in this file or above it changes.
+               ab.blob_url      IS NOT NULL AS has_region_image,
+               abe.extraction_id, abe.text, abe.ocr_confidence,
+               abe.plugin, abe.plugin_version, abe.mode, abe.engines
           FROM answers       a
           JOIN answer_blocks ab ON ab.answer_id = a.answer_id
+          LEFT JOIN answer_block_extractions abe
+                 ON abe.block_id = ab.block_id AND abe.is_current
          WHERE a.answer_id = %s AND a.college_id = %s
          ORDER BY {_READING_ORDER}
         """,
@@ -99,7 +102,33 @@ def list_answer_regions(cur, *, answer_id, college_id) -> list[dict[str, Any]]:
     for index, row in enumerate(cur.fetchall()):
         (block_id, block_type, page_number, region_bbox, sequence_order,
          classification_label, classification_confidence, needs_review,
-         content, confidence_score, has_page_image, has_region_image) = row
+         content, confidence_score, has_page_image, has_region_image,
+         extraction_id, extraction_text, extraction_confidence,
+         extraction_plugin, extraction_plugin_version, extraction_mode,
+         extraction_engines) = row
+
+        # ROW EXISTENCE, not text nullity — see the module docstring. A
+        # matched extraction row always has extraction_id (its PK, never
+        # NULL); a text=NULL row (extraction ran, found nothing) still
+        # counts as "has an extraction".
+        has_extraction = extraction_id is not None
+        text = content if content is not None else extraction_text
+        text_source = (
+            "answer_blocks.content" if content is not None
+            else "answer_block_extractions" if has_extraction
+            else None
+        )
+        ocr_confidence = (
+            float(confidence_score) if confidence_score is not None
+            else float(extraction_confidence) if extraction_confidence is not None
+            else None
+        )
+        ocr_confidence_source = (
+            "answer_blocks.confidence_score" if confidence_score is not None
+            else "answer_block_extractions" if extraction_confidence is not None
+            else None
+        )
+
         regions.append({
             "block_id": str(block_id),
             "block_type": block_type,
@@ -121,12 +150,19 @@ def list_answer_regions(cur, *, answer_id, college_id) -> list[dict[str, Any]]:
             # for the same flag, so a region's reason reads identically in the
             # API and in the CLI's report.
             "ingestion_flags": ["needs_review_at_ingestion"] if needs_review else [],
-            "text": content,
-            "text_source": "answer_blocks.content" if content is not None else None,
-            "ocr_confidence": (float(confidence_score)
-                               if confidence_score is not None else None),
-            "ocr_confidence_source": ("answer_blocks.confidence_score"
-                                      if confidence_score is not None else None),
+            "text": text,
+            "text_source": text_source,
+            "ocr_confidence": ocr_confidence,
+            "ocr_confidence_source": ocr_confidence_source,
+            # Provenance of the CURRENT extraction row, when one exists — who
+            # produced this read and how (migration 019's `plugin`/`mode`/
+            # `engines` columns), so a bad read can be attributed to a
+            # specific OCR engine rather than to the scoring model.
+            "extraction_available": has_extraction,
+            "extraction_plugin": extraction_plugin,
+            "extraction_plugin_version": extraction_plugin_version,
+            "extraction_mode": extraction_mode,
+            "extraction_engines": extraction_engines,
             "has_page_image": bool(has_page_image),
             "has_region_image": bool(has_region_image),
         })
@@ -225,16 +261,21 @@ def attach_evaluation_detail(regions: list[dict], metrics: dict | None) -> list[
                       region that was never scored says why instead of simply
                       being absent from the components.
 
-    OCR CONFIDENCE, AND ITS ONE HONEST SOURCE HERE. A component row carries
-    `extraction_confidence`, but for a MERGED text component that number is
-    the MINIMUM across its parts (build_components, decision 4), not any one
-    region's own confidence — the per-part values live in the merged
-    ExtractionResult's metrics, which the text plugin does not copy into its
-    EvaluationResult, so they are gone by the time anything is persisted. It
-    is therefore attributed to a region ONLY when that region was the
-    component's only part; otherwise the region keeps ocr_confidence=None and
-    the merged minimum stays where it belongs, on the component. 019 is what
-    makes this per-region for real.
+    OCR CONFIDENCE — MOSTLY ALREADY SET BY list_answer_regions(), THIS IS THE
+    FALLBACK. A component row carries `extraction_confidence`, but for a
+    MERGED text component that number is the MINIMUM across its parts
+    (build_components, decision 4), not any one region's own confidence.
+    Since migration 019, each region's OWN reading normally already has its
+    `ocr_confidence` filled in by list_answer_regions() straight from its
+    current answer_block_extractions row — written per region, before the
+    merge, independently of how the question was later scored (see
+    persist_extractions()'s docstring). The fallback below only fires when
+    that per-region row is missing (e.g. extraction failed, so nothing was
+    ever written for this block) and the region was nonetheless the
+    component's ONLY part, in which case the component's own confidence is
+    known to equal that single region's — attributing the merged MINIMUM to
+    every part of a multi-region component would still misreport every part
+    but the worst, so this never does that.
     """
     metrics = metrics or {}
     question_label = metrics.get("question")
@@ -301,8 +342,9 @@ def merged_text(regions: list[dict]) -> dict[str, Any]:
     separator wrong.
 
     `available` is False, with a `reason`, when any part's text is missing —
-    the usual case today, since scanned regions have no persisted text (see
-    the module docstring). A partial merge is NOT returned: a merged answer
+    an answer scanned before migration 019 landed, a region whose extraction
+    genuinely failed (see the module docstring), or a booklet not yet
+    evaluated at all. A partial merge is NOT returned: a merged answer
     missing its second page would read as a complete answer that simply says
     less, which is precisely the failure §7D's merge exists to prevent.
 

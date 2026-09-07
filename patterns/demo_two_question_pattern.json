@@ -1,0 +1,16 @@
+{
+  "name": "Demo Two-Question Pattern",
+  "description": "Minimal 1-section pattern built to match the two live questions already in the bank (one long/10, one short/5), so a paper can actually be generated for a live demo without waiting on more content review.",
+  "course_code": "DEMO",
+  "sections": [
+    {
+      "section_label": "Part A — Demo",
+      "section_order": 1,
+      "is_mandatory": true,
+      "slots": [
+        {"slot_label": "Q1", "slot_order": 1, "marks": 10, "style": "long"},
+        {"slot_label": "Q2", "slot_order": 2, "marks": 5, "style": "short"}
+      ]
+    }
+  ]
+}

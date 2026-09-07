@@ -147,13 +147,18 @@ function RegionBody({ region, component, mergedSlice }: RegionCardProps) {
 }
 
 function NoTextNotice({ region }: { region: RegionDetail }) {
-  return (
-    <p className="italic text-slate-400">
-      {region.text_source === null
-        ? "OCR text isn't stored for this region yet — extraction happens during scoring but isn't persisted (migration 019 would add it). This is not the same as the region being blank."
-        : "No text available for this region."}
-    </p>
-  );
+  // `text_source` distinguishes two genuinely different facts, per
+  // migrations/019_answer_block_extractions.sql's COMMENT ON COLUMN text:
+  // "NULL is legitimate ... not the same as never having tried."
+  //   - text_source is null / extraction_available is false: no
+  //     answer_block_extractions row exists for this region at all — the
+  //     booklet hasn't been (re-)evaluated since this region was ingested.
+  //   - text_source === "answer_block_extractions" but text is still empty:
+  //     extraction ran and read nothing back — a real result, not a gap.
+  const message = region.extraction_available
+    ? "OCR ran on this region and found no text — this appears to be a blank or unreadable region, not a missing read."
+    : "This region hasn't been through text extraction yet — it will be OCR'd the next time this booklet is evaluated.";
+  return <p className="italic text-slate-400">{message}</p>;
 }
 
 function StructuralDetail({ detail }: { detail: Record<string, unknown> }) {

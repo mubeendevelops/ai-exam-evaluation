@@ -1,9 +1,13 @@
 """api/routers/evaluation.py — evaluate, results, page images, override.
 
-Five endpoints, one rule each that matters more than the rest:
+Six endpoints, one rule each that matters more than the rest:
 
   POST /api/v1/evaluate                 -> 202, never a synchronous score.
   GET  /api/v1/results                  -> one row per answer, not the report.
+  GET  /api/v1/results/booklets         -> one row per (student, exam),
+                                           rolled up from its answers —
+                                           declared before {answer_id} below
+                                           so this literal path wins.
   GET  /api/v1/results/{answer_id}      -> 404 for another college, never a leak.
   GET  /api/v1/results/{id}/pages/{n}/image
                                         -> a URL that EXPIRES, generated per
@@ -38,6 +42,7 @@ from api.deps.pagination import Pagination, get_pagination
 from api.deps.quota import check_concurrent_job_cap, rate_limit
 from api.schemas.evaluation import (
     AnswerStatus,
+    BookletSummary,
     EvaluateRequest,
     EvaluateResponse,
     OverrideRequest,
@@ -45,6 +50,7 @@ from api.schemas.evaluation import (
     PageImageResponse,
     ResultResponse,
     ResultSummary,
+    booklet_to_summary,
     result_to_summary,
 )
 from api.schemas.pagination import Page
@@ -214,6 +220,42 @@ def list_results(
 
     return Page(
         items=[result_to_summary(r) for r in rows],
+        total=total, limit=pagination.limit, offset=pagination.offset,
+    )
+
+
+@router.get(
+    "/results/booklets",
+    response_model=Page[BookletSummary],
+    summary="One row per student+exam booklet, rolled up from its answers",
+)
+def list_booklets(
+    exam_id: uuid.UUID | None = Query(default=None),
+    student_id: uuid.UUID | None = Query(default=None),
+    needs_review: bool | None = Query(
+        default=None,
+        description="true = at least one answer in the booklet needs "
+                    "review; false = none do. Null does not filter.",
+    ),
+    user: CurrentUser = Depends(require_college_user),
+    conn=Depends(get_tenant_conn),
+    pagination: Pagination = Depends(get_pagination),
+) -> Page[BookletSummary]:
+    """One row per (student, exam) — a whole booklet's progress at a glance.
+
+    Declared before `/results/{answer_id}` so this literal path is matched
+    first. There is no `booklets` table (§7C) so this groups on the only pair
+    that identifies one; see core/booklet_summary.py for the score/max-score
+    and status-rollup rules.
+    """
+    with conn.cursor() as cur:
+        rows, total = evaluation_service.list_booklets(
+            cur, college_id=user.college_id, exam_id=exam_id, student_id=student_id,
+            needs_review=needs_review, limit=pagination.limit, offset=pagination.offset,
+        )
+
+    return Page(
+        items=[booklet_to_summary(r) for r in rows],
         total=total, limit=pagination.limit, offset=pagination.offset,
     )
 

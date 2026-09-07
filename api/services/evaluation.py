@@ -30,6 +30,7 @@ from typing import Any
 import core.answer_evaluation
 import core.answer_regions
 import core.booklet_evaluator
+import core.booklet_summary
 import core.jobs
 import core.pagination
 import core.results
@@ -197,6 +198,20 @@ def run_booklet_evaluation(conn, payload: dict, *, on_progress=None,
 
     report_progress("evaluating", 0.25,
                     f"Scoring {len(tasks)} regions.", regions=len(tasks))
+
+    # migrations/019_answer_block_extractions.sql: every region's raw
+    # extraction text, written the moment it exists (evaluate_booklet's
+    # `on_extracted` hook fires right after extract_tasks(), before text
+    # regions are merged for scoring — see persist_extractions()'s
+    # docstring for why that ordering matters). `persist` gates this exactly
+    # like the ledger write below; dry_run rolls the whole batch back.
+    extraction_persistence: dict = {}
+
+    def _persist_extractions(extractions: list) -> None:
+        extraction_persistence.update(
+            core.booklet_evaluator.persist_extractions(conn, extractions, dry_run=dry_run)
+        )
+
     report = core.booklet_evaluator.evaluate_booklet(
         tasks,
         stub=bool(options.get("stub")),
@@ -209,13 +224,23 @@ def run_booklet_evaluation(conn, payload: dict, *, on_progress=None,
             "exam_id": payload["exam_id"],
             "source_scan_url": payload.get("source_scan_url"),
         },
+        on_extracted=_persist_extractions if persist else None,
     )
+    report["extraction_persistence"] = extraction_persistence or {
+        "written": 0, "skipped": len(tasks), "failed": 0, "dry_run": dry_run,
+        "reason": "persist=False" if not persist else None,
+    }
 
     questions = len(report.get("questions", []))
     if persist:
         report_progress("persisting", 0.85,
                         f"Appending {questions} question results to the ledger.",
                         regions=len(tasks), questions=questions)
+        # persist_question_results() re-issues app.is_platform_admin itself,
+        # per question — see its own docstring. This job always runs as
+        # platform admin — the only caller of run_booklet_evaluation,
+        # scripts/run_job_worker.py's _run_booklet_eval, documents and sets
+        # exactly that (§6).
         # APPEND-ONLY. persist_question_results -> write_evaluation_result ->
         # record_evaluation, which flips the previous row's is_current and
         # INSERTs. Nothing in this path UPDATEs a score (rule 2).
@@ -250,6 +275,24 @@ def list_results(
     total = core.results.count_results(
         cur, college_id=college_id, exam_id=exam_id, student_id=student_id,
         status=status, needs_review=needs_review,
+    )
+    return rows, total
+
+
+def list_booklets(
+    cur, *, college_id, exam_id=None, student_id=None,
+    needs_review: bool | None = None, limit: int = 50, offset: int = 0,
+) -> tuple[list[dict], int]:
+    """A page of booklet (student+exam) summaries plus the matching total.
+    Straight through to core/booklet_summary.py, which owns the SQL and the
+    status-rollup rule — same shape as `list_results` above."""
+    rows = core.booklet_summary.list_booklets(
+        cur, college_id=college_id, exam_id=exam_id, student_id=student_id,
+        needs_review=needs_review, limit=limit, offset=offset,
+    )
+    total = core.booklet_summary.count_booklets(
+        cur, college_id=college_id, exam_id=exam_id, student_id=student_id,
+        needs_review=needs_review,
     )
     return rows, total
 

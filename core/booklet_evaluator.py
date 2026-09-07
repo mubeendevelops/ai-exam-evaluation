@@ -1048,7 +1048,8 @@ def evaluate_booklet(tasks: list, *,
                      weights: dict | None = None,
                      review_threshold: float = DEFAULT_REVIEW_CONFIDENCE,
                      unassigned_regions: list | None = None,
-                     booklet: dict | None = None) -> dict:
+                     booklet: dict | None = None,
+                     on_extracted: Any = None) -> dict:
     """Extract -> evaluate -> aggregate, over a whole booklet's regions.
 
     The one entry point a caller needs. Takes BlockTasks (from
@@ -1056,10 +1057,26 @@ def evaluate_booklet(tasks: list, *,
     returns the report dict. Touches no database — persist_question_results()
     is a separate, optional step, so a report can be produced and inspected
     before anything is written.
+
+    `on_extracted`, if given, is called ONCE with the raw `extractions` list
+    (one Extraction per task, block_id and all — see build_components()'s
+    docstring for why that per-region granularity is lost once text regions
+    are merged) right after extraction finishes and before it is merged into
+    components. This is the ONE place this function's purity is bent on
+    purpose: a DB-aware caller (scripts/evaluate_booklet.py,
+    api/services/evaluation.py) passes persist_extractions bound to its own
+    connection here to write migrations/019_answer_block_extractions.sql
+    rows, without this module importing psycopg2 or knowing what a
+    connection is. Exceptions raised by the callback are NOT caught here —
+    persist_extractions() is written to never raise (see its own docstring),
+    so a raise reaching this point is a bug in the callback, not a per-region
+    failure this module's partial-failure posture is meant to absorb.
     """
     started_at = time.perf_counter()
     extractions = extract_tasks(tasks, max_concurrency=max_concurrency,
                                 stub=stub, stub_extraction=stub_extraction)
+    if on_extracted is not None:
+        on_extracted(extractions)
     components = build_components(extractions)
     outcomes = evaluate_components(components, max_concurrency=max_concurrency,
                                    stub=stub, stub_llm=stub_llm,
@@ -1122,6 +1139,119 @@ def _ledger_result(report: dict, row: dict):
     )
 
 
+def persist_extractions(conn, extractions: list, *, dry_run: bool = False) -> dict:
+    """Appends one answer_block_extractions row per successfully-extracted,
+    persisted region — every Extraction whose task carries a block_id (an
+    offline run's tasks have none, since nothing was ever persisted) and
+    whose extract() succeeded (extraction.ok).
+
+    THE TEXT COMES FROM extraction.result.content, PER TASK — deliberately
+    BEFORE build_components() merges a question's text regions into one
+    Component. That merge is what §7D decision 3 needs for SCORING (a
+    paragraph split across two pages is one answer, not two), but it is also
+    exactly what throws away which words came from which region — merging
+    first and writing per-region rows after would mean inventing a split
+    that was never actually read that way. So this is called from
+    evaluate_booklet()'s `on_extracted` hook, straight off extract_tasks()'s
+    output, at the one point every region's own, unmerged text still exists.
+
+    The write itself goes through core/answer_evaluation.record_extraction(),
+    the same is_current-flip-then-INSERT shape record_evaluation() already
+    uses for evaluation_results (see that function's docstring) — mirrored
+    rather than reinvented, per migrations/019_answer_block_extractions.sql's
+    own header.
+
+    ONE TRANSACTION FOR THE WHOLE BATCH — a SAVEPOINT per region, not a
+    COMMIT per region (contrast persist_question_results below, which commits
+    per QUESTION). The caller sets this connection's RLS GUC ONCE, as the
+    first statement of its current transaction (`SET LOCAL
+    app.is_platform_admin = 'true'` for this system job — the same contract
+    core/booklet_persist.py and persist_question_results document), and SET
+    LOCAL lasts only until that transaction's next commit or rollback.
+    Committing per region here would drop that context after the FIRST row
+    and then fail every subsequent one — invisibly, since RLS fails closed
+    and silently (CLAUDE_CONTEXT.md §6) — which is exactly the trap
+    scripts/evaluate_pending.py avoids by re-issuing SET LOCAL inside ITS
+    per-row loop. Extraction rows have no reason to be split across
+    transactions the way question results do (there is no per-question
+    ledger semantics here, just N independent region writes), so a SAVEPOINT
+    per region gives the identical "one bad region does not cost the others"
+    guarantee without paying for that RLS re-establishment. Callers that also
+    call persist_question_results on the SAME connection afterward must
+    re-issue the RLS GUC first — this function's own commit (or rollback, if
+    dry_run) ends the transaction it was set on.
+
+    Never raises: a region whose INSERT fails rolls back to its own
+    SAVEPOINT and is recorded in the returned failures list, exactly the
+    posture extract_tasks/evaluate_components already take for their own
+    per-region failures.
+
+    TEXT ONLY — a diagram/table region's extraction.result.content is a
+    structured dict (a graph or a cell grid, core/diagram_extractor.py /
+    core/table_extractor.py), not a string, and `text` is a TEXT column: an
+    unconditional write here would either crash (psycopg2 cannot adapt a
+    dict) or, worse, silently stringify a graph into something that reads
+    like OCR text but isn't. This table and the Results screen it feeds are
+    about what was READ off a region, which for a diagram/table region isn't
+    "text" in that sense at all (RegionCard.tsx shows their structural
+    comparison instead — see core/answer_regions.py). So a non-str, non-None
+    content is `skipped`, not `failed`: it is a legitimate kind of region
+    this table simply doesn't describe, not a write that went wrong.
+    """
+    from core import answer_evaluation
+
+    written, skipped, failed = 0, 0, 0
+    failures: list = []
+
+    cur = conn.cursor()
+    try:
+        for index, extraction in enumerate(extractions):
+            task = extraction.task
+            if not task.block_id or not extraction.ok:
+                skipped += 1
+                continue
+
+            result = extraction.result
+            if result.content is not None and not isinstance(result.content, str):
+                skipped += 1
+                continue
+            metrics = result.metrics or {}
+            savepoint = f"sp_extraction_{index}"
+            cur.execute(f"SAVEPOINT {savepoint}")
+            try:
+                answer_evaluation.record_extraction(
+                    cur,
+                    block_id=task.block_id,
+                    text=result.content,
+                    ocr_confidence=(float(result.confidence)
+                                    if result.confidence is not None else None),
+                    plugin=extraction.plugin_name or "unknown",
+                    plugin_version=extraction.plugin_version,
+                    mode=metrics.get("mode"),
+                    engines=metrics.get("engines"),
+                )
+            except Exception as exc:            # noqa: BLE001 — one region must not abort the batch
+                cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                failed += 1
+                failures.append(_failure("persist_extraction", exc, task=task))
+            else:
+                cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+                written += 1
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+    if dry_run:
+        conn.rollback()
+    else:
+        conn.commit()
+
+    return {"written": written, "skipped": skipped, "failed": failed,
+            "dry_run": dry_run, "failures": failures}
+
+
 def persist_question_results(conn, report: dict, *, dry_run: bool = False) -> dict:
     """Append one evaluation_results row per scored question. Mutates
     `report` in place, adding a "persistence" block to every question row and
@@ -1134,10 +1264,24 @@ def persist_question_results(conn, report: dict, *, dry_run: bool = False) -> di
     the commit/rollback including the dry_run rollback, exactly as
     scripts/evaluate_table_answer.py does.
 
-    The caller owns the connection and MUST have set the RLS context on it
-    already (`SET LOCAL app.is_platform_admin = 'true'` for a system job) —
-    this function does not set it, and RLS fails closed and SILENTLY
-    (CLAUDE_CONTEXT.md §6).
+    The caller owns the connection and this is always a system job (§6),
+    never a tenant request, exactly like scripts/evaluate_pending.py and
+    scripts/evaluate_pending_diagrams.py.
+
+    RE-ISSUES `SET LOCAL app.is_platform_admin = 'true'` AT THE TOP OF EVERY
+    QUESTION'S ITERATION, not just once for the caller's first statement.
+    Reason: write_evaluation_result() commits (or rolls back, for dry_run —
+    and a failed write also rolls back, inside its own except block) PER
+    QUESTION, and SET LOCAL lasts only until that transaction's next commit
+    or rollback. A caller that set it once before the loop and expected it to
+    survive N commits would find question 2 onward silently RLS-invisible —
+    exactly the trap scripts/evaluate_pending.py's own per-row loop already
+    re-issues SET LOCAL to avoid (see that script), reproduced here 2026-09-07
+    once a second write (persist_extractions(), migrations/019) ahead of this
+    loop made a previously rare "only one question in the report" case common
+    enough to actually observe the first question fail too. RLS still fails
+    closed and SILENTLY otherwise (CLAUDE_CONTEXT.md §6) — a booklet whose
+    caller runs as anything other than platform admin must not call this.
 
     Commits PER QUESTION, the same granularity scripts/evaluate_pending.py
     and scripts/evaluate_pending_diagrams.py commit at: a booklet is not one
@@ -1175,6 +1319,12 @@ def persist_question_results(conn, report: dict, *, dry_run: bool = False) -> di
         try:
             cur = conn.cursor()
             try:
+                # See the docstring: this MUST be re-issued every iteration,
+                # not just relied on from before the loop — the previous
+                # question's write (or this one's own retry) may have
+                # already committed or rolled back, ending the transaction
+                # SET LOCAL was set on.
+                cur.execute("SET LOCAL app.is_platform_admin = 'true'")
                 cur.execute("SELECT status FROM answers WHERE answer_id = %s",
                             (target["answer_id"],))
                 answer_row = cur.fetchone()

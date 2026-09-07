@@ -283,7 +283,14 @@ api.use({
     }
 
     retryTemplate.headers.set("Authorization", `Bearer ${accessToken}`);
-    const retried = await options.fetch(retryTemplate);
+    // NOT `options.fetch(retryTemplate)`: native fetch is a Window method
+    // with a receiver check, and calling it AS A METHOD OF `options` (an
+    // unrelated plain object openapi-fetch hands to middleware) fails that
+    // check — "Failed to execute 'fetch' on 'Window': Illegal invocation".
+    // A bare reference call has no receiver at all, which fetch tolerates
+    // (this is exactly how openapi-fetch's own internals invoke it).
+    const doFetch = options.fetch;
+    const retried = await doFetch(retryTemplate);
     if (retried.status === 401) {
       redirectToLogin();
     }

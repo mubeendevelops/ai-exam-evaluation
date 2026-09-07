@@ -205,6 +205,11 @@ def build_matrix(*, booklet, job_id, question_id, paragraph_id, pattern_id) -> l
             note="lists answers (RLS + explicit predicate)",
         ),
         Endpoint(
+            "GET", "/api/v1/results/booklets",
+            touches_tenant_data=True,
+            note="lists answers grouped by (student_id, exam_id) (RLS + explicit predicate)",
+        ),
+        Endpoint(
             "GET", f"/api/v1/results/{booklet['answer_id']}",
             touches_tenant_data=True,
             note="reads answers/evaluation_results/answer_reviews",

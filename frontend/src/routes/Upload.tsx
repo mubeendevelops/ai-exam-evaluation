@@ -190,7 +190,7 @@ export function Upload() {
                 </p>
                 <div className="flex gap-3">
                   <Link
-                    to={`/results?exam_id=${selection.examId}&student_id=${selection.studentId}`}
+                    to={`/results/summary?exam_id=${selection.examId}&student_id=${selection.studentId}`}
                     className="btn-primary"
                   >
                     View results

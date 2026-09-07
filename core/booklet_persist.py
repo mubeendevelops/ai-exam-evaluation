@@ -112,14 +112,28 @@ def upsert_answer(cur, *, question_id: str, student_id: str, exam_id: str,
     """
     cur.execute(
         """
-        SELECT answer_id FROM answers
+        SELECT answer_id, source_scan_url FROM answers
          WHERE question_id = %s AND student_id = %s AND exam_id = %s
         """,
         (question_id, student_id, exam_id),
     )
     row = cur.fetchone()
     if row:
-        return str(row[0])
+        answer_id, existing_scan_url = str(row[0]), row[1]
+        if existing_scan_url != source_scan_url:
+            # A later re-ingestion under a NEW upload must move this pointer
+            # forward — otherwise it still names the FIRST scan this answer
+            # ever saw, and a later evaluate keyed on the new upload's blob
+            # url (api/services/evaluation.py's exact-match lookup) finds
+            # nothing despite the blocks this call is about to write existing
+            # right here. Blocks from the earlier scan are NOT removed (that
+            # would be a data-loss decision this function has no business
+            # making); only the pointer this row is looked up by moves.
+            cur.execute(
+                "UPDATE answers SET source_scan_url = %s WHERE answer_id = %s",
+                (source_scan_url, answer_id),
+            )
+        return answer_id
 
     answer_id = str(uuid.uuid4())
     cur.execute(

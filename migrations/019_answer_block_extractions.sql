@@ -1,15 +1,11 @@
 -- =============================================================================
--- Migration 019 (PROPOSED — NOT APPLIED) — per-region extraction history
+-- Migration 019 — per-region extraction history
 -- =============================================================================
 --
--- ┌───────────────────────────────────────────────────────────────────────┐
--- │ THIS FILE IS A DRAFT AWAITING APPROVAL AND HAS RUN AGAINST NO         │
--- │ DATABASE. Its extension is deliberately ".sql.proposed", not ".sql",  │
--- │ so scripts/migrate.py's discovery glob (MIGRATIONS_DIR.glob("*.sql"), │
--- │ scripts/migrate.py:96) does not see it and `--up` cannot apply it by  │
--- │ accident. Approving it means renaming it to                           │
--- │ 019_answer_block_extractions.sql and running the normal --up path.    │
--- └───────────────────────────────────────────────────────────────────────┘
+-- Approved and renamed from 019_answer_block_extractions.sql.proposed to
+-- 019_answer_block_extractions.sql so scripts/migrate.py's discovery glob
+-- (MIGRATIONS_DIR.glob("*.sql")) picks it up; applied via the normal --up
+-- path. The design rationale below is unchanged from the proposed draft.
 --
 -- WHY
 --

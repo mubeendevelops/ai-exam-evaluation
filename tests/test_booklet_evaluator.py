@@ -326,6 +326,43 @@ def test_concurrency_produces_the_same_report_as_serial(fake_plugins):
             == [(row["question"], row["score"]) for row in parallel["questions"]])
 
 
+# --- migrations/019_answer_block_extractions.sql: the on_extracted hook --
+
+def test_on_extracted_hook_fires_once_with_raw_per_region_extractions(fake_plugins):
+    """The wiring persist_extractions() (the DB-writing half, tested
+    separately below with @pytest.mark.db) hangs off: evaluate_booklet()
+    must hand a DB-aware caller every task's OWN, UNMERGED extraction —
+    block_id and all — before build_components() folds a question's text
+    regions into one Component and that per-region text is lost (see
+    build_components()'s and persist_extractions()'s docstrings for why the
+    write has to happen at exactly this point)."""
+    captured = []
+
+    report = run(
+        [task("Q1", source="first half", page=1, seq=1, block_id="b1"),
+         task("Q1", source="and the second half", page=2, seq=1, block_id="b2"),
+         task("Q2", "table", source="t", block_id="b3")],
+        on_extracted=captured.append,
+    )
+
+    assert len(captured) == 1, "the hook must fire exactly once per evaluate_booklet() call"
+    extractions = captured[0]
+    assert {e.task.block_id for e in extractions} == {"b1", "b2", "b3"}
+    assert {e.task.block_id: e.result.content for e in extractions} == {
+        "b1": "first half", "b2": "and the second half", "b3": {"cells": []},
+    }
+    # The merge happened downstream of the hook, not before it — the report
+    # still shows ONE component for Q1's two regions.
+    assert len(report["questions"][0]["components"]) == 1
+
+
+def test_on_extracted_hook_is_not_called_by_default(fake_plugins):
+    """Purity by default: a caller that doesn't pass on_extracted (every
+    test above this point, and the offline CLI path) gets no side effect."""
+    report = run([task("Q1", source="an answer")])
+    assert report["questions"][0]["scored"] is True
+
+
 # --- core/llm.py rate limiting ------------------------------------------
 
 def test_token_bucket_paces_requests_beyond_its_burst():
@@ -434,3 +471,171 @@ def test_post_json_does_not_retry_a_bad_api_key(monkeypatch):
         llm._post_json("https://api.groq.com/x", {})
     assert not isinstance(excinfo.value, llm.RateLimitError)
     assert calls["n"] == 1, "retrying a 401 only delays finding out about it"
+
+
+# ---------------------------------------------------------------------------
+# persist_extractions() — migrations/019_answer_block_extractions.sql
+# ---------------------------------------------------------------------------
+# The one DB-touching test in this otherwise DB-free file, exactly the shape
+# tests/test_text_plugin.py already uses for its own single @pytest.mark.db
+# integration test: everything else here runs against fake plugins and hand-
+# built BlockTasks, and only this needs a real connection, because
+# persist_extractions() is the write path itself, not orchestration logic
+# that can be exercised through a fake.
+
+#: The seeded text answer/block from migrations/seed_minimal.sql — the same
+#: fixture tests/test_text_plugin.py's DB test scores (SEEDED_ANSWER_ID
+#: there). Its block_id is not stable (seed_minimal.sql uses
+#: gen_random_uuid()), so it is looked up by answer_id + block_type below.
+SEEDED_TEXT_ANSWER_ID = "a0a0a0a0-0003-0003-0003-a0a0a0a0a0a0"
+
+
+def _seeded_text_block_id(cur) -> str:
+    cur.execute(
+        "SELECT block_id FROM answer_blocks WHERE answer_id = %s AND block_type = 'text'",
+        (SEEDED_TEXT_ANSWER_ID,),
+    )
+    row = cur.fetchone()
+    assert row is not None, (
+        "migrations/seed_minimal.sql's text fixture answer is missing — run "
+        "scripts/reset_and_seed_db.sh first"
+    )
+    return str(row[0])
+
+
+def _fake_extraction(block_id: str, *, content, confidence, mode="ocr",
+                     engines=None, plugin_version="0.2.0") -> be.Extraction:
+    task_ = be.BlockTask(question_label="Q1", block_type="text", block_id=block_id,
+                         answer_id=SEEDED_TEXT_ANSWER_ID)
+    return be.Extraction(
+        task=task_, plugin_name="text_extraction", plugin_version=plugin_version,
+        result=ExtractionResult(content=content, confidence=confidence,
+                                metrics={"mode": mode, "engines": engines}),
+    )
+
+
+def _readback(conn, sql, params):
+    """SELECT with its OWN SET LOCAL — persist_extractions() ends whatever
+    transaction db_conn's fixture set app.is_platform_admin on the moment it
+    commits (see persist_extractions()'s own docstring on why: SET LOCAL
+    doesn't survive a commit), so any query issued AFTER a real write must
+    re-establish RLS context or see zero rows back, indistinguishably from
+    "no such data" (CLAUDE_CONTEXT.md §6)."""
+    cur = conn.cursor()
+    cur.execute("SET LOCAL app.is_platform_admin = 'true'")
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    cur.close()
+    return rows
+
+
+@pytest.mark.db
+def test_persist_extractions_writes_then_flips_is_current_on_a_reocr(db_conn):
+    cur = db_conn.cursor()
+    block_id = _seeded_text_block_id(cur)
+    cur.close()
+
+    try:
+        summary = be.persist_extractions(
+            db_conn,
+            [_fake_extraction(block_id, content="first read", confidence=0.42,
+                              engines=["paddleocr"])],
+            dry_run=False,
+        )
+        assert summary == {"written": 1, "skipped": 0, "failed": 0,
+                           "dry_run": False, "failures": []}
+
+        rows = _readback(
+            db_conn,
+            """
+            SELECT text, ocr_confidence, plugin, plugin_version, mode, engines, is_current
+              FROM answer_block_extractions WHERE block_id = %s
+            """,
+            (block_id,),
+        )
+        assert len(rows) == 1
+        text, ocr_confidence, plugin, plugin_version, mode, engines, is_current = rows[0]
+        assert text == "first read"
+        assert ocr_confidence == pytest.approx(0.42, abs=1e-3)
+        assert plugin == "text_extraction"
+        assert plugin_version == "0.2.0"
+        assert mode == "ocr"
+        assert engines == ["paddleocr"]
+        assert is_current is True
+
+        # A re-OCR is an INSERT plus a flip — never an UPDATE of `text`
+        # (migrations/019's header). The first row must survive, demoted.
+        summary2 = be.persist_extractions(
+            db_conn,
+            [_fake_extraction(block_id, content="second read", confidence=0.9,
+                              engines=["tesseract"])],
+            dry_run=False,
+        )
+        assert summary2["written"] == 1
+
+        history = _readback(
+            db_conn,
+            "SELECT text, is_current FROM answer_block_extractions "
+            "WHERE block_id = %s ORDER BY extracted_at",
+            (block_id,),
+        )
+        assert [r[0] for r in history] == ["first read", "second read"]
+        assert [r[1] for r in history] == [False, True]
+    finally:
+        cleanup = db_conn.cursor()
+        cleanup.execute("SET LOCAL app.is_platform_admin = 'true'")
+        cleanup.execute("DELETE FROM answer_block_extractions WHERE block_id = %s",
+                        (block_id,))
+        db_conn.commit()
+        cleanup.close()
+
+
+@pytest.mark.db
+def test_persist_extractions_dry_run_writes_nothing(db_conn):
+    cur = db_conn.cursor()
+    block_id = _seeded_text_block_id(cur)
+    cur.execute("SELECT count(*) FROM answer_block_extractions WHERE block_id = %s",
+               (block_id,))
+    before = cur.fetchone()[0]
+    cur.close()
+
+    summary = be.persist_extractions(
+        db_conn,
+        [_fake_extraction(block_id, content="dry run read", confidence=0.5)],
+        dry_run=True,
+    )
+    assert summary["written"] == 1
+    assert summary["dry_run"] is True
+
+    after = _readback(
+        db_conn,
+        "SELECT count(*) FROM answer_block_extractions WHERE block_id = %s",
+        (block_id,),
+    )[0][0]
+    assert after == before, "dry_run must roll the whole batch back"
+
+
+@pytest.mark.db
+def test_persist_extractions_skips_tasks_with_no_block_id_or_failed_extraction(db_conn):
+    """An offline task (no block_id, nothing was ever persisted) and a task
+    whose extraction failed must never reach the INSERT — both are recorded
+    as `skipped`, not `written` or `failed`."""
+    cur = db_conn.cursor()
+    block_id = _seeded_text_block_id(cur)
+    cur.close()
+
+    offline_task = be.BlockTask(question_label="Q1", block_type="text", block_id=None)
+    offline_extraction = be.Extraction(
+        task=offline_task, plugin_name="text_extraction",
+        result=ExtractionResult(content="never persisted", confidence=1.0, metrics={}),
+    )
+    failed_extraction = be.Extraction(
+        task=be.BlockTask(question_label="Q1", block_type="text", block_id=block_id),
+        plugin_name="text_extraction", failure={"stage": "extract", "error_type": "OSError",
+                                                "message": "boom"},
+    )
+
+    summary = be.persist_extractions(db_conn, [offline_extraction, failed_extraction],
+                                     dry_run=True)
+    assert summary == {"written": 0, "skipped": 2, "failed": 0,
+                       "dry_run": True, "failures": []}

@@ -2,15 +2,20 @@
 // booklet that has already been uploaded (or is about to be).
 //
 // Three server round trips, deliberately not client-side joined: exams and
-// papers are independent lists, and students are filtered by exam_id because
-// GET /api/v1/students only returns students who already have an answer on
-// that exam (there is no direct student->exam link in this schema — §7C).
+// papers are independent lists. Students are NOT filtered by exam here —
+// GET /api/v1/results's exam-scoped student list (core/students.py) only
+// returns students who ALREADY have an answer on that exam, which is exactly
+// backwards for this screen: uploading IS how a student gets their first
+// answer on an exam, so gating the picker on that would make it impossible
+// to ever pick anyone for a brand-new exam. useAllStudents() lists the whole
+// college instead (there is no direct student->exam link in this schema —
+// §7C, so "all of them" is the only option that doesn't have this problem).
 // paper_id is required by POST /evaluate today (no exams.paper_id FK yet), so
 // a teacher has to name the paper the booklet's question markers ('Q1',
 // 'Q2a') should resolve against.
 import { useEffect } from "react";
 
-import { useExams, usePapers, useStudents } from "../../api/queries";
+import { useAllStudents, useExams, usePapers } from "../../api/queries";
 import { Loading } from "../../components/Loading";
 
 export interface BookletSelection {
@@ -27,7 +32,7 @@ interface BookletFormProps {
 
 export function BookletForm({ value, onChange, disabled }: BookletFormProps) {
   const exams = useExams();
-  const students = useStudents(value.examId);
+  const students = useAllStudents();
   const papers = usePapers();
 
   // Changing the exam invalidates whatever student was picked under the

@@ -4,7 +4,8 @@
 // One row per answer (GET /api/v1/results) — the full per-signal report with
 // regions, ledger history and reviews lives behind GET /results/{answer_id},
 // which clicking a row navigates to. Filters live in the URL so a link from
-// Upload's "View results" (?exam_id=&student_id=) lands pre-filtered.
+// the Booklets summary screen's per-row "View answers" (?exam_id=&student_id=)
+// lands pre-filtered.
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 

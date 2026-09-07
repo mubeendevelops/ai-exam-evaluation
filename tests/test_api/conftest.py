@@ -671,6 +671,21 @@ def make_booklet(admin_conn):
             )
             answer_ids = [str(row[0]) for row in cur.fetchall()]
         if answer_ids:
+            # answer_block_extractions (migration 019) references
+            # answer_blocks.block_id with no ON DELETE CASCADE, and has no
+            # answer_id column of its own (college_id is trigger-derived, not
+            # a join key here) — so it must be emptied by a block_id subquery
+            # BEFORE the answer_blocks DELETE below, or that DELETE fails on
+            # the FK instead of silently cascading.
+            cur.execute(
+                """
+                DELETE FROM answer_block_extractions
+                 WHERE block_id IN (
+                     SELECT block_id FROM answer_blocks WHERE answer_id = ANY(%s::uuid[])
+                 )
+                """,
+                (answer_ids,),
+            )
             for table in ("evaluation_results", "answer_reviews",
                           "answer_status_history", "answer_blocks"):
                 cur.execute(f"DELETE FROM {table} WHERE answer_id = ANY(%s::uuid[])",

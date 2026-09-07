@@ -16,6 +16,7 @@ export type UploadSummary = components["schemas"]["UploadSummary"];
 export type JobResponse = components["schemas"]["JobResponse"];
 export type EvaluateResponse = components["schemas"]["EvaluateResponse"];
 export type ResultSummary = components["schemas"]["ResultSummary"];
+export type BookletSummary = components["schemas"]["BookletSummary"];
 export type ResultResponse = components["schemas"]["ResultResponse"];
 export type RegionDetail = components["schemas"]["RegionDetail"];
 export type PageSummary = components["schemas"]["PageSummary"];
@@ -64,6 +65,17 @@ export function useStudents(examId: string | undefined) {
   });
 }
 
+/** Every student at this college, with no exam filter — see BookletForm.tsx
+ * for why Upload needs this instead of the exam-scoped `useStudents` above:
+ * that one only returns students who ALREADY have an answer on the exam,
+ * which is exactly backwards for picking who a brand-new booklet belongs to. */
+export function useAllStudents() {
+  return useQuery({
+    queryKey: ["students", "all"],
+    queryFn: () => unwrap(api.GET("/api/v1/students", { params: { query: { limit: 200 } } })),
+  });
+}
+
 export interface PapersFilter {
   status?: PaperSummary["status"];
   pattern_id?: string;
@@ -93,14 +105,21 @@ export function useUploads(bound?: boolean) {
 
 export function useUploadBooklet() {
   return useMutation({
-    mutationFn: (file: File) =>
-      unwrap(
+    mutationFn: (file: File) => {
+      // openapi-fetch does NOT serialize a plain object into FormData —
+      // checked against the installed openapi-fetch@0.17.0's own source
+      // (defaultBodySerializer only passes an ALREADY-FormData body through
+      // untouched; anything else gets JSON.stringify'd, and a File
+      // stringifies to "{}"). A real FormData instance has to be built by
+      // hand so the browser sets the multipart Content-Type + boundary.
+      const formData = new FormData();
+      formData.append("file", file);
+      return unwrap(
         api.POST("/api/v1/upload", {
-          // openapi-fetch serializes an object body to FormData when the
-          // operation's requestBody is multipart/form-data.
-          body: { file: file as unknown as string },
+          body: formData as unknown as { file: string },
         }),
-      ),
+      );
+    },
   });
 }
 
@@ -114,7 +133,16 @@ export interface EvaluateParams {
 export function useEvaluate() {
   return useMutation({
     mutationFn: (body: EvaluateParams) =>
-      unwrap(api.POST("/api/v1/evaluate", { body: { ...body, stub: false, stub_llm: false } })),
+      unwrap(
+        api.POST("/api/v1/evaluate", {
+          // Pinned to embeddings: the plugin's "blended" default (null) can
+          // fall through to a live Groq call, and that's an external network
+          // dependency with its own rate limit — a bad thing for this
+          // button to depend on. Embeddings-only scoring runs entirely
+          // on-box (sentence-transformers) and cannot 429.
+          body: { ...body, stub: false, stub_llm: false, method: "embeddings" },
+        }),
+      ),
   });
 }
 
@@ -200,6 +228,32 @@ export function useResultsList(filter: ResultsFilter) {
               status: filter.status ?? null,
               needs_review: filter.needs_review ?? null,
               limit: 200,
+            },
+          },
+        }),
+      ),
+  });
+}
+
+export interface BookletsFilter {
+  exam_id?: string;
+  student_id?: string;
+  needs_review?: boolean;
+}
+
+export function useBookletSummaries(filter: BookletsFilter, page: { limit: number; offset: number }) {
+  return useQuery({
+    queryKey: ["booklets", filter, page],
+    queryFn: () =>
+      unwrap(
+        api.GET("/api/v1/results/booklets", {
+          params: {
+            query: {
+              exam_id: filter.exam_id ?? null,
+              student_id: filter.student_id ?? null,
+              needs_review: filter.needs_review ?? null,
+              limit: page.limit,
+              offset: page.offset,
             },
           },
         }),
