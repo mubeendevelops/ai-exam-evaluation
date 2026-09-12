@@ -27,12 +27,15 @@ Usage:
 import argparse
 import json
 import sys
-import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core import db as db_mod   # noqa: E402
+from core import db as db_mod             # noqa: E402
+from core import reference_assets         # noqa: E402
 
+#: Version of the reference GRAPH schema. Not shared with
+#: load_reference_table.py's constant of the same name: they version
+#: different schemas and must be bumped independently.
 SCHEMA_VERSION = 1
 
 
@@ -65,9 +68,10 @@ def _validate_graph(graph: dict) -> None:
 
 def load_reference_diagram(cur, graph: dict, question_id: str | None = None,
                             variant_id: str | None = None) -> str:
-    """Inserts one content_assets row (asset_type='diagram') holding the
-    graph, optionally linked via question_asset_links. Caller owns the
-    transaction. Returns the new asset_id."""
+    """Validates the graph, then inserts one content_assets row
+    (asset_type='diagram') holding it, optionally linked via
+    question_asset_links — the write is core/reference_assets.py's. Caller
+    owns the transaction. Returns the new asset_id."""
     _validate_graph(graph)
 
     structured_data = {
@@ -75,32 +79,9 @@ def load_reference_diagram(cur, graph: dict, question_id: str | None = None,
         "nodes": graph["nodes"],
         "edges": graph.get("edges", []),
     }
-
-    asset_id = str(uuid.uuid4())
-    cur.execute("""
-        INSERT INTO content_assets (asset_id, asset_type, blob_url, structured_data, uploaded_at)
-        VALUES (%s, 'diagram', NULL, %s, now())
-    """, (asset_id, json.dumps(structured_data)))
-
-    if question_id:
-        cur.execute("SELECT question_id FROM questions WHERE question_id = %s", (question_id,))
-        if cur.fetchone() is None:
-            raise ValueError(f"question_id {question_id} not found")
-        cur.execute("""
-            INSERT INTO question_asset_links (link_id, asset_id, role, question_id, reference_answer_variant_id)
-            VALUES (%s, %s, 'question_source', %s, NULL)
-        """, (str(uuid.uuid4()), asset_id, question_id))
-
-    if variant_id:
-        cur.execute("SELECT variant_id FROM reference_answer_variants WHERE variant_id = %s", (variant_id,))
-        if cur.fetchone() is None:
-            raise ValueError(f"variant_id {variant_id} not found")
-        cur.execute("""
-            INSERT INTO question_asset_links (link_id, asset_id, role, question_id, reference_answer_variant_id)
-            VALUES (%s, %s, 'answer_component', NULL, %s)
-        """, (str(uuid.uuid4()), asset_id, variant_id))
-
-    return asset_id
+    return reference_assets.insert_reference_asset(
+        cur, "diagram", structured_data, question_id=question_id, variant_id=variant_id,
+    )
 
 
 def main():

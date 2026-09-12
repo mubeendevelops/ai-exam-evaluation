@@ -3,7 +3,9 @@
 scripts/load_reference_table.py — loads a reference (digital) table's grid
 into content_assets.structured_data.
 
-Mirrors scripts/load_reference_diagram.py exactly, including its rationale:
+Mirrors scripts/load_reference_diagram.py — the two share their write,
+core/reference_assets.insert_reference_asset(), and differ only in the
+per-type validation — including its rationale:
 reference tables are hand-authored JSON for v1 — small grids, no extraction
 dependency on the reference side, so a wrong reference is a typo in a file
 rather than an OCR failure nobody notices.
@@ -51,40 +53,16 @@ Usage:
 import argparse
 import json
 import sys
-import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core import db as db_mod   # noqa: E402
+from core import db as db_mod             # noqa: E402
+from core import reference_assets         # noqa: E402
 
+#: Version of the reference GRID schema. Not shared with
+#: load_reference_diagram.py's constant of the same name: they version
+#: different schemas and must be bumped independently.
 SCHEMA_VERSION = 1
-
-#: Substrings that mark a URL as presigned/temporary rather than a stable
-#: "bucket/key" reference. Checked case-insensitively.
-_PRESIGNED_MARKERS = ("x-amz-signature", "x-amz-credential", "signature=", "?", "://")
-
-
-def _validate_blob_url(blob_url: str) -> None:
-    """A blob_url must be the stable "bucket/key" form this repo stores
-    everywhere (CLAUDE_CONTEXT.md §10). Rejects a presigned/absolute URL
-    with a message that says what to store instead — silently accepting one
-    would put an expiring link in the DB that reads as valid until it
-    isn't."""
-    lowered = blob_url.lower()
-    for marker in _PRESIGNED_MARKERS:
-        if marker in lowered:
-            raise ValueError(
-                f"blob_url {blob_url!r} looks like a presigned or absolute URL "
-                f"(contains {marker!r}). content_assets.blob_url must be a stable "
-                f'"bucket/key" reference, e.g. "reference-assets/tables/cpu-sched.png" '
-                f"— presigned URLs expire and are generated on demand via "
-                f"core/storage.py::presigned_get_url()."
-            )
-    if "/" not in blob_url.strip("/"):
-        raise ValueError(
-            f'blob_url {blob_url!r} is not in "bucket/key" form — it needs a bucket '
-            f"and a key separated by '/'."
-        )
 
 
 def _validate_table(table: dict) -> dict:
@@ -152,38 +130,16 @@ def _validate_table(table: dict) -> dict:
 def load_reference_table(cur, table: dict, question_id: str | None = None,
                           variant_id: str | None = None,
                           blob_url: str | None = None) -> str:
-    """Inserts one content_assets row (asset_type='table') holding the grid,
-    optionally linked via question_asset_links. Caller owns the transaction.
-    Returns the new asset_id."""
+    """Validates the grid, then inserts one content_assets row
+    (asset_type='table') holding it, optionally linked via
+    question_asset_links — the write, and the blob_url check, are
+    core/reference_assets.py's. Caller owns the transaction. Returns the new
+    asset_id."""
     structured_data = _validate_table(table)
-    if blob_url:
-        _validate_blob_url(blob_url)
-
-    asset_id = str(uuid.uuid4())
-    cur.execute("""
-        INSERT INTO content_assets (asset_id, asset_type, blob_url, structured_data, uploaded_at)
-        VALUES (%s, 'table', %s, %s, now())
-    """, (asset_id, blob_url, json.dumps(structured_data)))
-
-    if question_id:
-        cur.execute("SELECT question_id FROM questions WHERE question_id = %s", (question_id,))
-        if cur.fetchone() is None:
-            raise ValueError(f"question_id {question_id} not found")
-        cur.execute("""
-            INSERT INTO question_asset_links (link_id, asset_id, role, question_id, reference_answer_variant_id)
-            VALUES (%s, %s, 'question_source', %s, NULL)
-        """, (str(uuid.uuid4()), asset_id, question_id))
-
-    if variant_id:
-        cur.execute("SELECT variant_id FROM reference_answer_variants WHERE variant_id = %s", (variant_id,))
-        if cur.fetchone() is None:
-            raise ValueError(f"variant_id {variant_id} not found")
-        cur.execute("""
-            INSERT INTO question_asset_links (link_id, asset_id, role, question_id, reference_answer_variant_id)
-            VALUES (%s, %s, 'answer_component', NULL, %s)
-        """, (str(uuid.uuid4()), asset_id, variant_id))
-
-    return asset_id
+    return reference_assets.insert_reference_asset(
+        cur, "table", structured_data,
+        question_id=question_id, variant_id=variant_id, blob_url=blob_url,
+    )
 
 
 def main():
