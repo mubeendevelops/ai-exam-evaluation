@@ -37,7 +37,7 @@ exactly one place instead of being re-derived by every new evaluation module:
 """
 from __future__ import annotations
 
-from core import answer_evaluation
+from core import answer_evaluation, db
 from core.plugins.base import REQUIRED_METRIC_KEYS, EvaluationResult
 
 
@@ -176,8 +176,5 @@ def write_evaluation_result(
     finally:
         cur.close()
 
-    if dry_run:
-        conn.rollback()
-    else:
-        conn.commit()
+    db.end_transaction(conn, dry_run=dry_run)
     return evaluation_id

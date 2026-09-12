@@ -164,10 +164,7 @@ def finish(job_id, *, result=None, error=None, dry_run: bool = False) -> None:
                 core.jobs.mark_failed(cur, job_id=job_id, error=error)
             else:
                 core.jobs.mark_succeeded(cur, job_id=job_id, result=result)
-        if dry_run:
-            conn.rollback()
-        else:
-            conn.commit()
+        core.db.end_transaction(conn, dry_run=dry_run)
     except Exception:
         conn.rollback()
         raise

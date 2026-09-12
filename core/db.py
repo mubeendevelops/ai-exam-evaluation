@@ -64,8 +64,21 @@ def transaction(dry_run: bool = False) -> Iterator[psycopg2.extensions.cursor]:
         conn.close()
         raise
     else:
-        if dry_run:
-            conn.rollback()
-        else:
-            conn.commit()
+        end_transaction(conn, dry_run=dry_run)
         conn.close()
+
+
+def end_transaction(conn, *, dry_run: bool) -> None:
+    """Ends `conn`'s current transaction: ROLLBACK under dry_run (the
+    --dry-run contract, CLAUDE_CONTEXT.md §5 rule 6), COMMIT otherwise.
+
+    Only that decision, deliberately. Where it is called — inside or after
+    the caller's try, before or after its cursor closes, and what happens if
+    the COMMIT itself fails — stays at each call site, because those differ
+    on purpose (booklet_persist, plugins/persistence, booklet_evaluator and
+    run_job_worker each end a differently-shaped transaction).
+    """
+    if dry_run:
+        conn.rollback()
+    else:
+        conn.commit()

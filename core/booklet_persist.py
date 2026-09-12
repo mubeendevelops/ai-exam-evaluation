@@ -41,6 +41,7 @@ region without weakening an existing FK — they live in the report only.
 import json
 import uuid
 
+from core import db
 from core.plugins.persistence import RLSVisibilityError, _rls_context
 
 # block_type values that a plugin can actually score today
@@ -271,10 +272,7 @@ def persist_regions(
             persisted += 1
             results.append(outcome)
 
-        if dry_run:
-            conn.rollback()
-        else:
-            conn.commit()
+        db.end_transaction(conn, dry_run=dry_run)
     except Exception:
         conn.rollback()
         raise

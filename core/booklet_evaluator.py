@@ -1198,7 +1198,7 @@ def persist_extractions(conn, extractions: list, *, dry_run: bool = False) -> di
     content is `skipped`, not `failed`: it is a legitimate kind of region
     this table simply doesn't describe, not a write that went wrong.
     """
-    from core import answer_evaluation
+    from core import answer_evaluation, db
 
     written, skipped, failed = 0, 0, 0
     failures: list = []
@@ -1243,10 +1243,7 @@ def persist_extractions(conn, extractions: list, *, dry_run: bool = False) -> di
     finally:
         cur.close()
 
-    if dry_run:
-        conn.rollback()
-    else:
-        conn.commit()
+    db.end_transaction(conn, dry_run=dry_run)
 
     return {"written": written, "skipped": skipped, "failed": failed,
             "dry_run": dry_run, "failures": failures}
