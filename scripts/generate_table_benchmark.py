@@ -68,11 +68,14 @@ import argparse
 import json
 import pathlib
 import random
+import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-FONTS_DIR = REPO_ROOT / "media" / "ocr_benchmark" / "fonts"
+sys.path.insert(0, str(REPO_ROOT))
+from scripts.generate_ocr_benchmark import FONTS_DIR, select_fonts  # noqa: E402
+
 TABLES_DIR = REPO_ROOT / "media" / "tables"
 IMAGES_DIR = TABLES_DIR / "images"
 GROUND_TRUTH_PATH = TABLES_DIR / "ground_truth.json"
@@ -241,18 +244,7 @@ def main() -> None:
 
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
-    font_paths = sorted(FONTS_DIR.glob("*.ttf"))
-    if not font_paths:
-        raise SystemExit(f"No .ttf fonts found in {FONTS_DIR} — nothing to render.")
-    if not args.all_styles:
-        wanted = set(DEFAULT_STYLES)
-        font_paths = [p for p in font_paths if p.stem in wanted]
-        missing = wanted - {p.stem for p in font_paths}
-        if missing:
-            raise SystemExit(
-                f"Default styles {sorted(missing)} not found in {FONTS_DIR} — "
-                f"pass --all-styles or fix DEFAULT_STYLES."
-            )
+    font_paths = select_fonts(None if args.all_styles else DEFAULT_STYLES)
 
     ground_truth = {}
     for font_path in font_paths:

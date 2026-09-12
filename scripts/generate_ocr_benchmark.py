@@ -43,6 +43,9 @@ import pathlib
 from PIL import Image, ImageDraw, ImageFont
 
 BENCHMARK_DIR = pathlib.Path(__file__).resolve().parent.parent / "media" / "ocr_benchmark"
+#: The handwriting fonts every rendered benchmark draws from. This module
+#: owns them; generate_diagram_benchmark.py and generate_table_benchmark.py
+#: import this constant and select_fonts() rather than re-deriving the path.
 FONTS_DIR = BENCHMARK_DIR / "fonts"
 IMAGES_DIR = BENCHMARK_DIR / "images"
 GROUND_TRUTH_PATH = BENCHMARK_DIR / "ground_truth.json"
@@ -113,12 +116,34 @@ def render_sample(font_path: pathlib.Path, style_name: str) -> dict:
     }
 
 
-def main() -> None:
-    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+def select_fonts(default_styles: tuple[str, ...] | None = None) -> list[pathlib.Path]:
+    """The .ttf files in FONTS_DIR to render, sorted by filename.
 
+    With `default_styles`, only the fonts whose stem is in it — and every
+    one of them must exist, since a silently smaller fixture set would read
+    as a complete one. Without it, every font: this benchmark always renders
+    the full spread, and the other generators pass None for --all-styles.
+    Exits (SystemExit) rather than rendering an empty or partial set.
+    """
     font_paths = sorted(FONTS_DIR.glob("*.ttf"))
     if not font_paths:
         raise SystemExit(f"No .ttf fonts found in {FONTS_DIR} — nothing to render.")
+    if default_styles is not None:
+        wanted = set(default_styles)
+        font_paths = [p for p in font_paths if p.stem in wanted]
+        missing = wanted - {p.stem for p in font_paths}
+        if missing:
+            raise SystemExit(
+                f"Default styles {sorted(missing)} not found in {FONTS_DIR} — "
+                f"pass --all-styles or fix DEFAULT_STYLES."
+            )
+    return font_paths
+
+
+def main() -> None:
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+    font_paths = select_fonts()
 
     ground_truth = {}
     for font_path in font_paths:
