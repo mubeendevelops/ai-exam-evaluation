@@ -124,6 +124,7 @@ import numpy as np
 import cv2
 
 from core import diagram_shapes
+from core.ocr_fallback import lazy_fallback_ocr
 
 SCHEMA_VERSION = 1
 
@@ -187,19 +188,10 @@ MIN_CELL_PX = 12
 #: TEXT box outward because there is no border there to exclude.
 CELL_INSET_PX = 4
 
-_fallback_ocr = None
-
-
-def _get_fallback_ocr():
-    """Lazy-loaded FallbackOCR — identical reasoning to
-    core/diagram_extractor._get_fallback_ocr(): constructing engines is
-    cheap, importing paddleocr/pytesseract and loading their models is not,
-    and a --stub-extraction run must never pay that cost."""
-    global _fallback_ocr
-    if _fallback_ocr is None:
-        from core.ocr_fallback import FallbackOCR
-        _fallback_ocr = FallbackOCR()
-    return _fallback_ocr
+#: This module's own lazily-built FallbackOCR. Deliberately NOT the instance
+#: core/diagram_extractor.py uses — see core/ocr_fallback.lazy_fallback_ocr()
+#: for why sharing one would be a concurrency bug, not a saving.
+_get_fallback_ocr = lazy_fallback_ocr()
 
 
 def stub_extract(source=None) -> dict:

@@ -32,6 +32,7 @@ per-engine calibration offset, not this module's docstring.
 from __future__ import annotations
 
 import dataclasses
+from typing import Callable
 
 from core.ocr_engines.base import OCREngine
 
@@ -111,3 +112,35 @@ class FallbackOCR:
         # score at all ranks below any engine that reported one.
         results.sort(key=lambda r: r.confidence if r.confidence is not None else -1.0, reverse=True)
         return results[0]
+
+
+def lazy_fallback_ocr() -> Callable[[], FallbackOCR]:
+    """A zero-argument getter that builds ONE FallbackOCR on its first call
+    and returns that same instance ever after.
+
+    Lazy because constructing engines is cheap but importing
+    paddleocr/pytesseract and loading their models is not: it must not
+    happen at module import time, and a --stub/--stub-extraction run must
+    never pay for it.
+
+    EACH CALL OF THIS FACTORY GETS ITS OWN INSTANCE, DELIBERATELY — do not
+    "simplify" this into one process-wide FallbackOCR. Engines hold their
+    models per instance (core/ocr_engines/paddleocr_engine.py keeps its
+    TextDetection/TextRecognition on self), and core/booklet_evaluator.py's
+    _plugin_lock serializes extraction PER PLUGIN while letting different
+    plugins overlap. That is safe only while no two plugins share a model:
+    one shared instance would let the table and diagram plugins enter the
+    same Paddle model concurrently — the wrong-score-not-crash bug that lock
+    exists to prevent. Hence one getter per call site
+    (core/diagram_extractor.py, core/table_extractor.py, and one per
+    core/plugins/text_extraction.py plugin instance).
+    """
+    instance: FallbackOCR | None = None
+
+    def get() -> FallbackOCR:
+        nonlocal instance
+        if instance is None:
+            instance = FallbackOCR()
+        return instance
+
+    return get

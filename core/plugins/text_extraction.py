@@ -300,17 +300,13 @@ class TextExtractionPlugin(EvaluationPlugin):
 
     def __init__(self):
         # Cheap: no engine, model, or binary is touched here. The whole
-        # roster is built lazily on first real use, for the same reason
-        # core/diagram_extractor._get_fallback_ocr() is lazy — importing
+        # roster is built lazily on first real use — importing
         # paddleocr/pytesseract and loading their models is expensive, and a
-        # stub run must never pay that cost.
-        self._ocr = None
-
-    def _get_ocr(self):
-        if self._ocr is None:
-            from core.ocr_fallback import FallbackOCR
-            self._ocr = FallbackOCR()
-        return self._ocr
+        # stub run must never pay that cost. This plugin instance's OWN
+        # FallbackOCR, never one shared with another plugin: see
+        # core/ocr_fallback.lazy_fallback_ocr() for why.
+        from core.ocr_fallback import lazy_fallback_ocr
+        self._get_ocr = lazy_fallback_ocr()
 
     def supports(self, block_type: str) -> bool:
         """Handles answer_blocks.block_type='text' — a written/typed answer.

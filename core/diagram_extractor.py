@@ -160,26 +160,18 @@ from __future__ import annotations
 
 import io
 
+from core.ocr_fallback import lazy_fallback_ocr
+
 SCHEMA_VERSION = 1
 
 REGION_CROP_PADDING_PX = 6
 
-_fallback_ocr = None
-
-
-def _get_fallback_ocr():
-    """Lazy-loaded FallbackOCR instance (core/ocr_fallback.py) — holds the
-    registered engine plugins (core/ocr_engines/) and does the actual
-    detect/recognize work. Lazy for the same reason the old direct
-    PaddleOCR calls were lazy: constructing engines is cheap, but importing
-    paddleocr/pytesseract and loading their models is not, so it shouldn't
-    happen at module import time (e.g. --stub-extraction runs never need
-    to pay this cost)."""
-    global _fallback_ocr
-    if _fallback_ocr is None:
-        from core.ocr_fallback import FallbackOCR
-        _fallback_ocr = FallbackOCR()
-    return _fallback_ocr
+#: This module's own lazily-built FallbackOCR (core/ocr_fallback.py) — holds
+#: the registered engine plugins (core/ocr_engines/) and does the actual
+#: detect/recognize work. Its own instance, not one shared with
+#: core/table_extractor.py: see lazy_fallback_ocr()'s docstring for why that
+#: separation is load-bearing.
+_get_fallback_ocr = lazy_fallback_ocr()
 
 
 def stub_extract(blob_url: str) -> dict:
