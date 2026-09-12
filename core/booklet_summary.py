@@ -31,7 +31,7 @@ This is computed in Python (`_rollup_status`) over `ARRAY_AGG(DISTINCT
 a.status)`, not in SQL, to keep the ordering rule readable and in one place.
 
 `needs_review` reuses core/results.py's exact per-answer EXISTS
-(`_NEEDS_REVIEW_EXISTS`) rolled up with BOOL_OR — an answer "needs review"
+(`NEEDS_REVIEW_EXISTS`) rolled up with BOOL_OR — an answer "needs review"
 here for the same reason it does there: at least one of its answer_blocks
 (migration 013) is flagged.
 
@@ -43,23 +43,12 @@ from __future__ import annotations
 from typing import Any
 
 import core.pagination
+from core.results import NEEDS_REVIEW_EXISTS, answer_scope_filters
 
 #: answer_status pipeline order, least to most progressed (migration 001
 #: line 34) — used by _rollup_status to find a booklet's least-progressed
 #: non-flagged answer.
 _PIPELINE_ORDER = ("pending_evaluation", "ai_scored", "sme_reviewed", "finalized")
-
-#: Kept identical to core/results.py's _NEEDS_REVIEW_EXISTS (not imported —
-#: that name is private to that module) — an answer "needs review" for the
-#: same reason there: at least one of its answer_blocks (migration 013) is
-#: flagged.
-_NEEDS_REVIEW_EXISTS = """
-    EXISTS (
-        SELECT 1 FROM answer_blocks ab
-        WHERE ab.answer_id = a.answer_id AND ab.needs_review
-    )
-"""
-
 
 def _rollup_status(statuses: list[str]) -> str:
     """One status for a booklet from the distinct statuses of its answers.
@@ -99,7 +88,7 @@ def list_booklets(
                    FILTER (WHERE er.answer_id IS NOT NULL) AS max_score,
                MAX(a.submitted_at) AS latest_submitted_at,
                ARRAY_AGG(DISTINCT a.status) AS statuses,
-               BOOL_OR({_NEEDS_REVIEW_EXISTS}) AS needs_review
+               BOOL_OR({NEEDS_REVIEW_EXISTS}) AS needs_review
         FROM   answers a
         JOIN   questions q ON q.question_id = a.question_id
         LEFT JOIN evaluation_results er
@@ -152,20 +141,14 @@ def count_booklets(
 
 
 def _filters(college_id, exam_id, student_id, needs_review):
-    where: list[str] = ["a.college_id = %s"]
-    params: list[Any] = [str(college_id)]
+    where, params = answer_scope_filters(college_id, exam_id, student_id)
 
-    if exam_id is not None:
-        where.append("a.exam_id = %s")
-        params.append(str(exam_id))
-    if student_id is not None:
-        where.append("a.student_id = %s")
-        params.append(str(student_id))
-
+    # needs_review rolls up per BOOKLET here (any answer flagged), so it is a
+    # HAVING over the group, not core/results.py's per-answer WHERE term.
     having = ""
     if needs_review is True:
-        having = f"BOOL_OR({_NEEDS_REVIEW_EXISTS})"
+        having = f"BOOL_OR({NEEDS_REVIEW_EXISTS})"
     elif needs_review is False:
-        having = f"NOT BOOL_OR({_NEEDS_REVIEW_EXISTS})"
+        having = f"NOT BOOL_OR({NEEDS_REVIEW_EXISTS})"
 
     return where, having, params

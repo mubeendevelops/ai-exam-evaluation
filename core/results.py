@@ -34,7 +34,11 @@ import core.pagination
 #: answer_status enum (migration 001 line 34).
 VALID_STATUSES = ("pending_evaluation", "ai_scored", "sme_reviewed", "finalized", "flagged")
 
-_NEEDS_REVIEW_EXISTS = """
+#: An answer "needs review" iff at least one of its answer_blocks
+#: (migration 013) is flagged. Public because core/booklet_summary.py rolls
+#: the same predicate up per booklet (with BOOL_OR in a HAVING) instead of
+#: applying it per answer in a WHERE, as this module does.
+NEEDS_REVIEW_EXISTS = """
     EXISTS (
         SELECT 1 FROM answer_blocks ab
         WHERE ab.answer_id = a.answer_id AND ab.needs_review
@@ -59,7 +63,7 @@ def list_results(
         f"""
         SELECT a.answer_id, a.question_id, a.student_id, a.exam_id, a.status,
                a.submitted_at, er.score, er.evaluated_at,
-               {_NEEDS_REVIEW_EXISTS} AS needs_review
+               {NEEDS_REVIEW_EXISTS} AS needs_review
         FROM   answers a
         LEFT JOIN evaluation_results er
                ON er.answer_id = a.answer_id AND er.is_current
@@ -97,7 +101,14 @@ def count_results(
     return int(total)
 
 
-def _filters(college_id, exam_id, student_id, status, needs_review):
+def answer_scope_filters(college_id, exam_id=None, student_id=None) -> tuple[list[str], list[Any]]:
+    """The tenant-scoped predicate over `answers a` that every answers read
+    starts from — (WHERE terms, params), for the caller to extend.
+
+    The explicit college_id term is load-bearing, not redundant with RLS: it
+    is the only layer left if PGUSER ever points at a superuser
+    (CLAUDE_CONTEXT.md §6). core/booklet_summary.py builds on this too.
+    """
     where: list[str] = ["a.college_id = %s"]
     params: list[Any] = [str(college_id)]
 
@@ -107,12 +118,18 @@ def _filters(college_id, exam_id, student_id, status, needs_review):
     if student_id is not None:
         where.append("a.student_id = %s")
         params.append(str(student_id))
+    return where, params
+
+
+def _filters(college_id, exam_id, student_id, status, needs_review):
+    where, params = answer_scope_filters(college_id, exam_id, student_id)
+
     if status is not None:
         where.append("a.status = %s")
         params.append(status)
     if needs_review is True:
-        where.append(_NEEDS_REVIEW_EXISTS)
+        where.append(NEEDS_REVIEW_EXISTS)
     elif needs_review is False:
-        where.append(f"NOT {_NEEDS_REVIEW_EXISTS}")
+        where.append(f"NOT {NEEDS_REVIEW_EXISTS}")
 
     return where, params
