@@ -146,7 +146,7 @@ api/
 │   │                 #   — the ONLY DB entry points
 │   ├── identity.py   # get_current_user(), require_role() — THE only file that
 │   │                 #   knows how a caller is identified
-│   ├── ratelimit.py  # the login rate limiter (in-process, no Redis)
+│   ├── ratelimit.py  # SlidingWindowLimiter — login + quota.py (in-process, no Redis)
 │   ├── quota.py      # per-college rate limits + the concurrent job-backlog
 │   │                 #   cap, for /evaluate, /questions/generate,
 │   │                 #   /papers/generate, /upload
@@ -668,9 +668,9 @@ when debug endpoints are enabled.
 `/papers/generate` and `/upload`.** Nothing bounded these before — `core/
 llm.py`'s token bucket paces OUTBOUND Groq calls one process makes, not how
 many callers ask it to make them. Two limits, both in `api/deps/quota.py`:
-a per-minute `SlidingWindowLimiter` (in-process, no Redis — the same
-mechanism `api/deps/ratelimit.py`'s login limiter already uses, generalized
-to count every accepted call rather than only failures), keyed by the
+a per-minute `SlidingWindowLimiter` (in-process, no Redis — the same class,
+from `api/deps/ratelimit.py`, that the login limiter uses; here it records
+every accepted call rather than only failures), keyed by the
 caller's college and applied via a route-level dependency; and
 `check_concurrent_job_cap()`, called inside `POST /evaluate` itself, which
 refuses a new job once the calling college already has

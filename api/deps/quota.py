@@ -15,7 +15,7 @@ committed to somebody's flood.
 
 Two independent limits, for two different failure shapes:
 
-  1. RATE — `SlidingWindowLimiter` below, one sliding-window counter per named
+  1. RATE — api/deps/ratelimit.py::SlidingWindowLimiter, one sliding-window counter per named
      endpoint class, keyed by the caller's college (or, for a platform_admin,
      their user id — there is no college to key by). Applied to POST
      /evaluate, /questions/generate, /papers/generate and /upload via the
@@ -41,16 +41,14 @@ here reopens that argument for a request counter.
 
 slowapi's default backend is an in-memory counter, the same shape this module
 would otherwise hand-write — and this repo already has a hand-written,
-TESTED one: api/deps/ratelimit.py::LoginRateLimiter proves the sliding-window
-approach (OrderedDict + deque, thread-safe, bounded key count, evict-oldest)
-works for exactly this problem. `SlidingWindowLimiter` below is that same
-mechanism, generalized from "count every FAILED login" to "count every
-ACCEPTED call" — copied rather than imported, because the two are shaped
-identically but mean different things (a login limiter that also throttled
-successful logins would be a bug), and importing one to subclass the other
-for a two-method difference is not a saving. Taking on a dependency (and its
-own key-function API, its own storage-backend config surface) to get the same
-few dozen lines back is not worth it either.
+TESTED one: api/deps/ratelimit.py::SlidingWindowLimiter, which the login
+endpoint already uses (OrderedDict + deque, thread-safe, bounded key count,
+evict-oldest). This module uses that SAME class — one mechanism, two uses:
+the login endpoint records only FAILED attempts, `rate_limit()` below records
+every ACCEPTED call. What gets counted is decided at the call site, not by
+the class. Taking on a dependency (and its own key-function API, its own
+storage-backend config surface) to get the same few dozen lines back is not
+worth it.
 
 (2) COULD NOT be an in-memory counter at all. The number that matters —
 how many jobs does this college have outstanding RIGHT NOW — is mutated by a
@@ -72,82 +70,11 @@ argument api/deps/ratelimit.py already makes.
 """
 from __future__ import annotations
 
-import collections
-import threading
-import time
-from typing import Deque
-
 from fastapi import Depends, HTTPException, Request, status
 
 import core.jobs
 from api.deps.identity import CurrentUser, get_current_user
-from api.deps.ratelimit import MAX_TRACKED_KEYS
-
-
-class SlidingWindowLimiter:
-    """A sliding-window counter over ACCEPTED calls to one endpoint class.
-
-    See the module docstring for why this is a sibling of
-    api/deps/ratelimit.py::LoginRateLimiter rather than a reuse of it: same
-    mechanics (sliding window, thread-safe, bounded key count, evict the
-    least-recently-touched key on overflow), different thing counted.
-    """
-
-    def __init__(self, *, limit: int, window_seconds: int):
-        if limit < 1:
-            raise ValueError(f"limit must be >= 1, got {limit}")
-        if window_seconds < 1:
-            raise ValueError(f"window_seconds must be >= 1, got {window_seconds}")
-        self.limit = limit
-        self.window_seconds = window_seconds
-        self._hits: collections.OrderedDict[str, Deque[float]] = collections.OrderedDict()
-        self._lock = threading.Lock()
-
-    def retry_after(self, key: str, *, now: float | None = None) -> int | None:
-        """Seconds until `key` may make another call, or None if it may now.
-
-        Read-only — does not itself count as a call. The caller records the
-        hit separately (`record_hit`), and only once it has actually decided
-        to let the request through.
-        """
-        now = time.monotonic() if now is None else now
-        with self._lock:
-            return self._retry_after_one(key, now) or None
-
-    def record_hit(self, key: str, *, now: float | None = None) -> None:
-        """Counts one accepted call against `key`."""
-        now = time.monotonic() if now is None else now
-        with self._lock:
-            bucket = self._bucket(key)
-            bucket.append(now)
-            self._prune(bucket, now)
-            self._evict()
-
-    def _bucket(self, key: str) -> Deque[float]:
-        bucket = self._hits.get(key)
-        if bucket is None:
-            bucket = collections.deque()
-            self._hits[key] = bucket
-        self._hits.move_to_end(key)
-        return bucket
-
-    def _prune(self, bucket: Deque[float], now: float) -> None:
-        cutoff = now - self.window_seconds
-        while bucket and bucket[0] <= cutoff:
-            bucket.popleft()
-
-    def _retry_after_one(self, key: str, now: float) -> int:
-        bucket = self._hits.get(key)
-        if bucket is None:
-            return 0
-        self._prune(bucket, now)
-        if len(bucket) < self.limit:
-            return 0
-        return max(1, int(bucket[0] + self.window_seconds - now) + 1)
-
-    def _evict(self) -> None:
-        while len(self._hits) > MAX_TRACKED_KEYS:
-            self._hits.popitem(last=False)
+from api.deps.ratelimit import SlidingWindowLimiter
 
 
 def _quota_key(user: CurrentUser) -> str:
@@ -188,7 +115,9 @@ def rate_limit(name: str):
         limiter: SlidingWindowLimiter = request.app.state.rate_limiters[name]
         key = _quota_key(user)
 
-        wait = limiter.retry_after(key)
+        # Read-only check first; the call is recorded only once it is
+        # actually being let through.
+        wait = limiter.retry_after([key])
         if wait is not None:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -199,7 +128,7 @@ def rate_limit(name: str):
                 headers={"Retry-After": str(wait)},
             )
 
-        limiter.record_hit(key)
+        limiter.record([key])
 
     dependency.__name__ = f"rate_limit_{name}"
     return dependency

@@ -16,9 +16,9 @@ A dedicated, TINY-limit app is built per test (mirroring the existing
 `prod_settings` pattern in test_evaluation.py / test_questions.py) rather
 than relying on `api_settings`'s production-sized defaults — driving those
 to their real limit would mean dozens of requests per test for no extra
-coverage, since api/deps/quota.py::SlidingWindowLimiter is the exact same
-class api/deps/ratelimit.py::LoginRateLimiter already proves at the
-mechanism level (test_auth.py's login rate-limit tests).
+coverage, since api/deps/ratelimit.py::SlidingWindowLimiter is the same
+class the login endpoint uses, already proven at the mechanism level by
+test_auth.py's login rate-limit tests.
 """
 from __future__ import annotations
 

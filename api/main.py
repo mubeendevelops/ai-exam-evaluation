@@ -50,8 +50,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.deps.db import TenantContextError
-from api.deps.quota import SlidingWindowLimiter
-from api.deps.ratelimit import LoginRateLimiter
+from api.deps.ratelimit import SlidingWindowLimiter
 from api.logging_config import bind_request_id, configure_logging, get_request_id
 from api.settings import Settings, get_settings, load_dotenv_once
 
@@ -87,8 +86,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # One limiter per app instance, holding the failed-login counters. On
     # app.state rather than module-global so two apps in one process (which is
     # every test module) do not share counters — see api/deps/ratelimit.py.
-    app.state.login_rate_limiter = LoginRateLimiter(
-        attempts=settings.login_rate_limit_attempts,
+    app.state.login_rate_limiter = SlidingWindowLimiter(
+        limit=settings.login_rate_limit_attempts,
         window_seconds=settings.login_rate_limit_window_seconds,
     )
 

@@ -60,7 +60,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 import core.users as users
 from api.deps.db import get_auth_conn
 from api.deps.identity import CurrentUser, create_access_token, get_current_user
-from api.deps.ratelimit import LoginRateLimiter, client_ip
+from api.deps.ratelimit import SlidingWindowLimiter, client_ip
 from api.schemas.auth import (
     LoginRequest,
     LogoutRequest,
@@ -101,7 +101,7 @@ def _settings_for(request: Request) -> Settings:
     return getattr(request.app.state, "settings", None) or get_settings()
 
 
-def _limiter_for(request: Request) -> LoginRateLimiter:
+def _limiter_for(request: Request) -> SlidingWindowLimiter:
     """The app's login limiter, created in create_app().
 
     Per-app rather than module-global so that two apps in one process (every
@@ -224,17 +224,17 @@ def login(
         password_ok = users.verify_password(body.password, stored)
 
         if row is None or not password_ok:
-            limiter.record_failure(keys)
+            limiter.record(keys)
             log.info("failed login for %r from %s", email, client_ip(request))
             raise _refused()
 
         if not row["is_active"]:
-            limiter.record_failure(keys)
+            limiter.record(keys)
             log.info("login refused: account %s is disabled", row["user_id"])
             raise _refused()
 
         if not _college_can_act(cur, row["college_id"]):
-            limiter.record_failure(keys)
+            limiter.record(keys)
             log.info("login refused: college %s is not active", row["college_id"])
             raise _refused()
 

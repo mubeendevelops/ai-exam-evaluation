@@ -1,4 +1,5 @@
-"""api/deps/ratelimit.py — the login rate limiter. In-process, no Redis.
+"""api/deps/ratelimit.py — the login rate limiter, and the sliding-window
+counter it shares with api/deps/quota.py. In-process, no Redis.
 
 ════════════════════════════════════════════════════════════════════════════
 WHAT THIS IS FOR
@@ -82,26 +83,31 @@ from fastapi import Request
 MAX_TRACKED_KEYS = 20_000
 
 
-class LoginRateLimiter:
-    """A sliding-window counter over failed login attempts.
+class SlidingWindowLimiter:
+    """A sliding-window counter, keyed by string.
+
+    It counts whatever its caller records, and the CALLER decides what that
+    means — the two uses deliberately differ: api/routers/auth.py records
+    only FAILED logins (a login limiter that also throttled successful logins
+    would be a bug), while api/deps/quota.py records every ACCEPTED call.
 
     Sliding rather than fixed-window: a fixed window lets an attacker fire the
     full allowance in the last second of one window and again in the first
     second of the next, i.e. twice the configured rate at the boundary. The
-    cost is storing one timestamp per attempt, and attempts are already capped
-    by the limit itself.
+    cost is storing one timestamp per recorded call, and those are already
+    capped by the limit itself.
 
-    Thread-safe: uvicorn runs sync endpoints in a thread pool, so two login
-    requests genuinely execute concurrently and a bare dict update would drop
+    Thread-safe: uvicorn runs sync endpoints in a thread pool, so two requests
+    genuinely execute concurrently and a bare dict update would drop
     increments — under exactly the concurrent load this exists to bound.
     """
 
-    def __init__(self, *, attempts: int, window_seconds: int):
-        if attempts < 1:
-            raise ValueError("attempts must be >= 1; a limit of 0 locks everyone out")
+    def __init__(self, *, limit: int, window_seconds: int):
+        if limit < 1:
+            raise ValueError(f"limit must be >= 1, got {limit}; a limit of 0 locks everyone out")
         if window_seconds < 1:
-            raise ValueError("window_seconds must be >= 1")
-        self.attempts = attempts
+            raise ValueError(f"window_seconds must be >= 1, got {window_seconds}")
+        self.limit = limit
         self.window_seconds = window_seconds
         self._hits: collections.OrderedDict[str, Deque[float]] = collections.OrderedDict()
         self._lock = threading.Lock()
@@ -111,17 +117,17 @@ class LoginRateLimiter:
     def retry_after(self, keys: list[str], *, now: float | None = None) -> int | None:
         """Seconds until `keys` may try again, or None if they may try now.
 
-        Read-only: asking does not consume an attempt. The endpoint calls this
-        BEFORE verifying a password, so a limited caller never reaches the
-        bcrypt work — which is half the point (see the DoS note above).
+        Read-only: asking does not record anything. The login endpoint calls
+        this BEFORE verifying a password, so a limited caller never reaches
+        the bcrypt work — which is half the point (see the DoS note above).
         """
         now = time.monotonic() if now is None else now
         with self._lock:
             waits = [w for key in keys if (w := self._retry_after_one(key, now))]
         return max(waits) if waits else None
 
-    def record_failure(self, keys: list[str], *, now: float | None = None) -> None:
-        """Counts one failed attempt against every key."""
+    def record(self, keys: list[str], *, now: float | None = None) -> None:
+        """Counts one call against every key."""
         now = time.monotonic() if now is None else now
         with self._lock:
             for key in keys:
@@ -160,7 +166,7 @@ class LoginRateLimiter:
         if bucket is None:
             return 0
         self._prune(bucket, now)
-        if len(bucket) < self.attempts:
+        if len(bucket) < self.limit:
             return 0
         # The window is full: the caller may retry when its OLDEST recorded
         # attempt falls out of the window. Rounded up, and never 0 — a
