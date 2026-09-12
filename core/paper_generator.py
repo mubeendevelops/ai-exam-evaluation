@@ -24,6 +24,8 @@ Matching strategy:
 
 import uuid
 
+from core import pattern_tree
+
 
 # ---------------------------------------------------------------------------
 # Pattern tree loading (reused from view_pattern.py's query shape)
@@ -101,34 +103,29 @@ def _build_pattern_tree(cur, pattern_id: str) -> dict:
     if not rows:
         raise ValueError(f"pattern {pattern_id} has no sections/slots")
 
-    sections = {}
-    slots_by_id = {}
-
-    for (section_id, sec_order, sec_label, is_mandatory,
-         slot_id, slot_label, slot_order, marks, style, parent_id) in rows:
-        sec_key = str(section_id)
-        sections.setdefault(sec_key, {
-            "section_id": str(section_id),
-            "section_order": sec_order,
-            "section_label": sec_label,
-            "is_mandatory": is_mandatory,
-            "top_slots": [],
-        })
-        slot_rec = {
-            "slot_id": str(slot_id),
-            "slot_label": slot_label,
-            "slot_order": slot_order,
-            "marks": marks,
-            "style": style,
-            "children": [],
-        }
-        slots_by_id[str(slot_id)] = slot_rec
-        if parent_id is None:
-            sections[sec_key]["top_slots"].append(slot_rec)
-        else:
-            parent_key = str(parent_id)
-            if parent_key in slots_by_id:
-                slots_by_id[parent_key]["children"].append(slot_rec)
+    sections = pattern_tree.nest_slots(
+        (
+            str(section_id),
+            {
+                "section_id": str(section_id),
+                "section_order": sec_order,
+                "section_label": sec_label,
+                "is_mandatory": is_mandatory,
+            },
+            slot_id,
+            parent_id,
+            {
+                "slot_id": str(slot_id),
+                "slot_label": slot_label,
+                "slot_order": slot_order,
+                "marks": marks,
+                "style": style,
+                "children": [],
+            },
+        )
+        for (section_id, sec_order, sec_label, is_mandatory,
+             slot_id, slot_label, slot_order, marks, style, parent_id) in rows
+    )
 
     # Sort sections by order
     sorted_sections = sorted(sections.values(), key=lambda s: s["section_order"])

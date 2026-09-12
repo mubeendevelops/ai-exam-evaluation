@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import db as db_mod  # noqa: E402
+from core import pattern_tree  # noqa: E402
 
 
 _SQL_LIST = """
@@ -103,39 +104,34 @@ def show_paper(conn, paper_id: str) -> None:
     print(f"  generated_by : {owner}")
     print()
 
-    # Build section tree
-    sections = {}
-    slots_by_id = {}
-
-    for (paper_section_id, sec_order, sec_label, is_mandatory, choose_count,
-         slot_id, slot_label, slot_order, marks, style, parent_id,
-         question_id, question_content, question_marks) in rows:
-
-        sec_key = sec_order
-        sections.setdefault(sec_key, {
-            "label": sec_label,
-            "mandatory": is_mandatory,
-            "choose_count": choose_count,
-            "top_slots": [],
-        })
-        slot_rec = {
-            "slot_id": str(slot_id),
-            "label": slot_label,
-            "order": slot_order,
-            "marks": marks,
-            "style": style,
-            "question_id": str(question_id) if question_id else None,
-            "question_content": question_content,
-            "question_marks": question_marks,
-            "children": [],
-        }
-        slots_by_id[str(slot_id)] = slot_rec
-        if parent_id is None:
-            sections[sec_key]["top_slots"].append(slot_rec)
-        else:
-            parent_key = str(parent_id)
-            if parent_key in slots_by_id:
-                slots_by_id[parent_key]["children"].append(slot_rec)
+    # Build section tree. The nesting itself is core/pattern_tree.py's (the
+    # extra columns and the filled/total accounting below stay here).
+    sections = pattern_tree.nest_slots(
+        (
+            sec_order,
+            {
+                "label": sec_label,
+                "mandatory": is_mandatory,
+                "choose_count": choose_count,
+            },
+            slot_id,
+            parent_id,
+            {
+                "slot_id": str(slot_id),
+                "label": slot_label,
+                "order": slot_order,
+                "marks": marks,
+                "style": style,
+                "question_id": str(question_id) if question_id else None,
+                "question_content": question_content,
+                "question_marks": question_marks,
+                "children": [],
+            },
+        )
+        for (paper_section_id, sec_order, sec_label, is_mandatory, choose_count,
+             slot_id, slot_label, slot_order, marks, style, parent_id,
+             question_id, question_content, question_marks) in rows
+    )
 
     filled = 0
     total = 0
