@@ -3,16 +3,16 @@
 scripts/evaluate_table_answer.py — score one student's table answer_block
 against a reference table (a content_assets row).
 
-Mirrors scripts/evaluate_diagram_answer.py, with one deliberate structural
-difference: the ledger write goes through
+The scoring itself is core/block_evaluation.evaluate_block(), shared with
+scripts/evaluate_diagram_answer.py; this script is argument parsing and the
+terminal summary. The ledger write goes through
 core/plugins/persistence.write_evaluation_result() rather than calling
 core/answer_evaluation.record_evaluation() directly. persistence.py is the
 one write path built for plugin-produced scores — it enforces migration
 012's reference XOR in Python before any SQL runs, enforces
 core/plugins/base.REQUIRED_METRIC_KEYS so the row can be traced back to the
 plugin version that produced it, and turns a silent RLS miss into a loud
-RLSVisibilityError instead of an orphaned row. evaluate_diagram_answer.py
-predates that module; new plugin-backed scripts should use it.
+RLSVisibilityError instead of an orphaned row.
 
 BEHAVIOUR:
   1. Fetches the answer_block's blob_url (block_type must be 'table').
@@ -59,11 +59,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core import answer_evaluation             # noqa: E402
+from core import block_evaluation              # noqa: E402
 from core import db as db_mod                   # noqa: E402
 from core.plugins import persistence            # noqa: E402
-from core.plugins.registry import get_plugin    # noqa: E402
-from core.plugins.table_extraction import TableReference   # noqa: E402
 
 #: Verdicts rendered with a tick in the summary grid — everything else is a
 #: problem the student (or the scan) has. Kept here rather than in
@@ -82,101 +80,23 @@ def evaluate_table_answer(conn, answer_block_id: str, reference_asset_id: str,
                            dry_run: bool = False) -> dict:
     """Score one table answer_block against one reference table asset.
 
-    Takes a CONNECTION, not a cursor: the ledger write is delegated to
-    core/plugins/persistence.write_evaluation_result(), which owns the
-    commit/rollback (including the dry_run rollback). The connection's
-    transaction must already have RLS bypassed (platform admin) or the
-    correct college_id set — this function doesn't set it.
+    A thin adapter over core/block_evaluation.evaluate_block(), which does
+    the work (and owns the commit/rollback, including the dry_run rollback,
+    through core/plugins/persistence.py). Takes a CONNECTION whose
+    transaction already has RLS bypassed (platform admin) or the correct
+    college_id set — this function doesn't set it.
+
+    Returns the comparison and the extraction metrics separately, the way
+    the table plugin nests them in evaluation_results.metrics.
     """
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            SELECT ab.answer_id, ab.blob_url, ab.block_type, a.status, a.question_id
-            FROM answer_blocks ab
-            JOIN answers a ON a.answer_id = ab.answer_id
-            WHERE ab.block_id = %s
-        """, (answer_block_id,))
-        row = cur.fetchone()
-        if row is None:
-            # persistence.write_evaluation_result() raises RLSVisibilityError for
-            # exactly this case with a full diagnostic; reuse it rather than
-            # reporting "not found" for what is usually a missing tenant context.
-            raise persistence.RLSVisibilityError(
-                f"answer_block {answer_block_id!r} returned zero rows. answer_blocks is "
-                f"RLS-protected and fails closed SILENTLY, so this is EITHER a "
-                f"nonexistent block_id OR a missing tenant context on this transaction "
-                f"(see core/plugins/persistence.py's module docstring, rule 4)."
-            )
-        answer_id, blob_url, block_type, answer_status, question_id = row
-
-        if block_type != "table":
-            raise ValueError(
-                f"answer_block {answer_block_id} has block_type={block_type!r}, expected 'table'"
-            )
-        if not blob_url and not (stub or stub_extraction):
-            raise ValueError(
-                f"answer_block {answer_block_id} has no blob_url — cannot extract a "
-                f"table from nothing. Use --stub-extraction for test data."
-            )
-
-        cur.execute(
-            "SELECT asset_type, structured_data FROM content_assets WHERE asset_id = %s",
-            (reference_asset_id,))
-        row = cur.fetchone()
-        if row is None:
-            raise ValueError(f"reference_asset_id {reference_asset_id} not found")
-        asset_type, reference_table = row
-        if asset_type != "table":
-            raise ValueError(
-                f"content_asset {reference_asset_id} has asset_type={asset_type!r}, "
-                f"expected 'table'"
-            )
-        if not reference_table:
-            raise ValueError(
-                f"content_asset {reference_asset_id} has no structured_data to compare against"
-            )
-
-        cur.execute("SELECT marks_max FROM questions WHERE question_id = %s", (question_id,))
-        row = cur.fetchone()
-        if row is None:
-            raise ValueError(f"question_id {question_id} not found")
-        marks_max = float(row[0])
-
-        plugin = get_plugin("table_extraction")
-        extracted = plugin.extract(blob_url, stub=stub or stub_extraction)
-        result = plugin.evaluate(
-            extracted,
-            TableReference(table=reference_table, marks_max=marks_max,
-                           asset_id=reference_asset_id),
-            stub=stub,
-        )
-
-        # Issued BEFORE the ledger write so both land in the same
-        # transaction — write_evaluation_result() owns the commit.
-        status_changed = answer_evaluation.transition_to_ai_scored(cur, answer_id, answer_status)
-    finally:
-        cur.close()
-
-    evaluation_id = persistence.write_evaluation_result(
-        conn,
-        answer_block_id=answer_block_id,
-        result=result,
-        reference_asset_id=reference_asset_id,
-        dry_run=dry_run,
+    payload = block_evaluation.evaluate_block(
+        conn, answer_block_id, reference_asset_id, block_type="table",
+        stub=stub, stub_extraction=stub_extraction, dry_run=dry_run,
     )
-
-    return {
-        "answer_id": answer_id,
-        "evaluation_id": evaluation_id,
-        "reference_asset_id": reference_asset_id,
-        "score": result.score,
-        "marks_max": marks_max,
-        "confidence": result.confidence,
-        "explanation": result.explanation,
-        "result": result.metrics["comparison"],
-        "extraction": result.metrics["extraction"],
-        "status_changed": status_changed,
-    }
+    metrics = payload.pop("metrics")
+    payload["result"] = metrics["comparison"]
+    payload["extraction"] = metrics["extraction"]
+    return payload
 
 
 def _print_summary(payload: dict) -> None:

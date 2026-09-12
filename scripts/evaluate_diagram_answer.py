@@ -3,7 +3,9 @@
 scripts/evaluate_diagram_answer.py — Task 4: score one student's diagram
 answer_block against a reference diagram (a content_assets row).
 
-Everything this script does with an image or a graph goes through the
+The scoring itself is core/block_evaluation.evaluate_block(), shared with
+scripts/evaluate_table_answer.py; this script is argument parsing and the
+terminal summary. Everything it does with an image or a graph goes through the
 'diagram_evaluation' plugin (core/plugins/diagram_evaluation.py), which
 wraps core/diagram_extractor.py and core/diagram_evaluator.py without
 changing either. The ledger write goes through
@@ -15,7 +17,9 @@ context). Scores, the stored metrics JSON and the stored explanation are
 byte-identical to what this script produced before it was routed this way.
 
 BEHAVIOUR (mirrors scripts/evaluate_answer.py, adapted for diagrams):
-  1. Fetches the answer_block's blob_url (block_type must be 'diagram').
+  1. Fetches the answer_block's blob_url (block_type must be 'diagram'; the
+     blob_url may be empty only under --stub/--stub-extraction, which never
+     read the image).
   2. Extracts its structure via the plugin's extract() (core/diagram_extractor
      — real extraction IS implemented, PaddleOCR, see that module's
      docstring); --stub-extraction is only needed for dummy-storage test
@@ -64,25 +68,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core import answer_evaluation     # noqa: E402
+from core import block_evaluation      # noqa: E402
 from core import db as db_mod          # noqa: E402
 from core.plugins import persistence   # noqa: E402
-from core.plugins.diagram_evaluation import DiagramReference  # noqa: E402
-from core.plugins.registry import get_plugin                   # noqa: E402
-
-
-def _load_glossary(cur, topic_id: str | None = None) -> list[dict]:
-    if topic_id:
-        cur.execute("""
-            SELECT term_id, canonical_term, aliases FROM glossary_terms
-            WHERE topic_id = %s OR topic_id IS NULL
-        """, (topic_id,))
-    else:
-        cur.execute("SELECT term_id, canonical_term, aliases FROM glossary_terms")
-    return [
-        {"term_id": str(r[0]), "canonical_term": r[1], "aliases": r[2] or []}
-        for r in cur.fetchall()
-    ]
 
 
 def evaluate_diagram_answer(conn, answer_block_id: str, reference_asset_id: str,
@@ -91,104 +79,23 @@ def evaluate_diagram_answer(conn, answer_block_id: str, reference_asset_id: str,
                              stub_llm: bool = False, dry_run: bool = False) -> dict:
     """Score one diagram answer_block against one reference diagram asset.
 
-    Takes a CONNECTION, not a cursor (it used to take a cursor): the ledger
-    write is delegated to core/plugins/persistence.write_evaluation_result(),
-    which owns the commit/rollback including the dry_run rollback — the same
-    shape scripts/evaluate_table_answer.py has. The connection's transaction
-    must already have RLS bypassed (platform admin) or the correct
+    A thin adapter over core/block_evaluation.evaluate_block(), which does
+    the work (and owns the commit/rollback, including the dry_run rollback,
+    through core/plugins/persistence.py). Takes a CONNECTION whose
+    transaction already has RLS bypassed (platform admin) or the correct
     college_id set; this function doesn't set it.
+
+    Returns the comparison FLAT under "result" — the diagram plugin stores
+    it flat in evaluation_results.metrics (CLAUDE_CONTEXT.md §7), and
+    _print_summary and scripts/evaluate_pending_diagrams.py read it there.
     """
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            SELECT ab.answer_id, ab.blob_url, ab.block_type, a.status, a.question_id
-            FROM answer_blocks ab
-            JOIN answers a ON a.answer_id = ab.answer_id
-            WHERE ab.block_id = %s
-        """, (answer_block_id,))
-        row = cur.fetchone()
-        if row is None:
-            # persistence.write_evaluation_result() raises RLSVisibilityError for
-            # exactly this case with a full diagnostic; reuse it rather than
-            # reporting "not found" for what is usually a missing tenant context
-            # (core/plugins/persistence.py's module docstring, rule 4).
-            raise persistence.RLSVisibilityError(
-                f"answer_block {answer_block_id!r} returned zero rows. answer_blocks is "
-                f"RLS-protected and fails closed SILENTLY, so this is EITHER a "
-                f"nonexistent block_id OR a missing tenant context on this transaction."
-            )
-        answer_id, blob_url, block_type, answer_status, question_id = row
-
-        if block_type != "diagram":
-            raise ValueError(
-                f"answer_block {answer_block_id} has block_type={block_type!r}, expected 'diagram'"
-            )
-        if not blob_url:
-            raise ValueError(
-                f"answer_block {answer_block_id} has no blob_url — cannot extract a diagram from nothing"
-            )
-
-        cur.execute("""
-            SELECT asset_type, structured_data FROM content_assets WHERE asset_id = %s
-        """, (reference_asset_id,))
-        row = cur.fetchone()
-        if row is None:
-            raise ValueError(f"reference_asset_id {reference_asset_id} not found")
-        asset_type, reference_graph = row
-        if asset_type != "diagram":
-            raise ValueError(
-                f"content_asset {reference_asset_id} has asset_type={asset_type!r}, expected 'diagram'"
-            )
-        if not reference_graph:
-            raise ValueError(
-                f"content_asset {reference_asset_id} has no structured_data to compare against"
-            )
-
-        cur.execute("SELECT marks_max FROM questions WHERE question_id = %s", (question_id,))
-        row = cur.fetchone()
-        if row is None:
-            raise ValueError(f"question_id {question_id} not found")
-        marks_max = float(row[0])
-
-        # --stub bypasses the glossary lookup entirely, as it always has:
-        # stub_compare() never looks at a glossary, so querying for one
-        # would be work whose result is discarded.
-        glossary = [] if stub else _load_glossary(cur, topic_id=topic_id)
-
-        plugin = get_plugin("diagram_evaluation")
-        extracted = plugin.extract(blob_url, stub=stub or stub_extraction)
-        result = plugin.evaluate(
-            extracted,
-            DiagramReference(graph=reference_graph, marks_max=marks_max,
-                             glossary_terms=glossary, asset_id=reference_asset_id),
-            stub=stub, explain=explain, stub_llm=stub_llm,
-        )
-
-        # Issued BEFORE the ledger write so both land in the same
-        # transaction — write_evaluation_result() owns the commit.
-        status_changed = answer_evaluation.transition_to_ai_scored(cur, answer_id, answer_status)
-    finally:
-        cur.close()
-
-    evaluation_id = persistence.write_evaluation_result(
-        conn,
-        answer_block_id=answer_block_id,
-        result=result,
-        reference_asset_id=reference_asset_id,
-        dry_run=dry_run,
+    payload = block_evaluation.evaluate_block(
+        conn, answer_block_id, reference_asset_id, block_type="diagram",
+        stub=stub, stub_extraction=stub_extraction, dry_run=dry_run,
+        topic_id=topic_id, explain=explain, stub_llm=stub_llm,
     )
-
-    return {
-        "answer_id": answer_id,
-        "evaluation_id": evaluation_id,
-        "reference_asset_id": reference_asset_id,
-        "score": result.score,
-        "marks_max": marks_max,
-        "confidence": result.confidence,
-        "explanation": result.explanation,
-        "result": result.metrics,
-        "status_changed": status_changed,
-    }
+    payload["result"] = payload.pop("metrics")
+    return payload
 
 
 def _is_noise_token(label: str) -> bool:

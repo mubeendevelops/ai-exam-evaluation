@@ -119,7 +119,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from core import llm
+from core import block_evaluation, llm
 
 #: Bump when the REPORT SHAPE or the aggregation rules change — the report is
 #: stored inside evaluation_results.metrics, an append-only ledger, so a
@@ -1417,16 +1417,6 @@ def _load_keywords(cur, question_id: str) -> list:
     return [{"term": term, "weight": float(weight)} for term, weight in cur.fetchall()]
 
 
-def _load_glossary(cur) -> list:
-    """Every glossary term, for diagram label canonicalization. Unscoped by
-    topic: scripts/evaluate_diagram_answer.py takes an optional --topic-id,
-    but a booklet spans a whole paper and therefore several topics, so
-    scoping it here would be the wrong default."""
-    cur.execute("SELECT term_id, canonical_term, aliases FROM glossary_terms")
-    return [{"term_id": str(term_id), "canonical_term": term, "aliases": aliases or []}
-            for term_id, term, aliases in cur.fetchall()]
-
-
 def _load_text_reference(cur, question_id: str, marks_max: float):
     """The current reference answer variant for a question, as a
     TextReference. Returns (reference, reference_id, error)."""
@@ -1490,14 +1480,9 @@ def _load_asset_reference(cur, question_id: str, block_type: str, marks_max: flo
             f"one is the reference is a content decision, not something to guess at")
 
     asset_id, structured_data = rows[0]
-    if block_type == "table":
-        from core.plugins.table_extraction import TableReference
-        reference = TableReference(table=structured_data, marks_max=marks_max,
-                                   asset_id=str(asset_id))
-    else:
-        from core.plugins.diagram_evaluation import DiagramReference
-        reference = DiagramReference(graph=structured_data, marks_max=marks_max,
-                                     glossary_terms=glossary, asset_id=str(asset_id))
+    reference = block_evaluation.asset_reference(
+        block_type, structured_data, marks_max=marks_max,
+        asset_id=str(asset_id), glossary=glossary)
     return reference, str(asset_id), None
 
 
@@ -1566,7 +1551,11 @@ def load_booklet_tasks(cur, *, student_id: str | None = None, exam_id: str | Non
                 reference_cache[cache_key] = _load_text_reference(cur, question_id, marks_max)
             elif block_type in ("table", "diagram"):
                 if block_type == "diagram" and glossary_cache is None:
-                    glossary_cache = _load_glossary(cur)
+                    # Unscoped by topic: scripts/evaluate_diagram_answer.py takes
+                    # an optional --topic-id, but a booklet spans a whole paper
+                    # and therefore several topics, so scoping it here would be
+                    # the wrong default.
+                    glossary_cache = block_evaluation.load_glossary(cur)
                 reference_cache[cache_key] = _load_asset_reference(
                     cur, question_id, block_type, marks_max, glossary_cache or [])
             else:
