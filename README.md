@@ -14,35 +14,37 @@ The platform consists of three core components:
 
 ## Tech Stack
 
-- **PostgreSQL** — relational core with JSONB for variable-shaped fields, recursive CTEs for topic trees
-- **pgvector** — Postgres extension for semantic similarity in AI evaluation
+- **PostgreSQL** — relational core with JSONB for variable-shaped fields, recursive CTEs for topic trees; also the job queue (`evaluation_jobs`, claimed with `FOR UPDATE SKIP LOCKED`) — **Redis was considered and explicitly rejected** for that role, see `migrations/README.md`
 - **MinIO** (S3-compatible) — object storage for binary files (scans, diagram images); the database stores only URL references, never blobs
-- **Redis** — job queues (OCR/evaluation jobs) and review locks
-- **Python** — backend scripts and services
+- **Python** — backend scripts, a FastAPI layer, and a worker process
 - **psycopg2** — Postgres driver
+- **sentence-transformers** — embeddings-based semantic scoring (no pgvector: nothing here is persisted as a vector column; scores are computed on the fly)
 
 ## Project Structure
 
 ```
 .
-├── migrations/                # Versioned SQL migrations
-│   ├── 001_answer_schema.sql
-│   ├── 002_question_schema.sql
-│   ├── 003_multi_tenancy.sql
-│   ├── 004_add_question_text.sql
-│   └── README.md              # Migration guide and schema docs
-├── scripts/
+├── migrations/                # Versioned SQL migrations, 001 through 019 (see migrations/README.md)
+├── core/                      # Shared library imported by every script AND the API
+│   ├── db.py                  # Postgres connection helper (reads PG* env vars)
+│   ├── storage.py              # Object storage abstraction (dummy / MinIO modes)
+│   └── ...                    # evaluator, diagram/table/booklet pipelines, auth, etc.
+├── api/                       # FastAPI layer over core/ — see api/README.md
+├── frontend/                  # Vite + React + TypeScript UI
+├── scripts/                   # 28 CLI entry points, e.g.:
 │   ├── extract_exam_bank.py   # Parses exam_bank.docx → structured JSON + images
 │   └── load_exam_bank.py      # Loads extracted JSON into Postgres (+ optional MinIO)
-├── readme files/              # Design decision docs
+├── tests/                     # pytest suite (`make test`)
+├── readme files/               # Design decision docs
+│   ├── PROJECT_CONTEXT.md     # Authoritative design doc — read before contributing
+│   ├── SCRIPT_COMMANDS.md     # Verified CLI command reference
 │   ├── answer-schema-design.md
 │   └── question-schema-design.md
-├── db.py                      # Postgres connection helper (reads PG* env vars)
-├── storage.py                 # Object storage abstraction (dummy / MinIO modes)
 ├── requirements.txt
-├── PROJECT_CONTEXT.md         # Authoritative design doc — read before contributing
 └── .gitignore
 ```
+
+This is a directory-level overview only — see [`CLAUDE_CONTEXT.md`](CLAUDE_CONTEXT.md) §3 for the full, current file tree.
 
 ## Database Schema
 
@@ -50,9 +52,9 @@ The database is split into two schemas, connected by shared foreign keys:
 
 **Question schema (12 tables):** `paragraphs`, `sentences`, `topics`, `topic_links`, `questions`, `keywords`, `question_keywords`, `content_assets`, `question_asset_links`, `reference_answer_variants`, `question_reviews`, `question_status_history`
 
-**Answer schema (8 tables):** `students`, `exams`, `answers`, `answer_blocks`, `reviewers` *(shared)*, `evaluation_results`, `answer_reviews`, `answer_status_history`
+**Answer schema (12 tables, 9 RLS-protected single-tenant):** `students`, `exams`, `answers`, `answer_blocks`, `evaluation_results`, `answer_reviews`, `answer_status_history`, `evaluation_jobs`, `booklet_uploads` (all RLS-protected); `colleges`, `reviewers` *(shared)*, `glossary_terms` *(shared, no `college_id`)* (not tenanted). A separate `users`/`refresh_tokens` pair (migration 017) backs authentication.
 
-See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for full column-level definitions, cross-schema integrity rules, and open design decisions.
+See [`readme files/PROJECT_CONTEXT.md`](readme%20files/PROJECT_CONTEXT.md) for full column-level definitions, cross-schema integrity rules, and open design decisions; see [`CLAUDE_CONTEXT.md`](CLAUDE_CONTEXT.md) for the maintained, up-to-date repo snapshot (this README covers only the original question-bank slice).
 
 Migration files with detailed comments live in [`migrations/`](migrations/).
 
@@ -61,7 +63,7 @@ Migration files with detailed comments live in [`migrations/`](migrations/).
 ### Prerequisites
 
 - Python 3.10+
-- PostgreSQL 14+ (with `pgvector` extension for AI evaluation features)
+- PostgreSQL 14+
 - [pandoc](https://pandoc.org/installing.html) (only needed if re-extracting from `.docx` source files)
 
 ### Setup
@@ -85,13 +87,13 @@ export PGDATABASE=ai_evaluation
 export PGUSER=postgres
 export PGPASSWORD=your_password
 
-# 5. Run migrations in order
-psql -f migrations/001_answer_schema.sql
-psql -f migrations/002_question_schema.sql
-psql -f migrations/003_multi_tenancy.sql
-psql -f migrations/004_add_question_text.sql
-psql -f migrations/005_question_tree_and_ai_flag.sql
+# 5. Apply migrations (001 through 019) — scripts/migrate.py is the canonical
+#    runner: it applies files in order and records what it applied, so
+#    --status can answer "is this DB current?" without guessing.
+python3 scripts/migrate.py --up
 ```
+
+See [`CLAUDE_CONTEXT.md`](CLAUDE_CONTEXT.md) §8 for the full setup sequence, including bootstrapping the first login and baselining a database that already has some migrations applied by hand.
 
 ### Loading the Question Bank
 
@@ -139,7 +141,7 @@ python3 scripts/load_exam_bank.py extracted/exam_bank.json --status draft --stor
 - **Generalized tables over duplication** — one `topic_links` table, one `content_assets` table, not per-type copies
 - **Explicit nullability and cardinality** — every FK states whether it can be null and its cardinality
 
-See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) §8 for the full list of non-negotiable patterns.
+See [`readme files/PROJECT_CONTEXT.md`](readme%20files/PROJECT_CONTEXT.md) §8 for the full list of non-negotiable patterns.
 
 ## Environment Variables
 

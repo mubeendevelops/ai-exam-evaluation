@@ -81,7 +81,7 @@ import dataclasses
 import datetime as dt
 import logging
 import uuid
-from typing import Any, Iterable
+from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -442,8 +442,3 @@ def unknown_tenant_error(college_id, *, reason: str) -> HTTPException:
         ),
         headers={"WWW-Authenticate": "Bearer"},
     )
-
-
-def roles_description(roles: Iterable[str]) -> str:
-    """Human-readable role list for OpenAPI `responses` descriptions."""
-    return ", ".join(sorted(roles))

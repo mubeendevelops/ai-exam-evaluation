@@ -437,9 +437,9 @@ async def test_booklets_list_collapses_a_students_answers_into_one_row(
     synthetic reference data nothing else writes to."""
     owner = dict(college_id=COLLEGE_B, **COLLEGE_B_OWNER)
     first = make_booklet(marks_max=10.0, **owner)
-    second = make_booklet(marks_max=6.0, **owner)
+    make_booklet(marks_max=6.0, **owner)
     _score(admin_conn, first, score=8.0, status="ai_scored")
-    # second stays pending_evaluation / unscored.
+    # the second booklet stays pending_evaluation / unscored.
 
     async with make_client(COLLEGE_B) as client:
         response = await client.get("/api/v1/results/booklets", params={

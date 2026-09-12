@@ -99,10 +99,6 @@ VALID_ROLES = ("teacher", "admin", "platform_admin")
 MAX_PASSWORD_BYTES = 72
 
 
-def _b64(raw: bytes) -> str:
-    return base64.b64encode(raw).decode("ascii")
-
-
 def hash_password(password: str) -> str:
     """Returns the string to store in users.password_hash.
 
