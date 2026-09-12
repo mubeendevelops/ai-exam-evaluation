@@ -84,6 +84,24 @@ class PageImageUnavailableError(RuntimeError):
 
 # ─────────────────────────────── enqueue ────────────────────────────────────
 
+def resolve_upload(cur, *, upload_id, college_id) -> dict[str, Any]:
+    """This college's upload, or UploadNotFoundError — never None.
+
+    The one place the "not found" message is written; every enqueue path
+    (here and api/services/ingestion.py) resolves its upload through this.
+    core/uploads.get_upload returns None deliberately (see its docstring), so
+    turning that None into a typed error is adapter work and belongs here.
+    """
+    upload = core.uploads.get_upload(cur, upload_id=upload_id, college_id=college_id)
+    if upload is None:
+        raise UploadNotFoundError(
+            f"No upload {upload_id} for this college. Either the id is wrong, it "
+            f"belongs to another college, or this transaction has no RLS context "
+            f"(booklet_uploads fails closed and silently — CLAUDE_CONTEXT.md §6)."
+        )
+    return upload
+
+
 def enqueue_booklet_evaluation(
     cur,
     *,
@@ -109,13 +127,7 @@ def enqueue_booklet_evaluation(
     would make the worker do this lookup, where a wrong tenant has nobody left
     to catch it.
     """
-    upload = core.uploads.get_upload(cur, upload_id=upload_id, college_id=college_id)
-    if upload is None:
-        raise UploadNotFoundError(
-            f"No upload {upload_id} for this college. Either the id is wrong, it "
-            f"belongs to another college, or this transaction has no RLS context "
-            f"(booklet_uploads fails closed and silently — CLAUDE_CONTEXT.md §6)."
-        )
+    upload = resolve_upload(cur, upload_id=upload_id, college_id=college_id)
 
     payload = {
         "upload_id": str(upload_id),

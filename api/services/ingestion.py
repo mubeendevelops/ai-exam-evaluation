@@ -52,8 +52,7 @@ import core.booklet_persist
 import core.booklet_pipeline
 import core.jobs
 import core.storage
-import core.uploads
-from api.services.evaluation import JOB_TYPE_BOOKLET_EVAL, UploadNotFoundError
+from api.services.evaluation import JOB_TYPE_BOOKLET_EVAL, resolve_upload
 
 #: evaluation_jobs.job_type for the ingestion pass.
 JOB_TYPE_BOOKLET_INGEST = "booklet_ingest"
@@ -96,13 +95,7 @@ def enqueue_booklet_ingest(
     `evaluate_after` carries the booklet_eval payload options this ingestion
     should chain into on success. None means "ingest only".
     """
-    upload = core.uploads.get_upload(cur, upload_id=upload_id, college_id=college_id)
-    if upload is None:
-        raise UploadNotFoundError(
-            f"No upload {upload_id} for this college. Either the id is wrong, it "
-            f"belongs to another college, or this transaction has no RLS context "
-            f"(booklet_uploads fails closed and silently — CLAUDE_CONTEXT.md §6)."
-        )
+    upload = resolve_upload(cur, upload_id=upload_id, college_id=college_id)
 
     try:
         core.booklet_persist._verify_paper_exists(cur, str(paper_id))
@@ -300,13 +293,7 @@ def enqueue_evaluation_pipeline(
     and that GET /jobs/{id} tells a client the truth about what it is waiting
     for.
     """
-    upload = core.uploads.get_upload(cur, upload_id=upload_id, college_id=college_id)
-    if upload is None:
-        raise UploadNotFoundError(
-            f"No upload {upload_id} for this college. Either the id is wrong, it "
-            f"belongs to another college, or this transaction has no RLS context "
-            f"(booklet_uploads fails closed and silently — CLAUDE_CONTEXT.md §6)."
-        )
+    upload = resolve_upload(cur, upload_id=upload_id, college_id=college_id)
 
     already_ingested = core.booklet_pipeline.booklet_is_ingested(
         cur,
