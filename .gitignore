@@ -112,3 +112,44 @@ htmlcov/
 # input scripts/ingest_booklet.py can be verified on.
 .claude/
 rough_edges.txt
+# ──────────────────────────────────────────────
+# Excluded from the shared/review tree (2026-09-12)
+# ──────────────────────────────────────────────
+# Student answer booklets — real submissions with apparent names and roll
+# numbers in the filenames. NEVER commit these; they are PII, not fixtures.
+# The sample booklet the code is actually verified against is
+# media/booklets/sample_booklet.pdf.
+/booklets/
+
+# Tests and test/benchmark fixture sets. NOTE: this supersedes the note
+# further up that deliberately did NOT ignore media/* — the fixture sets are
+# still the labelled data the benchmark scripts score against, they are just
+# no longer tracked here.
+/tests/
+/pytest.ini
+/media/
+
+# Dev/CI tooling
+/Makefile
+/.github/
+/frontend/.oxlintrc.json
+/frontend/scripts/
+
+# Generated internal docs — written for the coding agent, not for an
+# operator or end user.
+CLEANUP_AUDIT.md
+ARCHITECTURE.md
+CLEANUP_SUMMARY.md
+
+# Offline benchmark + demo tooling (fixture generators, engine scorers, and
+# the two hardcoded-id demo shells). Not part of the production pipeline —
+# CLAUDE_CONTEXT.md §4 says so explicitly for the OCR/diagram/table sets.
+/scripts/generate_ocr_benchmark.py
+/scripts/benchmark_ocr_engines.py
+/scripts/generate_diagram_benchmark.py
+/scripts/benchmark_diagram_extraction.py
+/scripts/generate_table_benchmark.py
+/scripts/generate_booklet_benchmark.py
+/scripts/benchmark_booklet_segmentation.py
+/scripts/run_diagram_eval_demo.sh
+/scripts/run_table_eval_demo.sh
