@@ -22,6 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/upload", label: "Upload", roles: ["teacher", "admin"] },
   { to: "/results", label: "Results", roles: ["teacher", "admin"] },
   { to: "/results/summary", label: "Booklets", roles: ["teacher", "admin"] },
+  { to: "/content", label: "Content", roles: ["teacher", "admin"] },
   { to: "/questions", label: "Question bank", roles: ["teacher", "admin"] },
   { to: "/papers", label: "Paper generation", roles: ["teacher", "admin"] },
   { to: "/classes", label: "Classes & students", roles: ["teacher", "admin"] },

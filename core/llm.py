@@ -6,7 +6,7 @@ Uses Groq's API (free tier, no credit card required).
 Sign up at console.groq.com, create a key. As of mid-2026: ~14,400
 requests/day, 30 req/min — plenty for dev/testing.
 
-Needs GROQ_API_KEY env var. GROQ_MODEL (default qwen/qwen3.6-27b)
+Needs GROQ_API_KEY env var. GROQ_MODEL (default qwen/qwen3.8-27b)
 to override.
 
 Called via plain HTTPS (stdlib urllib) — no extra dependencies required.
@@ -59,7 +59,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = "qwen/qwen3.6-27b"
+DEFAULT_MODEL = "qwen/qwen3.8-27b"
 
 # --- rate limiting tunables ---------------------------------------------
 #

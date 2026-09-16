@@ -430,6 +430,136 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/content/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview how pasted text would be split into paragraphs
+         * @description Pure text transform — a token is required (every endpoint requires
+         *     one; see api/main.py's docstring), but no `conn` dependency at all,
+         *     because nothing here reads or writes a row. Same shape as
+         *     GET /auth/me: authenticated, but no database connection opened. Call
+         *     this first, let the teacher edit the result (merge two candidates, drop
+         *     one, fix a boundary), then POST the final list to `/content`.
+         */
+        post: operations["split_content_api_v1_content_split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save the (edited) paragraph list — the only endpoint here that writes
+         * @description Inserts one `paragraphs` row (plus its `sentences`) per string in
+         *     `body.paragraphs`, in order, and returns them.
+         *
+         *     Every created paragraph starts at status='active', version=1 — ready to
+         *     generate from immediately.
+         */
+        post: operations["create_content_api_v1_content_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/paragraphs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The picker: list and filter uploaded content
+         * @description A filtered page of the shared content corpus, newest first.
+         */
+        get: operations["list_paragraphs_api_v1_content_paragraphs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Distinct uploads, for the picker's document filter
+         * @description Not paginated — see core/paragraphs.py::list_documents's docstring:
+         *     this is one row per upload batch, not per paragraph, and small enough
+         *     that a `Page` wrapper would only be a limit/offset nobody uses.
+         */
+        get: operations["list_documents_api_v1_content_documents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/paragraphs/{paragraph_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One paragraph, its sentences, and the questions generated from it */
+        get: operations["get_paragraph_api_v1_content_paragraphs__paragraph_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/paragraphs/{paragraph_id}/supersede": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retire a paragraph — active -> superseded
+         * @description Stops the paragraph being offered for FUTURE generation — it does not
+         *     touch any question already generated from it. See
+         *     core/paragraphs.py::supersede_paragraph's docstring.
+         */
+        post: operations["supersede_paragraph_api_v1_content_paragraphs__paragraph_id__supersede_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/questions": {
         parameters: {
             query?: never;
@@ -856,6 +986,44 @@ export interface components {
             regions?: {
                 [key: string]: unknown;
             }[];
+        };
+        /**
+         * CreateContentRequest
+         * @description POST /api/v1/content — commits the (possibly hand-edited) paragraph
+         *     list. This is what actually writes rows.
+         */
+        CreateContentRequest: {
+            /** Source Document */
+            source_document: string;
+            /**
+             * Paragraphs
+             * @description The final paragraph texts to save, in order — typically POST /content/split's candidates after the teacher has reviewed, merged, edited, or removed some of them. Capped at 200: a single upload this large is almost certainly a splitting problem, not real content.
+             */
+            paragraphs: string[];
+        };
+        /** CreateContentResponse */
+        CreateContentResponse: {
+            /** Source Document */
+            source_document: string;
+            /** Created */
+            created: number;
+            /** Paragraphs */
+            paragraphs: components["schemas"]["ParagraphSummary"][];
+        };
+        /**
+         * DocumentSummary
+         * @description One row of GET /api/v1/content/documents.
+         */
+        DocumentSummary: {
+            /** Source Document */
+            source_document: string;
+            /** Paragraph Count */
+            paragraph_count: number;
+            /**
+             * Last Uploaded At
+             * Format: date-time
+             */
+            last_uploaded_at: string;
         };
         /**
          * EvaluateRequest
@@ -1549,6 +1717,20 @@ export interface components {
             /** Offset */
             offset: number;
         };
+        /** Page[ParagraphSummary] */
+        Page_ParagraphSummary_: {
+            /** Items */
+            items: components["schemas"]["ParagraphSummary"][];
+            /**
+             * Total
+             * @description Rows matching the filters, ignoring limit/offset — lets a client page without guessing when it has reached the end.
+             */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
         /** Page[ResultSummary] */
         Page_ResultSummary_: {
             /** Items */
@@ -1739,6 +1921,91 @@ export interface components {
              * @description NULL = system-generated.
              */
             generated_by?: string | null;
+        };
+        /**
+         * ParagraphCandidate
+         * @description One suggested paragraph boundary — not yet saved.
+         */
+        ParagraphCandidate: {
+            /**
+             * Index
+             * @description Position in the candidate list, for the client to key its edit UI on.
+             */
+            index: number;
+            /** Content */
+            content: string;
+            /** Char Count */
+            char_count: number;
+            /** Sentence Count */
+            sentence_count: number;
+        };
+        /**
+         * ParagraphDetail
+         * @description GET /api/v1/content/paragraphs/{id} — the picker's detail rail.
+         */
+        ParagraphDetail: {
+            /**
+             * Paragraph Id
+             * Format: uuid
+             */
+            paragraph_id: string;
+            /** Content */
+            content: string;
+            /** Source Document */
+            source_document: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "superseded";
+            /** Version */
+            version: number;
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
+            /** Sentences */
+            sentences: string[];
+            /** Questions */
+            questions: components["schemas"]["QuestionSummary"][];
+        };
+        /**
+         * ParagraphSummary
+         * @description One row of GET /api/v1/content/paragraphs.
+         */
+        ParagraphSummary: {
+            /**
+             * Paragraph Id
+             * Format: uuid
+             */
+            paragraph_id: string;
+            /**
+             * Preview
+             * @description content, truncated to 220 characters. Fetch the detail endpoint for the full text.
+             */
+            preview: string;
+            /** Source Document */
+            source_document: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "superseded";
+            /** Version */
+            version: number;
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
+            /** Sentence Count */
+            sentence_count: number;
+            /**
+             * Question Count
+             * @description Questions already generated from this paragraph (source_type='paragraph', any status) — the single most useful column for deciding what to pick next.
+             */
+            question_count: number;
         };
         /**
          * PriorReview
@@ -2290,6 +2557,29 @@ export interface components {
              * @description Why no live question was assigned — today, always 'no matching live question' with the style/marks it looked for; kept as text rather than an enum because core/paper_generator.py's matching strategy (exact, then ±marks_tolerance) may grow more failure shapes.
              */
             reason: string;
+        };
+        /**
+         * SplitRequest
+         * @description POST /api/v1/content/split — the preview step. Writes nothing.
+         */
+        SplitRequest: {
+            /**
+             * Text
+             * @description The pasted content, as one block of text.
+             */
+            text: string;
+            /**
+             * Source Document
+             * @description A human-chosen name for this upload, e.g. 'Unit 3 notes'. Every paragraph created from this text will carry it, and the picker's document filter groups on it.
+             */
+            source_document: string;
+        };
+        /** SplitResponse */
+        SplitResponse: {
+            /** Source Document */
+            source_document: string;
+            /** Candidates */
+            candidates: components["schemas"]["ParagraphCandidate"][];
         };
         /** StudentSummary */
         StudentSummary: {
@@ -3064,6 +3354,222 @@ export interface operations {
             };
             /** @description No such answer for this college. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    split_content_api_v1_content_split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SplitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_content_api_v1_content_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateContentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateContentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description This caller's request rate for this endpoint is at its configured cap (CONTENT_CREATE_RATE_LIMIT_*). `Retry-After` says how long to wait — see api/deps/quota.py. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_paragraphs_api_v1_content_paragraphs_get: {
+        parameters: {
+            query?: {
+                /** @description Filter by lifecycle status. 'active' is what questions can be generated from. */
+                status?: ("active" | "superseded") | null;
+                /** @description Exact match on the upload this paragraph came from. See GET /content/documents for the list of values. */
+                source_document?: string | null;
+                /** @description Case-insensitive substring search over the paragraph's content. */
+                q?: string | null;
+                /** @description Rows per page. Values above 200 are CLAMPED to 200, not rejected — see this module's docstring. `total` in the response reports the real count so a client can tell it is seeing a partial page. */
+                limit?: number;
+                /** @description Rows to skip, for the next page. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ParagraphSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_documents_api_v1_content_documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSummary"][];
+                };
+            };
+        };
+    };
+    get_paragraph_api_v1_content_paragraphs__paragraph_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paragraph_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParagraphDetail"];
+                };
+            };
+            /** @description No such paragraph. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    supersede_paragraph_api_v1_content_paragraphs__paragraph_id__supersede_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paragraph_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParagraphSummary"];
+                };
+            };
+            /** @description No such paragraph. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The paragraph is already superseded. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

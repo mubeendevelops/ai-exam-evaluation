@@ -123,6 +123,11 @@ class Settings(BaseSettings):
     papers_generate_rate_limit_window_seconds: int = 60
     upload_rate_limit_attempts: int = 20
     upload_rate_limit_window_seconds: int = 60
+    #: POST /api/v1/content — writes paragraphs+sentences on every call but
+    #: spends no Groq tokens, so it sits between /upload and
+    #: /questions_generate rather than matching either exactly.
+    content_create_rate_limit_attempts: int = 10
+    content_create_rate_limit_window_seconds: int = 60
     #: How many of a college's OWN evaluation_jobs may sit 'queued' or
     #: 'running' at once (api/deps/quota.py::check_concurrent_job_cap). THIS,
     #: not the per-minute limit above, is what actually protects the shared

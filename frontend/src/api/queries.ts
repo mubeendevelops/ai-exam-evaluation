@@ -38,6 +38,14 @@ export type PaperSection = components["schemas"]["PaperSection"];
 export type PaperSlot = components["schemas"]["PaperSlot"];
 export type AssignedSlot = components["schemas"]["AssignedSlot"];
 export type SlotWarning = components["schemas"]["SlotWarning"];
+export type SplitRequest = components["schemas"]["SplitRequest"];
+export type SplitResponse = components["schemas"]["SplitResponse"];
+export type ParagraphCandidate = components["schemas"]["ParagraphCandidate"];
+export type CreateContentRequest = components["schemas"]["CreateContentRequest"];
+export type CreateContentResponse = components["schemas"]["CreateContentResponse"];
+export type ParagraphSummary = components["schemas"]["ParagraphSummary"];
+export type ParagraphDetail = components["schemas"]["ParagraphDetail"];
+export type DocumentSummary = components["schemas"]["DocumentSummary"];
 
 async function unwrap<T>(promise: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await promise;
@@ -296,6 +304,99 @@ export function useOverride(answerId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["result", answerId] });
       void queryClient.invalidateQueries({ queryKey: ["results"] });
+    },
+  });
+}
+
+// ─────────────────────────── content upload + picker ────────────────────────
+// paragraphs/sentences are two of the twelve question-schema tables — SHARED
+// across colleges by design, same as the question bank below (migration 003,
+// kept by migration 020). These hooks authenticate via get_tenant_conn like
+// everything else but never filter on a college.
+
+/** Preview only — POST /content/split writes nothing. Not cached under a
+ * query key: this is a one-shot transform a form calls on demand, not data
+ * that benefits from being revisited from the cache. */
+export function useSplitContent() {
+  return useMutation({
+    mutationFn: (body: SplitRequest) => unwrap(api.POST("/api/v1/content/split", { body })),
+  });
+}
+
+/** The only call in this section that writes. Invalidates both the picker's
+ * list and its document filter, since a new source_document may be new too. */
+export function useCreateContent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateContentRequest) => unwrap(api.POST("/api/v1/content", { body })),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["paragraphs"] });
+      void queryClient.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+}
+
+export interface ParagraphsFilter {
+  status?: ParagraphSummary["status"];
+  source_document?: string;
+  q?: string;
+}
+
+export function useParagraphs(filter: ParagraphsFilter, page: { limit: number; offset: number }) {
+  return useQuery({
+    queryKey: ["paragraphs", filter, page],
+    queryFn: () =>
+      unwrap(
+        api.GET("/api/v1/content/paragraphs", {
+          params: {
+            query: {
+              status: filter.status ?? null,
+              source_document: filter.source_document ?? null,
+              q: filter.q ?? null,
+              limit: page.limit,
+              offset: page.offset,
+            },
+          },
+        }),
+      ),
+  });
+}
+
+export function useParagraph(paragraphId: string | undefined) {
+  return useQuery({
+    queryKey: ["paragraph", paragraphId],
+    queryFn: () =>
+      unwrap(
+        api.GET("/api/v1/content/paragraphs/{paragraph_id}", {
+          params: { path: { paragraph_id: paragraphId! } },
+        }),
+      ),
+    enabled: Boolean(paragraphId),
+  });
+}
+
+export function useDocuments() {
+  return useQuery({
+    queryKey: ["documents"],
+    queryFn: () => unwrap(api.GET("/api/v1/content/documents", {})),
+  });
+}
+
+/** Active -> superseded, one-way (see api/routers/content.py). Does not
+ * touch any question already generated from this paragraph, so `questions`
+ * queries are not invalidated here. */
+export function useSupersedeParagraph() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (paragraphId: string) =>
+      unwrap(
+        api.POST("/api/v1/content/paragraphs/{paragraph_id}/supersede", {
+          params: { path: { paragraph_id: paragraphId } },
+        }),
+      ),
+    onSuccess: (_data, paragraphId) => {
+      void queryClient.invalidateQueries({ queryKey: ["paragraph", paragraphId] });
+      void queryClient.invalidateQueries({ queryKey: ["paragraphs"] });
     },
   });
 }

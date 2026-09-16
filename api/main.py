@@ -113,6 +113,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             limit=settings.upload_rate_limit_attempts,
             window_seconds=settings.upload_rate_limit_window_seconds,
         ),
+        "content_create": SlidingWindowLimiter(
+            limit=settings.content_create_rate_limit_attempts,
+            window_seconds=settings.content_create_rate_limit_window_seconds,
+        ),
     }
 
     _configure_cors(app, settings)
@@ -124,7 +128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Business endpoints. Every one of these takes its DB connection from
     # api/deps/db.py — see that module's header before adding another.
     from api.routers import (
-        auth, evaluation, exams, health, jobs, papers, questions, students, upload,
+        auth, content, evaluation, exams, health, jobs, papers, questions, students, upload,
     )
 
     # The two routes that answer without a bearer token, and the only two:
@@ -139,6 +143,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(upload.router)
     app.include_router(jobs.router)
     app.include_router(evaluation.router)
+    # Content upload + picker — the source paragraphs questions.py generates
+    # from. Registered just before it for the same reason: content.py never
+    # writes a question, questions.py never writes a paragraph.
+    app.include_router(content.router)
     # Question bank + paper generation. questions.py carries the mandatory
     # two-gate review flow (draft -> confirmed -> live); papers.py can only
     # ever draw from questions that finished it.

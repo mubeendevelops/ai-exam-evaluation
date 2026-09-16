@@ -7,6 +7,7 @@
 //                  \---Gate 1 (reject)---> rejected
 // This screen never offers a shortcut across both gates in one click.
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { useQuestionsList, usePapers, type QuestionsFilter, type QuestionSummary } from "../api/queries";
 import { Empty } from "../components/Empty";
@@ -31,6 +32,13 @@ const SOURCE_OPTIONS: NonNullable<QuestionsFilter["source_type"]>[] = [
 const PAGE_SIZE = 25;
 
 export function QuestionBank() {
+  // The Content screen's "Generate questions" button lands here with
+  // ?paragraph_id=<id> — read once as the generate form's initial value,
+  // never re-read on every render, so typing in the form afterwards isn't
+  // fighting a stale URL param.
+  const [searchParams] = useSearchParams();
+  const [initialParagraphId] = useState(() => searchParams.get("paragraph_id") ?? undefined);
+
   const [filter, setFilter] = useState<QuestionsFilter>({});
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<string | undefined>();
@@ -55,6 +63,7 @@ export function QuestionBank() {
 
       <div className="mt-6">
         <GenerateQuestionsForm
+          initialParagraphId={initialParagraphId}
           onGenerated={() => {
             updateFilter({ ...filter, status: "draft" });
           }}

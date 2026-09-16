@@ -29,6 +29,12 @@ set -a && source .env && set +a
 | `POST` | `/api/v1/results/{answer_id}/override` | teacher override → `answer_reviews`, **never** the ledger |
 | `GET` | `/api/v1/exams` | list/filter this college's exams by status |
 | `GET` | `/api/v1/students` | list this college's students, optionally filtered to one exam |
+| `POST` | `/api/v1/content/split` | pure text transform → candidate paragraphs. Writes nothing, opens no connection |
+| `POST` | `/api/v1/content` | the edited paragraph list → `paragraphs` + `sentences` rows → 201 |
+| `GET` | `/api/v1/content/paragraphs` | list/filter the shared content corpus by status, source document, search |
+| `GET` | `/api/v1/content/documents` | distinct source documents + counts, for the picker's filter (not paginated) |
+| `GET` | `/api/v1/content/paragraphs/{id}` | one paragraph + its sentences + the questions generated from it |
+| `POST` | `/api/v1/content/paragraphs/{id}/supersede` | `active` → `superseded`, one-way — already-superseded is 409 |
 | `GET` | `/api/v1/questions` | list/filter the shared bank by status, style, source, AI-flag, paper |
 | `GET` | `/api/v1/questions/{id}` | one question + its source paragraph + review history |
 | `POST` | `/api/v1/questions/generate` | paragraph → N **draft** questions → 201 |
@@ -37,7 +43,7 @@ set -a && source .env && set +a
 | `GET` | `/api/v1/papers` | list/filter the shared bank of generated papers by status, pattern |
 | `POST` | `/api/v1/papers/generate` | pattern → paper filled with **live** questions → 201 |
 
-Twenty-three endpoints, and that is the complete list in **every** environment —
+Twenty-nine endpoints, and that is the complete list in **every** environment —
 there are no env-gated routes. `tests/test_api/test_rls_isolation.py` derives
 its endpoint matrix from the app's own OpenAPI schema and fails if this table
 and the app disagree.
@@ -565,6 +571,13 @@ test that names where the decision was made — rather than quietly changing wha
 colleges can see. Rule 3's 404 applies to the answer schema, which really is
 tenanted; do not add a `college_id` predicate to the question endpoints to make
 them *look* isolated over a column that does not exist.
+
+`/api/v1/content` is the identical shape: `paragraphs`/`sentences` are two of
+those twelve question-schema tables, and `020_paragraph_indexes.sql` kept
+them out of RLS rather than reopening the decision. A paragraph one college
+uploads is visible, searchable, and generatable-from by every other college.
+`test_content.py::test_uploaded_content_is_visible_across_colleges` pins it
+the same way the two tests above pin the question/paper bank.
 
 ## Human review is mandatory, and the API has no path around it
 

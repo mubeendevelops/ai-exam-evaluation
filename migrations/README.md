@@ -440,7 +440,7 @@ A single column: `evaluator_model TEXT` on `evaluation_results`.
 `evaluator_type` distinguishes only 'ai' from 'sme'. Task 3 introduced two
 distinct AI methods:
 - Sentence-transformer embeddings (e.g., 'all-MiniLM-L6-v2')
-- LLM prompt-based scoring (e.g., 'qwen/qwen3.6-27b')
+- LLM prompt-based scoring (e.g., 'qwen/qwen3.8-27b')
 
 Both are `evaluator_type='ai'`, but they're fundamentally different. This
 column records which model/method produced each score, enabling:

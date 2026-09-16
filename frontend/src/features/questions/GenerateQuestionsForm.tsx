@@ -5,23 +5,40 @@
 // Every question this produces lands at status='draft', hardcoded server
 // side. There is no field here that could start it anywhere else — the
 // mandatory review gate has no bypass.
+//
+// The paragraph field used to be a UUID pasted by hand — there was no
+// endpoint to list uploaded content at all. It now opens the real picker
+// (fixedStatus="active": generating from a superseded paragraph is refused
+// server-side, so there is no reason to offer one here) and can also arrive
+// pre-filled via `initialParagraphId`, which QuestionBank.tsx reads from a
+// `?paragraph_id=` search param — the link the Content screen's "Generate
+// questions" button lands on.
 import { useState } from "react";
 
-import { useGenerateQuestions, type GenerateQuestionsRequest, type GeneratedQuestion } from "../../api/queries";
+import {
+  useGenerateQuestions,
+  useParagraph,
+  type GenerateQuestionsRequest,
+  type GeneratedQuestion,
+} from "../../api/queries";
+import { ParagraphPicker } from "../content/ParagraphPicker";
 
 const STYLE_OPTIONS: NonNullable<GenerateQuestionsRequest["style"]>[] = ["long", "short", "one_word", "mcq"];
 
 interface GenerateQuestionsFormProps {
   onGenerated?: (questions: GeneratedQuestion[]) => void;
+  initialParagraphId?: string;
 }
 
-export function GenerateQuestionsForm({ onGenerated }: GenerateQuestionsFormProps) {
-  const [paragraphId, setParagraphId] = useState("");
+export function GenerateQuestionsForm({ onGenerated, initialParagraphId }: GenerateQuestionsFormProps) {
+  const [paragraphId, setParagraphId] = useState(initialParagraphId ?? "");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [count, setCount] = useState(3);
   const [style, setStyle] = useState<NonNullable<GenerateQuestionsRequest["style"]> | "">("");
   const [intentHint, setIntentHint] = useState("");
   const [lastResult, setLastResult] = useState<GeneratedQuestion[] | null>(null);
 
+  const paragraph = useParagraph(paragraphId || undefined);
   const generate = useGenerateQuestions();
 
   function submit(e: React.FormEvent) {
@@ -49,20 +66,48 @@ export function GenerateQuestionsForm({ onGenerated }: GenerateQuestionsFormProp
       <summary className="cursor-pointer text-sm font-semibold text-slate-800">Generate questions</summary>
 
       <form onSubmit={submit} className="mt-4 space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-            <span className="font-medium text-slate-700">Paragraph ID</span>
-            <input
-              className="select"
-              placeholder="UUID of an already-uploaded, active paragraph"
-              value={paragraphId}
-              onChange={(e) => setParagraphId(e.target.value)}
-            />
-            <span className="text-xs text-slate-400">
-              There's no paragraph picker yet — this API has no endpoint to list uploaded content, so paste the id.
-            </span>
-          </label>
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Content to generate from</span>
+          {paragraphId ? (
+            <div className="flex items-start justify-between gap-2 rounded-md border border-slate-300 bg-slate-50 px-3 py-2">
+              <p className="line-clamp-2 text-sm text-slate-700">
+                {paragraph.isLoading ? "Loading…" : paragraph.data?.content ?? paragraphId}
+              </p>
+              <div className="flex flex-shrink-0 gap-3 text-xs">
+                <button type="button" className="text-slate-500 hover:text-slate-800" onClick={() => setPickerOpen((o) => !o)}>
+                  Change
+                </button>
+                <button type="button" className="text-slate-500 hover:text-red-600" onClick={() => setParagraphId("")}>
+                  Clear
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn-secondary self-start"
+              onClick={() => setPickerOpen(true)}
+            >
+              Choose content…
+            </button>
+          )}
 
+          {pickerOpen && (
+            <div className="mt-2 rounded-md border border-slate-200 p-3">
+              <ParagraphPicker
+                fixedStatus="active"
+                selectedId={paragraphId || undefined}
+                onSelect={(p) => {
+                  setParagraphId(p.paragraph_id);
+                  setPickerOpen(false);
+                }}
+                pageSize={10}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-slate-700">How many</span>
             <input
