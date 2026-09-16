@@ -1,4 +1,11 @@
 # ──────────────────────────────────────────────
+# Docker
+# ──────────────────────────────────────────────
+# Machine-local Compose overrides (paths, port remaps) — never portable across
+# checkouts, so never committed.
+docker-compose.override.yml
+
+# ──────────────────────────────────────────────
 # Python
 # ──────────────────────────────────────────────
 __pycache__/
