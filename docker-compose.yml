@@ -65,7 +65,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
-    restart: unless-stopped
 
   # One-shot: applies pending migrations (scripts/migrate.py --up) and exits.
   # Re-run on every `up` as api/worker's dependency; idempotent after the
@@ -108,7 +107,6 @@ services:
         condition: service_started
     volumes:
       - dummy_storage:/home/appuser/dummy-storage
-    restart: unless-stopped
 
   worker:
     build: .
@@ -122,23 +120,6 @@ services:
         condition: service_started
     volumes:
       - dummy_storage:/home/appuser/dummy-storage
-    restart: unless-stopped
-
-  # Static build of frontend/, served by nginx. VITE_API_BASE_URL is a build
-  # ARG, not a runtime env var — Vite inlines import.meta.env.VITE_* into the
-  # bundle at `npm run build`, so it must be set before `docker compose build`,
-  # not just before `up` (see frontend/Dockerfile).
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
-    image: ai-evaluation-frontend
-    ports:
-      - "80:80"
-    depends_on:
-      - api
-    restart: unless-stopped
 
 volumes:
   pg_data:
