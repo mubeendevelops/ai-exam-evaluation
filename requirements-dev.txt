@@ -1,0 +1,9 @@
+# Local dev + CI test dependencies. The runtime image installs
+# requirements.txt only; this file layers test tooling on top of it.
+#   pip install -r requirements-dev.txt
+# Versions are the ones pinned in requirements.txt before the 2026-09-19
+# split (verified installing into .venv-paddleocr) — not re-floated.
+-r requirements.txt
+pytest==9.1.1
+pytest-cov==7.1.0
+pytest-asyncio==1.4.0

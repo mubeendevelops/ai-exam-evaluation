@@ -39,26 +39,33 @@ WORKDIR /app
 # never invalidates it; the layer is only rebuilt when requirements.txt
 # itself changes.
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt \
-    # boto3 is deliberately commented out of requirements.txt (only needed
-    # for --storage minio / STORAGE_MODE=minio) — but docker-compose.yml
-    # brings up a real MinIO alongside this image specifically so the
-    # container path can be exercised for real, so it's installed here
-    # rather than uncommenting a line whose comment explains why it is off
-    # by default for the bare CLI/venv setup. Pinned to the same version
-    # requirements.txt's own boto3 comment names, so the two install paths
-    # can't silently drift apart.
-    && pip install --no-cache-dir boto3==1.43.82
+# torch (a transitive dep of sentence-transformers) is installed FIRST from
+# the CPU wheel index (--extra-index-url, not --index-url: the CPU index has no
+# build backends like flit_core, so torch's own deps must still come from PyPI): plain PyPI torch bundles CUDA and drags in several GB
+# of nvidia_* wheels this GPU-less image can never use. The pin matches
+# requirements.lock.txt; pip then sees torch as already satisfied when it
+# resolves sentence-transformers. Not --no-cache-dir: the BuildKit cache mount
+# keeps pip's download cache OUT of the image while still making rebuilds
+# fast (a ~3 GB re-download otherwise).
+#
+# boto3 is deliberately commented out of requirements.txt (only needed for
+# --storage minio / STORAGE_MODE=minio), but docker-compose.yml brings up a
+# real MinIO alongside this image, so it is installed here in the same pip
+# call, pinned to the same version requirements.txt's boto3 comment names.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install torch==2.13.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu \
+    && pip install -r requirements.txt boto3==1.43.82
 
-# ── App code — its own layer, changes on every commit ──────────────────────
-COPY . .
-
-# ── Non-root user ───────────────────────────────────────────────────────
+# ── Non-root user + app code — its own layer, changes on every commit ──────
 # The image has no reason to run as root: it never installs packages or
 # writes outside /app and DUMMY_STORAGE_ROOT (a mounted volume, see
-# docker-compose.yml) at runtime.
+# docker-compose.yml) at runtime. --chown on COPY sets ownership in the same
+# layer; a separate `chown -R /app` would duplicate every copied file.
 RUN useradd --create-home --uid 1000 appuser \
-    && chown -R appuser:appuser /app
+    && chown appuser:appuser /app \
+    && mkdir -p /home/appuser/.cache /home/appuser/.paddlex \
+    && chown appuser:appuser /home/appuser/.cache /home/appuser/.paddlex
+COPY --chown=appuser:appuser . .
 USER appuser
 
 # Dummy-storage default from .env.example, given a stable, writable home

@@ -1,0 +1,62 @@
+# Build-context filter. Everything listed is kept out of the image AND out of
+# the context sent to the daemon, so edits to these paths never invalidate the
+# `COPY . .` layer. Only api/, core/, scripts/, migrations/, patterns/ and
+# reference_diagrams/ (plus requirements.txt) need to reach the image.
+
+# VCS / tooling — history and editor/agent state are not runtime inputs
+.git
+.github
+.claude
+.gitignore
+.dockerignore
+
+# Secrets: supplied at runtime via compose env, never baked into the image
+.env
+.env.*
+!.env.example
+
+# Venvs and caches — a local venv is GBs and built for this host, not the image
+.venv*
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage*
+htmlcov
+coverage.xml
+
+# Frontend is not part of the api/worker image
+frontend
+
+# Runtime/user data (PII in booklets/) and generated output
+media
+booklets
+extracted
+db_backups
+report.json
+*.log
+
+# Docs, tests, dev-only tooling — not needed to run api/worker.
+# (`*.md` only matches at the context root, so directories are listed too.)
+*.md
+docs
+readme files
+tests
+pytest.ini
+Makefile
+requirements-dev.txt
+requirements.lock.txt
+rough_edges.txt
+# Benchmark/demo tooling. NOT excluded: scripts/migrate.py,
+# scripts/reset_and_seed_db.sh and scripts/run_job_worker.py, which the
+# migrate/seed/worker compose services execute.
+scripts/benchmark_*.py
+scripts/generate_*_benchmark.py
+scripts/run_*_demo.sh
+
+# Compose/Docker files are not needed inside the image
+# (also covers the machine-local docker-compose.override.yml)
+docker-compose*.yml
+Dockerfile

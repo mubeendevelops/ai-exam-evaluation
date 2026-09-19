@@ -91,25 +91,20 @@ There are two ways to run this: **Docker** (fastest, gets the whole stack up inc
 git clone <repo-url>
 cd "AI Evaluation System"
 
-# 2. (Optional) copy env overrides — docker-compose.yml already has working
-#    defaults for every value baked in, so this step can be skipped entirely
-#    for a first run. Create .env only if you want to override something
-#    (e.g. a real GROQ_API_KEY, or a non-default JWT_SECRET).
-cp .env.example .env
-
-# 3. Bring up Postgres and MinIO, and wait for Postgres to report healthy
-docker compose up -d postgres minio
-
-# 4. Load the minimal seed dataset (backs up nothing — this is a fresh DB —
-#    runs migrations first, then truncates+reloads migrations/seed_minimal.sql)
-docker compose run --rm seed
-
-# 5. Bring up the API and worker (this also runs migrations automatically,
-#    every time, as a dependency step — harmless once they're all applied)
-docker compose up -d api worker
+# 2. One-command setup (idempotent — safe to re-run)
+make setup
 ```
 
-The API is now at **http://localhost:8000** (interactive docs at `/docs`), MinIO's S3 API at **http://localhost:9000** (console at **http://localhost:9001**, login `minioadmin` / `minioadmin123`), and Postgres at **localhost:5432**.
+`make setup` runs `scripts/setup.sh`, which:
+
+1. copies `.env.example` to `.env` if it's missing and fills the empty secrets (`APP_DB_PASSWORD`, `PGPASSWORD`, `PGADMIN_PASSWORD`, `JWT_SECRET`) with `openssl rand` values — anything you've already set is left alone. `GROQ_API_KEY` can't be generated; add a real key to `.env` for LLM features;
+2. detects NTFS / Windows-mounted storage and writes a machine-local `docker-compose.override.yml` (Postgres can't keep its data directory there);
+3. starts Postgres and MinIO and waits for them;
+4. applies migrations;
+5. loads `migrations/seed_minimal.sql` **only if the database has no data yet** (the seed truncates every table, so it never runs against a populated DB);
+6. starts the API and worker.
+
+The API is now at **http://localhost:8000** (interactive docs at `/docs`), MinIO's S3 API at **http://localhost:9000** (console at **http://localhost:9001**, login `minioadmin` / `minioadmin123`), and Postgres at **localhost:5432**. If a host Postgres already owns port 5432, set `POSTGRES_PORT=5433` in `.env` (or stop the host one).
 
 Create the first login (there is no open signup — every other account is created by an admin from inside the app):
 
@@ -118,15 +113,23 @@ docker compose run --rm api python scripts/bootstrap_platform_admin.py \
     --email admin@platform.example --name "Platform Admin"
 ```
 
-Ordinary restarts afterward are just:
+#### Day-to-day commands
 
-```bash
-docker compose up -d
-```
+| Command | What it does |
+|---|---|
+| `make setup` | First-time / repeat setup (see above) |
+| `make up` | Start the whole stack (`docker compose up -d`) |
+| `make down` | Stop and remove the containers; data volumes are kept |
+| `make logs` | Follow the api and worker logs |
+| `make dev` | Start the frontend dev server (runs `npm ci` first only if `frontend/node_modules` is missing) |
+| `make frontend-deps` | Force a clean `npm ci` (stop `make dev` first) |
+| `make install-dev` | Install the local test tooling (`requirements-dev.txt`) into the venv |
 
-**Do not** run `docker compose run --rm seed` again on a stack you care about — it truncates every data table. It is intentionally *not* wired in as an automatic dependency of `up`, for that reason.
+Model weights (sentence-transformers, PaddleOCR) are cached in Docker volumes, so they download once and survive container recreation. The Docker image uses CPU-only torch and the build needs BuildKit (`docker-buildx`).
 
-To run the frontend against this stack, see [Frontend setup](#frontend-setup) below.
+**Do not** run `docker compose run --rm seed` by hand on a stack you care about — it truncates every data table. `make setup` only seeds an empty database.
+
+To run the frontend against this stack, use `make dev` (details in [Frontend setup](#frontend-setup) below).
 
 ### Option B — Bare-metal (Python venv + local Postgres)
 
@@ -156,9 +159,9 @@ source .venv-paddleocr/bin/activate   # .venv-paddleocr\Scripts\activate on Wind
 # `pip install -r requirements.txt` resolves plain PyPI torch (a transitive
 # dependency of sentence-transformers) and drags in several GB of nvidia_*
 # CUDA packages. Skip this if you have a GPU and want CUDA torch.
-pip install torch==2.13.0+cpu torchvision==0.28.0+cpu --index-url https://download.pytorch.org/whl/cpu
+pip install torch==2.13.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
 
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # runtime deps + pytest tooling (use requirements.txt for runtime only)
 ```
 
 > `requirements.lock.txt` is the full transitive freeze for reproducing the exact environment byte-for-byte if `requirements.txt` alone doesn't resolve cleanly.
@@ -255,10 +258,10 @@ STORAGE_MODE=minio
 ### Frontend setup
 
 ```bash
-cd frontend
-npm install
-npm run dev   # http://localhost:5173
+make dev      # http://localhost:5173 (installs dependencies on first run)
 ```
+
+Or by hand: `cd frontend && npm ci && npm run dev`.
 
 `frontend/.env.local` already points the frontend at `http://127.0.0.1:8000` (`VITE_API_BASE_URL`) — change it if your API runs elsewhere. The frontend's default CORS origin (`http://localhost:5173`) is exactly what the API allows by default in `API_ENV=development`.
 
@@ -338,7 +341,7 @@ See [`readme files/PROJECT_CONTEXT.md`](readme%20files/PROJECT_CONTEXT.md) §8 f
 
 - **`RLS is inert` / a query returns everything regardless of tenant** — `PGUSER` is pointed at a superuser (e.g. `postgres`). Postgres exempts superusers/`BYPASSRLS` roles from Row-Level Security entirely. Point `PGUSER`/`PGPASSWORD` at the application role created by `migrations/016_application_role.sql` instead.
 - **A tenant-scoped query returns zero rows unexpectedly** — RLS fails *closed and silently*. This usually means the request never set `app.current_college_id`/`app.is_platform_admin` — check that you're going through `api/deps/db.py`'s connection helpers, not opening a raw connection.
-- **`pip install -r requirements.txt` tries to download a huge nvidia_* wheel / fails on a flaky connection** — you skipped the CPU-torch step. Install the CPU wheel first: `pip install torch==2.13.0+cpu torchvision==0.28.0+cpu --index-url https://download.pytorch.org/whl/cpu`, then re-run `pip install -r requirements.txt`.
+- **`pip install -r requirements.txt` tries to download a huge nvidia_* wheel / fails on a flaky connection** — you skipped the CPU-torch step. Install the CPU wheel first: `pip install torch==2.13.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu`, then re-run `pip install -r requirements.txt`.
 - **`migrate.py --up` fails on a fresh run against a database with some migrations already applied by hand** — baseline it first: `python3 scripts/migrate.py --baseline` (marks 001–015 applied without re-running them), then `--baseline --through 17` if 016/017 are also already applied, then `--up`.
 - **API refuses to start with a CORS or JWT_SECRET error** — expected outside `API_ENV=development`. Set `CORS_ORIGINS` explicitly (there's no permissive fallback in non-dev) and generate a `JWT_SECRET` with `python -c 'import secrets; print(secrets.token_urlsafe(48))'`.
 - **Job worker fails on booklet ingestion with "No local bytes for dummy ref"** — the API and the worker disagree on `STORAGE_MODE`/`DUMMY_STORAGE_ROOT`. Both processes must use the same values (dummy mode keeps uploaded bytes on disk under `DUMMY_STORAGE_ROOT` so the worker can read them back later).

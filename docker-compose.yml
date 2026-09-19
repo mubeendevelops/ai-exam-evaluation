@@ -49,6 +49,11 @@ x-app-env: &app-env
   JWT_SECRET: ${JWT_SECRET:-}
   CORS_ORIGINS: ${CORS_ORIGINS:-}
 
+# Model caches. sentence-transformers/HF weights land in ~/.cache, PaddleOCR
+# (PaddleX) weights in ~/.paddlex — both are downloaded on first use, so
+# without a volume every container recreate re-downloads hundreds of MB.
+# Mounted on api and worker; the Dockerfile pre-creates both dirs owned by
+# appuser so the named volumes come up writable.
 services:
   postgres:
     image: postgres:15
@@ -57,7 +62,9 @@ services:
       POSTGRES_PASSWORD: ${PGADMIN_PASSWORD:-postgres_owner_password}
       POSTGRES_DB: ${PGDATABASE:-ai_evaluation}
     ports:
-      - "5432:5432"
+      # Host port is configurable: a host-installed Postgres often already owns
+      # 5432. Set POSTGRES_PORT=5433 in .env. Containers still use postgres:5432.
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -107,6 +114,8 @@ services:
         condition: service_started
     volumes:
       - dummy_storage:/home/appuser/dummy-storage
+      - model_cache:/home/appuser/.cache
+      - paddlex_cache:/home/appuser/.paddlex
 
   worker:
     build: .
@@ -120,7 +129,11 @@ services:
         condition: service_started
     volumes:
       - dummy_storage:/home/appuser/dummy-storage
+      - model_cache:/home/appuser/.cache
+      - paddlex_cache:/home/appuser/.paddlex
 
 volumes:
   pg_data:
   dummy_storage:
+  model_cache:
+  paddlex_cache:

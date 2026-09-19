@@ -18,7 +18,11 @@ psycopg2-binary==2.9.12
 # rather than "whatever pip resolves today" — verified importable in
 # .venv-paddleocr on 2026-09-06:
 #   pip install boto3==1.43.82
-# Dockerfile's separate `pip install boto3` should track this same pin.
+# Dockerfile's `pip install -r requirements.txt boto3==1.43.82` should track
+# this same pin.
+#
+# Test tooling (pytest, pytest-cov, pytest-asyncio) lives in
+# requirements-dev.txt, not here — the runtime image installs this file only.
 
 # Only needed for --method embeddings in evaluate_answer.py /
 # evaluate_pending.py, and for node-label matching in
@@ -26,13 +30,13 @@ psycopg2-binary==2.9.12
 #
 # PULLS IN torch (unpinned here — transitive, no direct import anywhere in
 # this repo). This box has no GPU, and .venv-paddleocr's torch is the CPU
-# wheel (torch==2.13.0+cpu / torchvision==0.28.0+cpu per requirements.lock.txt
-# — no nvidia_* packages). A bare `pip install -r requirements.txt` on a
+# wheel (torch==2.13.0+cpu per requirements.lock.txt — no nvidia_* packages;
+# torchvision is not needed). A bare `pip install -r requirements.txt` on a
 # fresh machine instead resolves plain PyPI torch, which bundles CUDA and
 # drags in several GB of nvidia_* wheels (confirmed 2026-09-06: this failed
 # outright on a flaky connection trying to fetch a 423 MB nvidia_cublas
 # wheel). Install the CPU build FIRST if you don't need GPU support:
-#   pip install torch==2.13.0+cpu torchvision==0.28.0+cpu --index-url https://download.pytorch.org/whl/cpu
+#   pip install torch==2.13.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
 # then `pip install -r requirements.txt` picks it up as already satisfied.
 sentence-transformers==5.7.0
 
@@ -80,14 +84,13 @@ pytesseract==0.3.13
 
 # OpenCV (cv2) is imported DIRECTLY by core/diagram_shapes.py and
 # core/table_extractor.py, but is deliberately NOT pinned here. It already
-# arrives transitively via paddleocr, and this venv currently resolves cv2 to
-# opencv-python-headless while also having opencv-contrib-python installed —
-# adding a pin for one distribution on top of that would make the double
-# install worse, not better. Relevant finding from the table-extractor engine
-# comparison (CLAUDE_CONTEXT.md §7B): the img2table library needs
-# opencv-contrib-python specifically (cv2.ximgproc.niBlackThreshold) and
-# fails outright against opencv-python-headless — so do not swap the OpenCV
-# distribution without re-testing the diagram pipeline, which depends on it.
+# arrives transitively via paddleocr, and this venv resolves cv2 to
+# opencv-contrib-python, which paddlex declares as a hard dependency. Keep it
+# that way: only ONE OpenCV distribution should be installed (two share the
+# same cv2/ directory and clobber each other) — the old venv had contrib AND
+# opencv-python-headless side by side; the 2026-09-19 rebuild from this file
+# alone yields contrib only, and the full test suite passes against it.
+# Re-test the diagram pipeline before swapping distributions.
 #
 # core/diagram_extractor.py and core/ocr_engines/ import these directly
 # (PIL.Image for the fetched scan / engine crops, numpy to feed PaddleOCR's
@@ -115,16 +118,6 @@ numpy==2.2.6
 pypdfium2==5.13.0
 
 # ──────────────────────────────────────────────
-# Test tooling (tests/, pytest.ini, Makefile `make test*` targets).
-# Pinned to the exact versions that installed into .venv-paddleocr on
-# 2026-08-31 (`pip install pytest pytest-cov` then `pip show`), not guessed —
-# characterization tests should run against a known-good pytest, not
-# whatever floats in on a loose `>=`.
-# ──────────────────────────────────────────────
-pytest==9.1.1
-pytest-cov==7.1.0
-
-# ──────────────────────────────────────────────
 # API layer (api/) — FastAPI over the same core/ library the scripts use.
 # The API imports core/ directly; it never shells out to scripts/ and never
 # reimplements evaluation logic (see api/__init__.py).
@@ -142,15 +135,11 @@ python-multipart==0.0.32
 # which have no FastAPI in scope.
 pydantic-settings==2.15.0
 
-# Async test support for tests/test_api/ — those tests drive the real ASGI app
-# through httpx.AsyncClient rather than mocking a connection, because the
-# thing under test is the request→dependency→transaction chain (does
-# app.current_college_id actually get set inside the request's transaction),
-# which a mocked connection would confirm without proving.
-# httpx already arrives transitively via fastapi's test tooling / paddle stack;
-# pinned directly here since tests import it.
+# tests/test_api/ drive the real ASGI app through httpx.AsyncClient (the
+# pytest-asyncio half of that lives in requirements-dev.txt). httpx already
+# arrives transitively via the paddle stack; pinned directly here since the
+# tests import it.
 httpx==0.28.1
-pytest-asyncio==1.4.0
 
 # ──────────────────────────────────────────────
 # Authentication (api/deps/identity.py, api/routers/auth.py, core/users.py).
