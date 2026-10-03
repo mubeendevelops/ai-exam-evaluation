@@ -35,6 +35,8 @@ def test_db_commands_are_listed() -> None:
 
 def test_db_downgrade_refused_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TARN_ENV", "production")
+    monkeypatch.setenv("TARN_KMS_KEY_REF", "gcp-kms:projects/p/locations/l/keyRings/r/cryptoKeys/k")
+    monkeypatch.setenv("TARN_SECRETS_BACKEND", "gcp")
     get_settings.cache_clear()
     result = runner.invoke(app, ["db", "downgrade", "base"])
     assert result.exit_code == 1

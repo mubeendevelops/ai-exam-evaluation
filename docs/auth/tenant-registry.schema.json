@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tarn.example/schemas/auth/tenant-registry/1.0",
+  "title": "Tarn tenant registry record",
+  "description": "One college (tenant) in the identity store. Written from docs/auth/tenant-registry.example.json with provider-neutral names: kms_key_ref replaces kms_key_arn. The fields after auth_policy are Tarn extensions; backups always carry them.",
+  "type": "object",
+  "required": ["tenant_id", "tenant_name", "kms_key_ref", "auth_policy"],
+  "additionalProperties": false,
+  "properties": {
+    "tenant_id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$", "description": "Tarn uses the college UUID." },
+    "tenant_name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "kms_key_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "description": "The KMS key that wraps the tenant's data key, in a provider-neutral form: 'gcp-kms:projects/…/cryptoKeys/…', 'local:<name>' (development) or another provider's key id."
+    },
+    "auth_policy": {
+      "type": "object",
+      "required": ["min_password_length", "argon_time_cost", "argon_memory_cost"],
+      "additionalProperties": false,
+      "properties": {
+        "min_password_length": { "type": "integer", "minimum": 8, "maximum": 128, "default": 12 },
+        "argon_time_cost": { "type": "integer", "minimum": 1, "default": 3 },
+        "argon_memory_cost": { "type": "integer", "minimum": 1024, "default": 65536, "description": "KiB." },
+        "argon_parallelism": { "type": "integer", "minimum": 1, "default": 4 },
+        "max_failed_logins": { "type": "integer", "minimum": 1, "default": 5, "description": "Failed sign-ins before a lockout." },
+        "lockout_minutes": { "type": "integer", "minimum": 1, "default": 15 }
+      }
+    },
+    "institution_id": { "type": "string", "pattern": "^[A-Z0-9_*&-]{1,20}$", "description": "The Institution / Org Domain ID typed at sign-in." },
+    "status": { "enum": ["PENDING_VERIFICATION", "PENDING_APPROVAL", "ACTIVE", "SUSPENDED"] },
+    "approval_required": { "type": "boolean" },
+    "data_key": {
+      "type": "object",
+      "required": ["wrapped", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "wrapped": { "type": "string", "contentEncoding": "base64", "description": "The tenant data key, encrypted by kms_key_ref. Never the plain key." },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "email_verified_at": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+    "approved_at": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+    "approved_by": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }], "description": "The Tarn operator who approved the registration." }
+  }
+}

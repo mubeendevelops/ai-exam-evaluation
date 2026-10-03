@@ -11,6 +11,8 @@ from collections.abc import Iterator
 import pytest
 
 from tarn_adapters.config import Settings
+from tarn_adapters.identity.database import IdentityDatabase
+from tarn_adapters.identity.testing import create_test_identity_database
 from tarn_adapters.postgres.database import PostgresDatabase
 from tarn_adapters.postgres.testing import (
     Opener,
@@ -47,3 +49,21 @@ def session(database: PostgresDatabase) -> Opener:
 @pytest.fixture
 def world(session: Opener) -> World:
     return seed_world(session)
+
+
+@pytest.fixture(scope="session")
+def identity_test_database() -> Iterator[TestDatabase]:
+    """A throwaway identity database (P4), used through ``tarn_auth``."""
+    settings = Settings()
+    db = create_test_identity_database(settings.database_url, settings.identity_app_database_url)
+    try:
+        yield db
+    finally:
+        drop_test_database(settings.database_url, db.name)
+
+
+@pytest.fixture(scope="session")
+def identity_db(identity_test_database: TestDatabase) -> Iterator[IdentityDatabase]:
+    db = IdentityDatabase(identity_test_database.app_url)
+    yield db
+    db.dispose()

@@ -1,0 +1,240 @@
+"""P4 adapters without services: argon2id + pepper, AES-GCM, key managers, secrets, the
+password list and its Bloom filter, JSON Schemas and production settings."""
+
+import io
+import json
+import stat
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from pydantic import SecretStr
+
+from tarn_adapters.auth.crypto import (
+    AesGcmCipher,
+    GcpKmsKeyManager,
+    LocalKeyManager,
+    RoutingKeyManager,
+)
+from tarn_adapters.auth.hashing import Argon2Hasher
+from tarn_adapters.auth.mail import ConsoleMailer, DeferredMailer
+from tarn_adapters.auth.passwords import BloomFilter, CommonPasswordList, bundled_bloom_bytes
+from tarn_adapters.auth.schemas import (
+    IDENTITY_RECORD,
+    TENANT_REGISTRY,
+    JsonSchemaValidator,
+    schema_text,
+)
+from tarn_adapters.auth.secrets import PEPPER, GcpSecrets, SettingsSecrets
+from tarn_adapters.config import Settings
+from tarn_core.domain.identity import HashParams
+from tarn_core.errors import InvariantError
+from tarn_core.ports.identity import EmailMessage
+
+DOCS = Path(__file__).resolve().parents[3] / "docs" / "auth"
+CHEAP = HashParams(time_cost=1, memory_cost=1024, parallelism=1)
+
+
+# --- hashing ----------------------------------------------------------------------------------
+
+
+def test_argon2id_with_pepper() -> None:
+    hasher = Argon2Hasher(b"p" * 32)
+    encoded = hasher.hash("correct horse battery staple", CHEAP)
+    assert encoded.startswith("$argon2id$v=19$m=1024,t=1,p=1$")
+    assert hasher.verify(encoded, "correct horse battery staple")
+    assert not hasher.verify(encoded, "correct horse battery stapl")
+    # Without the pepper the hash is useless.
+    assert not Argon2Hasher(b"q" * 32).verify(encoded, "correct horse battery staple")
+    assert not hasher.verify("not a hash", "x")
+    with pytest.raises(ValueError, match="16 bytes"):
+        Argon2Hasher(b"short")
+
+
+def test_needs_rehash_follows_the_policy() -> None:
+    hasher = Argon2Hasher(b"p" * 32)
+    encoded = hasher.hash("pw", CHEAP)
+    assert not hasher.needs_rehash(encoded, CHEAP)
+    assert hasher.needs_rehash(encoded, HashParams(time_cost=2, memory_cost=1024, parallelism=1))
+    assert hasher.needs_rehash(encoded, HashParams(time_cost=1, memory_cost=2048, parallelism=1))
+    assert hasher.needs_rehash("garbage", CHEAP)
+
+
+# --- encryption -------------------------------------------------------------------------------
+
+
+def test_aes_gcm_detects_tampering_and_wrong_aad() -> None:
+    cipher = AesGcmCipher()
+    key = b"k" * 32
+    sealed = cipher.seal(key, b"secret", b"aad")
+    assert cipher.seal(key, b"secret", b"aad") != sealed  # fresh nonce
+    assert cipher.open(key, sealed, b"aad") == b"secret"
+    with pytest.raises(ValueError):
+        cipher.open(key, sealed, b"other")
+    with pytest.raises(ValueError):
+        cipher.open(b"x" * 32, sealed, b"aad")
+    with pytest.raises(ValueError):
+        cipher.open(key, sealed[:-1] + bytes([sealed[-1] ^ 1]), b"aad")
+
+
+def test_local_key_manager_creates_a_private_key_file(tmp_path: Path) -> None:
+    keys = LocalKeyManager(tmp_path / "keys")
+    data_key = keys.generate_data_key("local:dev", b"tenant-1")
+    path = tmp_path / "keys" / "dev.key"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert keys.unwrap("local:dev", data_key.wrapped, b"tenant-1") == data_key.plaintext
+    assert data_key.plaintext not in data_key.wrapped
+    with pytest.raises(ValueError):
+        keys.unwrap("local:dev", data_key.wrapped, b"tenant-2")  # bound to its tenant
+    with pytest.raises(ValueError):
+        keys.unwrap("local:other", data_key.wrapped, b"tenant-1")
+    with pytest.raises(ValueError):
+        keys.generate_data_key("local:../escape", b"t")
+
+
+class FakeKms:
+    """Records requests; 'encrypts' by reversing and prefixing the key name."""
+
+    def __init__(self) -> None:
+        self.requests: list[dict[str, object]] = []
+
+    def encrypt(self, request: dict[str, object]) -> object:
+        self.requests.append(request)
+        plaintext = request["plaintext"]
+        assert isinstance(plaintext, bytes)
+        return SimpleNamespace(ciphertext=b"wrapped:" + plaintext[::-1])
+
+    def decrypt(self, request: dict[str, object]) -> object:
+        self.requests.append(request)
+        if request["additional_authenticated_data"] != b"ctx":
+            raise RuntimeError("PERMISSION_DENIED")
+        ciphertext = request["ciphertext"]
+        assert isinstance(ciphertext, bytes)
+        return SimpleNamespace(plaintext=ciphertext.removeprefix(b"wrapped:")[::-1])
+
+
+def test_gcp_kms_key_manager_sends_the_key_name_and_context() -> None:
+    kms = FakeKms()
+    keys = GcpKmsKeyManager(kms)
+    ref = "gcp-kms:projects/p/locations/asia-south1/keyRings/tarn/cryptoKeys/identity"
+    data_key = keys.generate_data_key(ref, b"ctx")
+    assert kms.requests[0]["name"] == ref.removeprefix("gcp-kms:")
+    assert kms.requests[0]["additional_authenticated_data"] == b"ctx"
+    assert keys.unwrap(ref, data_key.wrapped, b"ctx") == data_key.plaintext
+    with pytest.raises(ValueError, match="Cloud KMS refused"):
+        keys.unwrap(ref, data_key.wrapped, b"other")
+    with pytest.raises(ValueError):
+        keys.generate_data_key("local:dev", b"ctx")
+
+
+def test_routing_key_manager(tmp_path: Path) -> None:
+    routing = RoutingKeyManager(local=LocalKeyManager(tmp_path), gcp=None)
+    key = routing.generate_data_key("local:a", b"c")
+    assert routing.unwrap("local:a", key.wrapped, b"c") == key.plaintext
+    with pytest.raises(ValueError, match="no key manager"):
+        routing.generate_data_key("gcp-kms:projects/p", b"c")
+
+
+# --- secrets ----------------------------------------------------------------------------------
+
+
+def test_secret_sources() -> None:
+    settings = Settings(password_pepper=SecretStr("pepper-from-env-0123"))
+    assert SettingsSecrets(settings).get(PEPPER) == b"pepper-from-env-0123"
+    calls: list[dict[str, object]] = []
+
+    class Client:
+        def access_secret_version(self, request: dict[str, object]) -> object:
+            calls.append(request)
+            return SimpleNamespace(payload=SimpleNamespace(data=b"from-secret-manager"))
+
+    gcp = GcpSecrets("my-project", Client())
+    assert gcp.get(PEPPER) == b"from-secret-manager"
+    gcp.get(PEPPER)  # cached
+    assert calls == [{"name": "projects/my-project/secrets/tarn-password-pepper/versions/latest"}]
+
+
+def test_production_refuses_development_secrets_and_keys() -> None:
+    with pytest.raises(ValueError, match="unsafe production settings"):
+        Settings(env="production")
+    with pytest.raises(ValueError, match="cloud KMS key"):
+        Settings(env="production", secrets_backend="gcp")
+    ok = Settings(
+        env="production",
+        kms_key_ref="gcp-kms:projects/p/locations/l/keyRings/r/cryptoKeys/k",
+        secrets_backend="gcp",
+    )
+    from tarn_adapters.auth.wiring import auth_kit
+
+    with pytest.raises(RuntimeError, match="mail adapter"):
+        auth_kit(ok, secrets=SettingsSecrets(Settings()))
+
+
+# --- password list and Bloom filter ----------------------------------------------------------
+
+
+def test_common_password_list() -> None:
+    words = CommonPasswordList()
+    assert len(words) > 90_000
+    assert "password" in words and "PassWord" in words and "123456" in words
+    assert "correct horse battery staple x9" not in words
+
+
+def test_bloom_filter_has_no_false_negatives_and_a_low_false_positive_rate() -> None:
+    words = CommonPasswordList()
+    bloom = BloomFilter.from_bytes(bundled_bloom_bytes())
+    assert bloom.m > 1_000_000 and bloom.k >= 7  # sized for the list, not 32 bits
+    assert all(w in bloom for w in list(words)[:20_000])
+    probes = [f"tarn-not-a-common-password-{i}" for i in range(20_000)]
+    false_positives = sum(p in bloom for p in probes)
+    assert false_positives / len(probes) < 0.003  # built for 0.1 %
+
+
+def test_bloom_filter_format() -> None:
+    bloom = BloomFilter.build(["alpha", "beta"], p=0.01)
+    again = BloomFilter.from_bytes(bloom.to_bytes())
+    assert "alpha" in again and "BETA" in again
+    with pytest.raises(ValueError):
+        BloomFilter.from_bytes(b"XXXX" + bloom.to_bytes()[4:])
+    with pytest.raises(ValueError):
+        BloomFilter.from_bytes(bloom.to_bytes()[:-1])
+
+
+# --- JSON Schemas -----------------------------------------------------------------------------
+
+
+def test_packaged_schemas_equal_the_published_ones() -> None:
+    for name in (IDENTITY_RECORD, TENANT_REGISTRY):
+        assert schema_text(name) == (DOCS / name).read_text()
+
+
+def test_the_boss_examples_validate_with_neutral_names() -> None:
+    validator = JsonSchemaValidator()
+    identity = json.loads((DOCS / "identity-record.example.json").read_text())
+    validator.validate_identity(identity)
+    tenant = json.loads((DOCS / "tenant-registry.example.json").read_text())
+    with pytest.raises(InvariantError):
+        validator.validate_tenant(tenant)  # kms_key_arn is not a schema field
+    tenant["kms_key_ref"] = tenant.pop("kms_key_arn")
+    validator.validate_tenant(tenant)
+
+
+def test_schema_errors_never_echo_values() -> None:
+    identity = json.loads((DOCS / "identity-record.example.json").read_text())
+    identity["authentication"]["password_hash"] = "plain-text-secret"
+    with pytest.raises(InvariantError) as caught:
+        JsonSchemaValidator().validate_identity(identity)
+    assert "plain-text-secret" not in str(caught.value)
+    assert "authentication/password_hash" in str(caught.value)
+
+
+# --- mail -------------------------------------------------------------------------------------
+
+
+def test_deferred_mailer_sends_only_on_flush() -> None:
+    out = io.StringIO()
+    mailer = DeferredMailer(ConsoleMailer(out))
+    mailer.send(EmailMessage(to="a@b.example", subject="Hi", text="Body"))
+    assert out.getvalue() == ""
+    mailer.flush()
+    assert "To: a@b.example" in out.getvalue() and "Body" in out.getvalue()

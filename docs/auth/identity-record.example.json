@@ -1,0 +1,39 @@
+{
+  "version": "1.0",
+  "tenant_id": "tnt_987a6b5c",
+  "user_id": "usr_412e89d1",
+  "identity": {
+    "login_handle": "evaluator@institution.edu",
+    "email_canonical": "evaluator@institution.edu",
+    "status": "ACTIVE"
+  },
+  "authentication": {
+    "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$c2FsdF9iYXNlNjQ$...",
+    "last_password_change": "2026-09-29T08:00:00Z",
+    "force_reset": false
+  },
+  "recovery_support": {
+    "recovery_version": "v1",
+    "encrypted_master_recovery_token": "enc:v1:kms-key-id:AQICAHg...",
+    "recovery_factors": [
+      {
+        "type": "SECURE_RECOVERY_CODE",
+        "code_hash": "$argon2id$v=19$m=65536,t=3,p=4$...",
+        "created_at": "2026-09-29T08:00:00Z",
+        "used": false
+      },
+      {
+        "type": "SHAMIR_SECRET_SHARE",
+        "threshold": 2,
+        "total_shares": 3,
+        "encrypted_share_blob": "enc:v1:kms-key-id:B12389..."
+      }
+    ]
+  },
+  "audit": {
+    "created_at": "2026-01-15T10:00:00Z",
+    "updated_at": "2026-09-29T08:00:00Z",
+    "failed_login_attempts": 0,
+    "lockout_until": null
+  }
+}

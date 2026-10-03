@@ -159,6 +159,16 @@ class MemoryStudentRepository:
     def find_by_usn(self, college_id: CollegeId, usn: str) -> Student | None:
         return next((s for s in self._t.values(college_id) if s.usn == usn), None)
 
+    def search(self, college_id: CollegeId, query: str, limit: int) -> Sequence[Student]:
+        q = query.strip().lower()
+        usn = "".join(q.split()).upper()
+        hits = [
+            s
+            for s in self._t.values(college_id)
+            if not q or s.usn.startswith(usn) or q in s.name.lower()
+        ]
+        return sorted(hits, key=lambda s: (s.name.lower(), s.usn))[:limit]
+
     def save(self, college_id: CollegeId, student: Student) -> None:
         self._t.put(college_id, student.id, student)
 

@@ -91,6 +91,11 @@ class StudentRepository(Protocol):
 
     def find_by_usn(self, college_id: CollegeId, usn: str) -> Student | None: ...
 
+    def search(self, college_id: CollegeId, query: str, limit: int) -> Sequence[Student]:
+        """Students whose USN starts with, or whose name contains, ``query`` (any case);
+        ordered by name, then USN. An empty query lists the first ``limit``."""
+        ...
+
     def save(self, college_id: CollegeId, student: Student) -> None: ...
 
 

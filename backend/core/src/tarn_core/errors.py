@@ -19,3 +19,23 @@ class NotOwnerError(DomainError, PermissionError):
 
 class TenantViolationError(DomainError, PermissionError):
     """A write tried to put one college's row through another college's call."""
+
+
+class PermissionDeniedError(DomainError, PermissionError):
+    """The caller's role does not allow the action (e.g. a teacher disabling an account)."""
+
+
+class AlreadyExistsError(DomainError, ValueError):
+    """A unique name is taken: an institution id, or an email within a college."""
+
+
+class PasswordPolicyError(DomainError, ValueError):
+    """A new password breaks the tenant's policy. ``reasons`` are safe to show the user."""
+
+    def __init__(self, reasons: tuple[str, ...]) -> None:
+        super().__init__("; ".join(reasons))
+        self.reasons = reasons
+
+
+class TokenError(DomainError, ValueError):
+    """A link or session token is unknown, used, expired or revoked (one message for all)."""

@@ -19,7 +19,7 @@ def test_upgrade_downgrade_upgrade() -> None:
     settings = Settings()
     db = create_test_database(settings.database_url, settings.app_database_url)
     try:
-        assert migrate.current_revision(db.owner_url) == "0001"
+        assert migrate.current_revision(db.owner_url) == "0002"
         migrate.downgrade(db.owner_url, "base")
         assert migrate.current_revision(db.owner_url) is None
         with db.owner() as conn:
@@ -31,7 +31,7 @@ def test_upgrade_downgrade_upgrade() -> None:
             # The role is cluster-wide and stays.
             assert conn.execute("SELECT 1 FROM pg_roles WHERE rolname = 'tarn_app'").fetchone()
         migrate.upgrade(db.owner_url)
-        assert migrate.current_revision(db.owner_url) == "0001"
+        assert migrate.current_revision(db.owner_url) == "0002"
         with db.owner() as conn:
             names = {r[0] for r in conn.execute(_TABLES).fetchall()}
         assert names == set(m.metadata.tables)

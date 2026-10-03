@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any, NoReturn
 from uuid import UUID
 
-from sqlalchemy import Connection, Row, Table, delete, func, select
+from sqlalchemy import Connection, Row, Table, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import DBAPIError
 
@@ -126,6 +126,11 @@ def _upsert(conn: Connection, table: Table, values: Mapping[str, object]) -> Non
     stmt = insert(table).values(**values)
     updates = {k: stmt.excluded[k] for k in values if k not in {"id", "college_id"}}
     conn.execute(stmt.on_conflict_do_update(index_elements=["id"], set_=updates))
+
+
+def _like_escape(value: str) -> str:
+    """A LIKE pattern that matches ``value`` literally (escape character ``\\``)."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _one(row: Row[Any] | None, what: str) -> Row[Any]:
@@ -473,7 +478,13 @@ class PgUserRepository:
 
 
 def _student(r: Row[Any]) -> Student:
-    return Student(id=StudentId(r.id), college_id=CollegeId(r.college_id), name=r.name, usn=r.usn)
+    return Student(
+        id=StudentId(r.id),
+        college_id=CollegeId(r.college_id),
+        name=r.name,
+        usn=r.usn,
+        class_section=r.class_section,
+    )
 
 
 class PgStudentRepository:
@@ -499,6 +510,22 @@ class PgStudentRepository:
         ).first()
         return None if row is None else _student(row)
 
+    def search(self, college_id: CollegeId, query: str, limit: int) -> Sequence[Student]:
+        t = m.students
+        q = query.strip().lower()
+        stmt = select(t).where(t.c.college_id == college_id)
+        if q:
+            usn_prefix = _like_escape("".join(q.split()).upper()) + "%"
+            name_part = "%" + _like_escape(q) + "%"
+            stmt = stmt.where(
+                or_(
+                    t.c.usn.like(usn_prefix, escape="\\"),
+                    func.lower(t.c.name).like(name_part, escape="\\"),
+                )
+            )
+        rows = self._conn.execute(stmt.order_by(func.lower(t.c.name), t.c.usn).limit(limit))
+        return [_student(r) for r in rows]
+
     def save(self, college_id: CollegeId, student: Student) -> None:
         _check_tenant(college_id, student.college_id, "student")
         with writing(self._conn, f"student {student.id}"):
@@ -510,6 +537,7 @@ class PgStudentRepository:
                     "college_id": student.college_id,
                     "name": student.name,
                     "usn": student.usn,
+                    "class_section": student.class_section,
                 },
             )
 

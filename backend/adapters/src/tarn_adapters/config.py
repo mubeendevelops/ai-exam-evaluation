@@ -1,10 +1,15 @@
 """Runtime settings, read from ``TARN_*`` environment variables (and ``.env`` in development)."""
 
 from functools import lru_cache
-from typing import Literal
+from pathlib import Path
+from typing import Literal, Self
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Development defaults that must never reach production (checked below).
+DEV_PEPPER = "dev-only-pepper-not-for-production"
+DEV_SIGNING_KEY = "dev-only-signing-key-not-for-production"
 
 
 class Settings(BaseSettings):
@@ -36,6 +41,65 @@ class Settings(BaseSettings):
 
     # Cloud OCR engines (Textract, Azure Read, Document AI) stay off in development.
     cloud_ocr_enabled: bool = False
+
+    # --- Identity store (P4): a separate database with its own roles --------------------
+    # Owner role of the identity database: migrations only.
+    identity_database_url: str = "postgresql://tarn:tarn_dev_password@localhost:5432/tarn_identity"
+    # Application role tarn_auth: no superuser, no BYPASSRLS; RLS applies to it.
+    identity_app_database_url: str = (
+        "postgresql://tarn_auth:tarn_auth_dev_password@localhost:5432/tarn_identity"
+    )
+
+    # Envelope encryption. Key references: "local:<name>" (development file key under
+    # local_key_dir) or "gcp-kms:projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>".
+    kms_key_ref: str = "local:tarn-dev"
+    local_key_dir: Path = Path("../var/keys")
+
+    # Secrets: "settings" reads the two values below (development); "gcp" reads Secret
+    # Manager secrets tarn-password-pepper and tarn-token-signing-key in gcp_project.
+    secrets_backend: Literal["settings", "gcp"] = "settings"
+    gcp_project: str = ""
+    password_pepper: SecretStr = SecretStr(DEV_PEPPER)
+    token_signing_key: SecretStr = SecretStr(DEV_SIGNING_KEY)
+
+    # Sessions: short access tokens; the refresh cookie lasts a working day, or 30 days with
+    # "Remember session".
+    access_token_minutes: int = 15
+    session_hours: int = 12
+    remember_session_days: int = 30
+    # The public web address, for links in emails.
+    public_url: str = "http://localhost:5173"
+    # Development only; production needs a real mail adapter (P20).
+    mailer: Literal["console"] = "console"
+    # A Tarn operator approves new tenants (`tarn tenants approve`). Also read without the
+    # TARN_ prefix, as the build plan names it.
+    tenant_signup_requires_approval: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "TARN_TENANT_SIGNUP_REQUIRES_APPROVAL", "TENANT_SIGNUP_REQUIRES_APPROVAL"
+        ),
+    )
+
+    # Encrypted identity backups, written by the worker every interval (0 = off).
+    identity_backup_dir: Path = Path("../var/backups/identity")
+    identity_backup_interval_hours: float = 24.0
+    identity_backup_keep: int = 14
+
+    @model_validator(mode="after")
+    def _production_is_not_development(self) -> Self:
+        if self.env != "production":
+            return self
+        problems = []
+        if self.kms_key_ref.startswith("local:"):
+            problems.append("TARN_KMS_KEY_REF must name a cloud KMS key")
+        if self.secrets_backend == "settings" and (
+            self.password_pepper.get_secret_value() == DEV_PEPPER
+            or self.token_signing_key.get_secret_value() == DEV_SIGNING_KEY
+        ):
+            problems.append("the development pepper and signing key are not allowed")
+        if problems:
+            raise ValueError("unsafe production settings: " + "; ".join(problems))
+        return self
 
 
 @lru_cache

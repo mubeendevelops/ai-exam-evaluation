@@ -29,3 +29,6 @@ ReviewId = NewType("ReviewId", UUID)
 ResultSheetId = NewType("ResultSheetId", UUID)
 AuditEventId = NewType("AuditEventId", UUID)
 JobId = NewType("JobId", UUID)
+
+# Identity store (separate database, P4)
+AuthSessionId = NewType("AuthSessionId", UUID)

@@ -9,7 +9,7 @@ BACKEND  := backend
 FRONTEND := frontend
 COMPOSE  := docker compose
 
-.PHONY: help setup up up-gpu down logs test test-integration lint typecheck fmt migrate seed ci
+.PHONY: help setup up up-gpu down logs test test-integration lint typecheck fmt migrate seed openapi ci
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -20,10 +20,12 @@ setup: ## Install Python and Node dependencies; create .env from .env.example
 	@test -f .env || { cp .env.example .env; echo "created .env from .env.example"; }
 
 up: ## Start the dev stack (postgres+pgvector, minio, api, worker, frontend)
+	@mkdir -p var/keys var/backups  # bind mounts; created by Docker as root otherwise
 	$(COMPOSE) up --build -d
 	@echo "frontend http://localhost:5173  api http://localhost:8000/docs  minio console http://localhost:9001"
 
 up-gpu: ## Start the dev stack with the NVIDIA GPU given to the worker (see docs/development.md)
+	@mkdir -p var/keys var/backups
 	$(COMPOSE) -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
 
 down: ## Stop the dev stack (named volumes are kept; `docker compose down -v` deletes the data)
@@ -54,10 +56,14 @@ fmt: ## ruff format and prettier --write
 	cd $(BACKEND) && uv run ruff check --fix . && uv run ruff format .
 	cd $(FRONTEND) && npm run format
 
-migrate: ## Apply database migrations (alembic upgrade head) and enable the tarn_app login
+migrate: ## Migrate the application and identity databases; enable the tarn_app and tarn_auth logins
 	cd $(BACKEND) && uv run tarn db upgrade && uv run tarn db app-login
+	cd $(BACKEND) && uv run tarn identity upgrade && uv run tarn identity app-login
 
 seed: ## Load idempotent development seed data -- arrives in P8
 	@echo "seed: nothing to seed yet; seed data arrives in P8."
 
-ci: lint typecheck test ## What GitHub Actions runs
+openapi: ## Write the OpenAPI document to docs/api/openapi.json (R3)
+	cd $(BACKEND) && uv run python -m tarn_api.openapi
+
+ci: openapi lint typecheck test ## What GitHub Actions runs (CI fails if openapi.json is stale)

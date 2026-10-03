@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tarn.example/schemas/auth/identity-record/1.0",
+  "title": "Tarn identity record",
+  "description": "One user's credentials as held by the identity store and written to encrypted backups. Written from docs/auth/identity-record.example.json with provider-neutral names. Profiles and roles live in the application database, not here. Hashes are argon2id with a server-side pepper; encrypted values use the tenant's data key (enc:v1:<data key version or key id>:<base64>).",
+  "type": "object",
+  "required": ["version", "tenant_id", "user_id", "identity", "authentication", "recovery_support", "audit"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": "1.0", "description": "Version of this record format." },
+    "tenant_id": { "$ref": "#/$defs/id", "description": "The college (tenant). Tarn uses the college UUID." },
+    "user_id": { "$ref": "#/$defs/id", "description": "The user. Tarn uses the user UUID of the application database." },
+    "identity": {
+      "type": "object",
+      "required": ["login_handle", "email_canonical", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "login_handle": { "type": "string", "minLength": 3, "maxLength": 320, "description": "The email as the user typed it." },
+        "email_canonical": { "type": "string", "minLength": 3, "maxLength": 320, "pattern": "^[^\\sA-Z@]+@[^\\sA-Z@]+\\.[^\\sA-Z@]+$", "description": "Trimmed, lower-case email; unique within the tenant." },
+        "status": { "enum": ["PENDING", "ACTIVE", "DISABLED"], "description": "PENDING: registered or invited, not yet verified or without a password." },
+        "email_verified_at": { "$ref": "#/$defs/time_or_null" }
+      }
+    },
+    "authentication": {
+      "type": "object",
+      "required": ["password_hash", "last_password_change", "force_reset"],
+      "additionalProperties": false,
+      "properties": {
+        "password_hash": { "oneOf": [{ "$ref": "#/$defs/argon2id" }, { "type": "null" }], "description": "Null until an invited user sets a password." },
+        "last_password_change": { "$ref": "#/$defs/time_or_null" },
+        "force_reset": { "type": "boolean", "description": "An admin requires a new password at the next sign-in." }
+      }
+    },
+    "recovery_support": {
+      "type": "object",
+      "required": ["recovery_version", "recovery_factors"],
+      "additionalProperties": false,
+      "properties": {
+        "recovery_version": { "type": "string", "pattern": "^v[0-9]+$", "description": "v0: no recovery codes issued yet; increases each time the codes are replaced." },
+        "encrypted_master_recovery_token": { "oneOf": [{ "$ref": "#/$defs/encrypted" }, { "type": "null" }], "description": "From the original example. Not used by Tarn (purpose undefined): accepted on import and ignored; never exported." },
+        "recovery_factors": {
+          "type": "array",
+          "items": { "oneOf": [{ "$ref": "#/$defs/recovery_code" }, { "$ref": "#/$defs/shamir_share" }] }
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "required": ["created_at", "updated_at", "failed_login_attempts", "lockout_until"],
+      "additionalProperties": false,
+      "properties": {
+        "created_at": { "$ref": "#/$defs/time" },
+        "updated_at": { "$ref": "#/$defs/time" },
+        "failed_login_attempts": { "type": "integer", "minimum": 0, "description": "Stored apart from the credentials so it updates atomically." },
+        "lockout_until": { "$ref": "#/$defs/time_or_null" }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$" },
+    "time": { "type": "string", "format": "date-time" },
+    "time_or_null": { "oneOf": [{ "$ref": "#/$defs/time" }, { "type": "null" }] },
+    "argon2id": { "type": "string", "pattern": "^\\$argon2id\\$v=19\\$m=[0-9]+,t=[0-9]+,p=[0-9]+\\$" },
+    "encrypted": { "type": "string", "pattern": "^enc:v1:[^:]+:[A-Za-z0-9+/=._-]+$" },
+    "recovery_code": {
+      "type": "object",
+      "required": ["type", "code_hash", "created_at", "used"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "SECURE_RECOVERY_CODE" },
+        "code_hash": { "$ref": "#/$defs/argon2id" },
+        "created_at": { "$ref": "#/$defs/time" },
+        "used": { "type": "boolean" },
+        "used_at": { "$ref": "#/$defs/time_or_null" }
+      }
+    },
+    "shamir_share": {
+      "description": "Accepted and kept as received; the Shamir recovery flow is not decided or built.",
+      "type": "object",
+      "required": ["type", "threshold", "total_shares", "encrypted_share_blob"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "SHAMIR_SECRET_SHARE" },
+        "threshold": { "type": "integer", "minimum": 2 },
+        "total_shares": { "type": "integer", "minimum": 2 },
+        "encrypted_share_blob": { "$ref": "#/$defs/encrypted" }
+      }
+    }
+  }
+}

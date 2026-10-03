@@ -8,6 +8,9 @@ x-backend: &backend
   image: tarn/backend:dev
   volumes:
     - ./backend:/app/backend
+    # Development KMS file key and encrypted identity backups (git-ignored var/).
+    - ./var/keys:/app/var/keys
+    - ./var/backups:/app/var/backups
   environment: &backend-env
     TARN_ENV: development
     TARN_LOG_LEVEL: ${TARN_LOG_LEVEL:-INFO}
@@ -20,6 +23,17 @@ x-backend: &backend
     TARN_BLOB_BUCKET: ${TARN_BLOB_BUCKET:-tarn}
     TARN_DEVICE: ${TARN_DEVICE:-auto}
     TARN_CLOUD_OCR_ENABLED: ${TARN_CLOUD_OCR_ENABLED:-false}
+    # Identity store (P4): its own database and role.
+    TARN_IDENTITY_DATABASE_URL: postgresql://${POSTGRES_USER:-tarn}:${POSTGRES_PASSWORD:-tarn_dev_password}@postgres:5432/${TARN_IDENTITY_DB:-tarn_identity}
+    TARN_IDENTITY_APP_DATABASE_URL: postgresql://tarn_auth:${TARN_AUTH_DB_PASSWORD:-tarn_auth_dev_password}@postgres:5432/${TARN_IDENTITY_DB:-tarn_identity}
+    TARN_KMS_KEY_REF: ${TARN_KMS_KEY_REF:-local:tarn-dev}
+    TARN_LOCAL_KEY_DIR: /app/var/keys
+    TARN_PASSWORD_PEPPER: ${TARN_PASSWORD_PEPPER:-dev-only-pepper-not-for-production}
+    TARN_TOKEN_SIGNING_KEY: ${TARN_TOKEN_SIGNING_KEY:-dev-only-signing-key-not-for-production}
+    TARN_PUBLIC_URL: ${TARN_PUBLIC_URL:-http://localhost:5173}
+    TARN_TENANT_SIGNUP_REQUIRES_APPROVAL: ${TARN_TENANT_SIGNUP_REQUIRES_APPROVAL:-true}
+    TARN_IDENTITY_BACKUP_DIR: /app/var/backups/identity
+    TARN_IDENTITY_BACKUP_INTERVAL_HOURS: ${TARN_IDENTITY_BACKUP_INTERVAL_HOURS:-24}
 
 services:
   postgres:
@@ -106,6 +120,8 @@ services:
       PADDLE_PDX_CACHE_HOME: /models/paddlex
     volumes:
       - ./backend:/app/backend
+      - ./var/keys:/app/var/keys
+      - ./var/backups:/app/var/backups
       - model-cache:/models
     depends_on:
       postgres:

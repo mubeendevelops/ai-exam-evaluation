@@ -1,0 +1,10 @@
+{
+  "tenant_id": "tnt_987a6b5c",
+  "tenant_name": "Tarn Knowledge Services",
+  "kms_key_arn": "arn:aws:kms:ap-south-1:123456789012:key/mrk-8923a...",
+  "auth_policy": {
+    "min_password_length": 12,
+    "argon_time_cost": 3,
+    "argon_memory_cost": 65536
+  }
+}

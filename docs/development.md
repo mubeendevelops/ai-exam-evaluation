@@ -10,6 +10,7 @@
 ```bash
 make setup        # uv sync, npm ci, copy .env.example to .env
 make up           # build and start postgres+pgvector, minio, api, worker, frontend
+make migrate      # application database (tarn_app) and identity database (tarn_auth)
 make lint typecheck test
 ```
 
@@ -23,6 +24,15 @@ make lint typecheck test
 All ports are bound to 127.0.0.1. Data lives in the named volumes `postgres-data` and `minio-data`; `make down` keeps them, `docker compose down -v` deletes them.
 
 `make test-integration` runs the tests that need the stack (PostgreSQL has pgvector, the MinIO bucket exists). `uv run tarn doctor --services` (from `backend/`) prints the same checks.
+
+## Accounts in development
+
+Credentials live in their own database, `tarn_identity`, reached only by the role `tarn_auth`; the application role `tarn_app` cannot connect to it (and `tarn_auth` cannot connect to `tarn`). `make migrate` creates the database if the volume predates it.
+
+- **Email** goes to the API container's log (console mailer): `docker compose logs api | grep token=` finds verification, invitation and reset links. Production refuses the console mailer.
+- **Registering a college:** `POST /api/v1/registrations` (or the P5 page), open the verification link, then approve it as a Tarn operator: `cd backend && uv run tarn tenants list` and `uv run tarn tenants approve <ID> --operator <you>`. Set `TARN_TENANT_SIGNUP_REQUIRES_APPROVAL=false` to skip approval locally.
+- **Keys:** the development "KMS key" is `var/keys/tarn-dev.key`, created on first use and shared by host commands and containers (bind mount). Deleting it makes every tenant's encrypted recovery material and identity backups unreadable. On an NTFS drive the file cannot be made owner-only (mode 600); that is acceptable for development keys only.
+- **Backups:** the worker writes an encrypted bundle per tenant to `var/backups/identity/` every `TARN_IDENTITY_BACKUP_INTERVAL_HOURS`; `uv run tarn identity export` / `uv run tarn identity import <file>` do it by hand.
 
 ## Tooling choices
 

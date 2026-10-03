@@ -47,7 +47,7 @@ Needs Docker with Compose, uv and Node 22.22+ (24 LTS preferred). Details, tooli
 ```bash
 make setup   # install dependencies, create .env
 make up      # start the stack: frontend :5173, API :8000/docs, MinIO console :9001
-make ci      # lint, typecheck, test
+make ci      # openapi, lint, typecheck, test
 ```
 
 | Command | Purpose |
@@ -56,7 +56,9 @@ make ci      # lint, typecheck, test
 | `make up` / `make down` | Start or stop the Docker Compose stack (`make up-gpu` adds the NVIDIA GPU) |
 | `make test` / `make test-integration` | Run unit tests / tests that need the running stack |
 | `make lint` / `make typecheck` / `make fmt` | ruff, import-linter, eslint, prettier / mypy --strict, tsc / formatters |
-| `make migrate` | Apply database migrations and enable the `tarn_app` login (run after `make up`) |
+| `make migrate` | Migrate the application and identity databases; enable the `tarn_app` and `tarn_auth` logins (run after `make up`) |
+| `make openapi` | Write the API contract to `docs/api/openapi.json` (CI fails if it is stale) |
+| `uv run tarn tenants approve ID --operator NAME` | (from `backend/`) A Tarn operator approves a tenant registration |
 | `make seed` | Placeholder until P8 (seed data) |
 
 Real student booklets are never committed; `samples/` is git-ignored.

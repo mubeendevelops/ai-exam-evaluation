@@ -3,12 +3,22 @@
 from dataclasses import dataclass, field
 
 from tarn_core.services._support import Runtime
+from tarn_core.services.auth import AuthKit, AuthSettings
 from tarn_core.testing.fake_engines import (
     FixedCreditScorer,
     HashEmbedder,
     ScriptedDiagramRecognizer,
     ScriptedLayoutDetector,
     ScriptedOcrEngine,
+)
+from tarn_core.testing.memory_identity import (
+    CountingRandom,
+    FakeCipher,
+    FakeHasher,
+    FakeKeyManager,
+    MemoryIdentityStore,
+    MemoryMailer,
+    SetPasswords,
 )
 from tarn_core.testing.memory_repositories import (
     MemoryBookletRepository,
@@ -43,8 +53,16 @@ class InMemory:
     blobs: MemoryBlobStore = field(default_factory=MemoryBlobStore)
     page_source: MemoryPageSource = field(default_factory=MemoryPageSource)
     content: MemoryContentRepository = field(default_factory=MemoryContentRepository)
+    hasher: FakeHasher = field(default_factory=FakeHasher)
+    keys: FakeKeyManager = field(default_factory=FakeKeyManager)
+    cipher: FakeCipher = field(default_factory=FakeCipher)
+    random: CountingRandom = field(default_factory=CountingRandom)
+    mailer: MemoryMailer = field(default_factory=MemoryMailer)
+    common_passwords: SetPasswords = field(default_factory=SetPasswords)
+    auth_settings: AuthSettings = field(default_factory=AuthSettings)
 
     def __post_init__(self) -> None:
+        self.identity = MemoryIdentityStore(self.log)
         self.colleges = MemoryCollegeRepository(self.log)
         self.users = MemoryUserRepository(self.log)
         self.students = MemoryStudentRepository(self.log)
@@ -56,8 +74,24 @@ class InMemory:
     def runtime(self) -> Runtime:
         return Runtime(clock=self.clock, ids=self.ids, audit=self.audit)
 
+    @property
+    def auth_kit(self) -> AuthKit:
+        return AuthKit(
+            hasher=self.hasher,
+            keys=self.keys,
+            cipher=self.cipher,
+            random=self.random,
+            mailer=self.mailer,
+            common_passwords=self.common_passwords,
+            settings=self.auth_settings,
+        )
+
 
 __all__ = [
+    "CountingRandom",
+    "FakeCipher",
+    "FakeHasher",
+    "FakeKeyManager",
     "FixedClock",
     "FixedCreditScorer",
     "HashEmbedder",
@@ -67,7 +101,9 @@ __all__ = [
     "MemoryBookletRepository",
     "MemoryCollegeRepository",
     "MemoryContentRepository",
+    "MemoryIdentityStore",
     "MemoryJobQueue",
+    "MemoryMailer",
     "MemoryPageSource",
     "MemoryResultSheetRepository",
     "MemoryScoreRepository",
@@ -78,5 +114,6 @@ __all__ = [
     "ScriptedLayoutDetector",
     "ScriptedOcrEngine",
     "SequentialIds",
+    "SetPasswords",
     "TenantLog",
 ]

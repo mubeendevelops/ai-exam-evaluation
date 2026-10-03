@@ -178,6 +178,7 @@ students = Table(
     _text("name"),
     _text("usn"),
     _seq(),
+    _text("class_section"),
 )
 
 booklets = Table(
@@ -355,7 +356,7 @@ audit_events = Table(
     metadata,
     _uuid("id", primary_key=True),
     _uuid("college_id"),
-    _uuid("actor_id"),
+    _uuid("actor_id", nullable=True),
     Column("at", DateTime(timezone=True), nullable=False),
     _text("action"),
     _uuid("booklet_id", nullable=True),

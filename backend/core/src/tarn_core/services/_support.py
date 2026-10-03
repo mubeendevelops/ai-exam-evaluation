@@ -24,7 +24,7 @@ class Runtime:
     def record(
         self,
         college_id: CollegeId,
-        actor_id: UserId,
+        actor_id: UserId | None,
         action: AuditAction,
         *,
         booklet_id: BookletId | None = None,
