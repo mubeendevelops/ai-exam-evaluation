@@ -195,6 +195,35 @@ def identity_import(
     typer.echo(f"restored {report.tenant.institution_id}: {report.identities} identities")
 
 
+# --- development seed -------------------------------------------------------------------------
+
+
+@app.command()
+def seed() -> None:
+    """Load the development seed data: two demo colleges, the sample papers, keys and rosters.
+
+    Safe to run again. Needs the stack (make up) and the schemas (make migrate)."""
+    from tarn_adapters.seed import run_seed
+    from tarn_core.seed import SeedError
+
+    settings = get_settings()
+    try:
+        summary = run_seed(settings)
+    except SeedError as error:
+        typer.echo(f"seed: {error}")
+        raise typer.Exit(code=1) from None
+    for label, counts in (("created", summary.report.created), ("kept", summary.report.kept)):
+        line = ", ".join(f"{n} {what}" for what, n in counts.items()) or "nothing"
+        typer.echo(f"{label:8}: {line}")
+    typer.echo("")
+    typer.echo(f"Sign in at {settings.public_url} (development password: {summary.password})")
+    for college, _accounts in summary.colleges:
+        typer.echo(f"  {college.institution_id:9} {college.name}")
+        typer.echo(f"    admin   {college.admin.email}")
+        for teacher in college.teachers:
+            typer.echo(f"    teacher {teacher.email}")
+
+
 # --- tenants (Tarn operators) -----------------------------------------------------------------
 
 

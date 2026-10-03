@@ -42,3 +42,9 @@ def test_db_downgrade_refused_in_production(monkeypatch: pytest.MonkeyPatch) -> 
     assert result.exit_code == 1
     assert "refusing" in result.stdout
     get_settings.cache_clear()
+
+
+def test_seed_command_is_listed_and_documented() -> None:
+    result = runner.invoke(app, ["seed", "--help"])
+    assert result.exit_code == 0
+    assert "development seed" in result.output.lower()

@@ -63,8 +63,8 @@ migrate: ## Migrate the application and identity databases; enable the tarn_app 
 	cd $(BACKEND) && uv run tarn db upgrade && uv run tarn db app-login
 	cd $(BACKEND) && uv run tarn identity upgrade && uv run tarn identity app-login
 
-seed: ## Load idempotent development seed data -- arrives in P8
-	@echo "seed: nothing to seed yet; seed data arrives in P8."
+seed: ## Load idempotent development seed data: two demo colleges, sample papers, keys, rosters
+	cd $(BACKEND) && uv run tarn seed
 
 openapi: ## Write the OpenAPI document to docs/api/openapi.json (R3) and the typed web client from it
 	cd $(BACKEND) && uv run python -m tarn_api.openapi

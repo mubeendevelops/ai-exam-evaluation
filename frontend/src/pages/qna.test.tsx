@@ -178,6 +178,30 @@ describe('question detail', () => {
     )
   })
 
+  it('labels a synthetic key as dev only, and leaves a faculty key unlabelled', async () => {
+    const key = (id: string, text: string, synthetic: boolean) => ({
+      id,
+      version: 1,
+      text,
+      guidance_only: false,
+      synthetic,
+    })
+    opened({
+      ...detail(),
+      reference_answers: [
+        key('a-1', 'Faculty key text.', false),
+        key('a-2', 'Written for development.', true),
+      ],
+    })
+    await openFirst()
+    const keys = screen.getByRole('region', { name: 'Benchmark answers' })
+    const label = within(keys).getByText('SYNTHETIC – dev only, needs teacher validation')
+    const synthetic = within(keys).getByText('Written for development.').parentElement
+    const faculty = within(keys).getByText('Faculty key text.').parentElement
+    expect(synthetic).toContainElement(label)
+    expect(faculty).not.toHaveTextContent('SYNTHETIC')
+  })
+
   it('offers Edit and the upload actions to the owner, not Copy', async () => {
     opened()
     await openFirst()

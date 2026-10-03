@@ -258,7 +258,9 @@ export function QuestionDetailView({
           >
             <div className="flex flex-wrap items-center gap-2">
               {a.guidance_only && <Badge tone="amber">Guidance only: mark manually</Badge>}
-              {a.synthetic && <Badge tone="gray">SYNTHETIC – dev only</Badge>}
+              {a.synthetic && (
+                <Badge tone="purple">SYNTHETIC – dev only, needs teacher validation</Badge>
+              )}
               {own && (
                 <span className="ml-auto flex gap-2">
                   <SmallButton

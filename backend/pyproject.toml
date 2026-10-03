@@ -53,6 +53,8 @@ src = ["core/src", "adapters/src", "api/src", "worker/src", "cli/src"]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "C4", "PTH", "RUF", "S", "T20"]
 
 [tool.ruff.lint.per-file-ignores]
+# The seed data is prose (keys, rubrics, K-EL text): long string lines are the content.
+"core/src/tarn_core/seed/data/**" = ["E501"]
 "**/tests/**" = ["S101", "S105", "S106"]
 # Migrations build DDL from constants (table names, policy expressions), never from input.
 "**/migrations/**" = ["S608"]

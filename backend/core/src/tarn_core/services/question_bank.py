@@ -434,7 +434,11 @@ class QuestionBankService:
         *,
         text: str,
         guidance_only: bool = False,
+        synthetic: bool = False,
     ) -> ReferenceAnswer:
+        """``synthetic`` marks a key written for development (D18): it is shown as
+        "SYNTHETIC - dev only, needs teacher validation". The web app does not set it; the
+        development seed does."""
         self._users.get(college_id, actor_id)
         ensure_can_edit(college_id, self._content.get(Question, question_id))
         answer = ReferenceAnswer(
@@ -443,6 +447,7 @@ class QuestionBankService:
             question_id=question_id,
             text=text.strip(),
             guidance_only=guidance_only,
+            synthetic=synthetic,
         )
         self._content.save(answer)
         self._rt.record(
