@@ -1,50 +1,48 @@
-import { useEffect, useState } from 'react'
+import { Navigate, Route, Routes } from 'react-router'
+import { RedirectIfSignedIn, RequireAdmin, RequireAuth } from './auth/guards'
+import { AppShell } from './components/app/AppShell'
+import { PublicLayout } from './components/public/PublicLayout'
+import AcceptInvitePage from './pages/AcceptInvitePage'
+import AdminPage from './pages/AdminPage'
+import EvaluatePage from './pages/EvaluatePage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import LandingPage from './pages/LandingPage'
+import QnaPage from './pages/QnaPage'
+import RecoverPage from './pages/RecoverPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
+import SchemaPage from './pages/SchemaPage'
+import VerifyEmailPage from './pages/VerifyEmailPage'
 
-interface Health {
-  status: string
-  version: string
-  environment: string
-  device: { kind: string; name: string; detail: string }
-}
-
-type ApiState = { phase: 'loading' } | { phase: 'ok'; health: Health } | { phase: 'down' }
-
+/**
+ * Public pages (MainLogin.html look) and the signed-in app (project_idea.html look).
+ * Links in emails: /verify-email, /reset-password, /accept-invite (all `?token=`).
+ */
 export default function App() {
-  const [api, setApi] = useState<ApiState>({ phase: 'loading' })
-
-  useEffect(() => {
-    const controller = new AbortController()
-    fetch('/api/v1/health', { signal: controller.signal })
-      .then((res) => (res.ok ? (res.json() as Promise<Health>) : Promise.reject(new Error())))
-      .then((health) => setApi({ phase: 'ok', health }))
-      .catch(() => {
-        if (!controller.signal.aborted) setApi({ phase: 'down' })
-      })
-    return () => controller.abort()
-  }, [])
-
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-6 p-8">
-      <header>
-        <h1 className="text-3xl font-bold text-slate-900">Tarn AI Evaluation</h1>
-        <p className="mt-1 text-slate-600">Development environment placeholder.</p>
-      </header>
-      <section aria-label="API status" className="rounded-lg border border-slate-200 p-4">
-        {api.phase === 'loading' && <p className="text-slate-500">Checking API…</p>}
-        {api.phase === 'down' && (
-          <p className="text-red-700">
-            <i className="fa-solid fa-circle-xmark mr-2" aria-hidden="true" />
-            API unreachable. Run <code className="font-mono">make up</code>.
-          </p>
-        )}
-        {api.phase === 'ok' && (
-          <p className="text-emerald-700">
-            <i className="fa-solid fa-circle-check mr-2" aria-hidden="true" />
-            API {api.health.status} · v{api.health.version} · {api.health.environment} ·{' '}
-            {api.health.device.kind.toUpperCase()}
-          </p>
-        )}
-      </section>
-    </main>
+    <Routes>
+      <Route element={<PublicLayout />}>
+        <Route element={<RedirectIfSignedIn />}>
+          <Route index element={<LandingPage />} />
+          <Route path="forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="recover" element={<RecoverPage />} />
+        </Route>
+        <Route path="reset-password" element={<ResetPasswordPage />} />
+        <Route path="verify-email" element={<VerifyEmailPage />} />
+        <Route path="accept-invite" element={<AcceptInvitePage />} />
+      </Route>
+
+      <Route element={<RequireAuth />}>
+        <Route element={<AppShell />}>
+          <Route path="qna" element={<QnaPage />} />
+          <Route path="evaluate" element={<EvaluatePage />} />
+          <Route path="schema" element={<SchemaPage />} />
+          <Route element={<RequireAdmin />}>
+            <Route path="admin" element={<AdminPage />} />
+          </Route>
+        </Route>
+      </Route>
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }

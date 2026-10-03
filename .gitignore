@@ -91,3 +91,7 @@ crash.log
 *.swp
 .DS_Store
 Thumbs.db
+
+# --- Playwright output ---
+frontend/playwright-report/
+frontend/test-results/

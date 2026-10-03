@@ -39,5 +39,8 @@ jobs:
       - run: cd frontend && npm run lint
       - run: cd frontend && npm run format:check
       - run: cd frontend && npm run typecheck
+      - run: cd frontend && npm run api:check
       - run: cd frontend && npm test
       - run: cd frontend && npm run build
+      - run: cd frontend && npx playwright install --with-deps chromium
+      - run: cd frontend && npm run test:e2e

@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     identity_backup_interval_hours: float = 24.0
     identity_backup_keep: int = 14
 
+    # The worker answers GET /health on this port (0 = off); the API reports it in /api/v1/health
+    # by calling ``worker_health_url`` (empty = not configured, shown as "unknown").
+    worker_health_host: str = "127.0.0.1"
+    worker_health_port: int = 8001
+    worker_health_url: str = ""
+
     @model_validator(mode="after")
     def _production_is_not_development(self) -> Self:
         if self.env != "production":

@@ -20,6 +20,7 @@ from tarn_adapters.config import Settings, get_settings
 from tarn_adapters.logging_setup import configure_logging
 from tarn_adapters.runtime import SystemClock
 from tarn_core.ports.runtime import Clock
+from tarn_worker.health import start_health_server
 
 HEARTBEAT_SECONDS = 60.0
 
@@ -98,12 +99,22 @@ def run(
     log = structlog.get_logger("tarn_worker")
     device = detect_device(settings.device)
     log.info("worker.started", device=device.kind, device_name=device.name, detail=device.detail)
-    while True:
-        for job in jobs:
-            job.run_if_due()
-        if stop.wait(heartbeat_s):
-            break
-        log.info("worker.idle")
+    health = (
+        start_health_server(settings.worker_health_host, settings.worker_health_port, device.kind)
+        if settings.worker_health_port > 0
+        else None
+    )
+    try:
+        while True:
+            for job in jobs:
+                job.run_if_due()
+            if stop.wait(heartbeat_s):
+                break
+            log.info("worker.idle")
+    finally:
+        if health is not None:
+            health.shutdown()
+            health.server_close()
     log.info("worker.stopped")
 
 

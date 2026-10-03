@@ -1402,6 +1402,9 @@
           },
           "device": {
             "$ref": "#/components/schemas/DeviceOut"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/WorkerOut"
           }
         },
         "type": "object",
@@ -1409,7 +1412,8 @@
           "status",
           "version",
           "environment",
-          "device"
+          "device",
+          "worker"
         ],
         "title": "HealthOut"
       },
@@ -1985,6 +1989,29 @@
           "token"
         ],
         "title": "VerifyEmailIn"
+      },
+      "WorkerOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down",
+              "unknown"
+            ],
+            "title": "Status"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "detail"
+        ],
+        "title": "WorkerOut"
       }
     },
     "securitySchemes": {

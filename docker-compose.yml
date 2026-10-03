@@ -22,6 +22,9 @@ x-backend: &backend
     TARN_BLOB_SECURE: "false"
     TARN_BLOB_BUCKET: ${TARN_BLOB_BUCKET:-tarn}
     TARN_DEVICE: ${TARN_DEVICE:-auto}
+    # The worker serves GET /health inside the Compose network (not published); the API reads it.
+    TARN_WORKER_HEALTH_HOST: 0.0.0.0
+    TARN_WORKER_HEALTH_URL: http://worker:8001/health
     TARN_CLOUD_OCR_ENABLED: ${TARN_CLOUD_OCR_ENABLED:-false}
     # Identity store (P4): its own database and role.
     TARN_IDENTITY_DATABASE_URL: postgresql://${POSTGRES_USER:-tarn}:${POSTGRES_PASSWORD:-tarn_dev_password}@postgres:5432/${TARN_IDENTITY_DB:-tarn_identity}

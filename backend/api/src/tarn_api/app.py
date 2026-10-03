@@ -1,5 +1,10 @@
 """FastAPI application factory. Run with ``uvicorn tarn_api.app:create_app --factory``."""
 
+import json
+import urllib.error
+import urllib.request
+from typing import Literal
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -17,11 +22,31 @@ class DeviceOut(BaseModel):
     detail: str
 
 
+class WorkerOut(BaseModel):
+    status: Literal["up", "down", "unknown"]
+    detail: str
+
+
 class HealthOut(BaseModel):
     status: str
     version: str
     environment: str
     device: DeviceOut
+    worker: WorkerOut
+
+
+def probe_worker(url: str, timeout_s: float = 1.0) -> WorkerOut:
+    """Asks the worker's health endpoint; "unknown" when no address is configured."""
+    if not url:
+        return WorkerOut(status="unknown", detail="Worker address not configured")
+    try:
+        with urllib.request.urlopen(url, timeout=timeout_s) as response:  # noqa: S310 - own config
+            body = json.load(response)
+    except (urllib.error.URLError, OSError, ValueError):
+        return WorkerOut(status="down", detail="Worker not reachable")
+    if isinstance(body, dict) and body.get("status") == "ok":
+        return WorkerOut(status="up", detail="Worker running")
+    return WorkerOut(status="down", detail="Worker reports a problem")
 
 
 def create_app(settings: Settings | None = None, backends: Backends | None = None) -> FastAPI:
@@ -45,6 +70,7 @@ def create_app(settings: Settings | None = None, backends: Backends | None = Non
             version=__version__,
             environment=settings.env,
             device=DeviceOut(kind=device.kind, name=device.name, detail=device.detail),
+            worker=probe_worker(settings.worker_health_url),
         )
 
     for module in (auth, registration, accounts, roster):

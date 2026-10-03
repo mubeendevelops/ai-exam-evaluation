@@ -53,3 +53,26 @@ def test_run_starts_due_jobs() -> None:
     stop.set()
     run(Settings(_env_file=None, device="cpu"), stop, heartbeat_s=0.01, jobs=[job])
     assert ran == ["x"]
+
+
+def test_health_endpoint_answers_while_the_worker_runs() -> None:
+    import json
+    import urllib.error
+    import urllib.request
+
+    from tarn_worker.health import start_health_server
+
+    server = start_health_server("127.0.0.1", 0, "cpu")
+    try:
+        port = server.server_address[1]
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=3) as response:
+            assert json.load(response) == {"status": "ok", "device": "cpu"}
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/other", timeout=3)
+        except urllib.error.HTTPError as err:
+            assert err.code == 404
+        else:  # pragma: no cover
+            raise AssertionError("expected 404")
+    finally:
+        server.shutdown()
+        server.server_close()

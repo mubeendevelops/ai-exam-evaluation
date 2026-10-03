@@ -1,7 +1,150 @@
 @import 'tailwindcss';
 
-/* Prototype design tokens (docs/project_idea.html) are ported here in P5. */
+/*
+ * Two token sets, one per reference (CLAUDE.md "Frontend (P5)").
+ *   App (docs/project_idea.html)  — the defaults below, used after sign-in.
+ *   Public (docs/MainLogin.html)  — `.theme-public` overrides the same names, so a component
+ *     reads `bg-dark-bg` / `text-accent-purple` and gets the colours of the page it sits on.
+ * Both references also use Tailwind's stock palette (purple-*, gray-*, ...), which is unchanged.
+ */
 @theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --font-display: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
+
+  --color-dark-bg: #0b0f17;
+  --color-card-bg: #161b26;
+  --color-border-bg: #232d3f;
+  --color-accent-purple: #8b5cf6;
+  --color-accent-cyan: #06b6d4;
+  --color-accent-blue: #3b82f6;
+  --color-accent-pink: #ec4899;
+  --color-accent-emerald: #10b981;
+
+  --animate-scan-line: scan-line 3s ease-in-out infinite alternate;
+  @keyframes scan-line {
+    0% {
+      top: 0%;
+      opacity: 0.8;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      top: 98%;
+      opacity: 0.8;
+    }
+  }
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background-color: #0b0f17;
+  color: #f3f4f6;
+  font-family: var(--font-sans);
+}
+
+/* ---------- Public pages: MainLogin.html tokens and font ---------- */
+.theme-public {
+  --color-dark-bg: #090d16;
+  --color-card-bg: rgba(22, 28, 45, 0.75);
+  --color-accent-purple: #a855f7;
+  --color-accent-cyan: #06b6d4;
+  --color-accent-blue: #3b82f6;
+  --color-accent-emerald: #10b981;
+  font-family: var(--font-display);
+  background-color: var(--color-dark-bg);
+  color: #f3f4f6;
+  overflow-x: hidden;
+}
+
+.glass-box {
+  background: rgba(18, 24, 38, 0.75);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-box-interactive {
+  background: rgba(22, 30, 49, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+.glass-box-interactive:hover,
+.glass-box-interactive:focus-visible {
+  border-color: rgba(168, 85, 247, 0.4);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px -10px rgba(168, 85, 247, 0.25);
+}
+
+.bg-grid-pattern {
+  background-size: 40px 40px;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(168, 85, 247, 0.4);
+  border-radius: 3px;
+}
+
+/* ---------- Signed-in app: project_idea.html tokens and font ---------- */
+.theme-app {
+  background-color: var(--color-dark-bg);
+  color: #f3f4f6;
+  font-family: var(--font-sans);
+}
+.theme-app ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.theme-app ::-webkit-scrollbar-track {
+  background: var(--color-dark-bg);
+}
+.theme-app ::-webkit-scrollbar-thumb {
+  background: var(--color-border-bg);
+  border-radius: 4px;
+}
+.theme-app ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent-purple);
+}
+
+.glass-panel {
+  background: rgba(22, 27, 38, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* The prototype's scanning line (used by the evaluation screens in later prompts). */
+.scan-line {
+  position: absolute;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #06b6d4, #8b5cf6, transparent);
+  box-shadow: 0 0 15px #06b6d4;
+  animation: var(--animate-scan-line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-line,
+  .animate-ping,
+  .animate-pulse {
+    animation: none;
+  }
+  .glass-box-interactive {
+    transition: none;
+  }
 }

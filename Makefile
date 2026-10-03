@@ -9,7 +9,7 @@ BACKEND  := backend
 FRONTEND := frontend
 COMPOSE  := docker compose
 
-.PHONY: help setup up up-gpu down logs test test-integration lint typecheck fmt migrate seed openapi ci
+.PHONY: help setup up up-gpu down logs test test-integration test-e2e lint typecheck fmt migrate seed openapi ci
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -38,6 +38,9 @@ test: ## Backend pytest (all packages) and frontend vitest
 	cd $(BACKEND) && uv run pytest
 	cd $(FRONTEND) && npm test
 
+test-e2e: ## Playwright browser tests (API stubbed in the browser; first run: cd frontend && npx playwright install chromium)
+	cd $(FRONTEND) && npm run test:e2e
+
 test-integration: ## Tests that need the running stack (make up first)
 	cd $(BACKEND) && uv run pytest -m integration
 
@@ -63,7 +66,8 @@ migrate: ## Migrate the application and identity databases; enable the tarn_app 
 seed: ## Load idempotent development seed data -- arrives in P8
 	@echo "seed: nothing to seed yet; seed data arrives in P8."
 
-openapi: ## Write the OpenAPI document to docs/api/openapi.json (R3)
+openapi: ## Write the OpenAPI document to docs/api/openapi.json (R3) and the typed web client from it
 	cd $(BACKEND) && uv run python -m tarn_api.openapi
+	cd $(FRONTEND) && npm run api:types
 
 ci: openapi lint typecheck test ## What GitHub Actions runs (CI fails if openapi.json is stale)
