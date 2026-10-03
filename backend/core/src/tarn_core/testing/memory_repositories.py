@@ -1,11 +1,12 @@
 """In-memory repositories for tests. They filter by college the way PostgreSQL RLS will,
 and log every college id they are called with, so tests can prove isolation."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 from uuid import UUID
 
 from tarn_core.domain.booklet import Answer, Booklet, Page, Region, Segment
+from tarn_core.domain.content import KeyFile, Question, ReferenceAnswer
 from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore
@@ -18,9 +19,10 @@ from tarn_core.ids import (
     PageId,
     QuestionId,
     StudentId,
+    SubjectId,
     UserId,
 )
-from tarn_core.ports.repositories import GlobalItem, QuestionPart
+from tarn_core.ports.repositories import GlobalItem, QuestionPage, QuestionPart, QuestionQuery
 
 
 class TenantLog:
@@ -107,9 +109,51 @@ class MemoryContentRepository:
                 kind_name == kind.__name__
                 and isinstance(latest, kind)
                 and latest.question_id == question_id
+                and not getattr(latest, "retired", False)
             ):
                 found.append(latest)
         return found
+
+    def search_questions(
+        self, query: QuestionQuery, *, limit: int, offset: int = 0
+    ) -> QuestionPage:
+        hits = [q for q in self.latest(Question) if self._matches(query, q)]
+        hits.sort(key=lambda q: (q.code.casefold(), str(q.id)))
+        return QuestionPage(items=tuple(hits[offset : offset + limit]), total=len(hits))
+
+    def _matches(self, query: QuestionQuery, q: Question) -> bool:
+        if query.subject_id is not None and q.subject_id != query.subject_id:
+            return False
+        if query.difficulty is not None and q.difficulty != query.difficulty:
+            return False
+        if query.owner_id is not None and q.meta.owning_college_id != query.owner_id:
+            return False
+        if query.topic and q.category.casefold() != query.topic.casefold():
+            return False
+        if query.code:
+            wanted, code = query.code.casefold(), q.code.casefold()
+            if (code != wanted) if query.exact_code else (wanted not in code):
+                return False
+        if query.keyword:
+            word = query.keyword.casefold()
+            texts = [q.text, q.code, q.category]
+            texts += [a.text for a in self.for_question(ReferenceAnswer, q.id)]
+            if not any(word in t.casefold() for t in texts):
+                return False
+        return True
+
+    def topics(self, subject_id: SubjectId | None = None) -> Sequence[str]:
+        found: dict[str, str] = {}
+        for q in self.latest(Question):
+            if q.category.strip() and (subject_id is None or q.subject_id == subject_id):
+                found.setdefault(q.category.casefold(), q.category)
+        return sorted(found.values(), key=str.casefold)
+
+    def key_counts(self, question_ids: Sequence[QuestionId]) -> Mapping[QuestionId, int]:
+        return {
+            qid: len(self.for_question(ReferenceAnswer, qid)) + len(self.for_question(KeyFile, qid))
+            for qid in question_ids
+        }
 
     def save(self, item: GlobalItem) -> None:
         history = self._items.setdefault((type(item).__name__, item.id), [])
@@ -132,6 +176,10 @@ class MemoryCollegeRepository:
             return self._colleges[college_id]
         except KeyError:
             raise NotFoundError(f"college {college_id}") from None
+
+    def names(self, college_ids: Sequence[CollegeId]) -> Mapping[CollegeId, str]:
+        # Not logged: naming the owner of global content is not college data access.
+        return {i: self._colleges[i].name for i in college_ids if i in self._colleges}
 
     def save(self, college: College) -> None:
         self._log.touch(college.id)

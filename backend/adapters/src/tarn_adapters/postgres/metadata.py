@@ -88,6 +88,11 @@ colleges = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
+# Id and name of every college, readable by all: who owns a piece of global content is public.
+college_directory = Table(
+    "college_directory", metadata, _uuid("id", primary_key=True), _text("name")
+)
+
 questions = Table(
     "questions",
     metadata,
@@ -101,9 +106,11 @@ question_versions = Table(
     metadata,
     _uuid("question_id", primary_key=True),
     _int("version", primary_key=True),
+    _text("code"),
     _text("text"),
     _num("max_marks"),
     _text("category"),
+    _text("difficulty"),
     *_meta_columns(owner=False),
 )
 
@@ -115,6 +122,7 @@ reference_answers = _versioned(
     _text("text"),
     Column("synthetic", Boolean(), nullable=False),
     Column("guidance_only", Boolean(), nullable=False),
+    Column("retired", Boolean(), nullable=False, server_default="false"),
 )
 
 rubric_criteria = _versioned(
@@ -124,6 +132,19 @@ rubric_criteria = _versioned(
     _text("type"),
     _num("weight"),
     Column("params", JSONB(), nullable=False),
+    Column("retired", Boolean(), nullable=False, server_default="false"),
+)
+
+key_files = _versioned(
+    "key_files",
+    _uuid("question_id"),
+    _text("name"),
+    _text("media_type"),
+    Column("size_bytes", BigInteger(), nullable=False),
+    _text("sha256"),
+    _text("blob_key"),
+    Column("keywords", ARRAY(Text()), nullable=False),
+    Column("no_student_data_confirmed", Boolean(), nullable=False),
 )
 
 glossaries = _versioned(
@@ -406,6 +427,7 @@ GLOBAL_TABLES: tuple[Table, ...] = (
     rubric_criteria,
     glossaries,
     reference_diagrams,
+    key_files,
     exam_blueprints,
     ocr_calibrations,
 )

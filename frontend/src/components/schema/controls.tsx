@@ -1,4 +1,10 @@
-import { useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
+import {
+  useId,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+} from 'react'
 
 /** Input look of the prototype's designer form (project_idea.html). */
 export const inputClass =
@@ -34,6 +40,21 @@ export function TextInput({
   return (
     <Field label={label} hint={hint}>
       {(id) => <input id={id} className={inputClass} {...input} />}
+    </Field>
+  )
+}
+
+export function TextArea({
+  label,
+  hint,
+  ...input
+}: { label: string; hint?: ReactNode } & Omit<
+  TextareaHTMLAttributes<HTMLTextAreaElement>,
+  'className'
+>) {
+  return (
+    <Field label={label} hint={hint}>
+      {(id) => <textarea id={id} className={`${inputClass} resize-y`} {...input} />}
     </Field>
   )
 }

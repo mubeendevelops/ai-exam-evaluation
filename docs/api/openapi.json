@@ -1840,6 +1840,1468 @@
           }
         }
       }
+    },
+    "/api/v1/questions": {
+      "get": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Search the question bank (every college's questions)",
+        "description": "Every filter given must match; text filters ignore case. Ordered by code.",
+        "operationId": "search_questions_api_v1_questions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "In the question, its code, topic or key.",
+              "default": "",
+              "title": "Keyword"
+            },
+            "description": "In the question, its code, topic or key."
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 40,
+              "description": "Part of the code.",
+              "default": "",
+              "title": "Code"
+            },
+            "description": "Part of the code."
+          },
+          {
+            "name": "topic",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "The topic exactly.",
+              "default": "",
+              "title": "Topic"
+            },
+            "description": "The topic exactly."
+          },
+          {
+            "name": "subject_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          },
+          {
+            "name": "difficulty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Difficulty"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Difficulty"
+            }
+          },
+          {
+            "name": "mine",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Only questions my college owns.",
+              "default": false,
+              "title": "Mine"
+            },
+            "description": "Only questions my college owns."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionPageOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Create a question owned by my college, optionally with its key and rubric",
+        "operationId": "create_question_api_v1_questions_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionCreateIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "A rule is broken; the message says which.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The code is taken.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/question-topics": {
+      "get": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "The topics in use, for the topic filter",
+        "operationId": "list_topics_api_v1_question_topics_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "subject_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response List Topics Api V1 Question Topics Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{question_id}": {
+      "get": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "One question with its keys, rubric, glossary and files",
+        "operationId": "get_question_api_v1_questions__question_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Save the next version of a question (owning college only)",
+        "description": "The subject never changes. If the marks change and a rubric exists, send the new `criteria` too: their weights must add up to the marks.",
+        "operationId": "update_question_api_v1_questions__question_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionUpdateIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Another college owns it: copy it first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "A rule is broken; the message says which.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{question_id}/copy": {
+      "post": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Copy a question, with its keys, rubric, glossary and files, to my college",
+        "operationId": "copy_question_api_v1_questions__question_id__copy_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{question_id}/rubric": {
+      "put": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Replace the rubric (owning college only)",
+        "description": "Criteria with an `id` get a new version if changed; criteria left out are retired. The weights must add up to the question's marks (an empty list is allowed: a guidance-only key is marked by hand).",
+        "operationId": "put_rubric_api_v1_questions__question_id__rubric_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RubricIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RubricOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Another college owns it: copy it first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "A rule is broken; the message says which.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{question_id}/reference-answers": {
+      "post": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Add a reference answer (owning college only)",
+        "operationId": "add_reference_answer_api_v1_questions__question_id__reference_answers_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceAnswerIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceAnswerOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Another college owns it: copy it first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "A rule is broken; the message says which.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{question_id}/reference-answers/{answer_id}": {
+      "put": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Save the next version of a reference answer (owning college only)",
+        "operationId": "edit_reference_answer_api_v1_questions__question_id__reference_answers__answer_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "answer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Answer Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceAnswerIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceAnswerOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Another college owns it: copy it first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "A rule is broken; the message says which.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Retire a reference answer (owning college only)",
+        "description": "Saves a retired version: it stops being listed, and scores that used it keep it.",
+        "operationId": "retire_reference_answer_api_v1_questions__question_id__reference_answers__answer_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "answer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Answer Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Another college owns it: copy it first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "A rule is broken; the message says which.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{question_id}/glossary": {
+      "put": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Set the glossary terms (owning college only)",
+        "description": "The glossary is the teacher's terms plus the labels of the reference diagrams, which are kept up to date automatically.",
+        "operationId": "put_glossary_api_v1_questions__question_id__glossary_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlossaryIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlossaryOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Another college owns it: copy it first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "A rule is broken; the message says which.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{question_id}/key-files": {
+      "post": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Upload an answer key or sample (PDF or image; owning college only)",
+        "description": "The request body is the file itself. The file type is read from its content. `confirm_no_student_data` must be true: keys are written by faculty and hold no student data (C9).",
+        "operationId": "upload_key_file_api_v1_questions__question_id__key_files_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "title": "Filename"
+            }
+          },
+          {
+            "name": "confirm_no_student_data",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Confirm No Student Data"
+            }
+          },
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 30,
+              "default": [],
+              "title": "Keywords"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyFileOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Another college owns it: copy it first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "A rule is broken; the message says which.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/pdf": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/jpeg": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{question_id}/key-files/{file_id}/content": {
+      "get": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Download an answer-key file",
+        "operationId": "key_file_content_api_v1_questions__question_id__key_files__file_id__content_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{question_id}/diagrams": {
+      "post": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Upload a reference diagram as PNG (owning college only)",
+        "description": "The request body is the PNG. Its nodes and edges are read from the picture later (P14); until then the graph is empty. `confirm_no_student_data` must be true (C9).",
+        "operationId": "upload_reference_diagram_api_v1_questions__question_id__diagrams_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "title": "Filename"
+            }
+          },
+          {
+            "name": "confirm_no_student_data",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Confirm No Student Data"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceDiagramOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Another college owns it: copy it first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "A rule is broken; the message says which.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{question_id}/diagrams/{diagram_id}/content": {
+      "get": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Download a reference diagram PNG",
+        "operationId": "diagram_content_api_v1_questions__question_id__diagrams__diagram_id__content_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "diagram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Diagram Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "image/png": {}
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2176,6 +3638,47 @@
         ],
         "title": "ContentRefOut"
       },
+      "CriterionOut": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "criterion": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ListCriterion"
+              },
+              {
+                "$ref": "#/components/schemas/NumericCriterion"
+              },
+              {
+                "$ref": "#/components/schemas/SemanticCriterion"
+              },
+              {
+                "$ref": "#/components/schemas/DiagramCriterion"
+              }
+            ],
+            "title": "Criterion",
+            "discriminator": {
+              "propertyName": "type",
+              "mapping": {
+                "diagram": "#/components/schemas/DiagramCriterion",
+                "list": "#/components/schemas/ListCriterion",
+                "numeric": "#/components/schemas/NumericCriterion",
+                "semantic": "#/components/schemas/SemanticCriterion"
+              }
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "criterion"
+        ],
+        "title": "CriterionOut",
+        "description": "A criterion as stored: the same shape the editor sends, with its id and version."
+      },
       "CurrentPasswordIn": {
         "properties": {
           "current_password": {
@@ -2215,6 +3718,87 @@
         ],
         "title": "DeviceOut"
       },
+      "DiagramCriterion": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Omit for a new criterion; give it to save a new version of one."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "weight": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Weight",
+            "description": "In marks. All weights add up to the question's marks."
+          },
+          "type": {
+            "type": "string",
+            "const": "diagram",
+            "title": "Type"
+          },
+          "params": {
+            "$ref": "#/components/schemas/DiagramParamsBody"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "weight",
+          "type",
+          "params"
+        ],
+        "title": "DiagramCriterion"
+      },
+      "DiagramParamsBody": {
+        "properties": {
+          "reference_diagram_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reference Diagram Id"
+          },
+          "component": {
+            "type": "string",
+            "enum": [
+              "whole",
+              "nodes",
+              "edges",
+              "labels"
+            ],
+            "title": "Component",
+            "default": "whole"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reference_diagram_id"
+        ],
+        "title": "DiagramParamsBody"
+      },
+      "Difficulty": {
+        "type": "string",
+        "enum": [
+          "easy",
+          "medium",
+          "hard"
+        ],
+        "title": "Difficulty"
+      },
       "ErrorOut": {
         "properties": {
           "detail": {
@@ -2253,6 +3837,58 @@
           "email"
         ],
         "title": "ForgotIn"
+      },
+      "GlossaryIn": {
+        "properties": {
+          "terms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Terms"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "terms"
+        ],
+        "title": "GlossaryIn"
+      },
+      "GlossaryOut": {
+        "properties": {
+          "teacher_terms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Teacher Terms"
+          },
+          "reference_labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reference Labels",
+            "description": "Labels read from the reference diagrams."
+          },
+          "terms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Terms",
+            "description": "Both lists together, case-insensitively de-duplicated."
+          }
+        },
+        "type": "object",
+        "required": [
+          "teacher_terms",
+          "reference_labels",
+          "terms"
+        ],
+        "title": "GlossaryOut"
       },
       "HTTPValidationError": {
         "properties": {
@@ -2366,6 +4002,144 @@
         ],
         "title": "IssueOut"
       },
+      "KeyFileOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "media_type": {
+            "type": "string",
+            "title": "Media Type"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Keywords"
+          },
+          "content_url": {
+            "type": "string",
+            "title": "Content Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "media_type",
+          "size_bytes",
+          "keywords",
+          "content_url"
+        ],
+        "title": "KeyFileOut"
+      },
+      "ListCriterion": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Omit for a new criterion; give it to save a new version of one."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "weight": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Weight",
+            "description": "In marks. All weights add up to the question's marks."
+          },
+          "type": {
+            "type": "string",
+            "const": "list",
+            "title": "Type"
+          },
+          "params": {
+            "$ref": "#/components/schemas/ListParamsBody"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "weight",
+          "type",
+          "params"
+        ],
+        "title": "ListCriterion"
+      },
+      "ListItemBody": {
+        "properties": {
+          "term": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Term"
+          },
+          "synonyms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Synonyms"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "term"
+        ],
+        "title": "ListItemBody"
+      },
+      "ListParamsBody": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ListItemBody"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items"
+          },
+          "required_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Required Count",
+            "description": "How many items the student must name."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "required_count"
+        ],
+        "title": "ListParamsBody"
+      },
       "LoginIn": {
         "properties": {
           "institution_id": {
@@ -2436,6 +4210,78 @@
         ],
         "title": "MeOut"
       },
+      "NumericCriterion": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Omit for a new criterion; give it to save a new version of one."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "weight": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Weight",
+            "description": "In marks. All weights add up to the question's marks."
+          },
+          "type": {
+            "type": "string",
+            "const": "numeric",
+            "title": "Type"
+          },
+          "params": {
+            "$ref": "#/components/schemas/NumericParamsBody"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "weight",
+          "type",
+          "params"
+        ],
+        "title": "NumericCriterion"
+      },
+      "NumericParamsBody": {
+        "properties": {
+          "expected": {
+            "type": "number",
+            "title": "Expected"
+          },
+          "tolerance": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Tolerance",
+            "default": 0
+          },
+          "unit": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Unit",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected"
+        ],
+        "title": "NumericParamsBody"
+      },
       "PolicyErrorOut": {
         "properties": {
           "detail": {
@@ -2456,6 +4302,465 @@
           "reasons"
         ],
         "title": "PolicyErrorOut"
+      },
+      "QuestionCreateIn": {
+        "properties": {
+          "subject_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Subject Id"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Code",
+            "examples": [
+              "PHY-Q101"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "max_marks": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Marks"
+          },
+          "difficulty": {
+            "type": "string",
+            "enum": [
+              "easy",
+              "medium",
+              "hard"
+            ],
+            "title": "Difficulty",
+            "default": "medium"
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Category",
+            "description": "The topic, e.g. Electromagnetism.",
+            "default": ""
+          },
+          "reference_answer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Answer"
+          },
+          "criteria": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ListCriterion"
+                },
+                {
+                  "$ref": "#/components/schemas/NumericCriterion"
+                },
+                {
+                  "$ref": "#/components/schemas/SemanticCriterion"
+                },
+                {
+                  "$ref": "#/components/schemas/DiagramCriterion"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "diagram": "#/components/schemas/DiagramCriterion",
+                  "list": "#/components/schemas/ListCriterion",
+                  "numeric": "#/components/schemas/NumericCriterion",
+                  "semantic": "#/components/schemas/SemanticCriterion"
+                }
+              }
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Criteria"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "subject_id",
+          "code",
+          "text",
+          "max_marks"
+        ],
+        "title": "QuestionCreateIn"
+      },
+      "QuestionOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "max_marks": {
+            "type": "number",
+            "title": "Max Marks"
+          },
+          "difficulty": {
+            "type": "string",
+            "enum": [
+              "easy",
+              "medium",
+              "hard"
+            ],
+            "title": "Difficulty"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Subject Id"
+          },
+          "subject_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Name"
+          },
+          "key_count": {
+            "type": "integer",
+            "title": "Key Count",
+            "description": "Reference answers plus attached key files."
+          },
+          "owning_college_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owning College Id"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "owned": {
+            "type": "boolean",
+            "title": "Owned",
+            "description": "True if my college owns it and so may edit it."
+          },
+          "copied_from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentRefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reference_answers": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceAnswerOut"
+            },
+            "type": "array",
+            "title": "Reference Answers"
+          },
+          "rubric": {
+            "$ref": "#/components/schemas/RubricOut"
+          },
+          "glossary": {
+            "$ref": "#/components/schemas/GlossaryOut"
+          },
+          "key_files": {
+            "items": {
+              "$ref": "#/components/schemas/KeyFileOut"
+            },
+            "type": "array",
+            "title": "Key Files"
+          },
+          "diagrams": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceDiagramOut"
+            },
+            "type": "array",
+            "title": "Diagrams"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "code",
+          "text",
+          "max_marks",
+          "difficulty",
+          "category",
+          "subject_id",
+          "subject_name",
+          "key_count",
+          "owning_college_id",
+          "owner_name",
+          "owned",
+          "copied_from",
+          "reference_answers",
+          "rubric",
+          "glossary",
+          "key_files",
+          "diagrams"
+        ],
+        "title": "QuestionOut"
+      },
+      "QuestionPageOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionSummaryOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "QuestionPageOut"
+      },
+      "QuestionSummaryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "max_marks": {
+            "type": "number",
+            "title": "Max Marks"
+          },
+          "difficulty": {
+            "type": "string",
+            "enum": [
+              "easy",
+              "medium",
+              "hard"
+            ],
+            "title": "Difficulty"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Subject Id"
+          },
+          "subject_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Name"
+          },
+          "key_count": {
+            "type": "integer",
+            "title": "Key Count",
+            "description": "Reference answers plus attached key files."
+          },
+          "owning_college_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owning College Id"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "owned": {
+            "type": "boolean",
+            "title": "Owned",
+            "description": "True if my college owns it and so may edit it."
+          },
+          "copied_from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentRefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "code",
+          "text",
+          "max_marks",
+          "difficulty",
+          "category",
+          "subject_id",
+          "subject_name",
+          "key_count",
+          "owning_college_id",
+          "owner_name",
+          "owned",
+          "copied_from"
+        ],
+        "title": "QuestionSummaryOut"
+      },
+      "QuestionUpdateIn": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "max_marks": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Marks"
+          },
+          "difficulty": {
+            "type": "string",
+            "enum": [
+              "easy",
+              "medium",
+              "hard"
+            ],
+            "title": "Difficulty"
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Category",
+            "default": ""
+          },
+          "criteria": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ListCriterion"
+                    },
+                    {
+                      "$ref": "#/components/schemas/NumericCriterion"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SemanticCriterion"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DiagramCriterion"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "diagram": "#/components/schemas/DiagramCriterion",
+                      "list": "#/components/schemas/ListCriterion",
+                      "numeric": "#/components/schemas/NumericCriterion",
+                      "semantic": "#/components/schemas/SemanticCriterion"
+                    }
+                  }
+                },
+                "type": "array",
+                "maxItems": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Criteria",
+            "description": "Replaces the rubric. Required when the marks change and a rubric exists."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "text",
+          "max_marks",
+          "difficulty"
+        ],
+        "title": "QuestionUpdateIn"
       },
       "RecoverIn": {
         "properties": {
@@ -2516,6 +4821,104 @@
           "codes"
         ],
         "title": "RecoveryCodesOut"
+      },
+      "ReferenceAnswerIn": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "guidance_only": {
+            "type": "boolean",
+            "title": "Guidance Only",
+            "description": "The key is guidance only: no AI score, the teacher marks by hand (C8).",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "ReferenceAnswerIn"
+      },
+      "ReferenceAnswerOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "guidance_only": {
+            "type": "boolean",
+            "title": "Guidance Only"
+          },
+          "synthetic": {
+            "type": "boolean",
+            "title": "Synthetic"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "text",
+          "guidance_only",
+          "synthetic"
+        ],
+        "title": "ReferenceAnswerOut"
+      },
+      "ReferenceDiagramOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "node_count": {
+            "type": "integer",
+            "title": "Node Count"
+          },
+          "edge_count": {
+            "type": "integer",
+            "title": "Edge Count"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Labels"
+          },
+          "content_url": {
+            "type": "string",
+            "title": "Content Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "node_count",
+          "edge_count",
+          "labels",
+          "content_url"
+        ],
+        "title": "ReferenceDiagramOut"
       },
       "RegistrationIn": {
         "properties": {
@@ -2708,6 +5111,79 @@
         ],
         "title": "RowErrorOut"
       },
+      "RubricIn": {
+        "properties": {
+          "criteria": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ListCriterion"
+                },
+                {
+                  "$ref": "#/components/schemas/NumericCriterion"
+                },
+                {
+                  "$ref": "#/components/schemas/SemanticCriterion"
+                },
+                {
+                  "$ref": "#/components/schemas/DiagramCriterion"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "diagram": "#/components/schemas/DiagramCriterion",
+                  "list": "#/components/schemas/ListCriterion",
+                  "numeric": "#/components/schemas/NumericCriterion",
+                  "semantic": "#/components/schemas/SemanticCriterion"
+                }
+              }
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Criteria"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "criteria"
+        ],
+        "title": "RubricIn"
+      },
+      "RubricOut": {
+        "properties": {
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionOut"
+            },
+            "type": "array",
+            "title": "Criteria"
+          },
+          "total": {
+            "type": "number",
+            "title": "Total",
+            "description": "Sum of the weights."
+          },
+          "max_marks": {
+            "type": "number",
+            "title": "Max Marks"
+          },
+          "complete": {
+            "type": "boolean",
+            "title": "Complete",
+            "description": "True if the weights add up to the question's marks."
+          }
+        },
+        "type": "object",
+        "required": [
+          "criteria",
+          "total",
+          "max_marks",
+          "complete"
+        ],
+        "title": "RubricOut"
+      },
       "SectionSummaryOut": {
         "properties": {
           "label": {
@@ -2743,6 +5219,68 @@
           "max_marks"
         ],
         "title": "SectionSummaryOut"
+      },
+      "SemanticCriterion": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Omit for a new criterion; give it to save a new version of one."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "weight": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Weight",
+            "description": "In marks. All weights add up to the question's marks."
+          },
+          "type": {
+            "type": "string",
+            "const": "semantic",
+            "title": "Type"
+          },
+          "params": {
+            "$ref": "#/components/schemas/SemanticParamsBody"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "weight",
+          "type",
+          "params"
+        ],
+        "title": "SemanticCriterion"
+      },
+      "SemanticParamsBody": {
+        "properties": {
+          "reference_statement": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reference Statement"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reference_statement"
+        ],
+        "title": "SemanticParamsBody"
       },
       "StudentOut": {
         "properties": {

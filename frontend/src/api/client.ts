@@ -55,7 +55,7 @@ function withToken(request: Request, token: string | null): Request {
 }
 
 /** Adds the bearer token; on 401 refreshes once and repeats the request. */
-async function authFetch(request: Request): Promise<Response> {
+export async function authFetch(request: Request): Promise<Response> {
   const retry = request.clone()
   const first = await globalThis.fetch(withToken(request, session.token))
   if (first.status !== 401 || NO_REFRESH.test(new URL(request.url).pathname)) return first

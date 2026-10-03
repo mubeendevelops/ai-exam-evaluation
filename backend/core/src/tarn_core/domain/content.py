@@ -22,6 +22,7 @@ from tarn_core.ids import (
     CollegeId,
     CriterionId,
     GlossaryId,
+    KeyFileId,
     QuestionId,
     ReferenceAnswerId,
     ReferenceDiagramId,
@@ -60,16 +61,42 @@ class Subject:
         return ContentRef(kind=ContentKind.SUBJECT, id=self.id, version=self.meta.version)
 
 
+class Difficulty(StrEnum):
+    EASY = "easy"
+    MEDIUM = "medium"
+    HARD = "hard"
+
+
+MAX_CODE_LENGTH = 40
+
+
+def check_code(code: str) -> None:
+    """A question code such as ``PHY-Q101``: printable, no surrounding space, at most 40."""
+    if not code.strip():
+        raise InvariantError("question code must not be blank")
+    if code != code.strip() or len(code) > MAX_CODE_LENGTH or not code.isprintable():
+        raise InvariantError(
+            f"question code {code!r} must be printable text of at most {MAX_CODE_LENGTH} "
+            "characters without spaces at either end"
+        )
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Question:
+    """``category`` is the topic (the prototype's Category). ``code`` is unique within the
+    owning college (checked by the question bank service)."""
+
     id: QuestionId
     meta: ContentMeta
     subject_id: SubjectId
+    code: str
     text: str
     max_marks: Decimal
+    difficulty: Difficulty = Difficulty.MEDIUM
     category: str = ""
 
     def __post_init__(self) -> None:
+        check_code(self.code)
         check_text("question text", self.text)
         check_marks("question max marks", self.max_marks, allow_zero=False)
 
@@ -89,6 +116,9 @@ class ReferenceAnswer:
     text: str
     synthetic: bool = False
     guidance_only: bool = False
+    retired: bool = False
+    """A retired version means the key was removed: repositories stop listing it for the
+    question, and scores that used earlier versions keep them."""
 
     def __post_init__(self) -> None:
         check_text("reference answer text", self.text)
@@ -194,6 +224,7 @@ class RubricCriterion:
     type: CriterionType
     weight: Decimal
     params: CriterionParams
+    retired: bool = False
 
     def __post_init__(self) -> None:
         check_text("criterion label", self.label)
@@ -282,3 +313,42 @@ class ReferenceDiagram:
     @property
     def ref(self) -> ContentRef:
         return ContentRef(kind=ContentKind.REFERENCE_DIAGRAM, id=self.id, version=self.meta.version)
+
+
+KEY_FILE_TYPES = frozenset({"application/pdf", "image/png", "image/jpeg"})
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class KeyFile:
+    """An uploaded answer key or sample (PDF or image) attached to a question. Keys must hold
+    no student data (C9): the uploader confirms it, and the record cannot exist without it."""
+
+    id: KeyFileId
+    meta: ContentMeta
+    question_id: QuestionId
+    name: str
+    media_type: str
+    size_bytes: int
+    sha256: str
+    blob: BlobKey
+    keywords: tuple[str, ...] = ()
+    no_student_data_confirmed: bool = False
+
+    def __post_init__(self) -> None:
+        check_text("file name", self.name)
+        if self.media_type not in KEY_FILE_TYPES:
+            raise InvariantError(f"key files are PDF or image files, not {self.media_type}")
+        if self.size_bytes < 1:
+            raise InvariantError("a key file cannot be empty")
+        if len(self.sha256) != 64:
+            raise InvariantError("sha256 must be 64 hex characters")
+        if self.blob.college_id is not None:
+            raise InvariantError("key files are global content: key must be under global/")
+        if not self.no_student_data_confirmed:
+            raise InvariantError(
+                "confirm that the key holds no student data (names, USNs, handwriting)"
+            )
+
+    @property
+    def ref(self) -> ContentRef:
+        return ContentRef(kind=ContentKind.KEY_FILE, id=self.id, version=self.meta.version)

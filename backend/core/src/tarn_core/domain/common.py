@@ -62,6 +62,7 @@ class ContentKind(StrEnum):
     RUBRIC_CRITERION = "rubric_criterion"
     GLOSSARY = "glossary"
     REFERENCE_DIAGRAM = "reference_diagram"
+    KEY_FILE = "key_file"
     BLUEPRINT = "blueprint"
     OCR_CALIBRATION = "ocr_calibration"
 

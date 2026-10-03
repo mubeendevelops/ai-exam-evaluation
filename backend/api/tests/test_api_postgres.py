@@ -95,3 +95,71 @@ def test_two_colleges_over_http_on_postgres(setup: tuple[TestClient, CapturingMa
         assert client.post("/api/v1/auth/login", json=wrong).status_code == 401
     right = wrong | {"password": PASSWORD}
     assert client.post("/api/v1/auth/login", json=right).status_code == 401
+
+
+def test_question_bank_with_real_database_and_minio(
+    setup: tuple[TestClient, CapturingMailer],
+) -> None:
+    """Two colleges: A creates a question with key, rubric and files; B reads it (global),
+    cannot edit it, copies it. Files really go to MinIO under global/keys/."""
+    client, mailer = setup
+    a = {"Authorization": f"Bearer {_register(client, mailer, 'PG_QA', 'admin@pg-qa.example')}"}
+    b = {"Authorization": f"Bearer {_register(client, mailer, 'PG_QB', 'admin@pg-qb.example')}"}
+    subject = client.post(
+        "/api/v1/subjects", json={"code": "PHY", "name": "Physics"}, headers=a
+    ).json()["id"]
+    created = client.post(
+        "/api/v1/questions",
+        json={
+            "subject_id": subject,
+            "code": "PG-Q1",
+            "text": "Why is the sky blue?",
+            "max_marks": 4,
+            "difficulty": "easy",
+            "category": "Optics",
+            "reference_answer": "Rayleigh scattering.",
+            "criteria": [
+                {
+                    "type": "semantic",
+                    "label": "Cause",
+                    "weight": 3,
+                    "params": {"reference_statement": "Short wavelengths scatter more."},
+                },
+                {
+                    "type": "list",
+                    "label": "Names",
+                    "weight": 1,
+                    "params": {
+                        "items": [{"term": "Rayleigh", "synonyms": ["scattering"]}],
+                        "required_count": 1,
+                    },
+                },
+            ],
+        },
+        headers=a,
+    )
+    assert created.status_code == 201, created.text
+    qid = created.json()["id"]
+    pdf = b"%PDF-1.7\nsynthetic key"
+    up = client.post(
+        f"/api/v1/questions/{qid}/key-files",
+        params={"filename": "key.pdf", "confirm_no_student_data": "true", "keywords": ["sky"]},
+        content=pdf,
+        headers=a | {"Content-Type": "application/pdf"},
+    )
+    assert up.status_code == 201, up.text
+    assert client.get(up.json()["content_url"], headers=b).content == pdf  # from MinIO
+
+    seen = client.get(f"/api/v1/questions/{qid}", headers=b).json()
+    assert seen["owned"] is False and seen["owner_name"] == "PG_QA"
+    assert seen["rubric"]["complete"] is True and seen["key_count"] == 2
+    edit = {"code": "PG-Q1", "text": "x", "max_marks": 4, "difficulty": "easy", "category": ""}
+    assert client.put(f"/api/v1/questions/{qid}", json=edit, headers=b).status_code == 403
+
+    page = client.get("/api/v1/questions", params={"keyword": "rayleigh"}, headers=b).json()
+    assert [i["code"] for i in page["items"]] == ["PG-Q1"] and page["items"][0]["key_count"] == 2
+    copy = client.post(f"/api/v1/questions/{qid}/copy", headers=b)
+    assert copy.status_code == 201, copy.text
+    assert copy.json()["owned"] is True and copy.json()["key_files"][0]["name"] == "key.pdf"
+    mine = client.get("/api/v1/questions", params={"mine": "true"}, headers=b).json()
+    assert [i["id"] for i in mine["items"]] == [copy.json()["id"]]

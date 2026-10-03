@@ -493,6 +493,234 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search the question bank (every college's questions)
+         * @description Every filter given must match; text filters ignore case. Ordered by code.
+         */
+        get: operations["search_questions_api_v1_questions_get"];
+        put?: never;
+        /** Create a question owned by my college, optionally with its key and rubric */
+        post: operations["create_question_api_v1_questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/question-topics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The topics in use, for the topic filter */
+        get: operations["list_topics_api_v1_question_topics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One question with its keys, rubric, glossary and files */
+        get: operations["get_question_api_v1_questions__question_id__get"];
+        /**
+         * Save the next version of a question (owning college only)
+         * @description The subject never changes. If the marks change and a rubric exists, send the new `criteria` too: their weights must add up to the marks.
+         */
+        put: operations["update_question_api_v1_questions__question_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Copy a question, with its keys, rubric, glossary and files, to my college */
+        post: operations["copy_question_api_v1_questions__question_id__copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/rubric": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace the rubric (owning college only)
+         * @description Criteria with an `id` get a new version if changed; criteria left out are retired. The weights must add up to the question's marks (an empty list is allowed: a guidance-only key is marked by hand).
+         */
+        put: operations["put_rubric_api_v1_questions__question_id__rubric_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/reference-answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a reference answer (owning college only) */
+        post: operations["add_reference_answer_api_v1_questions__question_id__reference_answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/reference-answers/{answer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save the next version of a reference answer (owning college only) */
+        put: operations["edit_reference_answer_api_v1_questions__question_id__reference_answers__answer_id__put"];
+        post?: never;
+        /**
+         * Retire a reference answer (owning college only)
+         * @description Saves a retired version: it stops being listed, and scores that used it keep it.
+         */
+        delete: operations["retire_reference_answer_api_v1_questions__question_id__reference_answers__answer_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/glossary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the glossary terms (owning college only)
+         * @description The glossary is the teacher's terms plus the labels of the reference diagrams, which are kept up to date automatically.
+         */
+        put: operations["put_glossary_api_v1_questions__question_id__glossary_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/key-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload an answer key or sample (PDF or image; owning college only)
+         * @description The request body is the file itself. The file type is read from its content. `confirm_no_student_data` must be true: keys are written by faculty and hold no student data (C9).
+         */
+        post: operations["upload_key_file_api_v1_questions__question_id__key_files_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/key-files/{file_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download an answer-key file */
+        get: operations["key_file_content_api_v1_questions__question_id__key_files__file_id__content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/diagrams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a reference diagram as PNG (owning college only)
+         * @description The request body is the PNG. Its nodes and edges are read from the picture later (P14); until then the graph is empty. `confirm_no_student_data` must be true (C9).
+         */
+        post: operations["upload_reference_diagram_api_v1_questions__question_id__diagrams_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/diagrams/{diagram_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download a reference diagram PNG */
+        get: operations["diagram_content_api_v1_questions__question_id__diagrams__diagram_id__content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -631,6 +859,16 @@ export interface components {
             /** Version */
             version: number;
         };
+        /**
+         * CriterionOut
+         * @description A criterion as stored: the same shape the editor sends, with its id and version.
+         */
+        CriterionOut: {
+            /** Version */
+            version: number;
+            /** Criterion */
+            criterion: components["schemas"]["ListCriterion"] | components["schemas"]["NumericCriterion"] | components["schemas"]["SemanticCriterion"] | components["schemas"]["DiagramCriterion"];
+        };
         /** CurrentPasswordIn */
         CurrentPasswordIn: {
             /** Current Password */
@@ -645,6 +883,46 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** DiagramCriterion */
+        DiagramCriterion: {
+            /**
+             * Id
+             * @description Omit for a new criterion; give it to save a new version of one.
+             */
+            id?: string | null;
+            /** Label */
+            label: string;
+            /**
+             * Weight
+             * @description In marks. All weights add up to the question's marks.
+             */
+            weight: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "diagram";
+            params: components["schemas"]["DiagramParamsBody"];
+        };
+        /** DiagramParamsBody */
+        DiagramParamsBody: {
+            /**
+             * Reference Diagram Id
+             * Format: uuid
+             */
+            reference_diagram_id: string;
+            /**
+             * Component
+             * @default whole
+             * @enum {string}
+             */
+            component: "whole" | "nodes" | "edges" | "labels";
+        };
+        /**
+         * Difficulty
+         * @enum {string}
+         */
+        Difficulty: "easy" | "medium" | "hard";
         /** ErrorOut */
         ErrorOut: {
             /** Detail */
@@ -659,6 +937,26 @@ export interface components {
              * @example evaluator@institution.edu
              */
             email: string;
+        };
+        /** GlossaryIn */
+        GlossaryIn: {
+            /** Terms */
+            terms: string[];
+        };
+        /** GlossaryOut */
+        GlossaryOut: {
+            /** Teacher Terms */
+            teacher_terms: string[];
+            /**
+             * Reference Labels
+             * @description Labels read from the reference diagrams.
+             */
+            reference_labels: string[];
+            /**
+             * Terms
+             * @description Both lists together, case-insensitively de-duplicated.
+             */
+            terms: string[];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -703,6 +1001,62 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** KeyFileOut */
+        KeyFileOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Media Type */
+            media_type: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Keywords */
+            keywords: string[];
+            /** Content Url */
+            content_url: string;
+        };
+        /** ListCriterion */
+        ListCriterion: {
+            /**
+             * Id
+             * @description Omit for a new criterion; give it to save a new version of one.
+             */
+            id?: string | null;
+            /** Label */
+            label: string;
+            /**
+             * Weight
+             * @description In marks. All weights add up to the question's marks.
+             */
+            weight: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "list";
+            params: components["schemas"]["ListParamsBody"];
+        };
+        /** ListItemBody */
+        ListItemBody: {
+            /** Term */
+            term: string;
+            /** Synonyms */
+            synonyms?: string[];
+        };
+        /** ListParamsBody */
+        ListParamsBody: {
+            /** Items */
+            items: components["schemas"]["ListItemBody"][];
+            /**
+             * Required Count
+             * @description How many items the student must name.
+             */
+            required_count: number;
+        };
         /** LoginIn */
         LoginIn: {
             /**
@@ -735,12 +1089,220 @@ export interface components {
             /** Recovery Codes Left */
             recovery_codes_left: number;
         };
+        /** NumericCriterion */
+        NumericCriterion: {
+            /**
+             * Id
+             * @description Omit for a new criterion; give it to save a new version of one.
+             */
+            id?: string | null;
+            /** Label */
+            label: string;
+            /**
+             * Weight
+             * @description In marks. All weights add up to the question's marks.
+             */
+            weight: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "numeric";
+            params: components["schemas"]["NumericParamsBody"];
+        };
+        /** NumericParamsBody */
+        NumericParamsBody: {
+            /** Expected */
+            expected: number;
+            /**
+             * Tolerance
+             * @default 0
+             */
+            tolerance: number;
+            /**
+             * Unit
+             * @default
+             */
+            unit: string;
+        };
         /** PolicyErrorOut */
         PolicyErrorOut: {
             /** Detail */
             detail: string;
             /** Reasons */
             reasons: string[];
+        };
+        /** QuestionCreateIn */
+        QuestionCreateIn: {
+            /**
+             * Subject Id
+             * Format: uuid
+             */
+            subject_id: string;
+            /**
+             * Code
+             * @example PHY-Q101
+             */
+            code: string;
+            /** Text */
+            text: string;
+            /** Max Marks */
+            max_marks: number;
+            /**
+             * Difficulty
+             * @default medium
+             * @enum {string}
+             */
+            difficulty: "easy" | "medium" | "hard";
+            /**
+             * Category
+             * @description The topic, e.g. Electromagnetism.
+             * @default
+             */
+            category: string;
+            /** Reference Answer */
+            reference_answer?: string | null;
+            /** Criteria */
+            criteria?: (components["schemas"]["ListCriterion"] | components["schemas"]["NumericCriterion"] | components["schemas"]["SemanticCriterion"] | components["schemas"]["DiagramCriterion"])[];
+        };
+        /** QuestionOut */
+        QuestionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /** Code */
+            code: string;
+            /** Text */
+            text: string;
+            /** Max Marks */
+            max_marks: number;
+            /**
+             * Difficulty
+             * @enum {string}
+             */
+            difficulty: "easy" | "medium" | "hard";
+            /** Category */
+            category: string;
+            /**
+             * Subject Id
+             * Format: uuid
+             */
+            subject_id: string;
+            /** Subject Name */
+            subject_name: string | null;
+            /**
+             * Key Count
+             * @description Reference answers plus attached key files.
+             */
+            key_count: number;
+            /**
+             * Owning College Id
+             * Format: uuid
+             */
+            owning_college_id: string;
+            /** Owner Name */
+            owner_name: string | null;
+            /**
+             * Owned
+             * @description True if my college owns it and so may edit it.
+             */
+            owned: boolean;
+            copied_from: components["schemas"]["ContentRefOut"] | null;
+            /** Reference Answers */
+            reference_answers: components["schemas"]["ReferenceAnswerOut"][];
+            rubric: components["schemas"]["RubricOut"];
+            glossary: components["schemas"]["GlossaryOut"];
+            /** Key Files */
+            key_files: components["schemas"]["KeyFileOut"][];
+            /** Diagrams */
+            diagrams: components["schemas"]["ReferenceDiagramOut"][];
+        };
+        /** QuestionPageOut */
+        QuestionPageOut: {
+            /** Items */
+            items: components["schemas"]["QuestionSummaryOut"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** QuestionSummaryOut */
+        QuestionSummaryOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /** Code */
+            code: string;
+            /** Text */
+            text: string;
+            /** Max Marks */
+            max_marks: number;
+            /**
+             * Difficulty
+             * @enum {string}
+             */
+            difficulty: "easy" | "medium" | "hard";
+            /** Category */
+            category: string;
+            /**
+             * Subject Id
+             * Format: uuid
+             */
+            subject_id: string;
+            /** Subject Name */
+            subject_name: string | null;
+            /**
+             * Key Count
+             * @description Reference answers plus attached key files.
+             */
+            key_count: number;
+            /**
+             * Owning College Id
+             * Format: uuid
+             */
+            owning_college_id: string;
+            /** Owner Name */
+            owner_name: string | null;
+            /**
+             * Owned
+             * @description True if my college owns it and so may edit it.
+             */
+            owned: boolean;
+            copied_from: components["schemas"]["ContentRefOut"] | null;
+        };
+        /** QuestionUpdateIn */
+        QuestionUpdateIn: {
+            /** Code */
+            code: string;
+            /** Text */
+            text: string;
+            /** Max Marks */
+            max_marks: number;
+            /**
+             * Difficulty
+             * @enum {string}
+             */
+            difficulty: "easy" | "medium" | "hard";
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Criteria
+             * @description Replaces the rubric. Required when the marks change and a rubric exists.
+             */
+            criteria?: (components["schemas"]["ListCriterion"] | components["schemas"]["NumericCriterion"] | components["schemas"]["SemanticCriterion"] | components["schemas"]["DiagramCriterion"])[] | null;
         };
         /** RecoverIn */
         RecoverIn: {
@@ -766,6 +1328,51 @@ export interface components {
              * @description Shown once. Only their hashes are stored.
              */
             codes: string[];
+        };
+        /** ReferenceAnswerIn */
+        ReferenceAnswerIn: {
+            /** Text */
+            text: string;
+            /**
+             * Guidance Only
+             * @description The key is guidance only: no AI score, the teacher marks by hand (C8).
+             * @default false
+             */
+            guidance_only: boolean;
+        };
+        /** ReferenceAnswerOut */
+        ReferenceAnswerOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /** Text */
+            text: string;
+            /** Guidance Only */
+            guidance_only: boolean;
+            /** Synthetic */
+            synthetic: boolean;
+        };
+        /** ReferenceDiagramOut */
+        ReferenceDiagramOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Node Count */
+            node_count: number;
+            /** Edge Count */
+            edge_count: number;
+            /** Labels */
+            labels: string[];
+            /** Content Url */
+            content_url: string;
         };
         /** RegistrationIn */
         RegistrationIn: {
@@ -850,6 +1457,28 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** RubricIn */
+        RubricIn: {
+            /** Criteria */
+            criteria: (components["schemas"]["ListCriterion"] | components["schemas"]["NumericCriterion"] | components["schemas"]["SemanticCriterion"] | components["schemas"]["DiagramCriterion"])[];
+        };
+        /** RubricOut */
+        RubricOut: {
+            /** Criteria */
+            criteria: components["schemas"]["CriterionOut"][];
+            /**
+             * Total
+             * @description Sum of the weights.
+             */
+            total: number;
+            /** Max Marks */
+            max_marks: number;
+            /**
+             * Complete
+             * @description True if the weights add up to the question's marks.
+             */
+            complete: boolean;
+        };
         /** SectionSummaryOut */
         SectionSummaryOut: {
             /** Label */
@@ -871,6 +1500,32 @@ export interface components {
              * @description Most this section can earn: the N largest items.
              */
             max_marks: number;
+        };
+        /** SemanticCriterion */
+        SemanticCriterion: {
+            /**
+             * Id
+             * @description Omit for a new criterion; give it to save a new version of one.
+             */
+            id?: string | null;
+            /** Label */
+            label: string;
+            /**
+             * Weight
+             * @description In marks. All weights add up to the question's marks.
+             */
+            weight: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "semantic";
+            params: components["schemas"]["SemanticParamsBody"];
+        };
+        /** SemanticParamsBody */
+        SemanticParamsBody: {
+            /** Reference Statement */
+            reference_statement: string;
         };
         /** StudentOut */
         StudentOut: {
@@ -2419,6 +3074,946 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BlueprintOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_questions_api_v1_questions_get: {
+        parameters: {
+            query?: {
+                /** @description In the question, its code, topic or key. */
+                keyword?: string;
+                /** @description Part of the code. */
+                code?: string;
+                /** @description The topic exactly. */
+                topic?: string;
+                subject_id?: string | null;
+                difficulty?: components["schemas"]["Difficulty"] | null;
+                /** @description Only questions my college owns. */
+                mine?: boolean;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionPageOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_question_api_v1_questions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description The code is taken. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A rule is broken; the message says which. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    list_topics_api_v1_question_topics_get: {
+        parameters: {
+            query?: {
+                subject_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_question_api_v1_questions__question_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_question_api_v1_questions__question_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another college owns it: copy it first. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A rule is broken; the message says which. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    copy_question_api_v1_questions__question_id__copy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_rubric_api_v1_questions__question_id__rubric_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RubricIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RubricOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another college owns it: copy it first. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A rule is broken; the message says which. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    add_reference_answer_api_v1_questions__question_id__reference_answers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferenceAnswerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceAnswerOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another college owns it: copy it first. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A rule is broken; the message says which. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    edit_reference_answer_api_v1_questions__question_id__reference_answers__answer_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+                answer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferenceAnswerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceAnswerOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another college owns it: copy it first. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A rule is broken; the message says which. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    retire_reference_answer_api_v1_questions__question_id__reference_answers__answer_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+                answer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another college owns it: copy it first. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A rule is broken; the message says which. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    put_glossary_api_v1_questions__question_id__glossary_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GlossaryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlossaryOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another college owns it: copy it first. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A rule is broken; the message says which. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    upload_key_file_api_v1_questions__question_id__key_files_post: {
+        parameters: {
+            query: {
+                filename: string;
+                confirm_no_student_data?: boolean;
+                keywords?: string[];
+            };
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/pdf": string;
+                "image/png": string;
+                "image/jpeg": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyFileOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another college owns it: copy it first. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A rule is broken; the message says which. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    key_file_content_api_v1_questions__question_id__key_files__file_id__content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_reference_diagram_api_v1_questions__question_id__diagrams_post: {
+        parameters: {
+            query: {
+                filename: string;
+                confirm_no_student_data?: boolean;
+            };
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "image/png": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceDiagramOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another college owns it: copy it first. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A rule is broken; the message says which. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    diagram_content_api_v1_questions__question_id__diagrams__diagram_id__content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+                diagram_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
                 };
             };
             /** @description Unauthorized */

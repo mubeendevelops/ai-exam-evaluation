@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any, NoReturn
 from uuid import UUID
 
-from sqlalchemy import Connection, Row, Table, delete, func, or_, select
+from sqlalchemy import Connection, Row, Table, and_, delete, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import distinct_on, insert
 from sqlalchemy.exc import DBAPIError
 
@@ -44,7 +44,9 @@ from tarn_core.domain.common import (
 from tarn_core.domain.content import (
     ContentMeta,
     CriterionType,
+    Difficulty,
     Glossary,
+    KeyFile,
     Question,
     ReferenceAnswer,
     ReferenceDiagram,
@@ -70,6 +72,7 @@ from tarn_core.ids import (
     CollegeId,
     CriterionId,
     GlossaryId,
+    KeyFileId,
     PageId,
     QuestionId,
     ReferenceAnswerId,
@@ -83,7 +86,7 @@ from tarn_core.ids import (
     SubjectId,
     UserId,
 )
-from tarn_core.ports.repositories import GlobalItem, QuestionPart
+from tarn_core.ports.repositories import GlobalItem, QuestionPage, QuestionPart, QuestionQuery
 
 # SQLSTATEs translated into domain errors.
 INSUFFICIENT_PRIVILEGE = "42501"  # RLS refusal or missing grant
@@ -195,6 +198,7 @@ def _answer_key_values(a: ReferenceAnswer) -> dict[str, object]:
         "text": a.text,
         "synthetic": a.synthetic,
         "guidance_only": a.guidance_only,
+        "retired": a.retired,
     }
 
 
@@ -206,6 +210,7 @@ def _answer_key(r: Row[Any]) -> ReferenceAnswer:
         text=r.text,
         synthetic=r.synthetic,
         guidance_only=r.guidance_only,
+        retired=r.retired,
     )
 
 
@@ -217,6 +222,7 @@ def _criterion_values(c: RubricCriterion) -> dict[str, object]:
         "type": c.type.value,
         "weight": c.weight,
         "params": codec.params_to_json(c.params),
+        "retired": c.retired,
     }
 
 
@@ -230,6 +236,7 @@ def _criterion(r: Row[Any]) -> RubricCriterion:
         type=kind,
         weight=r.weight,
         params=codec.params_from_json(kind, r.params),
+        retired=r.retired,
     )
 
 
@@ -271,6 +278,35 @@ def _diagram(r: Row[Any]) -> ReferenceDiagram:
     )
 
 
+def _key_file_values(f: KeyFile) -> dict[str, object]:
+    return {
+        "id": f.id,
+        "question_id": f.question_id,
+        "name": f.name,
+        "media_type": f.media_type,
+        "size_bytes": f.size_bytes,
+        "sha256": f.sha256,
+        "blob_key": f.blob.value,
+        "keywords": list(f.keywords),
+        "no_student_data_confirmed": f.no_student_data_confirmed,
+    }
+
+
+def _key_file(r: Row[Any]) -> KeyFile:
+    return KeyFile(
+        id=KeyFileId(r.id),
+        meta=_meta(r),
+        question_id=QuestionId(r.question_id),
+        name=r.name,
+        media_type=r.media_type,
+        size_bytes=r.size_bytes,
+        sha256=r.sha256,
+        blob=BlobKey(r.blob_key),
+        keywords=tuple(r.keywords),
+        no_student_data_confirmed=r.no_student_data_confirmed,
+    )
+
+
 def _blueprint_values(b: ExamBlueprint) -> dict[str, object]:
     return {
         "id": b.id,
@@ -304,6 +340,7 @@ _KINDS: dict[type, _Kind] = {
     RubricCriterion: _Kind(m.rubric_criteria, _criterion_values, _criterion),
     Glossary: _Kind(m.glossaries, _glossary_values, _glossary),
     ReferenceDiagram: _Kind(m.reference_diagrams, _diagram_values, _diagram),
+    KeyFile: _Kind(m.key_files, _key_file_values, _key_file),
     ExamBlueprint: _Kind(m.exam_blueprints, _blueprint_values, _blueprint),
 }
 
@@ -322,8 +359,10 @@ def _question(r: Row[Any]) -> Question:
         id=QuestionId(r.question_id),
         meta=_meta(r),
         subject_id=SubjectId(r.subject_id),
+        code=r.code,
         text=r.text,
         max_marks=r.max_marks,
+        difficulty=Difficulty(r.difficulty),
         category=r.category,
     )
 
@@ -406,7 +445,101 @@ class PgContentRepository:
         for row in rows:  # oldest first: a later version replaces, first appearance keeps order
             latest[row.id] = row
         items = [spec.decode(r) for r in latest.values()]
-        return [i for i in items if isinstance(i, kind)]
+        return [i for i in items if isinstance(i, kind) and not getattr(i, "retired", False)]
+
+    def search_questions(
+        self, query: QuestionQuery, *, limit: int, offset: int = 0
+    ) -> QuestionPage:
+        qv, q = m.question_versions, m.questions
+        newest = select(qv.c.question_id, func.max(qv.c.version).label("v")).group_by(
+            qv.c.question_id
+        )
+        newest_q = newest.subquery()
+        source = _QUESTION_FROM.join(
+            newest_q, and_(qv.c.question_id == newest_q.c.question_id, qv.c.version == newest_q.c.v)
+        )
+        conditions = []
+        if query.subject_id is not None:
+            conditions.append(q.c.subject_id == query.subject_id)
+        if query.owner_id is not None:
+            conditions.append(q.c.owning_college_id == query.owner_id)
+        if query.difficulty is not None:
+            conditions.append(qv.c.difficulty == query.difficulty.value)
+        if query.topic:
+            conditions.append(func.lower(qv.c.category) == query.topic.casefold())
+        if query.code:
+            conditions.append(
+                func.lower(qv.c.code) == query.code.casefold()
+                if query.exact_code
+                else qv.c.code.icontains(query.code, autoescape=True)
+            )
+        if query.keyword:
+            ra, ra2 = m.reference_answers, m.reference_answers.alias("newer")
+            live_answer = exists().where(
+                ra.c.question_id == q.c.id,
+                ra.c.text.icontains(query.keyword, autoescape=True),
+                ~ra.c.retired,
+                ~exists().where(ra2.c.id == ra.c.id, ra2.c.version > ra.c.version),
+            )
+            conditions.append(
+                or_(
+                    qv.c.text.icontains(query.keyword, autoescape=True),
+                    qv.c.code.icontains(query.keyword, autoescape=True),
+                    qv.c.category.icontains(query.keyword, autoescape=True),
+                    live_answer,
+                )
+            )
+        total = self._conn.execute(
+            select(func.count()).select_from(source).where(*conditions)
+        ).scalar_one()
+        rows = self._conn.execute(
+            select(*_QUESTION_COLUMNS)
+            .select_from(source)
+            .where(*conditions)
+            .order_by(func.lower(qv.c.code), qv.c.question_id)
+            .limit(limit)
+            .offset(offset)
+        )
+        return QuestionPage(items=tuple(_question(r) for r in rows), total=total)
+
+    def topics(self, subject_id: SubjectId | None = None) -> Sequence[str]:
+        qv, q = m.question_versions, m.questions
+        newest_q = (
+            select(qv.c.question_id, func.max(qv.c.version).label("v"))
+            .group_by(qv.c.question_id)
+            .subquery()
+        )
+        source = _QUESTION_FROM.join(
+            newest_q, and_(qv.c.question_id == newest_q.c.question_id, qv.c.version == newest_q.c.v)
+        )
+        stmt = select(qv.c.category).select_from(source).where(func.btrim(qv.c.category) != "")
+        if subject_id is not None:
+            stmt = stmt.where(q.c.subject_id == subject_id)
+        found: dict[str, str] = {}
+        for (category,) in self._conn.execute(stmt):
+            found.setdefault(category.casefold(), category)
+        return sorted(found.values(), key=str.casefold)
+
+    def key_counts(self, question_ids: Sequence[QuestionId]) -> Mapping[QuestionId, int]:
+        counts: dict[QuestionId, int] = dict.fromkeys(question_ids, 0)
+        if not question_ids:
+            return counts
+        for table in (m.reference_answers, m.key_files):
+            newest = (
+                select(table.c.id, func.max(table.c.version).label("v"))
+                .where(table.c.question_id.in_(question_ids))
+                .group_by(table.c.id)
+                .subquery()
+            )
+            live = [table.c.question_id, func.count().label("n")]
+            stmt = select(*live).select_from(
+                table.join(newest, and_(table.c.id == newest.c.id, table.c.version == newest.c.v))
+            )
+            if table is m.reference_answers:
+                stmt = stmt.where(~table.c.retired)
+            for question_id, n in self._conn.execute(stmt.group_by(table.c.question_id)):
+                counts[QuestionId(question_id)] += n
+        return counts
 
     def save(self, item: GlobalItem) -> None:
         what = f"{type(item).__name__} {item.id} v{item.meta.version}"
@@ -423,9 +556,11 @@ class PgContentRepository:
                 self._conn.execute(
                     insert(m.question_versions).values(
                         question_id=item.id,
+                        code=item.code,
                         text=item.text,
                         max_marks=item.max_marks,
                         category=item.category,
+                        difficulty=item.difficulty.value,
                         **_meta_values(item.meta, owner=False),
                     )
                 )
@@ -448,12 +583,25 @@ class PgCollegeRepository:
         r = _one(row, f"college {college_id}")
         return College(id=CollegeId(r.id), name=r.name, code=r.code)
 
+    def names(self, college_ids: Sequence[CollegeId]) -> Mapping[CollegeId, str]:
+        if not college_ids:
+            return {}
+        rows = self._conn.execute(
+            select(m.college_directory).where(m.college_directory.c.id.in_(college_ids))
+        )
+        return {CollegeId(r.id): r.name for r in rows}
+
     def save(self, college: College) -> None:
         with writing(self._conn, f"college {college.id}"):
             _upsert(
                 self._conn,
                 m.colleges,
                 {"id": college.id, "name": college.name, "code": college.code},
+            )
+            _upsert(
+                self._conn,
+                m.college_directory,
+                {"id": college.id, "name": college.name},
             )
 
 

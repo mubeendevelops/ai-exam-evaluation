@@ -59,6 +59,7 @@ from tarn_core.services._support import Runtime
 from tarn_core.services.blueprints import BlueprintService
 from tarn_core.services.booklets import BookletService
 from tarn_core.services.content import ContentService
+from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.scoring import ScoringService
 from tarn_core.services.subjects import SubjectService
 from tarn_core.services.totals import TotalsService
@@ -154,7 +155,12 @@ def add_question(
     text: str = "Explain the synthetic concept.",
 ) -> Question:
     question = Question(
-        id=QuestionId(new_id), meta=meta(owner), subject_id=subject_id, text=text, max_marks=marks
+        id=QuestionId(new_id),
+        meta=meta(owner),
+        subject_id=subject_id,
+        code=f"SYN-{new_id.hex[:8]}",
+        text=text,
+        max_marks=marks,
     )
     content.save(question)
     return question
@@ -256,6 +262,7 @@ def ipr_shaped_blueprint(mem: Backend, owner: CollegeFixture) -> ExamBlueprint:
 
 @dataclass(frozen=True, slots=True)
 class Services:
+    bank: QuestionBankService
     blueprints: BlueprintService
     booklets: BookletService
     content: ContentService
@@ -268,6 +275,13 @@ def make_services(mem: Backend, scorers: Sequence[Scorer] | None = None) -> Serv
     """Every core service wired to the in-memory adapters."""
     rt = mem.runtime
     return Services(
+        bank=QuestionBankService(
+            content=mem.content,
+            users=mem.users,
+            colleges=mem.colleges,
+            blobs=mem.blobs,
+            runtime=rt,
+        ),
         blueprints=BlueprintService(content=mem.content, users=mem.users, runtime=rt),
         subjects=SubjectService(content=mem.content, users=mem.users, runtime=rt),
         booklets=BookletService(

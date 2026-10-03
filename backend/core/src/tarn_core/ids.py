@@ -15,6 +15,7 @@ ReferenceAnswerId = NewType("ReferenceAnswerId", UUID)
 CriterionId = NewType("CriterionId", UUID)
 GlossaryId = NewType("GlossaryId", UUID)
 ReferenceDiagramId = NewType("ReferenceDiagramId", UUID)
+KeyFileId = NewType("KeyFileId", UUID)
 BlueprintId = NewType("BlueprintId", UUID)
 
 # College data

@@ -15,7 +15,8 @@ from typing import Protocol
 from tarn_adapters.auth.mail import DeferredMailer
 from tarn_adapters.auth.secrets import SIGNING_KEY, secret_source
 from tarn_adapters.auth.wiring import auth_kit
-from tarn_adapters.blob.unavailable import NoBlobStore
+from tarn_adapters.blob.minio_client import make_client
+from tarn_adapters.blob.minio_store import MinioBlobStore
 from tarn_adapters.config import Settings
 from tarn_adapters.identity.database import IdentityDatabase
 from tarn_adapters.postgres.database import PostgresDatabase
@@ -29,9 +30,12 @@ from tarn_core.ports.repositories import (
     UserRepository,
 )
 from tarn_core.ports.runtime import Clock, IdGenerator
+from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime
 from tarn_core.services.auth import AccountService, AuthKit, AuthService
 from tarn_core.services.blueprints import BlueprintService
+from tarn_core.services.content import ContentService
+from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.registration import RegistrationService
 from tarn_core.services.roster import RosterService
 from tarn_core.services.subjects import SubjectService
@@ -51,6 +55,9 @@ class CollegeScope(Protocol):
 
     @property
     def content(self) -> ContentRepository: ...
+
+    @property
+    def blobs(self) -> BlobStore: ...
 
     @property
     def runtime(self) -> Runtime: ...
@@ -110,6 +117,22 @@ class Unit:
         )
 
     @property
+    def bank(self) -> QuestionBankService:
+        return QuestionBankService(
+            content=self.scope.content,
+            users=self.scope.users,
+            colleges=self.scope.colleges,
+            blobs=self.scope.blobs,
+            runtime=self.scope.runtime,
+        )
+
+    @property
+    def content(self) -> ContentService:
+        return ContentService(
+            content=self.scope.content, users=self.scope.users, runtime=self.scope.runtime
+        )
+
+    @property
     def blueprints(self) -> BlueprintService:
         return BlueprintService(
             content=self.scope.content, users=self.scope.users, runtime=self.scope.runtime
@@ -139,7 +162,8 @@ class PostgresBackends:
         self.access_token_minutes = settings.access_token_minutes
         self._app = PostgresDatabase(settings.app_database_url)
         self._identity = IdentityDatabase(settings.identity_app_database_url)
-        self._blobs = NoBlobStore()  # no endpoint touches blobs yet (P9 adds uploads)
+        # The client connects on first use, so building the app needs no MinIO.
+        self._blobs = MinioBlobStore(make_client(settings), settings.blob_bucket)
 
     def identity(self) -> AbstractContextManager[IdentityStore]:
         return self._identity.session()

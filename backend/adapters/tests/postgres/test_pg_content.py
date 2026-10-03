@@ -74,6 +74,7 @@ def test_copy_on_edit_for_another_college(session: Opener, world: World) -> None
                         version=2, owning_college_id=a.id, created_by=b.college.teacher.id
                     ),
                     subject_id=original.subject_id,
+                    code=original.code,
                     text="B's wording",
                     max_marks=original.max_marks,
                 )

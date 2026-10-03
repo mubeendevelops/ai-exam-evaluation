@@ -50,7 +50,10 @@ def test_app_role_cannot_bypass_rls(test_database: TestDatabase) -> None:
             "WHERE relnamespace = 'public'::regnamespace AND relkind = 'r' "
             "AND relname <> 'alembic_version'"
         ).fetchall()
-    assert {name for name, *_ in tables} == set(COLLEGE_TABLES) | set(GLOBAL_TABLES)
+    # ``college_directory`` is the one table that is neither: id and name of every college.
+    assert {name for name, *_ in tables} == (
+        set(COLLEGE_TABLES) | set(GLOBAL_TABLES) | {"college_directory"}
+    )
     assert all(enabled and forced for _, enabled, forced in tables)
 
 

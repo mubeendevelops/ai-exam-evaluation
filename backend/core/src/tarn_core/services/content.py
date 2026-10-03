@@ -6,9 +6,11 @@ from decimal import Decimal
 
 from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.content import (
+    MAX_CODE_LENGTH,
     ContentMeta,
     DiagramParams,
     Glossary,
+    KeyFile,
     Question,
     ReferenceAnswer,
     ReferenceDiagram,
@@ -19,12 +21,18 @@ from tarn_core.ids import (
     CollegeId,
     CriterionId,
     GlossaryId,
+    KeyFileId,
     QuestionId,
     ReferenceAnswerId,
     ReferenceDiagramId,
     UserId,
 )
-from tarn_core.ports.repositories import ContentRepository, GlobalItem, UserRepository
+from tarn_core.ports.repositories import (
+    ContentRepository,
+    GlobalItem,
+    QuestionQuery,
+    UserRepository,
+)
 from tarn_core.services._support import Runtime, ref_json
 
 
@@ -33,6 +41,21 @@ def ensure_can_edit(college_id: CollegeId, item: GlobalItem) -> None:
         raise NotOwnerError(
             f"{type(item).__name__} {item.id} belongs to another college; copy it first"
         )
+
+
+def free_code(content: ContentRepository, college_id: CollegeId, code: str) -> str:
+    """``code`` if no question of this college has it, else ``code-2``, ``code-3``..."""
+    query = QuestionQuery(code=code, exact_code=True, owner_id=college_id)
+    if content.search_questions(query, limit=1).total == 0:
+        return code
+    n = 2
+    while True:
+        suffix = f"-{n}"
+        candidate = f"{code[: MAX_CODE_LENGTH - len(suffix)]}{suffix}"
+        query = QuestionQuery(code=candidate, exact_code=True, owner_id=college_id)
+        if content.search_questions(query, limit=1).total == 0:
+            return candidate
+        n += 1
 
 
 class ContentService:
@@ -87,6 +110,7 @@ class ContentService:
             source,
             id=self._rt.new_id(QuestionId),
             meta=self._new_meta(college_id, actor_id, source),
+            code=free_code(self._content, college_id, source.code),
         )
         self._content.save(copy)
 
@@ -123,6 +147,16 @@ class ContentService:
                     params=params,
                 )
             )
+        for key_file in self._content.for_question(KeyFile, question_id):
+            # Blobs are global and never deleted, so the copy shares the stored file.
+            self._content.save(
+                replace(
+                    key_file,
+                    id=self._rt.new_id(KeyFileId),
+                    meta=self._new_meta(college_id, actor_id, key_file),
+                    question_id=copy.id,
+                )
+            )
         for glossary in self._content.for_question(Glossary, question_id):
             self._content.save(
                 replace(
@@ -146,7 +180,12 @@ class ContentService:
     def _new_meta(
         college_id: CollegeId,
         actor_id: UserId,
-        source: Question | ReferenceAnswer | RubricCriterion | Glossary | ReferenceDiagram,
+        source: Question
+        | ReferenceAnswer
+        | RubricCriterion
+        | Glossary
+        | ReferenceDiagram
+        | KeyFile,
     ) -> ContentMeta:
         return ContentMeta(
             version=1, owning_college_id=college_id, created_by=actor_id, copied_from=source.ref

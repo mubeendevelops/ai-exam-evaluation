@@ -1,7 +1,7 @@
 """Request and response bodies (the OpenAPI contract, ``docs/api/openapi.json``)."""
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -271,3 +271,184 @@ class BlueprintOut(BlueprintSummaryOut):
     document: dict[str, Any] = Field(
         description="The blueprint in the public form, see docs/api/blueprint.schema.json."
     )
+
+
+# --- question bank ----------------------------------------------------------------------------
+
+DifficultyName = Literal["easy", "medium", "hard"]
+
+
+class ListItemBody(_In):
+    term: str = Field(min_length=1, max_length=200)
+    synonyms: list[str] = Field(default_factory=list, max_length=50)
+
+
+class ListParamsBody(_In):
+    items: list[ListItemBody] = Field(min_length=1, max_length=100)
+    required_count: int = Field(ge=1, description="How many items the student must name.")
+
+
+class NumericParamsBody(_In):
+    expected: float
+    tolerance: float = Field(0, ge=0)
+    unit: str = Field("", max_length=40)
+
+
+class SemanticParamsBody(_In):
+    reference_statement: str = Field(min_length=1, max_length=2000)
+
+
+class DiagramParamsBody(_In):
+    reference_diagram_id: UUID
+    component: Literal["whole", "nodes", "edges", "labels"] = "whole"
+
+
+class _CriterionBase(_In):
+    id: UUID | None = Field(
+        None, description="Omit for a new criterion; give it to save a new version of one."
+    )
+    label: str = Field(min_length=1, max_length=200)
+    weight: float = Field(gt=0, description="In marks. All weights add up to the question's marks.")
+
+
+class ListCriterion(_CriterionBase):
+    type: Literal["list"]
+    params: ListParamsBody
+
+
+class NumericCriterion(_CriterionBase):
+    type: Literal["numeric"]
+    params: NumericParamsBody
+
+
+class SemanticCriterion(_CriterionBase):
+    type: Literal["semantic"]
+    params: SemanticParamsBody
+
+
+class DiagramCriterion(_CriterionBase):
+    type: Literal["diagram"]
+    params: DiagramParamsBody
+
+
+CriterionBody = Annotated[
+    ListCriterion | NumericCriterion | SemanticCriterion | DiagramCriterion,
+    Field(discriminator="type"),
+]
+
+
+class QuestionCreateIn(_In):
+    subject_id: UUID
+    code: str = Field(min_length=1, max_length=40, examples=["PHY-Q101"])
+    text: str = Field(min_length=1, max_length=5000)
+    max_marks: float = Field(gt=0)
+    difficulty: DifficultyName = "medium"
+    category: str = Field("", max_length=200, description="The topic, e.g. Electromagnetism.")
+    reference_answer: str | None = Field(None, max_length=20000)
+    criteria: list[CriterionBody] = Field(default_factory=list, max_length=50)
+
+
+class QuestionUpdateIn(_In):
+    code: str = Field(min_length=1, max_length=40)
+    text: str = Field(min_length=1, max_length=5000)
+    max_marks: float = Field(gt=0)
+    difficulty: DifficultyName
+    category: str = Field("", max_length=200)
+    criteria: list[CriterionBody] | None = Field(
+        None,
+        max_length=50,
+        description="Replaces the rubric. Required when the marks change and a rubric exists.",
+    )
+
+
+class RubricIn(_In):
+    criteria: list[CriterionBody] = Field(max_length=50)
+
+
+class ReferenceAnswerIn(_In):
+    text: str = Field(min_length=1, max_length=20000)
+    guidance_only: bool = Field(
+        False, description="The key is guidance only: no AI score, the teacher marks by hand (C8)."
+    )
+
+
+class GlossaryIn(_In):
+    terms: list[str] = Field(max_length=500)
+
+
+class QuestionSummaryOut(BaseModel):
+    id: UUID
+    version: int
+    code: str
+    text: str
+    max_marks: float
+    difficulty: DifficultyName
+    category: str
+    subject_id: UUID
+    subject_name: str | None
+    key_count: int = Field(description="Reference answers plus attached key files.")
+    owning_college_id: UUID
+    owner_name: str | None
+    owned: bool = Field(description="True if my college owns it and so may edit it.")
+    copied_from: ContentRefOut | None
+
+
+class QuestionPageOut(BaseModel):
+    items: list[QuestionSummaryOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class ReferenceAnswerOut(BaseModel):
+    id: UUID
+    version: int
+    text: str
+    guidance_only: bool
+    synthetic: bool
+
+
+class CriterionOut(BaseModel):
+    """A criterion as stored: the same shape the editor sends, with its id and version."""
+
+    version: int
+    criterion: CriterionBody
+
+
+class RubricOut(BaseModel):
+    criteria: list[CriterionOut]
+    total: float = Field(description="Sum of the weights.")
+    max_marks: float
+    complete: bool = Field(description="True if the weights add up to the question's marks.")
+
+
+class GlossaryOut(BaseModel):
+    teacher_terms: list[str]
+    reference_labels: list[str] = Field(description="Labels read from the reference diagrams.")
+    terms: list[str] = Field(description="Both lists together, case-insensitively de-duplicated.")
+
+
+class KeyFileOut(BaseModel):
+    id: UUID
+    name: str
+    media_type: str
+    size_bytes: int
+    keywords: list[str]
+    content_url: str
+
+
+class ReferenceDiagramOut(BaseModel):
+    id: UUID
+    name: str
+    node_count: int
+    edge_count: int
+    labels: list[str]
+    content_url: str
+
+
+class QuestionOut(QuestionSummaryOut):
+    reference_answers: list[ReferenceAnswerOut]
+    rubric: RubricOut
+    glossary: GlossaryOut
+    key_files: list[KeyFileOut]
+    diagrams: list[ReferenceDiagramOut]

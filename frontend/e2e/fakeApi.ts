@@ -232,13 +232,89 @@ export class FakeApi {
         })
       }
 
+      case 'GET /question-topics':
+        return json(200, ['Electromagnetism', 'Optics'])
+
+      case 'GET /questions': {
+        const level = url.searchParams.get('difficulty')
+        const word = (url.searchParams.get('keyword') ?? '').toLowerCase()
+        const items = QUESTIONS.filter(
+          (q) =>
+            (!level || q.difficulty === level) &&
+            (!word || `${q.text} ${q.code}`.toLowerCase().includes(word)),
+        )
+        return json(200, { items, total: items.length, limit: 12, offset: 0 })
+      }
+
       case 'GET /accounts':
         return json(200, [])
       case 'GET /students':
         return json(200, [])
 
-      default:
+      default: {
+        const one = /^GET \/questions\/(q-\d+)$/.exec(key)
+        const found = one ? QUESTIONS.find((q) => q.id === one[1]) : undefined
+        if (found) return json(200, questionDetail(found))
         return json(599, { detail: `fake API has no ${key}` })
+      }
     }
+  }
+}
+
+const COLLEGE = '11111111-1111-4111-8111-111111111111'
+const SUBJECT = '33333333-3333-4333-8333-333333333333'
+
+const QUESTIONS = [
+  ['q-1', 'PHY-Q1', 'State Lenz’s law.', 'easy', 4],
+  ['q-2', 'PHY-Q2', 'Define resonance in an LCR circuit.', 'hard', 5],
+].map(([id, code, text, difficulty, marks]) => ({
+  id,
+  version: 1,
+  code,
+  text,
+  max_marks: marks,
+  difficulty,
+  category: 'Electromagnetism',
+  subject_id: SUBJECT,
+  subject_name: 'Physics',
+  key_count: 1,
+  owning_college_id: COLLEGE,
+  owner_name: 'Synthetic College',
+  owned: true,
+  copied_from: null,
+}))
+
+function questionDetail(q: (typeof QUESTIONS)[number]) {
+  return {
+    ...q,
+    reference_answers: [
+      {
+        id: 'a-1',
+        version: 1,
+        text: 'The induced emf opposes the change.',
+        guidance_only: false,
+        synthetic: false,
+      },
+    ],
+    rubric: {
+      criteria: [
+        {
+          version: 1,
+          criterion: {
+            id: 'c-1',
+            type: 'semantic',
+            label: 'States the law',
+            weight: q.max_marks,
+            params: { reference_statement: 'The emf opposes the change that causes it.' },
+          },
+        },
+      ],
+      total: q.max_marks,
+      max_marks: q.max_marks,
+      complete: true,
+    },
+    glossary: { teacher_terms: ['induced emf'], reference_labels: [], terms: ['induced emf'] },
+    key_files: [],
+    diagrams: [],
   }
 }

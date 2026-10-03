@@ -8,14 +8,17 @@ return another college's rows; writes of an item from another college raise
 The content repository is global: reads need no college, and every item records its
 owning college. Edit rights are checked by the content service, not here."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import Answer, Booklet, Page, Region, Segment
 from tarn_core.domain.content import (
+    Difficulty,
     Glossary,
+    KeyFile,
     Question,
     ReferenceAnswer,
     ReferenceDiagram,
@@ -33,6 +36,7 @@ from tarn_core.ids import (
     PageId,
     QuestionId,
     StudentId,
+    SubjectId,
     UserId,
 )
 
@@ -44,8 +48,32 @@ type GlobalItem = (
     | Glossary
     | ReferenceDiagram
     | ExamBlueprint
+    | KeyFile
 )
-type QuestionPart = ReferenceAnswer | RubricCriterion | Glossary | ReferenceDiagram
+type QuestionPart = ReferenceAnswer | RubricCriterion | Glossary | ReferenceDiagram | KeyFile
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class QuestionQuery:
+    """Filters of the question bank; every filter given must match (case-insensitive).
+    ``keyword`` looks in the question text, code, topic and the live reference answers;
+    ``code`` is a part of the code (the whole code with ``exact_code``); ``topic`` is the
+    topic exactly."""
+
+    keyword: str = ""
+    code: str = ""
+    exact_code: bool = False
+    topic: str = ""
+    subject_id: SubjectId | None = None
+    difficulty: Difficulty | None = None
+    owner_id: CollegeId | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class QuestionPage:
+    items: tuple[Question, ...]
+    total: int
+    """All matches, not just this page."""
 
 
 class ContentRepository(Protocol):
@@ -64,7 +92,22 @@ class ContentRepository(Protocol):
         ...
 
     def for_question[T: QuestionPart](self, kind: type[T], question_id: QuestionId) -> Sequence[T]:
-        """Latest version of each item of ``kind`` that belongs to the question."""
+        """Latest version of each item of ``kind`` that belongs to the question, leaving out
+        items whose latest version is retired."""
+        ...
+
+    def search_questions(
+        self, query: QuestionQuery, *, limit: int, offset: int = 0
+    ) -> QuestionPage:
+        """Latest version of each matching question, ordered by code (then id)."""
+        ...
+
+    def topics(self, subject_id: SubjectId | None = None) -> Sequence[str]:
+        """Distinct non-empty topics of the latest question versions, sorted."""
+        ...
+
+    def key_counts(self, question_ids: Sequence[QuestionId]) -> Mapping[QuestionId, int]:
+        """Live reference answers plus key files, per question (0 when none)."""
         ...
 
     def save(self, item: GlobalItem) -> None:
@@ -74,6 +117,11 @@ class ContentRepository(Protocol):
 
 class CollegeRepository(Protocol):
     def get(self, college_id: CollegeId) -> College: ...
+
+    def names(self, college_ids: Sequence[CollegeId]) -> Mapping[CollegeId, str]:
+        """Names of colleges, any college's: the owner of global content is public (R7).
+        Unknown ids are left out."""
+        ...
 
     def save(self, college: College) -> None: ...
 

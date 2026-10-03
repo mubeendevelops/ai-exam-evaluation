@@ -54,3 +54,26 @@ test('on a phone the schema designer, with an OR pair and sub-parts open, does n
   )
   expect(overflow).toBeLessThanOrEqual(0)
 })
+
+test('on a phone the question bank, a question and the New Question modal do not scroll sideways', async ({
+  page,
+}) => {
+  await new FakeApi().install(page)
+  await page.goto('/')
+  await page.getByLabel('Institution / Org Domain ID').fill('SYNTH_COLLEGE')
+  await page.getByLabel('Username / Evaluator Email').fill('admin@synthetic.test')
+  await page.getByLabel('Security Access Password').fill('correct horse battery staple')
+  await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
+  await expect(page.getByRole('article', { name: 'Question PHY-Q1' })).toBeVisible()
+  const overflow = () =>
+    page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  expect(await overflow()).toBeLessThanOrEqual(0)
+
+  await page.getByRole('button', { name: 'Open PHY-Q1' }).click()
+  await expect(page.getByRole('region', { name: 'Rubric' })).toBeVisible()
+  expect(await overflow()).toBeLessThanOrEqual(0)
+
+  await page.getByRole('button', { name: 'Edit question' }).click()
+  await expect(page.getByRole('dialog', { name: 'Edit PHY-Q1' })).toBeVisible()
+  expect(await overflow()).toBeLessThanOrEqual(0)
+})

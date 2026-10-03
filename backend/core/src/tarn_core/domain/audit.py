@@ -17,6 +17,7 @@ class AuditAction(StrEnum):
     CONTENT_CREATED = "content.created"
     CONTENT_EDITED = "content.edited"
     CONTENT_COPIED = "content.copied"
+    CONTENT_RETIRED = "content.retired"
     ANSWER_SCORED = "answer.scored"
     ANSWER_APPROVED = "answer.approved"
     RESULT_SHEET_ISSUED = "result_sheet.issued"

@@ -25,6 +25,7 @@ QUESTION = Question(
     id=QuestionId(UUID(int=10)),
     meta=META,
     subject_id=SubjectId(UUID(int=11)),
+    code="KM-1",
     text="Compute the two cluster centroids after one k-means step.",
     max_marks=Decimal(5),
 )

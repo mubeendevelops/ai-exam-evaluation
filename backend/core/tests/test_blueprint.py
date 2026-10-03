@@ -110,7 +110,12 @@ def test_labels_must_be_unique() -> None:
 
 def test_blueprint_leaves_must_match_question_marks() -> None:
     question = Question(
-        id=Q, meta=META, subject_id=SubjectId(UUID(int=5)), text="Q", max_marks=Decimal(5)
+        id=Q,
+        meta=META,
+        subject_id=SubjectId(UUID(int=5)),
+        code="Q-1",
+        text="Q",
+        max_marks=Decimal(5),
     )
     bp = blueprint("5", Section(label="A", items=(slot("1", "5"),)))
     check_blueprint_questions(bp, {Q: question})
