@@ -54,8 +54,8 @@ fmt: ## ruff format and prettier --write
 	cd $(BACKEND) && uv run ruff check --fix . && uv run ruff format .
 	cd $(FRONTEND) && npm run format
 
-migrate: ## Apply database migrations (alembic upgrade head) -- arrives in P3
-	@echo "migrate: no migrations yet; the schema and Alembic arrive in P3."
+migrate: ## Apply database migrations (alembic upgrade head) and enable the tarn_app login
+	cd $(BACKEND) && uv run tarn db upgrade && uv run tarn db app-login
 
 seed: ## Load idempotent development seed data -- arrives in P8
 	@echo "seed: nothing to seed yet; seed data arrives in P8."

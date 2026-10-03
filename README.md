@@ -56,6 +56,7 @@ make ci      # lint, typecheck, test
 | `make up` / `make down` | Start or stop the Docker Compose stack (`make up-gpu` adds the NVIDIA GPU) |
 | `make test` / `make test-integration` | Run unit tests / tests that need the running stack |
 | `make lint` / `make typecheck` / `make fmt` | ruff, import-linter, eslint, prettier / mypy --strict, tsc / formatters |
-| `make migrate` / `make seed` | Placeholders until P3 (migrations) and P8 (seed data) |
+| `make migrate` | Apply database migrations and enable the `tarn_app` login (run after `make up`) |
+| `make seed` | Placeholder until P8 (seed data) |
 
 Real student booklets are never committed; `samples/` is git-ignored.

@@ -24,3 +24,19 @@ def test_doctor_reports_device(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "device      : cpu" in result.stdout
     assert "cloud OCR   : disabled" in result.stdout
     get_settings.cache_clear()
+
+
+def test_db_commands_are_listed() -> None:
+    result = runner.invoke(app, ["db", "--help"])
+    assert result.exit_code == 0
+    for command in ("upgrade", "downgrade", "app-login"):
+        assert command in result.stdout
+
+
+def test_db_downgrade_refused_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TARN_ENV", "production")
+    get_settings.cache_clear()
+    result = runner.invoke(app, ["db", "downgrade", "base"])
+    assert result.exit_code == 1
+    assert "refusing" in result.stdout
+    get_settings.cache_clear()

@@ -7,6 +7,7 @@ QP-IPR (60 marks: any 5 of 7 x 3, any 3 of 4 x 10, Q12 (a 10 + b 5) OR Q13 (a 10
 from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Protocol
 from uuid import UUID
 
 from tarn_core.domain.blueprint import AnyN, ExamBlueprint, OrGroup, QuestionSlot, Section, SubPart
@@ -43,12 +44,48 @@ from tarn_core.ids import (
     UserId,
 )
 from tarn_core.ports.engines import Scorer
-from tarn_core.ports.repositories import ContentRepository
+from tarn_core.ports.repositories import (
+    BookletRepository,
+    CollegeRepository,
+    ContentRepository,
+    ResultSheetRepository,
+    ScoreRepository,
+    StudentRepository,
+    UserRepository,
+)
+from tarn_core.ports.runtime import IdGenerator
+from tarn_core.ports.storage import BlobStore
+from tarn_core.services._support import Runtime
 from tarn_core.services.booklets import BookletService
 from tarn_core.services.content import ContentService
 from tarn_core.services.scoring import ScoringService
 from tarn_core.services.totals import TotalsService
-from tarn_core.testing import FixedCreditScorer, InMemory
+from tarn_core.testing import FixedCreditScorer
+
+
+class Backend(Protocol):
+    """What the builders need: ``InMemory``, or a database session from an adapter."""
+
+    @property
+    def ids(self) -> IdGenerator: ...
+    @property
+    def colleges(self) -> CollegeRepository: ...
+    @property
+    def users(self) -> UserRepository: ...
+    @property
+    def students(self) -> StudentRepository: ...
+    @property
+    def content(self) -> ContentRepository: ...
+    @property
+    def booklets(self) -> BookletRepository: ...
+    @property
+    def scores(self) -> ScoreRepository: ...
+    @property
+    def sheets(self) -> ResultSheetRepository: ...
+    @property
+    def blobs(self) -> BlobStore: ...
+    @property
+    def runtime(self) -> Runtime: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,9 +100,14 @@ class CollegeFixture:
         return self.college.id
 
 
-def add_college(mem: InMemory, code: str) -> CollegeFixture:
-    """A college with one teacher, one admin and three students."""
-    college = College(id=CollegeId(mem.ids.new()), name=f"Test College {code}", code=code)
+def add_college(mem: Backend, code: str, college_id: CollegeId | None = None) -> CollegeFixture:
+    """A college with one teacher, one admin and three students. Pass ``college_id`` when the
+    backend must know the college before its row exists (a database session bound to it)."""
+    college = College(
+        id=CollegeId(mem.ids.new()) if college_id is None else college_id,
+        name=f"Test College {code}",
+        code=code,
+    )
     mem.colleges.save(college)
     teacher = User(
         id=UserId(mem.ids.new()),
@@ -116,7 +158,7 @@ def add_question(
     return question
 
 
-def add_rubric(mem: InMemory, owner: CollegeFixture, question: Question) -> None:
+def add_rubric(mem: Backend, owner: CollegeFixture, question: Question) -> None:
     """Two criteria splitting the marks: a list criterion and a semantic one."""
     half = question.max_marks / 2
     mem.content.save(
@@ -146,7 +188,7 @@ def add_rubric(mem: InMemory, owner: CollegeFixture, question: Question) -> None
     )
 
 
-def ci_shaped_blueprint(mem: InMemory, owner: CollegeFixture) -> ExamBlueprint:
+def ci_shaped_blueprint(mem: Backend, owner: CollegeFixture) -> ExamBlueprint:
     """50 marks: A any 5 of 7 x 2, B any 4 of 7 x 5, C any 2 of 3 x 10. Questions numbered 1-17."""
     subject = Subject(
         id=SubjectId(mem.ids.new()), meta=meta(owner), code="SYN101", name="Synthetic Civics"
@@ -174,7 +216,7 @@ def ci_shaped_blueprint(mem: InMemory, owner: CollegeFixture) -> ExamBlueprint:
     return blueprint
 
 
-def ipr_shaped_blueprint(mem: InMemory, owner: CollegeFixture) -> ExamBlueprint:
+def ipr_shaped_blueprint(mem: Backend, owner: CollegeFixture) -> ExamBlueprint:
     """60 marks: A any 5 of 7 x 3, B any 3 of 4 x 10, C Q12 (a 10 + b 5) OR Q13 (a 10 + b 5)."""
     subject = Subject(
         id=SubjectId(mem.ids.new()), meta=meta(owner), code="SYN201", name="Synthetic IP Law"
@@ -218,7 +260,7 @@ class Services:
     totals: TotalsService
 
 
-def make_services(mem: InMemory, scorers: Sequence[Scorer] | None = None) -> Services:
+def make_services(mem: Backend, scorers: Sequence[Scorer] | None = None) -> Services:
     """Every core service wired to the in-memory adapters."""
     rt = mem.runtime
     return Services(
@@ -244,7 +286,7 @@ def make_services(mem: InMemory, scorers: Sequence[Scorer] | None = None) -> Ser
     )
 
 
-def add_answer(mem: InMemory, booklet: Booklet, slot_label: str) -> Answer:
+def add_answer(mem: Backend, booklet: Booklet, slot_label: str) -> Answer:
     """An answer with one segment on a fresh page of the booklet."""
     college_id = booklet.college_id
     page = Page(

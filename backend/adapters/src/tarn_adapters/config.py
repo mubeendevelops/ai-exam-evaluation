@@ -19,7 +19,10 @@ class Settings(BaseSettings):
     env: Literal["development", "test", "production"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
+    # Owner role: runs migrations and owns the tables. Never used to serve requests.
     database_url: str = "postgresql://tarn:tarn_dev_password@localhost:5432/tarn"
+    # Application role (tarn_app): no superuser, no BYPASSRLS, owns nothing; RLS applies to it.
+    app_database_url: str = "postgresql://tarn_app:tarn_app_dev_password@localhost:5432/tarn"
 
     # S3-compatible object store: MinIO in development, Cloud Storage in production.
     blob_endpoint: str = "localhost:9000"
