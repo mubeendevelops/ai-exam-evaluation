@@ -1,0 +1,16 @@
+[project]
+name = "tarn-worker"
+version = "0.0.0"
+description = "Tarn AI Evaluation queue worker entry point."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "tarn-core",
+    "tarn-adapters",
+]
+
+[project.scripts]
+tarn-worker = "tarn_worker.main:main"
+
+[build-system]
+requires = ["uv_build>=0.12.6,<0.13"]
+build-backend = "uv_build"

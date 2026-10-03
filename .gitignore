@@ -1,0 +1,93 @@
+# --- Real student data: never commit ---
+/samples/
+
+# --- Internal planning docs: kept local only ---
+/docs/claude_prompts.md
+/docs/design.md
+/docs/requirements.md
+/CLAUDE.md
+
+# --- Environment and secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+gcp-credentials*.json
+*-service-account*.json
+
+# --- Local storage data (MinIO, PostgreSQL, uploads, exports) ---
+/var/
+/data/
+minio-data/
+pgdata/
+postgres-data/
+*.dump
+backups/
+
+# --- Model weights and caches ---
+models/
+weights/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.bin
+*.pdparams
+*.pdiparams
+*.pdmodel
+.cache/
+huggingface/
+.paddleocr/
+.paddlex/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.import_linter_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.ipynb_checkpoints/
+
+# --- Node / frontend ---
+node_modules/
+frontend/dist/
+.vite/
+*.tsbuildinfo
+.eslintcache
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+playwright-report/
+test-results/
+blob-report/
+coverage/
+
+# --- Terraform ---
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# --- Editors and OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

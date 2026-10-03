@@ -1,0 +1,7 @@
+@import 'tailwindcss';
+
+/* Prototype design tokens (docs/project_idea.html) are ported here in P5. */
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}

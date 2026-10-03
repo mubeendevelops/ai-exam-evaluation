@@ -1,0 +1,15 @@
+# GPU override: `make up-gpu` (docker compose -f docker-compose.yml -f docker-compose.gpu.yml up).
+# Needs the NVIDIA Container Toolkit on the host; see docs/development.md.
+# Only the worker gets the GPU: the 4 GB GTX 1650 loads one model at a time.
+services:
+  worker:
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

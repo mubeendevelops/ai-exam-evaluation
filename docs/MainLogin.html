@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tarn Knowledge Services | Exam Evaluation Cloud</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#090d16',
+                        cardBg: 'rgba(22, 28, 45, 0.75)',
+                        accentPurple: '#a855f7',
+                        accentCyan: '#06b6d4',
+                        accentBlue: '#3b82f6',
+                        accentEmerald: '#10b981'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome & Google Fonts -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #090d16;
+            color: #f3f4f6;
+            overflow-x: hidden;
+        }
+        .glass-box {
+            background: rgba(18, 24, 38, 0.75);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-box-interactive {
+            background: rgba(22, 30, 49, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+        }
+        .glass-box-interactive:hover {
+            border-color: rgba(168, 85, 247, 0.4);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px -10px rgba(168, 85, 247, 0.25);
+        }
+        .bg-grid-pattern {
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        }
+        /* Custom scrollbars for modal contents */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(168, 85, 247, 0.4);
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between bg-grid-pattern selection:bg-purple-500 selection:text-white">
+
+    <!-- BACKGROUND GLOW EFFECTS -->
+    <div class="fixed top-0 left-1/4 w-96 h-96 bg-purple-600/15 rounded-full blur-[120px] pointer-events-none"></div>
+    <div class="fixed bottom-1/3 right-1/4 w-96 h-96 bg-cyan-600/15 rounded-full blur-[120px] pointer-events-none"></div>
+
+    <!-- TOP NAVIGATION BAR -->
+    <header class="sticky top-0 z-40 glass-box border-b border-gray-800/80 bg-opacity-90">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-20">
+                <!-- Brand Logo & Title -->
+                <div class="flex items-center space-x-3.5">
+                    <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-cyan-400 flex items-center justify-center text-white text-2xl shadow-lg shadow-purple-900/40">
+                        <i class="fa-solid fa-cloud-bolt"></i>
+                    </div>
+                    <div>
+                        <a href="https://tarnknowledge.com/" target="_blank" class="flex items-center gap-2 group">
+                            <span class="text-xl font-black tracking-tight bg-gradient-to-r from-white via-gray-100 to-purple-300 bg-clip-text text-transparent group-hover:to-cyan-400 transition-all duration-300">
+                                TARN KNOWLEDGE
+                            </span>
+                        </a>
+                        <p class="text-[10px] text-cyan-400 font-bold tracking-widest uppercase">Exam Evaluation Cloud</p>
+                    </div>
+                </div>
+
+                <!-- Right Nav Controls (Customer Portal Login removed and replaced with Register) -->
+                <div class="flex items-center space-x-4">
+                    <a href="https://www.tarnknowledge.com" target="_blank" class="hidden sm:flex items-center gap-2 text-xs text-gray-400 hover:text-white transition">
+                        <i class="fa-solid fa-globe text-purple-400"></i>
+                        <span>tarnknowledge.com</span>
+                    </a>
+                    <button onclick="openRegisterModal()" class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-purple-900/30 transition flex items-center gap-2">
+                        <i class="fa-solid fa-user-plus"></i>
+                        <span>Register</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN BODY CONTAINER -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex-grow w-full relative z-10 space-y-16">
+
+        <!-- HERO BANNER & LOGIN CARD SECTION -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+            
+            <!-- Left Hero Content -->
+            <div class="lg:col-span-7 space-y-6">
+                <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-950/80 border border-purple-500/40 text-purple-300 text-xs font-semibold">
+                    <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                    <span>Next-Gen Enterprise Assessment Infrastructure</span>
+                </div>
+
+                <h1 class="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-tight">
+                    AI-Driven Evaluation & <br>
+                    <span class="bg-gradient-to-r from-purple-400 via-cyan-400 to-indigo-300 bg-clip-text text-transparent">
+                        Question Cloud
+                    </span>
+                </h1>
+
+                <p class="text-sm sm:text-base text-gray-300 max-w-xl leading-relaxed">
+                    Elevate academic standardizations with Tarn Knowledge Services' next-generation Evaluation Cloud. Streamline question bank generation, automated key mappings, and high-precision evaluation pipelines.
+                </p>
+
+                <!-- Value Chips -->
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+                    <div class="glass-box p-3 rounded-xl border border-gray-800 flex items-center gap-2.5">
+                        <i class="fa-solid fa-shield-halved text-purple-400 text-base"></i>
+                        <span class="text-xs font-semibold text-gray-200">ISO Secure Cloud</span>
+                    </div>
+                    <div class="glass-box p-3 rounded-xl border border-gray-800 flex items-center gap-2.5">
+                        <i class="fa-solid fa-bolt text-cyan-400 text-base"></i>
+                        <span class="text-xs font-semibold text-gray-200">99.9% Evaluation Accuracy</span>
+                    </div>
+                    <div class="glass-box p-3 rounded-xl border border-gray-800 flex items-center gap-2.5 col-span-2 sm:col-span-1">
+                        <i class="fa-solid fa-chart-line text-emerald-400 text-base"></i>
+                        <span class="text-xs font-semibold text-gray-200">Real-Time Analytics</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Interactive Login Card -->
+            <div id="loginSection" class="lg:col-span-5">
+                <div class="glass-box p-8 rounded-3xl border border-purple-500/30 shadow-2xl relative overflow-hidden">
+                    <div class="absolute -top-12 -right-12 w-32 h-32 bg-purple-500/20 rounded-full blur-2xl"></div>
+
+                    <div class="flex justify-between items-center mb-6">
+                        <div>
+                            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-right-to-bracket text-purple-400"></i> Customer Sign In
+                            </h2>
+                            <p class="text-xs text-gray-400 mt-1">Access your institutional evaluation portal</p>
+                        </div>
+                        <span class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-semibold">Active Portal</span>
+                    </div>
+
+                    <form onsubmit="handleCustomerLogin(event)" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-1">Institution / Org Domain ID</label>
+                            <div class="relative">
+                                <i class="fa-solid fa-building absolute left-3.5 top-3 text-gray-500 text-xs"></i>
+                                <input type="text" id="domainId" required placeholder="org.tarnknowledge.com" class="w-full bg-gray-950/80 border border-gray-700/80 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-1">Username / Evaluator Email</label>
+                            <div class="relative">
+                                <i class="fa-solid fa-envelope absolute left-3.5 top-3 text-gray-500 text-xs"></i>
+                                <input type="email" id="evaluatorEmail" required placeholder="evaluator@institution.edu" class="w-full bg-gray-950/80 border border-gray-700/80 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-1">Security Access Password</label>
+                            <div class="relative">
+                                <i class="fa-solid fa-key absolute left-3.5 top-3 text-gray-500 text-xs"></i>
+                                <input type="password" id="evaluatorPassword" required placeholder="••••••••••••" class="w-full bg-gray-950/80 border border-gray-700/80 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition">
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between text-xs pt-1">
+                            <label class="flex items-center text-gray-400 cursor-pointer">
+                                <input type="checkbox" class="rounded bg-gray-900 border-gray-700 text-purple-600 focus:ring-0 mr-2"> Remember session
+                            </label>
+                            <a href="#" onclick="alert('Password reset instructions sent to institution administrator.')" class="text-purple-400 hover:text-purple-300 font-semibold">Forgot Password?</a>
+                        </div>
+
+                        <button type="submit" class="w-full bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-purple-900/40 transition flex items-center justify-center gap-2 mt-2">
+                            <span>Authenticate Cloud Access</span>
+                            <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+                    </form>
+                    <!-- "Need new cloud tenant workspace?" and "Request Onboarding" removed from bottom of login card -->
+                </div>
+            </div>
+        </div>
+
+        <!-- FEATURE ADVERTISEMENT CAPTIONS SECTION -->
+        <div class="space-y-8 pt-6">
+            <div class="text-center max-w-2xl mx-auto space-y-2">
+                <h2 class="text-2xl font-extrabold text-white">Powerful Cloud Assessment Modules</h2>
+                <p class="text-xs text-gray-400">Discover Tarn's intelligent suite designed for modern academic evaluation.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                
+                <!-- Caption Card 1: Get Cloud Question Bank -->
+                <div onclick="openDemoModal('repository')" class="glass-box-interactive p-6 rounded-2xl flex flex-col justify-between space-y-4 relative overflow-hidden group">
+                    <div class="w-12 h-12 rounded-xl bg-purple-950 border border-purple-500/40 text-purple-400 flex items-center justify-center text-xl group-hover:scale-110 transition duration-300">
+                        <i class="fa-solid fa-database"></i>
+                    </div>
+                    <div class="space-y-2">
+                        <span class="text-[10px] uppercase font-bold tracking-widest text-purple-400">Repository Cloud</span>
+                        <h3 class="text-lg font-bold text-white group-hover:text-purple-300 transition">Get Cloud Question Bank</h3>
+                        <p class="text-xs text-gray-400 leading-relaxed">
+                            Access over 100,000+ pre-validated, mark-categorized questions with dynamic blueprint schemas and instant paper drafting.
+                        </p>
+                    </div>
+                    <div class="pt-2 flex items-center text-xs text-purple-400 font-semibold group-hover:translate-x-1 transition">
+                        <span>Explore Repository</span>
+                        <i class="fa-solid fa-chevron-right text-[10px] ml-1.5"></i>
+                    </div>
+                </div>
+
+                <!-- Caption Card 2: Cloud Map Answer Keys (Renamed link to Map Answers demo) -->
+                <div onclick="openDemoModal('mapAnswers')" class="glass-box-interactive p-6 rounded-2xl flex flex-col justify-between space-y-4 relative overflow-hidden group">
+                    <div class="w-12 h-12 rounded-xl bg-cyan-950 border border-cyan-500/40 text-cyan-400 flex items-center justify-center text-xl group-hover:scale-110 transition duration-300">
+                        <i class="fa-solid fa-diagram-project"></i>
+                    </div>
+                    <div class="space-y-2">
+                        <span class="text-[10px] uppercase font-bold tracking-widest text-cyan-400">Precision Mapping</span>
+                        <h3 class="text-lg font-bold text-white group-hover:text-cyan-300 transition">Cloud Map Answer Keys</h3>
+                        <p class="text-xs text-gray-400 leading-relaxed">
+                            Map custom answer variants, key phrases, and step-by-step rubrics directly to auto-segment handwritten answer pages.
+                        </p>
+                    </div>
+                    <div class="pt-2 flex items-center text-xs text-cyan-400 font-semibold group-hover:translate-x-1 transition">
+                        <span>Map Answers demo</span>
+                        <i class="fa-solid fa-chevron-right text-[10px] ml-1.5"></i>
+                    </div>
+                </div>
+
+                <!-- Caption Card 3: Intelligent Assessment Assistant (Renamed link to AI evaluation demo) -->
+                <div onclick="openDemoModal('aiEvaluation')" class="glass-box-interactive p-6 rounded-2xl flex flex-col justify-between space-y-4 relative overflow-hidden group">
+                    <div class="w-12 h-12 rounded-xl bg-indigo-950 border border-indigo-500/40 text-indigo-400 flex items-center justify-center text-xl group-hover:scale-110 transition duration-300">
+                        <i class="fa-solid fa-brain"></i>
+                    </div>
+                    <div class="space-y-2">
+                        <span class="text-[10px] uppercase font-bold tracking-widest text-indigo-400">AI Evaluation Engine</span>
+                        <h3 class="text-lg font-bold text-white group-hover:text-indigo-300 transition">Intelligent Assessment Assistant</h3>
+                        <p class="text-xs text-gray-400 leading-relaxed">
+                            Automate scan evaluation with high-accuracy OCR, semantic grading suggestions, and evaluator override panels.
+                        </p>
+                    </div>
+                    <div class="pt-2 flex items-center text-xs text-indigo-400 font-semibold group-hover:translate-x-1 transition">
+                        <span>AI evaluation demo</span>
+                        <i class="fa-solid fa-chevron-right text-[10px] ml-1.5"></i>
+                    </div>
+                </div>
+
+                <!-- Caption Card 4: Cloud Analytics On House -->
+                <div onclick="openDemoModal('analytics')" class="glass-box-interactive p-6 rounded-2xl flex flex-col justify-between space-y-4 relative overflow-hidden group">
+                    <div class="w-12 h-12 rounded-xl bg-emerald-950 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-xl group-hover:scale-110 transition duration-300">
+                        <i class="fa-solid fa-chart-pie"></i>
+                    </div>
+                    <div class="space-y-2">
+                        <span class="text-[10px] uppercase font-bold tracking-widest text-emerald-400">Institutional Insights</span>
+                        <h3 class="text-lg font-bold text-white group-hover:text-emerald-300 transition">Cloud Analytics On House</h3>
+                        <p class="text-xs text-gray-400 leading-relaxed">
+                            Receive complimentary high-level performance metrics, difficulty heatmaps, and score distribution reports for all tests.
+                        </p>
+                    </div>
+                    <div class="pt-2 flex items-center text-xs text-emerald-400 font-semibold group-hover:translate-x-1 transition">
+                        <span>View Analytics</span>
+                        <i class="fa-solid fa-chevron-right text-[10px] ml-1.5"></i>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </main>
+
+    <!-- FOOTER WITH TARN KNOWLEDGE SERVICES COORDINATES -->
+    <footer class="mt-16 border-t border-gray-800/80 bg-gray-950/90 backdrop-blur-md text-gray-400 text-xs">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+                
+                <!-- Left: Branding -->
+                <div class="md:col-span-5 space-y-3">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-cyan-400 flex items-center justify-center text-white font-bold text-sm">
+                            <i class="fa-solid fa-brain"></i>
+                        </div>
+                        <span class="font-extrabold text-white text-base tracking-tight">TARN KNOWLEDGE SERVICES</span>
+                    </div>
+                    <p class="text-xs text-gray-400 leading-relaxed max-w-sm">
+                        Building intelligent enterprise architecture, educational platforms, AI tools, and specialized consulting ecosystems.
+                    </p>
+                </div>
+
+                <!-- Right: Official Registered Coordinates -->
+                <div class="md:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <!-- Location -->
+                    <div class="space-y-1.5">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+                            <i class="fa-solid fa-location-dot"></i> Corporate Headquarters
+                        </h4>
+                        <p class="text-xs text-gray-300 leading-relaxed">
+                            A404, Meenakshi Mangalam, 2nd Main Road,<br>
+                            Arekere, Bannerghatta Road, Hulimavu,<br>
+                            Bangalore South, Bangalore – 560076,<br>
+                            Karnataka, India
+                        </p>
+                    </div>
+
+                    <!-- Contact & Web -->
+                    <div class="space-y-1.5">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                            <i class="fa-solid fa-headset"></i> Direct Coordinates
+                        </h4>
+                        <p class="text-xs text-gray-300">
+                            <strong>Phone:</strong> +91 9380163148
+                        </p>
+                        <p class="text-xs text-gray-300">
+                            <strong>Email:</strong> <a href="mailto:info@tarnknowledge.com" class="text-purple-400 hover:underline">info@tarnknowledge.com</a>
+                        </p>
+                        <p class="text-xs text-gray-300">
+                            <strong>Official Portal:</strong> <a href="https://tarnknowledge.com/" target="_blank" class="text-cyan-400 hover:underline font-semibold">https://tarnknowledge.com</a>
+                        </p>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="mt-8 pt-6 border-t border-gray-800/60 flex flex-col sm:flex-row justify-between items-center text-[11px] text-gray-500 gap-4">
+                <p>&copy; 2026 Tarn Knowledge Services. All rights reserved.</p>
+                <div class="flex space-x-6">
+                    <a href="#" class="hover:text-gray-300 transition">Privacy Policy</a>
+                    <a href="#" class="hover:text-gray-300 transition">Terms of Service</a>
+                    <a href="#" class="hover:text-gray-300 transition">Security Spec</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- REGISTRATION MODAL WITH VALIDATION & BLOOM FILTER PASSWD VERIFIER -->
+    <div id="registerModal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+        <div class="glass-box max-w-xl w-full p-6 sm:p-8 rounded-3xl border border-purple-500/30 relative shadow-2xl my-8">
+            <button onclick="closeRegisterModal()" class="absolute top-5 right-5 text-gray-400 hover:text-white text-xl">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+
+            <div class="mb-6">
+                <span class="text-[10px] font-bold text-purple-400 uppercase tracking-widest bg-purple-950/80 px-2.5 py-1 rounded-full border border-purple-500/30">Tenant Registration</span>
+                <h2 class="text-2xl font-black text-white mt-2">Create Cloud Workspace</h2>
+                <p class="text-xs text-gray-400 mt-1">Register your organization domain and setup evaluator admin credentials.</p>
+            </div>
+
+            <form onsubmit="handleRegistrationSubmit(event)" class="space-y-4">
+                <!-- Institution ID with Live Validation -->
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-1">
+                        Institution ID / Org Domain ID <span class="text-red-400">*</span>
+                    </label>
+                    <div class="relative">
+                        <input type="text" id="regInstId" oninput="validateInstId()" maxlength="20" required placeholder="e.g. TARN_INST_01&*" class="w-full bg-gray-950/90 border border-gray-700/80 rounded-xl px-3 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-purple-500 transition">
+                        <button type="button" onclick="checkAvailability()" class="absolute right-2 top-1.5 bg-purple-900/60 hover:bg-purple-800 text-purple-200 text-[10px] px-2.5 py-1.5 rounded-lg border border-purple-500/40 transition">Check</button>
+                    </div>
+                    <p class="text-[10px] text-gray-400 mt-1">Max 20 chars, no spaces. Allowed: A-Z, 0-9, _, -, *, &amp;</p>
+                    <div id="instIdFeedback" class="text-[11px] font-semibold mt-1 hidden"></div>
+                </div>
+
+                <!-- Evaluator Name & Email -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-1">Admin Full Name</label>
+                        <input type="text" required placeholder="Dr. Sarah Connor" class="w-full bg-gray-950/90 border border-gray-700/80 rounded-xl px-3 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-purple-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-1">Official Email</label>
+                        <input type="email" required placeholder="admin@domain.edu" class="w-full bg-gray-950/90 border border-gray-700/80 rounded-xl px-3 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-purple-500 transition">
+                    </div>
+                </div>
+
+                <!-- Password with Bloom Filter Leak/Common Test -->
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-1">Security Password</label>
+                    <input type="password" id="regPassword" oninput="testPasswordBloomFilter()" required placeholder="••••••••••••" class="w-full bg-gray-950/90 border border-gray-700/80 rounded-xl px-3 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-purple-500 transition">
+                    
+                    <!-- Password Security Status -->
+                    <div class="mt-2 p-3 bg-gray-950/60 rounded-xl border border-gray-800 text-xs space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-400 text-[11px]">Bloom Filter Security Verification:</span>
+                            <span id="bloomStatus" class="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-gray-800 text-gray-400">Idle</span>
+                        </div>
+                        <div class="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                            <div id="bloomMeter" class="bg-purple-500 h-1.5 w-0 transition-all duration-300"></div>
+                        </div>
+                        <p id="bloomHelp" class="text-[10px] text-gray-400 leading-tight">Checks against a probabilistic 10-bit hash array for common weak patterns (no key rotation active).</p>
+                    </div>
+                </div>
+
+                <div class="pt-2">
+                    <button type="submit" class="w-full bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-purple-900/40 transition">
+                        Complete Registration &amp; Provision Workspace
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- DEMO MODAL CONTAINER (RESPONSIVE FOR ALL DEMOS) -->
+    <div id="demoModal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+        <div class="glass-box max-w-5xl w-full p-6 sm:p-8 rounded-3xl border border-purple-500/30 relative shadow-2xl my-auto max-h-[92vh] flex flex-col">
+            
+            <!-- Modal Header -->
+            <div class="flex justify-between items-start pb-4 border-b border-gray-800 flex-shrink-0">
+                <div>
+                    <span id="modalCategory" class="text-[10px] font-bold text-cyan-400 uppercase tracking-widest bg-cyan-950 px-2.5 py-1 rounded-full border border-cyan-500/30">Demo Module</span>
+                    <h2 id="modalTitle" class="text-2xl font-black text-white mt-2">Module View</h2>
+                </div>
+                <button onclick="closeDemoModal()" class="text-gray-400 hover:text-white text-xl p-1">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Modal Content Injector -->
+            <div id="demoModalContent" class="py-6 overflow-y-auto flex-grow custom-scrollbar">
+                <!-- Content dynamically populated via JS -->
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="pt-4 border-t border-gray-800 flex justify-between items-center text-xs text-gray-400 flex-shrink-0">
+                <span class="flex items-center gap-1.5">
+                    <i class="fa-solid fa-circle-check text-emerald-400"></i> Interactive Tarn Cloud Sandbox Environment
+                </span>
+                <button onclick="closeDemoModal()" class="bg-gray-800 hover:bg-gray-700 text-gray-200 px-4 py-2 rounded-xl text-xs font-semibold">
+                    Close Preview
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- INTERACTIVE LOGIC, BLOOM FILTER, AND DEMO MODULE RENDERERS -->
+    <script>
+        function handleCustomerLogin(e) {
+            e.preventDefault();
+            const domain = document.getElementById('domainId').value;
+            const email = document.getElementById('evaluatorEmail').value;
+            alert(`Authenticating ${email} for domain [${domain}]...\n\nWelcome to Tarn Knowledge Services Exam Evaluation Cloud! Accessing Dashboard.`);
+        }
+
+        // --- REGISTRATION & BLOOM FILTER VALIDATION ---
+        const registeredDomains = ["TARN_MAIN", "OXFORD_EDU", "STANFORD_AI", "DEMO_ORG"];
+
+        function openRegisterModal() {
+            document.getElementById('registerModal').classList.remove('hidden');
+        }
+
+        function closeRegisterModal() {
+            document.getElementById('registerModal').classList.add('hidden');
+        }
+
+        function validateInstId() {
+            const input = document.getElementById('regInstId');
+            const feedback = document.getElementById('instIdFeedback');
+            const val = input.value;
+
+            // Rule: Up to 20 chars without spaces. Capitals, numbers, _, -, *, & allowed.
+            const regex = /^[A-Z0-9_\-\*&]{1,20}$/;
+
+            if (val === '') {
+                feedback.classList.add('hidden');
+                return false;
+            }
+
+            if (!regex.test(val)) {
+                feedback.textContent = "Invalid Format: Upper case, numbers, _, -, *, & only. Max 20 chars. No spaces.";
+                feedback.className = "text-[11px] font-semibold mt-1 text-red-400 block";
+                return false;
+            } else {
+                feedback.textContent = "Format matches specification.";
+                feedback.className = "text-[11px] font-semibold mt-1 text-cyan-400 block";
+                return true;
+            }
+        }
+
+        function checkAvailability() {
+            const input = document.getElementById('regInstId');
+            const feedback = document.getElementById('instIdFeedback');
+            const val = input.value.trim();
+
+            if (!validateInstId()) {
+                alert("Please meet the structural criteria first before checking availability.");
+                return;
+            }
+
+            if (registeredDomains.includes(val)) {
+                feedback.textContent = `Org ID "${val}" is ALREADY TAKEN. Please choose another.`;
+                feedback.className = "text-[11px] font-semibold mt-1 text-red-400 block";
+            } else {
+                feedback.textContent = `Org ID "${val}" is AVAILABLE!`;
+                feedback.className = "text-[11px] font-semibold mt-1 text-emerald-400 block";
+            }
+        }
+
+        // Simplified Bloom Filter implementation for common standard password testing
+        class SimpleBloomFilter {
+            constructor(size = 32) {
+                this.size = size;
+                this.bitArray = new Array(size).fill(0);
+                // Seed dictionary of weak patterns
+                ["password", "123456", "admin123", "password123", "qwerty", "tarn123"].forEach(w => this.add(w));
+            }
+            hash1(str) {
+                let h = 0;
+                for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % this.size;
+                return h;
+            }
+            hash2(str) {
+                let h = 0;
+                for (let i = 0; i < str.length; i++) h = (h * 17 + str.charCodeAt(i)) % this.size;
+                return h;
+            }
+            add(str) {
+                this.bitArray[this.hash1(str)] = 1;
+                this.bitArray[this.hash2(str)] = 1;
+            }
+            mightContain(str) {
+                return this.bitArray[this.hash1(str)] === 1 && this.bitArray[this.hash2(str)] === 1;
+            }
+        }
+
+        const bloom = new SimpleBloomFilter();
+
+        function testPasswordBloomFilter() {
+            const pass = document.getElementById('regPassword').value;
+            const status = document.getElementById('bloomStatus');
+            const meter = document.getElementById('bloomMeter');
+            const help = document.getElementById('bloomHelp');
+
+            if (!pass) {
+                status.textContent = "Idle";
+                status.className = "text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-gray-800 text-gray-400";
+                meter.style.width = "0%";
+                return;
+            }
+
+            const flagWeak = bloom.mightContain(pass.toLowerCase());
+
+            if (flagWeak || pass.length < 8) {
+                status.textContent = "FLAGGED / WEAK";
+                status.className = "text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-red-950 text-red-400 border border-red-500/30";
+                meter.style.width = "25%";
+                meter.className = "bg-red-500 h-1.5 transition-all duration-300";
+                help.textContent = "Bloom Filter probabilistic query matches known common dictionary strings.";
+            } else if (pass.length >= 8 && pass.length < 12) {
+                status.textContent = "ACCEPTABLE";
+                status.className = "text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-yellow-950 text-yellow-400 border border-yellow-500/30";
+                meter.style.width = "65%";
+                meter.className = "bg-yellow-500 h-1.5 transition-all duration-300";
+                help.textContent = "Passed Bloom filter. Consider adding numbers/symbols for enterprise strength.";
+            } else {
+                status.textContent = "HIGH SECURE";
+                status.className = "text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-500/30";
+                meter.style.width = "100%";
+                meter.className = "bg-emerald-500 h-1.5 transition-all duration-300";
+                help.textContent = "Passed Bloom Filter filter hash verification cleanly (no rotation scheme attached).";
+            }
+        }
+
+        function handleRegistrationSubmit(e) {
+            e.preventDefault();
+            if (!validateInstId()) {
+                alert("Please correct the Institution ID errors before proceeding.");
+                return;
+            }
+            alert("Registration Successful! Workspace provisioned with specified bloom-filtered credentials.");
+            closeRegisterModal();
+        }
+
+        // --- DEMO MODAL ROUTER & RENDERERS ---
+        function openDemoModal(type) {
+            const modal = document.getElementById('demoModal');
+            const title = document.getElementById('modalTitle');
+            const cat = document.getElementById('modalCategory');
+            const content = document.getElementById('demoModalContent');
+
+            if (type === 'repository') {
+                cat.textContent = "Repository Cloud";
+                title.textContent = "Explore Repository Schema";
+                content.innerHTML = renderRepositoryDemo();
+            } else if (type === 'mapAnswers') {
+                cat.textContent = "Map Answers Demo";
+                title.textContent = "Answer Key Mapping & Dynamic Rubrics";
+                content.innerHTML = renderMapAnswersDemo();
+            } else if (type === 'aiEvaluation') {
+                cat.textContent = "AI Evaluation Demo";
+                title.textContent = "Tri-Window AI Evaluation Workstation";
+                content.innerHTML = renderAIEvaluationDemo();
+            } else if (type === 'analytics') {
+                cat.textContent = "View Analytics";
+                title.textContent = "Multi-Tier Assessment Performance Analytics";
+                content.innerHTML = renderAnalyticsDemo();
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeDemoModal() {
+            document.getElementById('demoModal').classList.add('hidden');
+        }
+
+        // DEMO 1: QUESTION & ANSWER SCHEMA
+        function renderRepositoryDemo() {
+            return `
+                <div class="space-y-6">
+                    <p class="text-xs text-gray-300">
+                        Explore Tarn's standardized Question &amp; Answer JSON/Relational Schema. Designed for adaptive testing, taxonomical tagging, and rapid auto-paper generation.
+                    </p>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Left: Visual Schema Node Card -->
+                        <div class="bg-gray-950/80 p-5 rounded-2xl border border-gray-800 space-y-4">
+                            <h3 class="text-sm font-bold text-purple-300 flex items-center gap-2">
+                                <i class="fa-solid fa-sitemap"></i> Question Schema Attributes
+                            </h3>
+                            <div class="space-y-2 text-xs">
+                                <div class="p-2.5 bg-gray-900/90 rounded-xl border border-gray-800 flex justify-between">
+                                    <span class="font-mono text-cyan-400">question_id</span>
+                                    <span class="text-gray-400">UUIDv4 string</span>
+                                </div>
+                                <div class="p-2.5 bg-gray-900/90 rounded-xl border border-gray-800 flex justify-between">
+                                    <span class="font-mono text-cyan-400">blooms_taxonomy_level</span>
+                                    <span class="text-gray-400">Apply / Analyze / Evaluate</span>
+                                </div>
+                                <div class="p-2.5 bg-gray-900/90 rounded-xl border border-gray-800 flex justify-between">
+                                    <span class="font-mono text-cyan-400">cognitive_complexity_score</span>
+                                    <span class="text-gray-400">0.00 - 1.00 (Float)</span>
+                                </div>
+                                <div class="p-2.5 bg-gray-900/90 rounded-xl border border-gray-800 flex justify-between">
+                                    <span class="font-mono text-cyan-400">rubric_key_phrases</span>
+                                    <span class="text-gray-400">Array&lt;String&gt;</span>
+                                </div>
+                                <div class="p-2.5 bg-gray-900/90 rounded-xl border border-gray-800 flex justify-between">
+                                    <span class="font-mono text-cyan-400">acceptable_variants</span>
+                                    <span class="text-gray-400">Nested Schema Array</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: JSON Response Preview -->
+                        <div class="bg-gray-950 p-5 rounded-2xl border border-purple-500/30 flex flex-col justify-between">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-[10px] font-mono text-purple-400">SCHEMA JSON RESPONSE</span>
+                                <span class="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded font-mono">200 OK</span>
+                            </div>
+                            <pre class="text-[11px] font-mono text-emerald-300 bg-gray-900/80 p-3 rounded-xl overflow-x-auto custom-scrollbar leading-relaxed">
+{
+  "q_id": "Q-TARN-8092",
+  "subject": "Data Structures & Algorithms",
+  "topic": "Graph Theory",
+  "max_marks": 10,
+  "question_text": "Explain Dijkstra's Algorithm with time complexity.",
+  "canonical_answer": {
+    "core_concept": "Greedy single-source shortest path",
+    "key_nodes": ["Priority Queue", "Edge relaxation", "Non-negative weights"],
+    "time_complexity": "O((V + E) log V)"
+  }
+}</pre>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // DEMO 2: MAP ANSWERS DEMO (Search vs Direct Upload)
+        function renderMapAnswersDemo() {
+            return `
+                <div class="space-y-6">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gray-950 p-4 rounded-2xl border border-cyan-500/30">
+                        <div>
+                            <h3 class="text-sm font-bold text-white">Answer Generation &amp; Key Linking Pipeline</h3>
+                            <p class="text-xs text-gray-400">Select standard source mode to link reference keys to exam questions.</p>
+                        </div>
+                        <div class="flex items-center gap-2 bg-gray-900 p-1 rounded-xl border border-gray-800 text-xs">
+                            <button onclick="toggleMapSource('search')" id="btnSrcSearch" class="px-3 py-1.5 rounded-lg bg-cyan-600 text-white font-bold transition">Web Search Link</button>
+                            <button onclick="toggleMapSource('upload')" id="btnSrcUpload" class="px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition">Direct Upload</button>
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Container for Selected Source -->
+                    <div id="mapSourceContainer" class="bg-gray-950/80 p-6 rounded-2xl border border-gray-800 space-y-4">
+                        <!-- Default Search View -->
+                        <div class="space-y-3">
+                            <label class="block text-xs font-bold text-cyan-400 uppercase tracking-wider">AI Search &amp; Auto-Synthesize Key Rubric</label>
+                            <div class="flex gap-2">
+                                <input type="text" value="Quantum Computing Qubit Entanglement standard grading rubric 2026" class="flex-grow bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none">
+                                <button class="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2">
+                                    <i class="fa-solid fa-magnifying-glass"></i> Crawl &amp; Map
+                                </button>
+                            </div>
+                            <div class="p-3 bg-cyan-950/30 border border-cyan-500/20 rounded-xl text-xs text-cyan-200">
+                                <i class="fa-solid fa-link text-cyan-400 mr-2"></i> Linked Reference: <strong>IEEE Quantum Curriculum Spec 2025-26</strong> (Auto-extracted 4 key evaluation benchmarks).
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggleMapSource(mode) {
+            const container = document.getElementById('mapSourceContainer');
+            const btnSearch = document.getElementById('btnSrcSearch');
+            const btnUpload = document.getElementById('btnSrcUpload');
+
+            if (mode === 'search') {
+                btnSearch.className = "px-3 py-1.5 rounded-lg bg-cyan-600 text-white font-bold transition";
+                btnUpload.className = "px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition";
+                container.innerHTML = `
+                    <div class="space-y-3">
+                        <label class="block text-xs font-bold text-cyan-400 uppercase tracking-wider">AI Search &amp; Auto-Synthesize Key Rubric</label>
+                        <div class="flex gap-2">
+                            <input type="text" value="Quantum Computing Qubit Entanglement standard grading rubric 2026" class="flex-grow bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none">
+                            <button class="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2">
+                                <i class="fa-solid fa-magnifying-glass"></i> Crawl &amp; Map
+                            </button>
+                        </div>
+                        <div class="p-3 bg-cyan-950/30 border border-cyan-500/20 rounded-xl text-xs text-cyan-200">
+                            <i class="fa-solid fa-link text-cyan-400 mr-2"></i> Linked Reference: <strong>IEEE Quantum Curriculum Spec 2025-26</strong> (Auto-extracted 4 key evaluation benchmarks).
+                        </div>
+                    </div>
+                `;
+            } else {
+                btnUpload.className = "px-3 py-1.5 rounded-lg bg-cyan-600 text-white font-bold transition";
+                btnSearch.className = "px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition";
+                container.innerHTML = `
+                    <div class="space-y-3">
+                        <label class="block text-xs font-bold text-cyan-400 uppercase tracking-wider">Direct Key Model Upload (.PDF / .DOCX / Key Schema)</label>
+                        <div class="border-2 border-dashed border-gray-700 rounded-2xl p-6 text-center space-y-2 hover:border-cyan-500 transition cursor-pointer">
+                            <i class="fa-solid fa-file-arrow-up text-3xl text-cyan-400"></i>
+                            <p class="text-xs text-gray-300 font-semibold">Drag &amp; Drop official answer key file or click to browse</p>
+                            <p class="text-[10px] text-gray-500">Supports PDF, JSON, DOCX up to 25MB</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // DEMO 3: AI EVALUATION DEMO (Three Window Operation)
+        function renderAIEvaluationDemo() {
+            return `
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="text-gray-400">Candidate: <strong class="text-white">STD-2026-8891</strong> (Mathematics Paper II)</span>
+                        <span class="bg-purple-950 text-purple-300 px-2.5 py-1 rounded-full border border-purple-500/30 font-semibold">Evaluation Mode Active</span>
+                    </div>
+
+                    <!-- THREE WINDOW LAYOUT GRID -->
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        
+                        <!-- Window 1: Actual Segmented Answer Scan -->
+                        <div class="bg-gray-950 p-4 rounded-2xl border border-gray-800 flex flex-col justify-between space-y-3">
+                            <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+                                <span class="text-xs font-bold text-purple-400 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-file-image"></i> 1. Segmented Answer
+                                </span>
+                                <span class="text-[10px] bg-gray-800 text-gray-300 px-2 py-0.5 rounded">Scan Region #2</span>
+                            </div>
+                            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 min-h-[180px] flex flex-col justify-center items-center relative overflow-hidden">
+                                <div class="absolute inset-0 bg-blue-500/5 pointer-events-none"></div>
+                                <div class="text-center font-serif text-gray-300 italic text-sm leading-relaxed border-b border-dashed border-gray-700 pb-2">
+                                    "dx/dt = k(100 - x)<br>
+                                    Integrating both sides:<br>
+                                    -ln(100 - x) = kt + C"
+                                </div>
+                                <span class="mt-2 text-[10px] text-purple-400 font-mono">B-Box: [x:120, y:450, w:300, h:110]</span>
+                            </div>
+                            <p class="text-[10px] text-gray-400 italic">Auto-cropped from primary 300 DPI sheet scan.</p>
+                        </div>
+
+                        <!-- Window 2: High Accuracy OCR Text -->
+                        <div class="bg-gray-950 p-4 rounded-2xl border border-gray-800 flex flex-col justify-between space-y-3">
+                            <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+                                <span class="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-font"></i> 2. Extracted OCR Text
+                                </span>
+                                <span class="text-[10px] bg-cyan-950 text-cyan-300 px-2 py-0.5 rounded">Conf: 98.4%</span>
+                            </div>
+                            <div class="bg-gray-900 border border-gray-800 rounded-xl p-3 min-h-[180px] font-mono text-xs text-cyan-200 space-y-2">
+                                <p class="text-[11px]"><span class="text-gray-500">Step 1:</span> dx/dt = k(100 - x)</p>
+                                <p class="text-[11px]"><span class="text-gray-500">Step 2:</span> ∫ (1 / (100 - x)) dx = ∫ k dt</p>
+                                <p class="text-[11px]"><span class="text-gray-500">Step 3:</span> -ln|100 - x| = kt + C</p>
+                            </div>
+                            <p class="text-[10px] text-gray-400 italic">Normalized using LaTeX math parser.</p>
+                        </div>
+
+                        <!-- Window 3: AI Criteria & Teacher Override -->
+                        <div class="bg-gray-950 p-4 rounded-2xl border border-purple-500/40 flex flex-col justify-between space-y-3">
+                            <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+                                <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-user-check"></i> 3. AI Evaluation &amp; Override
+                                </span>
+                                <span class="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded">Suggested: 5/5</span>
+                            </div>
+                            <div class="bg-gray-900 border border-gray-800 rounded-xl p-3 min-h-[180px] space-y-3 text-xs">
+                                <div>
+                                    <span class="text-[10px] text-gray-400 font-bold uppercase">AI Breakdown:</span>
+                                    <p class="text-emerald-400 text-[11px]">✔ Differential Setup (+2)</p>
+                                    <p class="text-emerald-400 text-[11px]">✔ Integration Steps (+3)</p>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] text-gray-400 font-bold uppercase mb-1">Teacher Score Override</label>
+                                    <div class="flex items-center gap-2">
+                                        <input type="number" value="5" max="5" min="0" class="w-16 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-center font-bold text-white text-xs">
+                                        <span class="text-gray-400 text-xs">/ 5 Marks</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button onclick="alert('Marks & Override confirmed for Question 2!')" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-xl text-xs transition">
+                                Confirm &amp; Commit Score
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            `;
+        }
+
+        // DEMO 4: VIEW ANALYTICS DEMO
+        function renderAnalyticsDemo() {
+            return `
+                <div class="space-y-6">
+                    <p class="text-xs text-gray-300">
+                        Real-time analytics engine displaying tiered insights across student, class, subject, and institutional metrics.
+                    </p>
+
+                    <!-- Analytics Grid -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        
+                        <!-- Student Level -->
+                        <div class="bg-gray-950 p-4 rounded-2xl border border-purple-500/30 space-y-2">
+                            <span class="text-[10px] font-bold text-purple-400 uppercase tracking-widest">Student Level</span>
+                            <div class="text-2xl font-black text-white">88.4%</div>
+                            <p class="text-xs text-gray-400">Avg Candidate Score</p>
+                            <div class="pt-2 border-t border-gray-800 text-[11px] text-purple-300">
+                                Student ID: STD-9021<br>Percentile: 94th
+                            </div>
+                        </div>
+
+                        <!-- Class Level -->
+                        <div class="bg-gray-950 p-4 rounded-2xl border border-cyan-500/30 space-y-2">
+                            <span class="text-[10px] font-bold text-cyan-400 uppercase tracking-widest">Class Level</span>
+                            <div class="text-2xl font-black text-white">76.2%</div>
+                            <p class="text-xs text-gray-400">Class Section 12-A</p>
+                            <div class="pt-2 border-t border-gray-800 text-[11px] text-cyan-300">
+                                Enrolled: 42 Students<br>Median Score: 78%
+                            </div>
+                        </div>
+
+                        <!-- Subject Level -->
+                        <div class="bg-gray-950 p-4 rounded-2xl border border-indigo-500/30 space-y-2">
+                            <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Subject Level</span>
+                            <div class="text-2xl font-black text-white">82.0%</div>
+                            <p class="text-xs text-gray-400">Physics &amp; Mechanics</p>
+                            <div class="pt-2 border-t border-gray-800 text-[11px] text-indigo-300">
+                                Toughness Index: Medium<br>Evaluated: 1,420 Papers
+                            </div>
+                        </div>
+
+                        <!-- Institute Level -->
+                        <div class="bg-gray-950 p-4 rounded-2xl border border-emerald-500/30 space-y-2">
+                            <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Institute Level</span>
+                            <div class="text-2xl font-black text-white">99.1%</div>
+                            <p class="text-xs text-gray-400">Overall SLA Accuracy</p>
+                            <div class="pt-2 border-t border-gray-800 text-[11px] text-emerald-300">
+                                Active Workspaces: 18<br>Total Scans Processed: 1.2M
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Visual Distribution Graph Mock -->
+                    <div class="bg-gray-950 p-5 rounded-2xl border border-gray-800 space-y-3">
+                        <h4 class="text-xs font-bold text-white uppercase tracking-wider">Institutional Performance Bell Curve</h4>
+                        <div class="h-28 flex items-end justify-between gap-2 px-4 pt-4 border-b border-gray-800">
+                            <div class="w-full bg-purple-900/40 rounded-t h-[20%]"></div>
+                            <div class="w-full bg-purple-800/50 rounded-t h-[45%]"></div>
+                            <div class="w-full bg-cyan-600/60 rounded-t h-[85%]"></div>
+                            <div class="w-full bg-purple-600/70 rounded-t h-[95%]"></div>
+                            <div class="w-full bg-indigo-600/60 rounded-t h-[60%]"></div>
+                            <div class="w-full bg-emerald-600/40 rounded-t h-[30%]"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

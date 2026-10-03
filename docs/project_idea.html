@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tarn Knowledge Services | AI Exam Evaluation & Question Paper Studio</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#0b0f17',
+                        cardBg: '#161b26',
+                        borderBg: '#232d3f',
+                        accentPurple: '#8b5cf6',
+                        accentCyan: '#06b6d4',
+                        accentBlue: '#3b82f6',
+                        accentPink: '#ec4899',
+                        accentEmerald: '#10b981'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b0f17;
+            color: #f3f4f6;
+        }
+        .code-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0b0f17;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #232d3f;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #8b5cf6;
+        }
+        .glass-panel {
+            background: rgba(22, 27, 38, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        @keyframes scanLine {
+            0% { top: 0%; opacity: 0.8; }
+            50% { opacity: 1; }
+            100% { top: 98%; opacity: 0.8; }
+        }
+        .scan-line {
+            position: absolute;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #06b6d4, #8b5cf6, transparent);
+            box-shadow: 0 0 15px #06b6d4;
+            animation: scanLine 3s ease-in-out infinite alternate;
+        }
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #printablePaper, #printablePaper * {
+                visibility: visible;
+            }
+            #printablePaper {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                color: #000 !important;
+                background: #fff !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-purple-500 selection:text-white">
+
+    <!-- TOP NAVIGATION BAR -->
+    <header class="sticky top-0 z-50 glass-panel border-b border-gray-800/80 bg-opacity-90 no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Brand Logo & Name -->
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-cyan-400 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-purple-900/30">
+                        <i class="fa-solid fa-brain"></i>
+                    </div>
+                    <div>
+                        <a href="https://tarnknowledge.com/" target="_blank" class="flex items-center gap-2 group">
+                            <span class="text-xl font-extrabold tracking-tight bg-gradient-to-r from-white via-gray-200 to-purple-400 bg-clip-text text-transparent group-hover:to-cyan-400 transition-all duration-300">
+                                TARN KNOWLEDGE
+                            </span>
+                            <span class="text-xs bg-purple-900/60 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30 font-semibold tracking-wider uppercase">
+                                AI Studio
+                            </span>
+                        </a>
+                        <p class="text-[10px] text-gray-400 -mt-1 tracking-wider uppercase font-medium">Services & Assessment Platform</p>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <nav class="hidden md:flex space-x-1 lg:space-x-2">
+                    <button onclick="switchTab('tab-qna')" id="nav-tab-qna" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 text-gray-400 hover:text-white hover:bg-gray-800/50">
+                        <i class="fa-solid fa-database text-xs"></i>
+                        <span>Q&A Repository</span>
+                    </button>
+                    <button onclick="switchTab('tab-paper-designer')" id="nav-tab-paper-designer" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 text-purple-400 bg-purple-950/40 border border-purple-500/30">
+                        <i class="fa-solid fa-file-signature text-xs"></i>
+                        <span>Paper & Blueprint Designer</span>
+                    </button>
+                    <button onclick="switchTab('tab-eval')" id="nav-tab-eval" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 text-gray-400 hover:text-white hover:bg-gray-800/50">
+                        <i class="fa-solid fa-microchip text-xs"></i>
+                        <span>AI Bulk Scan & Eval</span>
+                    </button>
+                </nav>
+
+                <!-- Status Indicator & User Info -->
+                <div class="flex items-center space-x-4">
+                    <div class="hidden sm:flex items-center space-x-2 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1 rounded-full text-xs text-emerald-400">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span class="font-medium">AI Generator Ready</span>
+                    </div>
+                    <div class="w-8 h-8 rounded-full bg-purple-800/50 border border-purple-500/40 flex items-center justify-center text-purple-200 text-xs font-bold">
+                        TK
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile Navigation Sub-bar -->
+        <div class="md:hidden flex border-t border-gray-800 bg-gray-900/90 px-2 py-2 overflow-x-auto justify-around">
+            <button onclick="switchTab('tab-qna')" id="mob-nav-tab-qna" class="px-3 py-1.5 rounded-md text-xs font-medium text-gray-400 flex items-center gap-1.5 whitespace-nowrap">
+                <i class="fa-solid fa-database"></i> Q&A DB
+            </button>
+            <button onclick="switchTab('tab-paper-designer')" id="mob-nav-tab-paper-designer" class="px-3 py-1.5 rounded-md text-xs font-medium text-purple-400 bg-purple-950/50 flex items-center gap-1.5 whitespace-nowrap">
+                <i class="fa-solid fa-file-signature"></i> Paper Studio
+            </button>
+            <button onclick="switchTab('tab-eval')" id="mob-nav-tab-eval" class="px-3 py-1.5 rounded-md text-xs font-medium text-gray-400 flex items-center gap-1.5 whitespace-nowrap">
+                <i class="fa-solid fa-microchip"></i> AI Eval
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT BODY -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-grow w-full">
+
+        <!-- TAB 1: Q&A DATABASE & REPOSITORY BROWSER -->
+        <section id="tab-qna" class="tab-content hidden space-y-6">
+            <!-- Header Banner & Top Controls -->
+            <div class="glass-panel rounded-2xl p-6 border border-gray-800 relative overflow-hidden">
+                <div class="absolute -right-10 -bottom-10 w-60 h-60 bg-purple-600/10 rounded-full blur-3xl pointer-events-none"></div>
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-10">
+                    <div>
+                        <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-layer-group text-purple-400"></i>
+                            Questions & Answers Repository
+                        </h1>
+                        <p class="text-sm text-gray-400 mt-1">Manage institutional question banks, mark-specific answers, references, and bulk question imports.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="openModal('bulkUploadModal')" class="bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-2">
+                            <i class="fa-solid fa-file-excel text-emerald-400"></i> Bulk Import Questions
+                        </button>
+                        <button onclick="openModal('addQuestionModal')" class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-lg shadow-purple-900/30 transition flex items-center gap-2">
+                            <i class="fa-solid fa-plus"></i> New Question
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- REPOSITORY BROWSER GRID / TABLE -->
+            <div id="qna-repository-browser" class="space-y-4">
+                <!-- Selectable Subject & Category Filters Bar -->
+                <div class="glass-panel p-4 rounded-2xl border border-gray-800 flex flex-col md:flex-row gap-4 items-center justify-between">
+                    <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-book text-purple-400 text-sm"></i>
+                            <label class="text-xs font-semibold text-gray-300">Subject:</label>
+                            <select id="repoSubjectSelect" onchange="applyRepoFilters()" class="bg-gray-900 border border-gray-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500">
+                                <option value="all">All Subjects</option>
+                                <option value="Physics">Physics</option>
+                                <option value="Mathematics">Mathematics</option>
+                                <option value="Computer Science">Computer Science</option>
+                            </select>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-tags text-cyan-400 text-sm"></i>
+                            <label class="text-xs font-semibold text-gray-300">Category:</label>
+                            <select id="repoCategorySelect" onchange="applyRepoFilters()" class="bg-gray-900 border border-gray-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500">
+                                <option value="all">All Categories</option>
+                                <option value="Electromagnetism">Electromagnetism</option>
+                                <option value="AC Circuits">AC Circuits</option>
+                                <option value="Algebra">Algebra</option>
+                                <option value="Algorithms">Algorithms</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="relative w-full md:w-72">
+                        <i class="fa-solid fa-search absolute left-3 top-2.5 text-gray-400 text-xs"></i>
+                        <input type="text" id="repoSearchInput" onkeyup="applyRepoFilters()" placeholder="Search questions..." class="w-full bg-gray-900 border border-gray-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-purple-500">
+                    </div>
+                </div>
+
+                <!-- Questions Table Repository -->
+                <div class="glass-panel rounded-2xl border border-gray-800 overflow-hidden">
+                    <div class="p-3 bg-gray-900/60 border-b border-gray-800 flex justify-between items-center text-xs text-gray-400">
+                        <span>Showing <strong id="displayedCount" class="text-white">0</strong> Questions</span>
+                        <span class="text-purple-400 italic"><i class="fa-solid fa-mouse-pointer text-[10px]"></i> Double-click any row to open full question & answers view</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b border-gray-800 bg-gray-900/40 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                                    <th class="py-3 px-4">Code</th>
+                                    <th class="py-3 px-4">Question Title</th>
+                                    <th class="py-3 px-4">Subject</th>
+                                    <th class="py-3 px-4">Category</th>
+                                    <th class="py-3 px-4">Difficulty</th>
+                                    <th class="py-3 px-4 text-center">Marks Tier</th>
+                                    <th class="py-3 px-4 text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="repoQuestionsTableBody" class="divide-y divide-gray-800/60 text-xs">
+                                <!-- Dynamically populated rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- QUESTION DETAIL & MULTIPLE ANSWERS VIEW -->
+            <div id="qna-detail-view" class="hidden space-y-6">
+                <!-- Back Navigation Header -->
+                <div class="flex items-center justify-between glass-panel p-4 rounded-2xl border border-gray-800">
+                    <button onclick="closeQuestionDetailView()" class="px-3.5 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold transition flex items-center gap-2">
+                        <i class="fa-solid fa-arrow-left"></i> Back to Repository Browser
+                    </button>
+                    <div class="flex items-center gap-2">
+                        <button onclick="openUploadAnswersModal()" class="px-4 py-1.5 rounded-xl bg-cyan-950 border border-cyan-500/40 text-cyan-300 text-xs font-semibold hover:bg-cyan-900/50 transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-cloud-arrow-up"></i> Upload Answer Variant / Docs
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Detailed Question Banner -->
+                <div class="glass-panel p-6 rounded-2xl border border-gray-800 space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center gap-2">
+                            <span id="detailQCode" class="text-xs font-mono px-2.5 py-1 rounded bg-purple-950 border border-purple-500/30 text-purple-300 font-bold">PHY-Q101</span>
+                            <span id="detailQSubject" class="text-xs px-2.5 py-1 rounded bg-gray-800 text-gray-300">Physics</span>
+                            <span id="detailQCategory" class="text-xs px-2.5 py-1 rounded bg-gray-800 text-cyan-300">Electromagnetism</span>
+                        </div>
+                        <span id="detailQDiff" class="text-xs px-2.5 py-1 rounded-full bg-amber-950 text-amber-300 border border-amber-500/30">Medium</span>
+                    </div>
+                    <h2 id="detailQTitle" class="text-xl font-bold text-white leading-snug">Question Title Loading...</h2>
+                </div>
+
+                <!-- Answers Stack -->
+                <div class="space-y-4">
+                    <h3 class="text-sm font-bold uppercase tracking-wider text-purple-400 flex items-center gap-2">
+                        <i class="fa-solid fa-list-check"></i>
+                        Multiple Answer Keys & Rubrics
+                    </h3>
+                    <div id="answerVariantsContainer" class="space-y-4"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: QUESTION PAPER & BLUEPRINT SCHEMAS STUDIO -->
+        <section id="tab-paper-designer" class="tab-content block space-y-6">
+            <!-- Header Banner -->
+            <div class="glass-panel rounded-2xl p-6 border border-gray-800 relative overflow-hidden">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-10">
+                    <div>
+                        <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-file-signature text-purple-400"></i>
+                            Question Paper Studio & Schema Engine
+                        </h1>
+                        <p class="text-sm text-gray-400 mt-1">Design mark blueprints (e.g. 50-mark, 100-mark), save custom named schemas, auto-generate papers, and manually edit questions.</p>
+                    </div>
+                    
+                    <!-- Sub-view navigation buttons -->
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="switchStudioView('view-blueprint')" id="btn-view-blueprint" class="px-4 py-2 rounded-xl text-xs font-semibold bg-purple-600 text-white shadow-lg shadow-purple-900/30 flex items-center gap-2">
+                            <i class="fa-solid fa-sliders"></i> 1. Design & Save Schema
+                        </button>
+                        <button onclick="switchStudioView('view-my-schemas')" id="btn-view-schemas" class="px-4 py-2 rounded-xl text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 flex items-center gap-2">
+                            <i class="fa-solid fa-bookmark text-amber-400"></i> 2. My Saved Schemas (<span id="savedSchemasCount">2</span>)
+                        </button>
+                        <button onclick="switchStudioView('view-paper-preview')" id="btn-view-preview" class="px-4 py-2 rounded-xl text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 flex items-center gap-2">
+                            <i class="fa-solid fa-print text-cyan-400"></i> 3. Live Paper Studio
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STUDIO SUB-VIEW 1: DESIGN QUESTION PAPER SCHEMA & BLUEPRINT -->
+            <div id="view-blueprint" class="space-y-6">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <!-- Left Column: Exam Details & Section Blueprint Builder -->
+                    <div class="lg:col-span-7 glass-panel rounded-2xl p-6 border border-gray-800 space-y-6">
+                        <div class="flex justify-between items-center pb-3 border-b border-gray-800">
+                            <h2 class="text-sm font-bold uppercase tracking-wider text-purple-400 flex items-center gap-2">
+                                <i class="fa-solid fa-file-pen"></i> Step 1: Examination Header & Marks Config
+                            </h2>
+                            <span class="text-xs text-gray-400">Subject: <strong class="text-white">Physics</strong></span>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-300 mb-1">Exam Title / Header</label>
+                                <input type="text" id="paperTitleInput" value="Physics Mid-Term Assessment 2026" oninput="recalculateBlueprintTotals()" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-300 mb-1">Subject / Course Code</label>
+                                <input type="text" id="paperCodeInput" value="PHY-501" oninput="recalculateBlueprintTotals()" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-300 mb-1">Duration (Minutes)</label>
+                                <input type="number" id="paperDurationInput" value="90" oninput="recalculateBlueprintTotals()" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-300 mb-1">Subject Filter for Auto-Gen</label>
+                                <select id="paperSubjectSelect" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white">
+                                    <option value="Physics">Physics</option>
+                                    <option value="Mathematics">Mathematics</option>
+                                    <option value="Computer Science">Computer Science</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Section Breakdown Controls (e.g. 10 1-mark, 10 2-mark etc) -->
+                        <div class="space-y-4 pt-2">
+                            <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+                                <h3 class="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-list-ol"></i> Step 2: Mark Weightage Blueprint
+                                </h3>
+                                <button onclick="addBlueprintSectionRow()" class="text-xs bg-cyan-950 border border-cyan-500/40 text-cyan-300 px-2.5 py-1 rounded-lg hover:bg-cyan-900/50 transition flex items-center gap-1">
+                                    <i class="fa-solid fa-plus"></i> Add Section Tier
+                                </button>
+                            </div>
+
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs">
+                                    <thead>
+                                        <tr class="text-gray-400 border-b border-gray-800 text-[11px] uppercase">
+                                            <th class="pb-2">Section Name</th>
+                                            <th class="pb-2">Marks per Question</th>
+                                            <th class="pb-2">No. of Questions</th>
+                                            <th class="pb-2 text-right">Section Total</th>
+                                            <th class="pb-2 text-center">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="blueprintSectionsTableBody" class="divide-y divide-gray-800/60">
+                                        <!-- Dynamic Section Rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Live Calculation Banner -->
+                            <div class="bg-gray-900/90 border border-purple-500/30 p-4 rounded-xl flex items-center justify-between">
+                                <div>
+                                    <span class="text-xs text-gray-400 block font-medium">Calculated Question Count</span>
+                                    <span id="totalQuestionsCalc" class="text-xl font-bold text-purple-400">20 Questions</span>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-xs text-gray-400 block font-medium">Total Paper Marks</span>
+                                    <span id="totalMarksCalc" class="text-2xl font-extrabold text-emerald-400">50 Marks</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Save Schema Form -->
+                        <div class="pt-4 border-t border-gray-800 space-y-3">
+                            <label class="block text-xs font-bold uppercase tracking-wider text-amber-400">
+                                <i class="fa-solid fa-bookmark"></i> Step 3: Save Blueprint Schema with Custom Name
+                            </label>
+                            <div class="flex gap-2">
+                                <input type="text" id="saveSchemaNameInput" placeholder="e.g. Standard 50-Mark Midterm Physics Schema" class="flex-grow bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500">
+                                <button onclick="saveCurrentSchema()" class="bg-amber-600 hover:bg-amber-500 text-white font-semibold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-lg shadow-amber-900/20 whitespace-nowrap">
+                                    <i class="fa-solid fa-floppy-disk"></i> Save Schema
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Schema JSON & Quick Auto-Generate Action Card -->
+                    <div class="lg:col-span-5 glass-panel rounded-2xl p-6 border border-gray-800 flex flex-col justify-between space-y-4">
+                        <div>
+                            <div class="flex justify-between items-center pb-2 border-b border-gray-800 mb-3">
+                                <h3 class="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-code"></i> Realtime Schema JSON Spec
+                                </h3>
+                                <span class="text-[10px] bg-cyan-950 text-cyan-300 px-2 py-0.5 rounded">Sync Active</span>
+                            </div>
+
+                            <pre class="bg-gray-950 p-4 rounded-xl text-xs text-emerald-400 code-font border border-gray-800 overflow-x-auto h-[320px]" id="liveSchemaJsonPreview"></pre>
+                        </div>
+
+                        <!-- Auto Generate Trigger Card -->
+                        <div class="bg-gradient-to-br from-purple-950/60 to-indigo-950/60 border border-purple-500/40 p-4 rounded-xl space-y-3">
+                            <div class="flex items-center gap-2 text-purple-300 text-xs font-bold uppercase tracking-wider">
+                                <i class="fa-solid fa-wand-magic-sparkles text-cyan-400 text-sm"></i>
+                                Ready to Generate Paper?
+                            </div>
+                            <p class="text-xs text-gray-300 leading-relaxed">
+                                Automatically pick questions from repository matching this <strong>50-mark blueprint</strong> or build instant draft for editing.
+                            </p>
+                            <button onclick="autoGeneratePaperFromCurrentBlueprint()" class="w-full bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-purple-900/40 transition flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-arrows-rotate"></i>
+                                <span>Auto-Generate Question Paper Now</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STUDIO SUB-VIEW 2: MY SAVED QUESTION SCHEMAS LIBRARY -->
+            <div id="view-my-schemas" class="hidden space-y-4">
+                <div class="glass-panel p-4 rounded-2xl border border-gray-800 flex justify-between items-center">
+                    <div>
+                        <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-box-archive text-amber-400"></i> Saved Paper Schemas Library
+                        </h2>
+                        <p class="text-xs text-gray-400 mt-0.5">Click "Generate Paper" on any stored schema to produce a question paper instantly.</p>
+                    </div>
+                    <button onclick="switchStudioView('view-blueprint')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 px-3 py-1.5 rounded-xl border border-gray-700 font-semibold">
+                        + Create New Blueprint
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="savedSchemasGrid">
+                    <!-- Dynamic Saved Schema Cards -->
+                </div>
+            </div>
+
+            <!-- STUDIO SUB-VIEW 3: LIVE QUESTION PAPER PREVIEW & MANUAL EDITING -->
+            <div id="view-paper-preview" class="hidden space-y-6">
+                <!-- Action Controls Bar -->
+                <div class="glass-panel p-4 rounded-2xl border border-gray-800 flex flex-wrap justify-between items-center gap-4 no-print">
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs font-bold text-purple-300 bg-purple-950 border border-purple-500/30 px-3 py-1 rounded-xl">
+                            <i class="fa-solid fa-file-invoice"></i> Active Generated Paper
+                        </span>
+                        <span class="text-xs text-gray-400">Total Marks: <strong class="text-emerald-400" id="previewPaperMarks">50</strong></span>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button onclick="autoGeneratePaperFromCurrentBlueprint()" class="px-3.5 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-cyan-300 text-xs font-semibold border border-gray-700 transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-shuffle"></i> Shuffle / Re-Generate
+                        </button>
+                        <button onclick="openModal('addQuestionToPaperModal')" class="px-3.5 py-1.5 rounded-xl bg-purple-950 hover:bg-purple-900 border border-purple-500/40 text-purple-300 text-xs font-semibold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-plus"></i> Add Custom Question
+                        </button>
+                        <button onclick="window.print()" class="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-lg shadow-emerald-900/30 flex items-center gap-1.5">
+                            <i class="fa-solid fa-print"></i> Print / Export PDF
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Printable Question Paper Canvas -->
+                <div id="printablePaper" class="glass-panel p-8 md:p-12 rounded-2xl border border-gray-800 space-y-6 bg-gray-950 text-gray-100 max-w-4xl mx-auto shadow-2xl">
+                    <!-- Institutional Header -->
+                    <div class="text-center border-b-2 border-gray-700 pb-6 space-y-2">
+                        <h1 class="text-2xl font-black tracking-wide text-white uppercase" id="paperHeaderTitle">TARN KNOWLEDGE SERVICES ACADEMIC EXAM</h1>
+                        <p class="text-xs font-mono uppercase text-gray-400 tracking-wider" id="paperHeaderSub">DEPARTMENT OF PHYSICS • MID-TERM EXAMINATION 2026</p>
+                        <div class="flex justify-between items-center text-xs font-semibold pt-4 text-gray-300">
+                            <span>COURSE CODE: <strong id="paperHeaderCode" class="text-white">PHY-501</strong></span>
+                            <span>TIME ALLOWED: <strong id="paperHeaderDuration" class="text-white">90 MINS</strong></span>
+                            <span>MAXIMUM MARKS: <strong id="paperHeaderTotal" class="text-emerald-400">50</strong></span>
+                        </div>
+                    </div>
+
+                    <!-- General Instructions -->
+                    <div class="text-xs text-gray-400 space-y-1 bg-gray-900/60 p-3 rounded-xl border border-gray-800/80">
+                        <p class="font-bold text-gray-300 uppercase tracking-wider text-[11px]">General Instructions:</p>
+                        <ol class="list-decimal list-inside space-y-0.5">
+                            <li>All questions are compulsory according to specified sections.</li>
+                            <li>Write clear differential equations and diagrams wherever applicable.</li>
+                        </ol>
+                    </div>
+
+                    <!-- Dynamic Rendered Sections & Editable Questions -->
+                    <div id="paperSectionsContainer" class="space-y-8">
+                        <!-- Rendered Questions -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: BULK SCAN & AI EVALUATION PIPELINE -->
+        <section id="tab-eval" class="tab-content hidden space-y-6">
+            <div class="glass-panel rounded-2xl p-5 border border-gray-800">
+                <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-microchip text-cyan-400"></i>
+                            AI Automated Answer Evaluation Pipeline
+                        </h2>
+                        <p class="text-xs text-gray-400 mt-0.5">Bulk uploaded handwritten answer sheets undergo instant AI question segmentation, keyword mapping & rubric grading.</p>
+                    </div>
+                    <div class="flex items-center space-x-2 bg-gray-900/80 p-1.5 rounded-xl border border-gray-800 text-xs">
+                        <button onclick="setEvalStep(1)" id="step-btn-1" class="px-3 py-1.5 rounded-lg bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 font-medium">1. Scan Upload</button>
+                        <i class="fa-solid fa-chevron-right text-gray-600 text-[10px]"></i>
+                        <button onclick="setEvalStep(2)" id="step-btn-2" class="px-3 py-1.5 rounded-lg text-gray-400 hover:text-white">2. AI Segmentation</button>
+                        <i class="fa-solid fa-chevron-right text-gray-600 text-[10px]"></i>
+                        <button onclick="setEvalStep(3)" id="step-btn-3" class="px-3 py-1.5 rounded-lg text-gray-400 hover:text-white">3. Evaluation View</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 1 VIEW -->
+            <div id="eval-step-1" class="space-y-6">
+                <div class="border-2 border-dashed border-gray-700/80 hover:border-purple-500 rounded-2xl p-8 text-center glass-panel transition group cursor-pointer" id="dropzone" onclick="triggerFileInput()">
+                    <input type="file" id="bulkFileInput" multiple class="hidden" accept=".pdf,image/*" onchange="handleFileUpload(event)">
+                    <div class="w-16 h-16 rounded-2xl bg-purple-950/50 border border-purple-500/30 text-purple-400 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition duration-300">
+                        <i class="fa-solid fa-cloud-arrow-up text-2xl"></i>
+                    </div>
+                    <h3 class="text-lg font-semibold text-white">Drag & Drop Scanned Student Answer Sheets</h3>
+                    <p class="text-xs text-gray-400 mt-1">Supports PDF stacks, JPEG, PNG high-res page scans (Batch processing supported)</p>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-sm font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-2">
+                            <i class="fa-solid fa-folder-open text-purple-400"></i>
+                            Uploaded Student Submissions (<span id="sheetCount">3</span>)
+                        </h3>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="uploadedSheetsGrid"></div>
+                </div>
+            </div>
+
+            <!-- STEP 2 VIEW -->
+            <div id="eval-step-2" class="hidden space-y-6">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <div class="lg:col-span-6 glass-panel rounded-2xl p-4 border border-gray-800 flex flex-col">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-file-contract text-cyan-400"></i>
+                                Scanned Answer Sheet: <span id="segStudentName" class="text-cyan-300">Alex Mercer</span>
+                            </h3>
+                        </div>
+                        
+                        <div class="relative bg-gray-950 rounded-xl overflow-hidden border border-gray-800 flex-grow flex items-center justify-center p-2 min-h-[440px]">
+                            <div id="scannedPaperContainer" class="relative w-full max-w-md bg-stone-100 text-gray-900 p-6 rounded shadow-2xl font-serif text-sm border border-stone-300 min-h-[420px] select-none">
+                                <div class="border-b-2 border-red-300 pb-2 mb-4 flex justify-between text-xs text-gray-600 font-sans">
+                                    <span><strong>Candidate ID:</strong> STU-88291</span>
+                                    <span><strong>Subject:</strong> Physics (50 Marks)</span>
+                                </div>
+
+                                <div class="relative border-2 border-emerald-500 bg-emerald-500/10 p-2 rounded mb-4">
+                                    <span class="absolute -top-2.5 left-2 bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase font-sans">Segmented Q1</span>
+                                    <p class="font-bold text-gray-800 text-xs">Ans 1.</p>
+                                    <p class="font-handwriting text-xs text-blue-900 italic font-mono leading-relaxed mt-1">
+                                        Faraday's Law states induced EMF is proportional to negative rate of change of magnetic flux (ε = -dΦ/dt).
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-6 glass-panel rounded-2xl p-5 border border-gray-800 flex flex-col justify-between">
+                        <div>
+                            <div class="flex justify-between items-center mb-4 border-b border-gray-800 pb-3">
+                                <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+                                    <i class="fa-solid fa-scissors text-purple-400"></i>
+                                    AI Cropped OCR Extracted Segments
+                                </h3>
+                            </div>
+
+                            <div class="space-y-4">
+                                <div class="bg-gray-900/90 rounded-xl p-4 border border-emerald-500/40 shadow-lg relative">
+                                    <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider block mb-1">Question 1 Answer Clip</span>
+                                    <div class="bg-black/50 p-3 rounded-lg border border-gray-800 text-xs font-mono text-cyan-200">
+                                        "Faraday's Law states induced EMF is proportional to negative rate of change of magnetic flux (ε = -dΦ/dt)..."
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 pt-4 border-t border-gray-800 flex justify-end">
+                            <button onclick="setEvalStep(3)" class="bg-gradient-to-r from-cyan-600 to-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-lg transition flex items-center gap-2">
+                                <span>Proceed to 3-Panel Evaluation</span>
+                                <i class="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 3 VIEW -->
+            <div id="eval-step-3" class="hidden space-y-6">
+                <div class="glass-panel p-3 rounded-xl border border-gray-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div class="flex items-center gap-3">
+                        <span class="text-gray-400">Evaluating Student: <strong class="text-white" id="evalStudentName">Alex Mercer (ID: 88291)</strong></span>
+                    </div>
+                    <button onclick="setEvalStep(2)" class="px-3 py-1.5 rounded-lg bg-gray-800 text-gray-300">
+                        <i class="fa-solid fa-arrow-left"></i> Back to Segments
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                    <div class="lg:col-span-4 glass-panel rounded-2xl p-4 border border-gray-800 space-y-3">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-purple-400">Panel A: Answer Mapping</h3>
+                        <div class="bg-gray-900 p-3 rounded-xl text-xs text-gray-200">
+                            Reference Key: "State induced EMF formula ε = -dΦ/dt and Lenz's direction law."
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-4 glass-panel rounded-2xl p-4 border border-gray-800 space-y-3">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-cyan-400">Panel B: AI Diagnostic Reasoning</h3>
+                        <div class="bg-cyan-950/30 border border-cyan-500/30 p-3 rounded-xl">
+                            <span class="text-xs text-cyan-300 font-bold block">Suggested AI Marks: 2.0 / 2.0</span>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-4 glass-panel rounded-2xl p-4 border border-gray-800 space-y-3">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-pink-400">Panel C: Teacher Override & Feedback</h3>
+                        <input type="number" value="2.0" class="bg-gray-900 border border-gray-700 text-white font-bold rounded-xl p-2 w-full text-center">
+                        <button onclick="alert('Grading Saved!')" class="w-full bg-pink-600 text-white py-2 rounded-xl font-bold text-xs">Save Marks</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL: ADD CUSTOM QUESTION DIRECTLY TO ACTIVE QUESTION PAPER -->
+    <div id="addQuestionToPaperModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="glass-panel max-w-xl w-full rounded-2xl border border-gray-800 p-6 space-y-4">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-circle-plus text-purple-400"></i>
+                    Add Custom Question to Active Question Paper
+                </h3>
+                <button onclick="closeModal('addQuestionToPaperModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form onsubmit="handleManualQuestionAddToPaper(event)" class="space-y-4 text-xs">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-300 mb-1">Target Section</label>
+                    <select id="manualTargetSectionSelect" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-2.5 text-xs text-white">
+                        <!-- Options populated dynamically -->
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-300 mb-1">Question Statement / Text</label>
+                    <textarea id="manualQText" required rows="3" placeholder="Write question statement..." class="w-full bg-gray-900 border border-gray-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-purple-500"></textarea>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-300 mb-1">Marks Assigned</label>
+                        <input type="number" id="manualQMarks" value="2" min="1" max="20" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-2 text-xs text-white">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-300 mb-1">Subject</label>
+                        <input type="text" id="manualQSub" value="Physics" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-2 text-xs text-white">
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-3 border-t border-gray-800">
+                    <button type="button" onclick="closeModal('addQuestionToPaperModal')" class="px-4 py-2 rounded-xl text-xs font-semibold text-gray-400 bg-gray-800">Cancel</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl text-xs font-semibold text-white bg-purple-600 hover:bg-purple-500 shadow-lg">Append Question</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD NEW SINGLE QUESTION TO REPOSITORY -->
+    <div id="addQuestionModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="glass-panel max-w-xl w-full rounded-2xl border border-gray-800 p-6 space-y-4">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-circle-plus text-purple-400"></i> Add New Question
+                </h3>
+                <button onclick="closeModal('addQuestionModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form onsubmit="handleNewQuestionSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-300 mb-1">Question Title / Text</label>
+                    <textarea id="modalQText" required rows="2" placeholder="Enter question statement..." class="w-full bg-gray-900 border border-gray-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-purple-500"></textarea>
+                </div>
+
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-300 mb-1">Subject</label>
+                        <select id="modalQSubject" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-2 text-xs text-white">
+                            <option value="Physics">Physics</option>
+                            <option value="Mathematics">Mathematics</option>
+                            <option value="Computer Science">Computer Science</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-300 mb-1">Category</label>
+                        <input type="text" id="modalQCategory" required placeholder="e.g. Electromagnetism" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-2 text-xs text-white">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-300 mb-1">Marks Tier</label>
+                        <select id="modalQMarksTier" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-2 text-xs text-white">
+                            <option value="1">1 Mark</option>
+                            <option value="2">2 Marks</option>
+                            <option value="4">4 Marks</option>
+                            <option value="5">5 Marks</option>
+                            <option value="10">10 Marks</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2 border-t border-gray-800">
+                    <button type="button" onclick="closeModal('addQuestionModal')" class="px-4 py-2 rounded-xl text-xs font-semibold text-gray-400 bg-gray-800">Cancel</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600">Save Question</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: BULK UPLOAD QUESTIONS -->
+    <div id="bulkUploadModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="glass-panel max-w-xl w-full rounded-2xl border border-gray-800 p-6 space-y-4">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-file-excel text-emerald-400"></i> Bulk Upload Questions
+                </h3>
+                <button onclick="closeModal('bulkUploadModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4 text-xs">
+                <div onclick="triggerSpreadsheetSelect()" class="border-2 border-dashed border-gray-700 hover:border-emerald-500 rounded-xl p-6 text-center cursor-pointer bg-gray-900/40">
+                    <input type="file" id="spreadsheetFileInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleSpreadsheetUpload(event)">
+                    <i class="fa-solid fa-file-csv text-3xl text-emerald-400 mb-2"></i>
+                    <p class="text-white font-semibold">Click or drag CSV/Excel spreadsheet file here</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: UPLOAD MORE ANSWERS -->
+    <div id="uploadAnswersModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="glass-panel max-w-lg w-full rounded-2xl border border-gray-800 p-6 space-y-4">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-file-circle-plus text-cyan-400"></i> Upload Answer Variant
+                </h3>
+                <button onclick="closeModal('uploadAnswersModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form onsubmit="handleNewAnswerVariantSubmit(event)" class="space-y-4 text-xs">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-300 mb-1">Answer Type</label>
+                    <select id="modalAnsMarksCategory" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-2.5 text-xs text-white">
+                        <option value="1-Mark Answer Key">1-Mark Answer Key</option>
+                        <option value="2-Mark Answer Key">2-Mark Answer Key</option>
+                        <option value="4-Mark Answer Key">4-Mark Answer Key</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-300 mb-1">Answer Text</label>
+                    <textarea id="modalAnsText" required rows="3" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-2.5 text-xs text-white"></textarea>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" onclick="closeModal('uploadAnswersModal')" class="px-4 py-2 rounded-xl text-xs font-semibold text-gray-400 bg-gray-800">Cancel</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl text-xs font-semibold text-white bg-cyan-600">Save Variant</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- FOOTER WITH BRANDING -->
+    <footer class="mt-12 border-t border-gray-800/80 bg-gray-950/80 backdrop-blur-md text-gray-400 text-xs no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-4 text-[11px]">
+                <div class="flex items-center space-x-2">
+                    <div class="w-6 h-6 rounded-lg bg-gradient-to-tr from-purple-600 to-cyan-400 flex items-center justify-center text-white font-bold text-xs">
+                        <i class="fa-solid fa-brain"></i>
+                    </div>
+                    <span class="font-extrabold text-white text-sm tracking-tight">TARN KNOWLEDGE SERVICES</span>
+                </div>
+                <p>&copy; 2026 Tarn Knowledge Services Private Limited. All rights reserved.</p>
+                <a href="https://tarnknowledge.com/" target="_blank" class="text-purple-400 hover:text-purple-300 font-semibold">https://tarnknowledge.com</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- APPLICATION LOGIC & STATE MANAGEMENT -->
+    <script>
+        // MASTER QUESTION BANK (REPOSITORIES WITH MARKS TAG)
+        let questionsRepository = [
+            // 1-MARK QUESTIONS
+            { id: "Q101", code: "PHY-Q101", title: "State the SI unit of magnetic flux.", subject: "Physics", category: "Electromagnetism", difficulty: "Easy", marks: 1, answers: [{ type: "1-Mark Key", text: "Weber (Wb) or Volt-second.", docs: [] }] },
+            { id: "Q102", code: "PHY-Q102", title: "Write the mathematical expression for Lenz's Law.", subject: "Physics", category: "Electromagnetism", difficulty: "Easy", marks: 1, answers: [{ type: "1-Mark Key", text: "ε = - dΦ_B / dt", docs: [] }] },
+            { id: "Q103", code: "PHY-Q103", title: "Define self-inductance of a coil.", subject: "Physics", category: "Electromagnetism", difficulty: "Easy", marks: 1, answers: [{ type: "1-Mark Key", text: "Ratio of induced EMF to rate of change of current in same coil.", docs: [] }] },
+            { id: "Q104", code: "PHY-Q104", title: "What is the peak factor for a sinusoidal AC wave?", subject: "Physics", category: "AC Circuits", difficulty: "Easy", marks: 1, answers: [{ type: "1-Mark Key", text: "Peak value divided by RMS value = √2 ≈ 1.414.", docs: [] }] },
+            { id: "Q105", code: "PHY-Q105", title: "Name the principle behind optical fiber communication.", subject: "Physics", category: "Optics", difficulty: "Easy", marks: 1, answers: [{ type: "1-Mark Key", text: "Total Internal Reflection (TIR).", docs: [] }] },
+            { id: "Q106", code: "PHY-Q106", title: "State the condition for resonance in an LCR circuit.", subject: "Physics", category: "AC Circuits", difficulty: "Easy", marks: 1, answers: [{ type: "1-Mark Key", text: "Inductive reactance equals capacitive reactance (X_L = X_C).", docs: [] }] },
+            { id: "Q107", code: "PHY-Q107", title: "What type of wave is light?", subject: "Physics", category: "Optics", difficulty: "Easy", marks: 1, answers: [{ type: "1-Mark Key", text: "Transverse Electromagnetic Wave.", docs: [] }] },
+            { id: "Q108", code: "PHY-Q108", title: "Define power factor in an AC circuit.", subject: "Physics", category: "AC Circuits", difficulty: "Easy", marks: 1, answers: [{ type: "1-Mark Key", text: "Cosine of phase angle φ between voltage and current (cos φ = R/Z).", docs: [] }] },
+            { id: "Q109", code: "PHY-Q109", title: "Write the dimension of magnetic permeability μ0.", subject: "Physics", category: "Electromagnetism", difficulty: "Medium", marks: 1, answers: [{ type: "1-Mark Key", text: "[M1 L1 T-2 A-2]", docs: [] }] },
+            { id: "Q110", code: "PHY-Q110", title: "Does a step-up transformer change the frequency of AC?", subject: "Physics", category: "AC Circuits", difficulty: "Easy", marks: 1, answers: [{ type: "1-Mark Key", text: "No, frequency remains unchanged.", docs: [] }] },
+
+            // 2-MARK QUESTIONS
+            { id: "Q201", code: "PHY-Q201", title: "Differentiate between self-induction and mutual induction.", subject: "Physics", category: "Electromagnetism", difficulty: "Medium", marks: 2, answers: [{ type: "2-Mark Key", text: "Self induction occurs in single coil due to own current change; mutual induction occurs in secondary coil due to primary current change.", docs: [] }] },
+            { id: "Q202", code: "PHY-Q202", title: "Explain why a transformer cannot step up DC voltage.", subject: "Physics", category: "AC Circuits", difficulty: "Medium", marks: 2, answers: [{ type: "2-Mark Key", text: "DC current is constant, producing zero rate of change of flux (dΦ/dt = 0), so zero EMF is induced in secondary coil.", docs: [] }] },
+            { id: "Q203", code: "PHY-Q203", title: "State Faraday's two laws of electromagnetic induction.", subject: "Physics", category: "Electromagnetism", difficulty: "Medium", marks: 2, answers: [{ type: "2-Mark Key", text: "1. Change in flux induces EMF. 2. Magnitude of EMF is proportional to rate of change of flux.", docs: [] }] },
+            { id: "Q204", code: "PHY-Q204", title: "What are eddy currents? Mention one practical application.", subject: "Physics", category: "Electromagnetism", difficulty: "Medium", marks: 2, answers: [{ type: "2-Mark Key", text: "Circulating currents induced in bulk conductors by changing flux. Application: Induction furnace or magnetic braking.", docs: [] }] },
+            { id: "Q205", code: "PHY-Q205", title: "Calculate resonant frequency for L = 10mH and C = 10µF.", subject: "Physics", category: "AC Circuits", difficulty: "Medium", marks: 2, answers: [{ type: "2-Mark Key", text: "f_r = 1 / (2π √(LC)) = 503.29 Hz.", docs: [] }] },
+            { id: "Q206", code: "PHY-Q206", title: "Explain displacement current introduced by Maxwell.", subject: "Physics", category: "Electromagnetism", difficulty: "Medium", marks: 2, answers: [{ type: "2-Mark Key", text: "Current due to time-varying electric flux: I_d = ε0 (dΦ_E / dt).", docs: [] }] },
+            { id: "Q207", code: "PHY-Q207", title: "Why is soft iron core used in transformers?", subject: "Physics", category: "AC Circuits", difficulty: "Medium", marks: 2, answers: [{ type: "2-Mark Key", text: "High magnetic permeability and low hysteresis loss loop area.", docs: [] }] },
+            { id: "Q208", code: "PHY-Q208", title: "Define Quality Factor (Q-factor) of a resonant LCR circuit.", subject: "Physics", category: "AC Circuits", difficulty: "Medium", marks: 2, answers: [{ type: "2-Mark Key", text: "Ratio of resonant frequency to bandwidth: Q = ω0 L / R.", docs: [] }] },
+            { id: "Q209", code: "PHY-Q209", title: "State Brewster's Law for polarization of light.", subject: "Physics", category: "Optics", difficulty: "Medium", marks: 2, answers: [{ type: "2-Mark Key", text: "Refractive index μ = tan(i_p) where i_p is polarizing angle.", docs: [] }] },
+            { id: "Q210", code: "PHY-Q210", title: "Distinguish between reactance and impedance in AC.", subject: "Physics", category: "AC Circuits", difficulty: "Medium", marks: 2, answers: [{ type: "2-Mark Key", text: "Reactance is opposition due to L or C; Impedance Z is total opposition combining R, X_L, and X_C.", docs: [] }] },
+
+            // 4-MARK & 5-MARK QUESTIONS
+            { id: "Q401", code: "PHY-Q401", title: "Derive an expression for the energy stored in an inductor carrying current I.", subject: "Physics", category: "Electromagnetism", difficulty: "Hard", marks: 4, answers: [{ type: "4-Mark Key", text: "Work done dW = L i di. Integrate from 0 to I gives U = 1/2 L I^2.", docs: [] }] },
+            { id: "Q402", code: "PHY-Q402", title: "Explain the construction, principle, and working of an AC Generator with a neat sketch.", subject: "Physics", category: "Electromagnetism", difficulty: "Hard", marks: 5, answers: [{ type: "5-Mark Key", text: "Based on electromagnetic induction. Rotating armature in magnetic field produces sinusoidal EMF ε = N B A ω sin(ωt).", docs: [] }] },
+            { id: "Q403", code: "PHY-Q403", title: "Derive expression for impedance and phase angle in series LCR circuit using phasor diagram.", subject: "Physics", category: "AC Circuits", difficulty: "Hard", marks: 5, answers: [{ type: "5-Mark Key", text: "Z = √(R^2 + (X_L - X_C)^2), tan φ = (X_L - X_C)/R.", docs: [] }] },
+            { id: "Q404", code: "PHY-Q404", title: "Derive Lens Maker's Formula for a thin convex lens.", subject: "Physics", category: "Optics", difficulty: "Hard", marks: 4, answers: [{ type: "4-Mark Key", text: "1/f = (μ - 1)(1/R1 - 1/R2) using double refraction surfaces.", docs: [] }] }
+        ];
+
+        // DEFAULT BLUEPRINT CONFIGURATION (e.g. 50 MARKS: 10 1-MARK, 10 2-MARK, 2 5-MARK)
+        let activeBlueprint = {
+            title: "Physics Mid-Term Assessment 2026",
+            code: "PHY-501",
+            duration: 90,
+            subject: "Physics",
+            sections: [
+                { id: "sec_a", name: "Section A (Objective & Very Short)", marksPerQ: 1, qCount: 10 },
+                { id: "sec_b", name: "Section B (Short Answer Questions)", marksPerQ: 2, qCount: 10 },
+                { id: "sec_c", name: "Section C (Long Answer / Derivations)", marksPerQ: 5, qCount: 2 }
+            ]
+        };
+
+        // STORED SCHEMAS DATABASE (USER FAVORITE NAMED SCHEMAS)
+        let savedSchemasLibrary = [
+            {
+                id: "schema_50_standard",
+                name: "Standard 50-Mark Physics Midterm Schema",
+                subject: "Physics",
+                totalMarks: 50,
+                qCount: 22,
+                blueprint: {
+                    title: "Physics Mid-Term Assessment 2026",
+                    code: "PHY-501",
+                    duration: 90,
+                    subject: "Physics",
+                    sections: [
+                        { id: "s1", name: "Section A (1 Mark Questions)", marksPerQ: 1, qCount: 10 },
+                        { id: "s2", name: "Section B (2 Mark Questions)", marksPerQ: 2, qCount: 10 },
+                        { id: "s3", name: "Section C (5 Mark Questions)", marksPerQ: 5, qCount: 2 }
+                    ]
+                }
+            },
+            {
+                id: "schema_100_final",
+                name: "100-Mark Comprehensive Annual Exam Blueprint",
+                subject: "Physics",
+                totalMarks: 100,
+                qCount: 30,
+                blueprint: {
+                    title: "Annual Physics Board Assessment",
+                    code: "PHY-100",
+                    duration: 180,
+                    subject: "Physics",
+                    sections: [
+                        { id: "s1", name: "Section A (1 Mark MCQs)", marksPerQ: 1, qCount: 20 },
+                        { id: "s2", name: "Section B (2 Mark Shorts)", marksPerQ: 2, qCount: 15 },
+                        { id: "s3", name: "Section C (5 Mark Longs)", marksPerQ: 5, qCount: 10 }
+                    ]
+                }
+            }
+        ];
+
+        // CURRENT ACTIVE GENERATED QUESTION PAPER DRAFT
+        let activeGeneratedPaper = {
+            header: { title: "", code: "", duration: 90, totalMarks: 50 },
+            sections: []
+        };
+
+        let activeQuestionId = null;
+
+        // TAB & SUB-VIEW NAVIGATION
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById(tabId).classList.remove('hidden');
+
+            ['qna', 'paper-designer', 'eval'].forEach(nav => {
+                const btn = document.getElementById(`nav-tab-${nav}`);
+                if (`tab-${nav}` === tabId) {
+                    btn.className = "tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 text-purple-400 bg-purple-950/40 border border-purple-500/30";
+                } else {
+                    btn.className = "tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 text-gray-400 hover:text-white hover:bg-gray-800/50";
+                }
+            });
+        }
+
+        function switchStudioView(viewId) {
+            ['view-blueprint', 'view-my-schemas', 'view-paper-preview'].forEach(v => {
+                document.getElementById(v).classList.add('hidden');
+            });
+            document.getElementById(viewId).classList.remove('hidden');
+
+            const btnMap = {
+                'view-blueprint': 'btn-view-blueprint',
+                'view-my-schemas': 'btn-view-schemas',
+                'view-paper-preview': 'btn-view-preview'
+            };
+
+            Object.keys(btnMap).forEach(key => {
+                const btn = document.getElementById(btnMap[key]);
+                if (key === viewId) {
+                    btn.className = "px-4 py-2 rounded-xl text-xs font-semibold bg-purple-600 text-white shadow-lg shadow-purple-900/30 flex items-center gap-2";
+                } else {
+                    btn.className = "px-4 py-2 rounded-xl text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 flex items-center gap-2";
+                }
+            });
+
+            if (viewId === 'view-my-schemas') renderSavedSchemasGrid();
+        }
+
+        // BLUEPRINT EDITOR LOGIC
+        function renderBlueprintSectionsRows() {
+            const tbody = document.getElementById('blueprintSectionsTableBody');
+            tbody.innerHTML = '';
+
+            activeBlueprint.sections.forEach((sec, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b border-gray-800/60";
+                tr.innerHTML = `
+                    <td class="py-2.5 pr-2">
+                        <input type="text" value="${sec.name}" oninput="updateBlueprintSection('${sec.id}', 'name', this.value)" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-purple-500">
+                    </td>
+                    <td class="py-2.5 px-2 w-28">
+                        <input type="number" value="${sec.marksPerQ}" min="1" max="20" oninput="updateBlueprintSection('${sec.id}', 'marksPerQ', this.value)" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-center text-emerald-400 font-bold focus:border-purple-500">
+                    </td>
+                    <td class="py-2.5 px-2 w-28">
+                        <input type="number" value="${sec.qCount}" min="1" max="50" oninput="updateBlueprintSection('${sec.id}', 'qCount', this.value)" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-center text-cyan-300 font-bold focus:border-purple-500">
+                    </td>
+                    <td class="py-2.5 px-2 text-right font-bold text-white text-xs">
+                        ${sec.marksPerQ * sec.qCount} Marks
+                    </td>
+                    <td class="py-2.5 pl-2 text-center w-12">
+                        <button onclick="removeBlueprintSectionRow('${sec.id}')" class="text-rose-400 hover:text-rose-300 p-1">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            recalculateBlueprintTotals();
+        }
+
+        function addBlueprintSectionRow() {
+            const nextMarks = activeBlueprint.sections.length === 0 ? 1 : activeBlueprint.sections.length === 1 ? 2 : 5;
+            activeBlueprint.sections.push({
+                id: "sec_" + Date.now(),
+                name: `Section ${String.fromCharCode(65 + activeBlueprint.sections.length)} (${nextMarks} Mark Questions)`,
+                marksPerQ: nextMarks,
+                qCount: 5
+            });
+            renderBlueprintSectionsRows();
+        }
+
+        function removeBlueprintSectionRow(secId) {
+            activeBlueprint.sections = activeBlueprint.sections.filter(s => s.id !== secId);
+            renderBlueprintSectionsRows();
+        }
+
+        function updateBlueprintSection(secId, field, val) {
+            const sec = activeBlueprint.sections.find(s => s.id === secId);
+            if (sec) {
+                if (field === 'marksPerQ' || field === 'qCount') {
+                    sec[field] = parseInt(val) || 0;
+                } else {
+                    sec[field] = val;
+                }
+            }
+            renderBlueprintSectionsRows();
+        }
+
+        function recalculateBlueprintTotals() {
+            activeBlueprint.title = document.getElementById('paperTitleInput').value;
+            activeBlueprint.code = document.getElementById('paperCodeInput').value;
+            activeBlueprint.duration = parseInt(document.getElementById('paperDurationInput').value) || 90;
+            activeBlueprint.subject = document.getElementById('paperSubjectSelect').value;
+
+            let totalQ = 0;
+            let totalM = 0;
+
+            activeBlueprint.sections.forEach(s => {
+                totalQ += s.qCount;
+                totalM += (s.marksPerQ * s.qCount);
+            });
+
+            document.getElementById('totalQuestionsCalc').innerText = `${totalQ} Questions`;
+            document.getElementById('totalMarksCalc').innerText = `${totalM} Marks`;
+
+            // Render JSON
+            const jsonSpec = {
+                schemaVersion: "2.5.0",
+                blueprintName: activeBlueprint.title,
+                subject: activeBlueprint.subject,
+                totalCalculatedMarks: totalM,
+                totalQuestions: totalQ,
+                durationMinutes: activeBlueprint.duration,
+                sectionBreakdown: activeBlueprint.sections
+            };
+            document.getElementById('liveSchemaJsonPreview').textContent = JSON.stringify(jsonSpec, null, 2);
+        }
+
+        // SAVE SCHEMA TO LIBRARY
+        function saveCurrentSchema() {
+            const nameInput = document.getElementById('saveSchemaNameInput').value.trim();
+            if (!nameInput) {
+                alert("Please enter a custom name for this blueprint schema before saving.");
+                return;
+            }
+
+            let totalM = 0;
+            let totalQ = 0;
+            activeBlueprint.sections.forEach(s => {
+                totalQ += s.qCount;
+                totalM += (s.marksPerQ * s.qCount);
+            });
+
+            const newSchemaEntry = {
+                id: "schema_" + Date.now(),
+                name: nameInput,
+                subject: activeBlueprint.subject,
+                totalMarks: totalM,
+                qCount: totalQ,
+                blueprint: JSON.parse(JSON.stringify(activeBlueprint))
+            };
+
+            savedSchemasLibrary.unshift(newSchemaEntry);
+            document.getElementById('savedSchemasCount').innerText = savedSchemasLibrary.length;
+            document.getElementById('saveSchemaNameInput').value = '';
+            alert(`Schema "${nameInput}" successfully saved to your Schemas Library!`);
+        }
+
+        // RENDER SAVED SCHEMAS LIBRARY
+        function renderSavedSchemasGrid() {
+            const grid = document.getElementById('savedSchemasGrid');
+            grid.innerHTML = '';
+            document.getElementById('savedSchemasCount').innerText = savedSchemasLibrary.length;
+
+            savedSchemasLibrary.forEach(sch => {
+                const card = document.createElement('div');
+                card.className = "glass-panel p-5 rounded-2xl border border-gray-800 hover:border-amber-500/50 transition flex flex-col justify-between space-y-4";
+
+                let sectionsHtml = sch.blueprint.sections.map(s => `<span class="bg-gray-900 border border-gray-800 text-gray-300 text-[10px] px-2 py-0.5 rounded">${s.qCount} &times; ${s.marksPerQ}M</span>`).join(" ");
+
+                card.innerHTML = `
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-start">
+                            <span class="text-[10px] bg-amber-950 text-amber-300 border border-amber-500/30 font-bold px-2.5 py-0.5 rounded-full">
+                                ${sch.totalMarks} Marks Schema
+                            </span>
+                            <span class="text-xs text-gray-400 font-mono">${sch.subject}</span>
+                        </div>
+                        <h3 class="text-sm font-bold text-white leading-snug">${sch.name}</h3>
+                        <p class="text-xs text-gray-400">${sch.qCount} Questions total • ${sch.blueprint.duration} mins</p>
+                        <div class="pt-2 flex flex-wrap gap-1">
+                            ${sectionsHtml}
+                        </div>
+                    </div>
+
+                    <div class="pt-3 border-t border-gray-800 flex items-center justify-between gap-2">
+                        <button onclick="loadSavedSchemaToBlueprint('${sch.id}')" class="text-xs text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-xl border border-gray-700 transition">
+                            Edit Blueprint
+                        </button>
+                        <button onclick="autoGenerateFromSavedSchema('${sch.id}')" class="text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 px-3.5 py-1.5 rounded-xl shadow-lg transition flex items-center gap-1">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Paper
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function loadSavedSchemaToBlueprint(schId) {
+            const sch = savedSchemasLibrary.find(s => s.id === schId);
+            if (!sch) return;
+            activeBlueprint = JSON.parse(JSON.stringify(sch.blueprint));
+
+            document.getElementById('paperTitleInput').value = activeBlueprint.title;
+            document.getElementById('paperCodeInput').value = activeBlueprint.code;
+            document.getElementById('paperDurationInput').value = activeBlueprint.duration;
+            document.getElementById('paperSubjectSelect').value = activeBlueprint.subject;
+
+            renderBlueprintSectionsRows();
+            switchStudioView('view-blueprint');
+        }
+
+        function autoGenerateFromSavedSchema(schId) {
+            loadSavedSchemaToBlueprint(schId);
+            autoGeneratePaperFromCurrentBlueprint();
+        }
+
+        // AUTO GENERATE QUESTION PAPER FROM ACTIVE BLUEPRINT
+        function autoGeneratePaperFromCurrentBlueprint() {
+            recalculateBlueprintTotals();
+
+            activeGeneratedPaper = {
+                header: {
+                    title: activeBlueprint.title,
+                    code: activeBlueprint.code,
+                    duration: activeBlueprint.duration,
+                    totalMarks: document.getElementById('totalMarksCalc').innerText
+                },
+                sections: []
+            };
+
+            activeBlueprint.sections.forEach(secSpec => {
+                // Filter matching subject & exact marks tier from repository
+                let matchingPool = questionsRepository.filter(q => q.subject === activeBlueprint.subject && q.marks === secSpec.marksPerQ);
+
+                // Fallback pool if repository lacks exact marks count
+                if (matchingPool.length === 0) {
+                    matchingPool = questionsRepository.filter(q => q.subject === activeBlueprint.subject);
+                }
+
+                // Shuffle pool
+                let shuffled = [...matchingPool].sort(() => 0.5 - Math.random());
+
+                let pickedQuestions = [];
+                for (let i = 0; i < secSpec.qCount; i++) {
+                    if (i < shuffled.length) {
+                        pickedQuestions.push({
+                            id: shuffled[i].id,
+                            title: shuffled[i].title,
+                            marks: secSpec.marksPerQ
+                        });
+                    } else {
+                        // Generate placeholder editable question if repository runs out
+                        pickedQuestions.push({
+                            id: "Q_GEN_" + Math.floor(1000 + Math.random() * 9000),
+                            title: `[Sample Question ${i + 1}] State and derive the fundamental equations corresponding to ${secSpec.marksPerQ}-mark theoretical topic.`,
+                            marks: secSpec.marksPerQ
+                        });
+                    }
+                }
+
+                activeGeneratedPaper.sections.push({
+                    id: secSpec.id,
+                    name: secSpec.name,
+                    marksPerQ: secSpec.marksPerQ,
+                    questions: pickedQuestions
+                });
+            });
+
+            renderPaperPreviewCanvas();
+            switchStudioView('view-paper-preview');
+        }
+
+        // RENDER LIVE QUESTION PAPER CANVAS & ENABLE MANUAL EDITING
+        function renderPaperPreviewCanvas() {
+            document.getElementById('paperHeaderTitle').innerText = activeGeneratedPaper.header.title.toUpperCase();
+            document.getElementById('paperHeaderCode').innerText = activeGeneratedPaper.header.code;
+            document.getElementById('paperHeaderDuration').innerText = `${activeGeneratedPaper.header.duration} MINS`;
+            document.getElementById('paperHeaderTotal').innerText = activeGeneratedPaper.header.totalMarks;
+            document.getElementById('previewPaperMarks').innerText = activeGeneratedPaper.header.totalMarks;
+
+            const container = document.getElementById('paperSectionsContainer');
+            container.innerHTML = '';
+
+            let globalQIndex = 1;
+
+            activeGeneratedPaper.sections.forEach((sec, sIdx) => {
+                const secBlock = document.createElement('div');
+                secBlock.className = "space-y-4";
+
+                let qListHtml = '';
+                sec.questions.forEach((q, qIdx) => {
+                    qListHtml += `
+                        <div class="group relative bg-gray-900/40 hover:bg-gray-900/90 p-4 rounded-xl border border-gray-800/80 hover:border-purple-500/40 transition">
+                            <div class="flex justify-between items-start gap-4">
+                                <div class="flex items-start gap-3 w-full">
+                                    <span class="font-bold text-purple-400 text-sm font-mono">${globalQIndex}.</span>
+                                    <div class="w-full">
+                                        <!-- Editable Question Statement -->
+                                        <p contenteditable="true" onblur="updateGeneratedQuestionText(${sIdx}, ${qIdx}, this.innerText)" class="text-sm font-medium text-gray-100 outline-none focus:bg-gray-950 focus:p-2 focus:rounded-lg focus:ring-1 focus:ring-purple-500 transition leading-relaxed">
+                                            ${q.title}
+                                        </p>
+                                        <span class="text-[10px] text-gray-500 italic mt-1 block no-print"><i class="fa-solid fa-pen-to-square"></i> Click question text above to manually edit statement directly</span>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2 whitespace-nowrap">
+                                    <span class="text-xs font-bold text-emerald-400 font-mono">[${q.marks} ${q.marks === 1 ? 'Mark' : 'Marks'}]</span>
+                                    <button onclick="deleteQuestionFromGeneratedPaper(${sIdx}, ${qIdx})" class="text-rose-400 hover:text-rose-300 text-xs p-1 opacity-0 group-hover:opacity-100 transition no-print" title="Delete Question">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    globalQIndex++;
+                });
+
+                secBlock.innerHTML = `
+                    <div class="border-b border-gray-800 pb-2 flex justify-between items-center">
+                        <h3 class="text-sm font-bold text-cyan-300 uppercase tracking-wider">${sec.name}</h3>
+                        <span class="text-xs font-semibold text-gray-400 font-mono">${sec.questions.length} Questions &times; ${sec.marksPerQ}M</span>
+                    </div>
+                    <div class="space-y-3">
+                        ${qListHtml}
+                    </div>
+                `;
+                container.appendChild(secBlock);
+            });
+
+            populateTargetSectionDropdown();
+        }
+
+        // MANUAL EDITING FUNCTIONS ON GENERATED PAPER
+        function updateGeneratedQuestionText(secIndex, qIndex, newText) {
+            if (activeGeneratedPaper.sections[secIndex] && activeGeneratedPaper.sections[secIndex].questions[qIndex]) {
+                activeGeneratedPaper.sections[secIndex].questions[qIndex].title = newText.trim();
+            }
+        }
+
+        function deleteQuestionFromGeneratedPaper(secIndex, qIndex) {
+            activeGeneratedPaper.sections[secIndex].questions.splice(qIndex, 1);
+            renderPaperPreviewCanvas();
+        }
+
+        function populateTargetSectionDropdown() {
+            const select = document.getElementById('manualTargetSectionSelect');
+            select.innerHTML = '';
+            activeGeneratedPaper.sections.forEach((sec, idx) => {
+                const opt = document.createElement('option');
+                opt.value = idx;
+                opt.innerText = sec.name;
+                select.appendChild(opt);
+            });
+        }
+
+        function handleManualQuestionAddToPaper(e) {
+            e.preventDefault();
+            const secIdx = parseInt(document.getElementById('manualTargetSectionSelect').value);
+            const text = document.getElementById('manualQText').value;
+            const marks = parseInt(document.getElementById('manualQMarks').value) || 2;
+
+            if (activeGeneratedPaper.sections[secIdx]) {
+                activeGeneratedPaper.sections[secIdx].questions.push({
+                    id: "Q_MANUAL_" + Date.now(),
+                    title: text,
+                    marks: marks
+                });
+                renderPaperPreviewCanvas();
+                closeModal('addQuestionToPaperModal');
+                document.getElementById('manualQText').value = '';
+            }
+        }
+
+        // Q&A REPOSITORY VIEW FUNCTIONS
+        function renderRepositoryTable(questions = questionsRepository) {
+            const tbody = document.getElementById('repoQuestionsTableBody');
+            tbody.innerHTML = '';
+            document.getElementById('displayedCount').innerText = questions.length;
+
+            questions.forEach(q => {
+                const row = document.createElement('tr');
+                row.className = "hover:bg-purple-950/20 transition cursor-pointer select-none group";
+                row.ondblclick = () => openQuestionDetailView(q.id);
+
+                row.innerHTML = `
+                    <td class="py-3 px-4 font-mono text-purple-300 font-semibold">${q.code}</td>
+                    <td class="py-3 px-4 font-medium text-white group-hover:text-purple-200">${q.title}</td>
+                    <td class="py-3 px-4 text-gray-300">${q.subject}</td>
+                    <td class="py-3 px-4 text-cyan-400">${q.category}</td>
+                    <td class="py-3 px-4">
+                        <span class="text-[10px] px-2 py-0.5 rounded-full ${q.difficulty === 'Easy' ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/30' : q.difficulty === 'Medium' ? 'bg-amber-950 text-amber-300 border border-amber-500/30' : 'bg-rose-950 text-rose-300 border border-rose-500/30'}">${q.difficulty}</span>
+                    </td>
+                    <td class="py-3 px-4 text-center">
+                        <span class="text-xs bg-purple-950/80 text-purple-300 border border-purple-500/30 px-2.5 py-0.5 rounded-full font-bold">${q.marks} Mark(s)</span>
+                    </td>
+                    <td class="py-3 px-4 text-center">
+                        <button onclick="openQuestionDetailView('${q.id}')" class="text-xs bg-gray-800 hover:bg-purple-900 text-gray-300 hover:text-white px-2.5 py-1 rounded-lg transition border border-gray-700">
+                            Open <i class="fa-solid fa-chevron-right text-[10px] ml-1"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function applyRepoFilters() {
+            const subject = document.getElementById('repoSubjectSelect').value;
+            const category = document.getElementById('repoCategorySelect').value;
+            const query = document.getElementById('repoSearchInput').value.toLowerCase();
+
+            const filtered = questionsRepository.filter(q => {
+                const matchSub = subject === 'all' || q.subject === subject;
+                const matchCat = category === 'all' || q.category === category;
+                const matchQuery = q.title.toLowerCase().includes(query) || q.code.toLowerCase().includes(query);
+                return matchSub && matchCat && matchQuery;
+            });
+
+            renderRepositoryTable(filtered);
+        }
+
+        function openQuestionDetailView(qId) {
+            activeQuestionId = qId;
+            const q = questionsRepository.find(item => item.id === qId);
+            if (!q) return;
+
+            document.getElementById('qna-repository-browser').classList.add('hidden');
+            document.getElementById('qna-detail-view').classList.remove('hidden');
+
+            document.getElementById('detailQCode').innerText = q.code;
+            document.getElementById('detailQSubject').innerText = q.subject;
+            document.getElementById('detailQCategory').innerText = q.category;
+            document.getElementById('detailQTitle').innerText = q.title;
+            document.getElementById('detailQDiff').innerText = q.difficulty;
+
+            renderAnswersList(q);
+        }
+
+        function closeQuestionDetailView() {
+            document.getElementById('qna-detail-view').classList.add('hidden');
+            document.getElementById('qna-repository-browser').classList.remove('hidden');
+        }
+
+        function renderAnswersList(q) {
+            const container = document.getElementById('answerVariantsContainer');
+            container.innerHTML = '';
+
+            q.answers.forEach((ans, index) => {
+                const card = document.createElement('div');
+                card.className = "glass-panel p-5 rounded-2xl border border-gray-800 space-y-3";
+                card.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-bold text-cyan-400 bg-cyan-950/80 border border-cyan-500/30 px-3 py-1 rounded-xl">
+                            ${ans.type}
+                        </span>
+                    </div>
+                    <div class="bg-gray-900 border border-gray-800 p-3.5 rounded-xl text-xs text-gray-200">
+                        ${ans.text}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function handleNewQuestionSubmit(e) {
+            e.preventDefault();
+            const title = document.getElementById('modalQText').value;
+            const subject = document.getElementById('modalQSubject').value;
+            const category = document.getElementById('modalQCategory').value;
+            const marksTier = parseInt(document.getElementById('modalQMarksTier').value) || 1;
+
+            const newQ = {
+                id: "Q" + (questionsRepository.length + 101),
+                code: subject.substring(0, 3).toUpperCase() + "-Q" + (questionsRepository.length + 101),
+                title: title,
+                subject: subject,
+                category: category,
+                difficulty: "Medium",
+                marks: marksTier,
+                answers: [{ type: `${marksTier}-Mark Key`, text: "Standard key", docs: [] }]
+            };
+
+            questionsRepository.unshift(newQ);
+            renderRepositoryTable();
+            closeModal('addQuestionModal');
+        }
+
+        // EVALUATION TAB STUB HANDLERS
+        let uploadedSheets = [
+            { id: "STU-88291", studentName: "Alex Mercer", rollNo: "PH-2026-041", status: "Ready for Segmenting", pages: 2, score: "Pending" }
+        ];
+
+        function renderUploadedSheets() {
+            const grid = document.getElementById('uploadedSheetsGrid');
+            grid.innerHTML = '';
+            uploadedSheets.forEach((sheet) => {
+                const card = document.createElement('div');
+                card.className = "glass-panel p-4 rounded-xl border border-gray-800 flex justify-between items-center";
+                card.innerHTML = `
+                    <div>
+                        <h4 class="text-xs font-bold text-white">${sheet.studentName}</h4>
+                        <p class="text-[10px] text-gray-400">ID: ${sheet.id}</p>
+                    </div>
+                    <button onclick="setEvalStep(2)" class="px-3 py-1 rounded-lg bg-cyan-600 text-white font-semibold text-[11px]">
+                        Run Eval
+                    </button>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function setEvalStep(s) {
+            [1, 2, 3].forEach(step => document.getElementById(`eval-step-${step}`).classList.add('hidden'));
+            document.getElementById(`eval-step-${s}`).classList.remove('hidden');
+        }
+
+        // MODAL HELPERS
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+        // INITIALIZATION
+        window.onload = function() {
+            renderRepositoryTable();
+            renderBlueprintSectionsRows();
+            renderSavedSchemasGrid();
+            renderUploadedSheets();
+            autoGeneratePaperFromCurrentBlueprint();
+            switchStudioView('view-blueprint');
+        };
+    </script>
+</body>
+</html>

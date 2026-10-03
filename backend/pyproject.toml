@@ -1,0 +1,112 @@
+[project]
+name = "tarn-workspace"
+version = "0.0.0"
+description = "Tarn AI Evaluation backend workspace (uv)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "tarn-core",
+    "tarn-adapters",
+    "tarn-api",
+    "tarn-worker",
+    "tarn-cli",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2==2.13.1",
+    "import-linter==2.15",
+    "mypy==2.4.0",
+    "pytest==9.1.1",
+    "ruff==0.16.10",
+]
+
+[tool.uv]
+package = false
+default-groups = ["dev"]
+
+[tool.uv.workspace]
+members = ["core", "adapters", "api", "worker", "cli"]
+
+[tool.uv.sources]
+tarn-core = { workspace = true }
+tarn-adapters = { workspace = true }
+tarn-api = { workspace = true }
+tarn-worker = { workspace = true }
+tarn-cli = { workspace = true }
+
+# --- pytest -----------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["core/tests", "adapters/tests", "api/tests", "worker/tests", "cli/tests"]
+addopts = "-ra --strict-markers --import-mode=importlib -m 'not integration'"
+markers = [
+    "integration: needs the Docker Compose stack (make up); run with `make test-integration`",
+]
+
+# --- ruff -------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["core/src", "adapters/src", "api/src", "worker/src", "cli/src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "C4", "PTH", "RUF", "S", "T20"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tarn_core", "tarn_adapters", "tarn_api", "tarn_worker", "tarn_cli"]
+
+# --- mypy -------------------------------------------------------------------
+[tool.mypy]
+strict = true
+python_version = "3.12"
+mypy_path = ["core/src", "adapters/src", "api/src", "worker/src", "cli/src"]
+explicit_package_bases = true
+plugins = ["pydantic.mypy"]
+files = [
+    "core/src", "core/tests",
+    "adapters/src", "adapters/tests",
+    "api/src", "api/tests",
+    "worker/src", "worker/tests",
+    "cli/src", "cli/tests",
+]
+
+# torch is an optional dependency (installed from P10); its absence must not fail typechecking.
+[[tool.mypy.overrides]]
+module = ["torch"]
+ignore_missing_imports = true
+
+# --- import-linter: the architecture rules of CLAUDE.md / design.md ----------
+[tool.importlinter]
+root_packages = ["tarn_core", "tarn_adapters", "tarn_api", "tarn_worker", "tarn_cli"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "tarn_core is pure: no web, database, cloud, ML or adapter imports"
+type = "forbidden"
+source_modules = ["tarn_core"]
+forbidden_modules = [
+    # web
+    "fastapi", "starlette", "uvicorn", "pydantic", "pydantic_settings", "typer",
+    # database and queue
+    "sqlalchemy", "psycopg", "psycopg2", "alembic", "procrastinate",
+    # HTTP clients
+    "requests", "httpx", "httpx2", "httpcore", "urllib3", "aiohttp",
+    # cloud and object storage
+    "boto3", "botocore", "minio", "azure", "google",
+    # ML and imaging
+    "torch", "transformers", "sentence_transformers", "paddle", "paddleocr",
+    "cv2", "numpy", "sklearn", "scipy", "pytesseract", "fitz",
+    # our own outer layers
+    "tarn_adapters", "tarn_api", "tarn_worker", "tarn_cli",
+]
+
+[[tool.importlinter.contracts]]
+name = "Layers: api, worker and cli sit on adapters, which sit on core"
+type = "layers"
+layers = [
+    "tarn_api | tarn_worker | tarn_cli",
+    "tarn_adapters",
+    "tarn_core",
+]
