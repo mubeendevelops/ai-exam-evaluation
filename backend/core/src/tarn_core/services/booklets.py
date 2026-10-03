@@ -5,7 +5,8 @@ from dataclasses import dataclass
 
 from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.blueprint import ExamBlueprint
-from tarn_core.domain.booklet import Booklet
+from tarn_core.domain.booklet import Booklet, SourceFile
+from tarn_core.domain.common import BlobKey, college_blob_key
 from tarn_core.errors import InvariantError
 from tarn_core.ids import BlueprintId, BookletId, CollegeId, StudentId, UserId
 from tarn_core.ports.repositories import (
@@ -18,6 +19,11 @@ from tarn_core.ports.repositories import (
 )
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime, ref_json
+
+
+def booklet_folder(college_id: CollegeId, booklet_id: BookletId) -> BlobKey:
+    """``college/{id}/booklet/{id}``: everything stored for one booklet lives under it."""
+    return college_blob_key(college_id, "booklet", str(booklet_id))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -57,6 +63,8 @@ class BookletService:
         student_id: StudentId,
         blueprint_id: BlueprintId,
         file_sha256: str,
+        booklet_id: BookletId | None = None,
+        sources: tuple[SourceFile, ...] = (),
     ) -> Registration:
         """Create a booklet for a student picked from this college's roster (D17), pinned to
         the blueprint's current version."""
@@ -71,13 +79,14 @@ class BookletService:
             )
         duplicates = tuple(b.id for b in self._booklets.find_by_hash(college_id, file_sha256))
         booklet = Booklet(
-            id=self._rt.new_id(BookletId),
+            id=booklet_id or self._rt.new_id(BookletId),
             college_id=college_id,
             student_id=student_id,
             blueprint=blueprint.ref,
             file_sha256=file_sha256,
             uploaded_by=actor_id,
             uploaded_at=self._rt.clock.now(),
+            sources=sources,
         )
         self._booklets.save(college_id, booklet)
         self._rt.record(
@@ -106,6 +115,13 @@ class BookletService:
         answer_ids = [a.id for a in self._booklets.answers(college_id, booklet_id)]
         for page in self._booklets.pages(college_id, booklet_id):
             self._blobs.delete(page.image)
+            if page.original is not None:
+                self._blobs.delete(page.original)
+        booklet = self._booklets.get(college_id, booklet_id)
+        for source in booklet.sources:
+            self._blobs.delete(source.key)
+        # Anything else stored for the booklet (cleaned pages, later stages' crops).
+        self._blobs.delete_prefix(booklet_folder(college_id, booklet_id))
         self._scores.delete_for_answers(college_id, answer_ids)
         self._sheets.delete_for_booklet(college_id, booklet_id)
         self._booklets.delete(college_id, booklet_id)

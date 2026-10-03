@@ -18,3 +18,6 @@ class NoBlobStore:
 
     def delete(self, key: BlobKey) -> None:
         raise self._refuse()
+
+    def delete_prefix(self, prefix: BlobKey) -> int:
+        raise self._refuse()

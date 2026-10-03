@@ -18,6 +18,9 @@ dependencies = [
     "google-cloud-kms==3.18.0",
     "google-cloud-secret-manager==2.31.0",
     "jsonschema==4.26.0",
+    "pymupdf==1.28.2",
+    "opencv-python-headless==4.14.0.94",
+    "numpy==2.5.3",
 ]
 
 [build-system]

@@ -39,3 +39,28 @@ class PasswordPolicyError(DomainError, ValueError):
 
 class TokenError(DomainError, ValueError):
     """A link or session token is unknown, used, expired or revoked (one message for all)."""
+
+
+class UnreadableFileError(DomainError, ValueError):
+    """An uploaded file is not a readable PDF or image (damaged, encrypted, or another type)."""
+
+
+class UnsupportedFileError(DomainError, ValueError):
+    """The uploaded file is not a PDF, JPEG or PNG (judged by its first bytes, not its name)."""
+
+
+class UploadTooLargeError(DomainError, ValueError):
+    """The upload has more bytes or more files than the configured limit."""
+
+
+class QueueFullError(DomainError, ValueError):
+    """The teacher already has the maximum number of booklets waiting to be processed."""
+
+
+class DuplicateBookletError(DomainError, ValueError):
+    """A booklet with the same file hash exists in this college; upload again with
+    ``allow_duplicate`` to create a second copy on purpose."""
+
+    def __init__(self, duplicates: tuple[object, ...]) -> None:
+        super().__init__("This file was uploaded before in your college.")
+        self.duplicates = duplicates

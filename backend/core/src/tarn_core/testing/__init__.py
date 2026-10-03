@@ -11,6 +11,7 @@ from tarn_core.testing.fake_engines import (
     ScriptedLayoutDetector,
     ScriptedOcrEngine,
 )
+from tarn_core.testing.fake_pages import FakePageCleaner, FakePageSplitter, fake_image, fake_pdf
 from tarn_core.testing.memory_identity import (
     CountingRandom,
     FakeCipher,
@@ -36,6 +37,7 @@ from tarn_core.testing.memory_runtime import (
     MemoryBlobStore,
     MemoryJobQueue,
     MemoryPageSource,
+    MemoryQueueHarness,
     QueuedJob,
     SequentialIds,
 )
@@ -49,7 +51,7 @@ class InMemory:
     clock: FixedClock = field(default_factory=FixedClock)
     ids: SequentialIds = field(default_factory=SequentialIds)
     audit: MemoryAuditSink = field(default_factory=MemoryAuditSink)
-    jobs: MemoryJobQueue = field(default_factory=MemoryJobQueue)
+    jobs: MemoryJobQueue = field(init=False)
     blobs: MemoryBlobStore = field(default_factory=MemoryBlobStore)
     page_source: MemoryPageSource = field(default_factory=MemoryPageSource)
     content: MemoryContentRepository = field(default_factory=MemoryContentRepository)
@@ -62,6 +64,7 @@ class InMemory:
     auth_settings: AuthSettings = field(default_factory=AuthSettings)
 
     def __post_init__(self) -> None:
+        self.jobs = MemoryJobQueue(self.clock)
         self.identity = MemoryIdentityStore(self.log)
         self.colleges = MemoryCollegeRepository(self.log)
         self.users = MemoryUserRepository(self.log)
@@ -92,6 +95,8 @@ __all__ = [
     "FakeCipher",
     "FakeHasher",
     "FakeKeyManager",
+    "FakePageCleaner",
+    "FakePageSplitter",
     "FixedClock",
     "FixedCreditScorer",
     "HashEmbedder",
@@ -105,6 +110,7 @@ __all__ = [
     "MemoryJobQueue",
     "MemoryMailer",
     "MemoryPageSource",
+    "MemoryQueueHarness",
     "MemoryResultSheetRepository",
     "MemoryScoreRepository",
     "MemoryStudentRepository",
@@ -116,4 +122,6 @@ __all__ = [
     "SequentialIds",
     "SetPasswords",
     "TenantLog",
+    "fake_image",
+    "fake_pdf",
 ]

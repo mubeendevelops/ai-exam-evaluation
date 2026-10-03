@@ -265,6 +265,9 @@ def _seed(open_: Opener, college: CollegeFixture, blueprint_id: BlueprintId) -> 
                 embedding=[1.0, 0.0, 0.0],
             )
         )
+        s.jobs.enqueue(
+            cid, "booklet.prepare", {"booklet_id": str(booklet.id)}, key=f"seed:{booklet.id}"
+        )
         # A second booklet, deleted: leaves a deletion record.
         doomed = svc.booklets.register(
             cid,

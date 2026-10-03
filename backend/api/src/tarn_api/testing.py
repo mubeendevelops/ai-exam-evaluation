@@ -8,6 +8,7 @@ from tarn_core.ids import CollegeId
 from tarn_core.ports.identity import IdentityStore
 from tarn_core.ports.runtime import Clock, IdGenerator
 from tarn_core.services.auth import AuthKit
+from tarn_core.services.uploads import UploadLimits
 from tarn_core.testing import InMemory
 
 
@@ -17,6 +18,7 @@ class MemoryBackends:
     signing_key: bytes = b"api-test-signing-key-0123456789abcdef"
     secure_cookies: bool = False
     access_token_minutes: int = 15
+    upload_limits: UploadLimits = field(default_factory=UploadLimits)
 
     def __post_init__(self) -> None:
         self.kit: AuthKit = self.mem.auth_kit

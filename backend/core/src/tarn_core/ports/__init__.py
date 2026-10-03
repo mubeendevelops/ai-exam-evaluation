@@ -21,6 +21,8 @@ from tarn_core.ports.identity import (
     RandomSource,
     RecordValidator,
 )
+from tarn_core.ports.jobs import JOB_PREPARE_BOOKLET, Job, JobQueue
+from tarn_core.ports.pages import CleanedPage, PageCleaner, PageSplitter
 from tarn_core.ports.repositories import (
     BookletRepository,
     CollegeRepository,
@@ -32,14 +34,16 @@ from tarn_core.ports.repositories import (
     StudentRepository,
     UserRepository,
 )
-from tarn_core.ports.runtime import AuditSink, Clock, IdGenerator, JobQueue
+from tarn_core.ports.runtime import AuditSink, Clock, IdGenerator
 from tarn_core.ports.storage import BlobStore, PageImage, PageSource
 
 __all__ = [
+    "JOB_PREPARE_BOOKLET",
     "AuditSink",
     "BlobStore",
     "BookletRepository",
     "Cipher",
+    "CleanedPage",
     "Clock",
     "CollegeRepository",
     "CommonPasswords",
@@ -52,13 +56,16 @@ __all__ = [
     "GlobalItem",
     "IdGenerator",
     "IdentityStore",
+    "Job",
     "JobQueue",
     "KeyManager",
     "LayoutDetector",
     "Mailer",
     "OcrEngine",
+    "PageCleaner",
     "PageImage",
     "PageSource",
+    "PageSplitter",
     "PasswordHasher",
     "QuestionPart",
     "RandomSource",

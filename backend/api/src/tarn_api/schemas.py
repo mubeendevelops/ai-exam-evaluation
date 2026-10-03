@@ -452,3 +452,89 @@ class QuestionOut(QuestionSummaryOut):
     glossary: GlossaryOut
     key_files: list[KeyFileOut]
     diagrams: list[ReferenceDiagramOut]
+
+
+# --- booklets: upload, page cleaning, status ----------------------------------------------------
+
+BookletStatusName = Literal[
+    "uploaded",
+    "processing",
+    "needs_retake",
+    "pages_ready",
+    "failed",
+    "scored",
+    "in_review",
+    "approved",
+    "amendment_in_progress",
+]
+RetakeReasonName = Literal["blurry", "glare", "low_resolution", "no_page_found"]
+
+
+class BookletStudentOut(BaseModel):
+    id: UUID
+    name: str
+    usn: str
+
+
+class BookletBlueprintOut(BaseModel):
+    id: UUID
+    version: int
+    title: str
+
+
+class PageOut(BaseModel):
+    number: int = Field(description="Page number in upload order, from 1.")
+    cleaned: bool
+    width: int
+    height: int
+    retake_reasons: list[RetakeReasonName] = Field(
+        description="Why the quality gate asks for a retake; empty when the page passed."
+    )
+    use_anyway: bool = Field(description="The teacher chose to go on with a flagged page.")
+    sharpness: float | None = Field(
+        description="Edge strength of the writing; null when the page has too little writing."
+    )
+    glare_share: float | None
+    rotation_degrees: int | None = Field(description="Clockwise quarter turn applied to the page.")
+    rotation_guessed: bool | None = Field(
+        description="The direction of that turn is a default, not a finding."
+    )
+    skew_degrees: float | None
+    cropped: bool | None
+    perspective_corrected: bool | None
+    neighbour_removed: bool | None = Field(description="A neighbouring page was cut away.")
+    page_found: bool | None
+    image_url: str | None = Field(description="The cleaned page (needs the bearer token).")
+    original_url: str | None
+
+
+class BookletOut(BaseModel):
+    id: UUID
+    status: BookletStatusName
+    student: BookletStudentOut
+    blueprint: BookletBlueprintOut
+    uploaded_by: UUID
+    uploaded_at: datetime
+    version: int
+    page_count: int = Field(description="0 until the file has been split into pages.")
+    pages_cleaned: int
+    flagged_pages: list[int] = Field(
+        description="Numbers of the pages that still need a retake or a 'use anyway'."
+    )
+    failure_reason: Literal["unreadable_file", "too_many_pages", "processing_failed"] | None
+    duplicate_of: list[UUID] = Field(
+        description="Other booklets of this college with the same file (set on upload only)."
+    )
+
+
+class BookletDetailOut(BookletOut):
+    pages: list[PageOut]
+
+
+class BookletPageOut(BaseModel):
+    items: list[BookletOut]
+    total: int
+    limit: int
+    offset: int
+    waiting: int = Field(description="Your booklets that are queued or being processed.")
+    max_waiting: int = Field(description="How many you may have waiting at once.")

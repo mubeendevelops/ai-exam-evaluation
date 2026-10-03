@@ -14,6 +14,9 @@ from tarn_core.ids import AnswerId, AuditEventId, BookletId, CollegeId, UserId
 class AuditAction(StrEnum):
     BOOKLET_REGISTERED = "booklet.registered"
     BOOKLET_DELETED = "booklet.deleted"
+    BOOKLET_PROCESSED = "booklet.processed"  # by the page pipeline: no acting user
+    BOOKLET_FAILED = "booklet.failed"  # by the page pipeline: no acting user
+    PAGE_USED_ANYWAY = "page.used_anyway"
     CONTENT_CREATED = "content.created"
     CONTENT_EDITED = "content.edited"
     CONTENT_COPIED = "content.copied"
@@ -46,9 +49,17 @@ class AuditAction(StrEnum):
     ROSTER_IMPORTED = "roster.imported"
 
 
-# Events that may have no acting user: a failed sign-in for an unknown email, and the
-# approval of a tenant by a Tarn operator (who is not a user of any college).
-ANONYMOUS_ACTIONS = frozenset({AuditAction.LOGIN_FAILED, AuditAction.TENANT_APPROVED})
+# Events that may have no acting user: a failed sign-in for an unknown email, the approval of
+# a tenant by a Tarn operator (who is not a user of any college), and what the page pipeline
+# does on its own.
+ANONYMOUS_ACTIONS = frozenset(
+    {
+        AuditAction.LOGIN_FAILED,
+        AuditAction.TENANT_APPROVED,
+        AuditAction.BOOKLET_PROCESSED,
+        AuditAction.BOOKLET_FAILED,
+    }
+)
 
 # A before/after key containing one of these words is refused: events never hold secrets.
 _SECRET_WORDS = ("password", "secret", "token", "pepper", "hash", "recovery_code")

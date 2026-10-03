@@ -217,6 +217,8 @@ booklets = Table(
     Column("uploaded_at", DateTime(timezone=True), nullable=False),
     _text("status"),
     _int("version"),
+    Column("sources", JSONB(), nullable=False),
+    _text("failure_reason", nullable=True),
     _seq(),
 )
 
@@ -230,6 +232,11 @@ pages = Table(
     _text("image_key"),
     _int("width"),
     _int("height"),
+    _text("original_key", nullable=True),
+    Column("cleaned", Boolean(), nullable=False),
+    Column("use_anyway", Boolean(), nullable=False),
+    Column("metrics", JSONB(), nullable=True),
+    Column("retake_reasons", ARRAY(Text()), nullable=False),
     _seq(),
 )
 
@@ -400,6 +407,27 @@ deletion_records = Table(
     Column("at", DateTime(timezone=True), nullable=False),
 )
 
+jobs = Table(
+    "jobs",
+    metadata,
+    _uuid("id", primary_key=True),
+    _uuid("college_id"),
+    _text("kind"),
+    Column("payload", JSONB(), nullable=False),
+    _text("dedupe_key", nullable=True),
+    _text("status"),
+    _int("attempts"),
+    _int("max_attempts"),
+    Column("run_after", DateTime(timezone=True), nullable=False),
+    _text("locked_by", nullable=True),
+    Column("locked_until", DateTime(timezone=True), nullable=True),
+    Column("started_at", DateTime(timezone=True), nullable=True),
+    Column("finished_at", DateTime(timezone=True), nullable=True),
+    _text("last_error", nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    _seq(),
+)
+
 COLLEGE_TABLES: tuple[Table, ...] = (
     colleges,
     users,
@@ -418,6 +446,7 @@ COLLEGE_TABLES: tuple[Table, ...] = (
     sentence_embeddings,
     audit_events,
     deletion_records,
+    jobs,
 )
 GLOBAL_TABLES: tuple[Table, ...] = (
     subjects,

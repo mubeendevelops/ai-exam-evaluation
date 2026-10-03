@@ -160,6 +160,10 @@ class BookletRepository(Protocol):
 
     def find_by_hash(self, college_id: CollegeId, file_sha256: str) -> Sequence[Booklet]: ...
 
+    def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:
+        """Booklets this user uploaded that are still queued or being processed."""
+        ...
+
     def save(self, college_id: CollegeId, booklet: Booklet) -> None: ...
 
     def delete(self, college_id: CollegeId, booklet_id: BookletId) -> None:

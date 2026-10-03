@@ -20,12 +20,17 @@ from tarn_adapters.blob.minio_store import MinioBlobStore
 from tarn_adapters.config import Settings
 from tarn_adapters.identity.database import IdentityDatabase
 from tarn_adapters.postgres.database import PostgresDatabase
+from tarn_adapters.postgres.jobs import JobSettings
 from tarn_adapters.runtime import SystemClock, UuidGenerator
 from tarn_core.ids import CollegeId
 from tarn_core.ports.identity import IdentityStore
+from tarn_core.ports.jobs import JobQueue
 from tarn_core.ports.repositories import (
+    BookletRepository,
     CollegeRepository,
     ContentRepository,
+    ResultSheetRepository,
+    ScoreRepository,
     StudentRepository,
     UserRepository,
 )
@@ -34,11 +39,14 @@ from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime
 from tarn_core.services.auth import AccountService, AuthKit, AuthService
 from tarn_core.services.blueprints import BlueprintService
+from tarn_core.services.booklets import BookletService
 from tarn_core.services.content import ContentService
+from tarn_core.services.pipeline import PageDecisions
 from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.registration import RegistrationService
 from tarn_core.services.roster import RosterService
 from tarn_core.services.subjects import SubjectService
+from tarn_core.services.uploads import UploadLimits, UploadService
 
 
 class CollegeScope(Protocol):
@@ -57,6 +65,18 @@ class CollegeScope(Protocol):
     def content(self) -> ContentRepository: ...
 
     @property
+    def booklets(self) -> BookletRepository: ...
+
+    @property
+    def scores(self) -> ScoreRepository: ...
+
+    @property
+    def sheets(self) -> ResultSheetRepository: ...
+
+    @property
+    def jobs(self) -> JobQueue: ...
+
+    @property
     def blobs(self) -> BlobStore: ...
 
     @property
@@ -70,6 +90,7 @@ class Backends(Protocol):
     signing_key: bytes
     secure_cookies: bool
     access_token_minutes: int
+    upload_limits: UploadLimits
 
     def identity(self) -> AbstractContextManager[IdentityStore]: ...
 
@@ -81,6 +102,7 @@ class Unit:
     identity: IdentityStore
     scope: CollegeScope
     kit: AuthKit
+    limits: UploadLimits
 
     @property
     def auth(self) -> AuthService:
@@ -138,6 +160,34 @@ class Unit:
             content=self.scope.content, users=self.scope.users, runtime=self.scope.runtime
         )
 
+    @property
+    def booklet_service(self) -> BookletService:
+        return BookletService(
+            booklets=self.scope.booklets,
+            students=self.scope.students,
+            users=self.scope.users,
+            content=self.scope.content,
+            scores=self.scope.scores,
+            sheets=self.scope.sheets,
+            blobs=self.scope.blobs,
+            runtime=self.scope.runtime,
+        )
+
+    @property
+    def uploads(self) -> UploadService:
+        return UploadService(
+            booklets=self.booklet_service,
+            repository=self.scope.booklets,
+            blobs=self.scope.blobs,
+            jobs=self.scope.jobs,
+            runtime=self.scope.runtime,
+            limits=self.limits,
+        )
+
+    @property
+    def page_decisions(self) -> PageDecisions:
+        return PageDecisions(booklets=self.scope.booklets, runtime=self.scope.runtime)
+
 
 @contextmanager
 def unit_of_work(backends: Backends, college_id: CollegeId) -> Iterator[Unit]:
@@ -145,7 +195,12 @@ def unit_of_work(backends: Backends, college_id: CollegeId) -> Iterator[Unit]:
     session; mail goes out only after both. Any exception rolls both back and sends nothing."""
     mailer = DeferredMailer(backends.kit.mailer)
     with backends.identity() as identity, backends.college(college_id) as scope:
-        yield Unit(identity=identity, scope=scope, kit=replace(backends.kit, mailer=mailer))
+        yield Unit(
+            identity=identity,
+            scope=scope,
+            kit=replace(backends.kit, mailer=mailer),
+            limits=backends.upload_limits,
+        )
     mailer.flush()
 
 
@@ -160,7 +215,19 @@ class PostgresBackends:
         self.signing_key = secrets.get(SIGNING_KEY)
         self.secure_cookies = settings.env == "production"
         self.access_token_minutes = settings.access_token_minutes
-        self._app = PostgresDatabase(settings.app_database_url)
+        self.upload_limits = UploadLimits(
+            max_waiting=settings.max_queued_booklets_per_teacher,
+            max_total_bytes=settings.upload_max_bytes,
+            max_files=settings.upload_max_pages,
+        )
+        self._app = PostgresDatabase(
+            settings.app_database_url,
+            job_settings=JobSettings(
+                max_attempts=settings.job_max_attempts,
+                lease_seconds=settings.job_lease_seconds,
+                backoff_seconds=settings.job_backoff_seconds,
+            ),
+        )
         self._identity = IdentityDatabase(settings.identity_app_database_url)
         # The client connects on first use, so building the app needs no MinIO.
         self._blobs = MinioBlobStore(make_client(settings), settings.blob_bucket)

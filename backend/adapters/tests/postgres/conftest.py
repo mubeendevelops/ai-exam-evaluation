@@ -14,6 +14,7 @@ from tarn_adapters.config import Settings
 from tarn_adapters.identity.database import IdentityDatabase
 from tarn_adapters.identity.testing import create_test_identity_database
 from tarn_adapters.postgres.database import PostgresDatabase
+from tarn_adapters.postgres.jobs import JobSettings
 from tarn_adapters.postgres.testing import (
     Opener,
     TestDatabase,
@@ -67,3 +68,22 @@ def identity_db(identity_test_database: TestDatabase) -> Iterator[IdentityDataba
     db = IdentityDatabase(identity_test_database.app_url)
     yield db
     db.dispose()
+
+
+@pytest.fixture
+def fresh() -> Iterator[tuple[TestDatabase, PostgresDatabase]]:
+    """A database of its own: the job queue is global (a claim takes any college's job), so a
+    database shared with other tests would hand out their jobs."""
+    settings = Settings()
+    test_db = create_test_database(settings.database_url, settings.app_database_url)
+    db = PostgresDatabase(
+        test_db.app_url,
+        job_settings=JobSettings(
+            max_attempts=3, lease_seconds=60, backoff_seconds=5, max_running=1
+        ),
+    )
+    try:
+        yield test_db, db
+    finally:
+        db.dispose()
+        drop_test_database(settings.database_url, test_db.name)

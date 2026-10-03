@@ -80,3 +80,21 @@ make up-gpu
 ```
 
 `docker-compose.gpu.yml` reserves one NVIDIA device for the worker only. `make down` stops the stack in either mode.
+
+## Uploading booklets and cleaning pages (P9)
+
+Upload a booklet as a teacher (the seeded `pooja.rao@demo-com.example.test` works after `make seed`): `POST /api/v1/booklets` with `student_id`, `blueprint_id` and `files` (one PDF, or the page images in order). The API stores the files and queues a job; the worker splits the file into pages, cleans each page and runs the quality gate. Watch it with `GET /api/v1/booklets` and `GET /api/v1/booklets/{id}` (statuses `uploaded`, `processing`, `needs_retake`, `pages_ready`, `failed`), or open `http://localhost:8000/docs`. The worker must be running (`make up`); after pulling P9 run `make migrate` (revision 0005) and rebuild the images (`docker compose up -d --build api worker`: OpenCV and PyMuPDF are new dependencies).
+
+To try the image stages on a folder of real booklets without the stack, a database or a queue:
+
+```bash
+cd backend
+uv run tarn pages check "../samples/Some Booklet.pdf" other.pdf --out ../var/pages-check
+```
+
+It prints one line per page (sizes, quarter turn, skew, sharpness, glare, what was done: `C` cropped, `P` perspective corrected, `N` neighbouring page removed, `?` direction of a quarter turn guessed, and `RETAKE:` reasons) and writes the cleaned pages and `report.json` under `--out` (inside `var/`, which is git-ignored: the cleaned pages are student data, delete them when done). Use it to read the measurements when tuning the quality gate (`TARN_QUALITY_*`).
+
+Settings (all in `.env.example`): `TARN_MAX_QUEUED_BOOKLETS_PER_TEACHER` (5), `TARN_UPLOAD_MAX_BYTES`, `TARN_UPLOAD_MAX_PAGES`, `TARN_PAGE_MAX_EDGE_PX`, `TARN_PAGE_MAX_BYTES`, `TARN_QUALITY_MIN_SHARPNESS`, `TARN_QUALITY_MAX_GLARE_SHARE`, `TARN_QUALITY_MIN_PAGE_EDGE_PX`, `TARN_JOB_MAX_ATTEMPTS`, `TARN_JOB_LEASE_SECONDS`, `TARN_JOB_BACKOFF_SECONDS`, `TARN_WORKER_POLL_SECONDS`.
+
+The job queue is the `jobs` table. To look at it: `docker compose exec postgres psql -U tarn -d tarn -c "select kind, status, attempts, last_error from jobs order by seq desc limit 10"`. A job whose worker died is handed out again after `TARN_JOB_LEASE_SECONDS`; a booklet whose job ran out of attempts ends as `failed` (`processing_failed`).
+

@@ -6,19 +6,27 @@ from fastapi.responses import JSONResponse
 from tarn_core.errors import (
     AlreadyExistsError,
     DomainError,
+    DuplicateBookletError,
     InvariantError,
     NotFoundError,
     NotOwnerError,
     PasswordPolicyError,
     PermissionDeniedError,
+    QueueFullError,
     TenantViolationError,
     TokenError,
+    UnsupportedFileError,
+    UploadTooLargeError,
 )
 
 _STATUS: list[tuple[type[DomainError], int]] = [
     (PasswordPolicyError, status.HTTP_422_UNPROCESSABLE_CONTENT),
     (TokenError, status.HTTP_400_BAD_REQUEST),
     (AlreadyExistsError, status.HTTP_409_CONFLICT),
+    (DuplicateBookletError, status.HTTP_409_CONFLICT),
+    (QueueFullError, status.HTTP_429_TOO_MANY_REQUESTS),
+    (UploadTooLargeError, status.HTTP_413_CONTENT_TOO_LARGE),
+    (UnsupportedFileError, status.HTTP_415_UNSUPPORTED_MEDIA_TYPE),
     (PermissionDeniedError, status.HTTP_403_FORBIDDEN),
     (NotOwnerError, status.HTTP_403_FORBIDDEN),
     # Another college's rows look exactly like missing rows.
@@ -34,6 +42,10 @@ def _domain_error(_request: Request, exc: Exception) -> JSONResponse:
         return JSONResponse(
             {"detail": "The password does not meet the policy.", "reasons": list(exc.reasons)},
             code,
+        )
+    if isinstance(exc, DuplicateBookletError):
+        return JSONResponse(
+            {"detail": str(exc), "duplicate_of": [str(d) for d in exc.duplicates]}, code
         )
     if isinstance(exc, (NotFoundError, TenantViolationError)):
         return JSONResponse({"detail": "Not found."}, code)

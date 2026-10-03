@@ -91,6 +91,24 @@ class Settings(BaseSettings):
     worker_health_port: int = 8001
     worker_health_url: str = ""
 
+    # --- Upload, page cleaning and the job queue (P9) ------------------------------------------
+    # A teacher may have this many booklets queued or in processing at once (design decision 12).
+    max_queued_booklets_per_teacher: int = Field(5, ge=1)
+    upload_max_bytes: int = Field(100 * 1024 * 1024, ge=1)
+    upload_max_pages: int = Field(40, ge=1)  # image files per booklet, and PDF pages
+    # Cleaned pages: long side in pixels and file size, at most.
+    page_max_edge_px: int = Field(2200, ge=600)
+    page_max_bytes: int = Field(800_000, ge=50_000)
+    # Quality gate (placeholders until teacher-marked ground truth exists).
+    quality_min_sharpness: float = 130.0
+    quality_max_glare_share: float = Field(0.06, ge=0, le=1)
+    quality_min_page_edge_px: int = 500
+    # Job queue: attempts, lease (a worker that stops heartbeating loses its job), retry backoff.
+    job_max_attempts: int = Field(3, ge=1)
+    job_lease_seconds: float = Field(120.0, gt=0)
+    job_backoff_seconds: float = Field(5.0, ge=0)
+    worker_poll_seconds: float = Field(2.0, gt=0)
+
     @model_validator(mode="after")
     def _production_is_not_development(self) -> Self:
         if self.env != "production":

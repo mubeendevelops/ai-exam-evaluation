@@ -5,7 +5,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 from uuid import UUID
 
-from tarn_core.domain.booklet import Answer, Booklet, Page, Region, Segment
+from tarn_core.domain.booklet import WAITING_STATUSES, Answer, Booklet, Page, Region, Segment
 from tarn_core.domain.content import KeyFile, Question, ReferenceAnswer
 from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import ResultSheet, Review
@@ -244,6 +244,13 @@ class MemoryBookletRepository:
 
     def find_by_hash(self, college_id: CollegeId, file_sha256: str) -> Sequence[Booklet]:
         return [b for b in self._booklets.values(college_id) if b.file_sha256 == file_sha256]
+
+    def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:
+        return sum(
+            1
+            for b in self._booklets.values(college_id)
+            if b.uploaded_by == user_id and b.status in WAITING_STATUSES
+        )
 
     def save(self, college_id: CollegeId, booklet: Booklet) -> None:
         self._booklets.put(college_id, booklet.id, booklet)

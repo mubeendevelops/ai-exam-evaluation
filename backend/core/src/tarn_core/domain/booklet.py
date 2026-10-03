@@ -27,11 +27,17 @@ from tarn_core.ids import (
 
 
 class BookletStatus(StrEnum):
-    """States from design.md "Workflow engine"; transitions arrive in P15."""
+    """States from design.md "Workflow engine"; transitions after page cleaning arrive in P15.
+
+    P9 moves a booklet UPLOADED → PROCESSING → PAGES_READY or NEEDS_RETAKE (a teacher's "use
+    anyway" on every flagged page moves NEEDS_RETAKE → PAGES_READY), or → FAILED when the file
+    cannot be read. PAGES_READY is where OCR (P10) takes over."""
 
     UPLOADED = "uploaded"
     PROCESSING = "processing"
     NEEDS_RETAKE = "needs_retake"
+    PAGES_READY = "pages_ready"
+    FAILED = "failed"
     SCORED = "scored"
     IN_REVIEW = "in_review"
     APPROVED = "approved"
@@ -41,6 +47,29 @@ class BookletStatus(StrEnum):
 def check_aware(name: str, value: datetime) -> None:
     if value.tzinfo is None:
         raise InvariantError(f"{name} must be timezone-aware")
+
+
+# Statuses in which a booklet still counts against its teacher's queue limit.
+WAITING_STATUSES = frozenset({BookletStatus.UPLOADED, BookletStatus.PROCESSING})
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SourceFile:
+    """One file the teacher uploaded for a booklet, as stored (never its name: file names can
+    carry personal data)."""
+
+    key: BlobKey
+    media_type: str
+    size_bytes: int
+
+    def __post_init__(self) -> None:
+        if self.media_type not in SOURCE_MEDIA_TYPES:
+            raise InvariantError(f"unsupported source type {self.media_type!r}")
+        if self.size_bytes < 1:
+            raise InvariantError("a source file is not empty")
+
+
+SOURCE_MEDIA_TYPES = frozenset({"application/pdf", "image/jpeg", "image/png"})
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -54,10 +83,16 @@ class Booklet:
     uploaded_at: datetime
     status: BookletStatus = BookletStatus.UPLOADED
     version: int = 1  # optimistic-lock counter: every write carries it
+    sources: tuple[SourceFile, ...] = ()
+    """The uploaded files, in upload order (page order = upload order, P9)."""
+    failure_reason: str | None = None
+    """Content-free reason code for FAILED: ``unreadable_file`` or ``too_many_pages``."""
 
     def __post_init__(self) -> None:
         if self.blueprint.kind is not ContentKind.BLUEPRINT:
             raise InvariantError("a booklet must point at a blueprint")
+        if (self.status is BookletStatus.FAILED) != (self.failure_reason is not None):
+            raise InvariantError("a failure reason goes with the failed status, and only with it")
         if len(self.file_sha256) != 64 or set(self.file_sha256) - set("0123456789abcdef"):
             raise InvariantError("file_sha256 must be 64 lower-case hex characters")
         check_aware("uploaded_at", self.uploaded_at)
@@ -65,8 +100,55 @@ class Booklet:
             raise InvariantError("booklet version starts at 1")
 
 
+class RetakeReason(StrEnum):
+    """Why the quality gate asks for a retake of a page (design.md "Reliability")."""
+
+    BLURRY = "blurry"
+    GLARE = "glare"
+    LOW_RESOLUTION = "low_resolution"
+    NO_PAGE_FOUND = "no_page_found"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class PageMetrics:
+    """What the page cleaner measured and did for one page."""
+
+    sharpness: float | None
+    """Edge strength of the handwriting at a fixed scale (higher = sharper); None when the page
+    has too little writing to judge."""
+    glare_share: float
+    """Share of the page lost to blown-out highlights, 0..1."""
+    page_found: bool
+    """False when no page could be told apart from its surroundings (and no content found)."""
+    page_area_share: float
+    """Share of the photo the page covered before cropping, 0..1."""
+    source_width: int
+    source_height: int
+    rotation_degrees: int
+    """Clockwise quarter turns applied to make the text upright: 0, 90, 180 or 270."""
+    rotation_guessed: bool
+    """The direction of that quarter turn is a default, not a finding (OCR decides in P10)."""
+    skew_degrees: float
+    """Small rotation applied after that to level the text lines."""
+    cropped: bool
+    perspective_corrected: bool
+    neighbour_removed: bool
+    """A neighbouring page in the shot (a notebook spread) was cut away."""
+
+    def __post_init__(self) -> None:
+        if self.rotation_degrees not in (0, 90, 180, 270):
+            raise InvariantError("rotation must be 0, 90, 180 or 270 degrees")
+        check_unit_interval("glare share", self.glare_share)
+        check_unit_interval("page area share", self.page_area_share)
+        if self.source_width <= 0 or self.source_height <= 0:
+            raise InvariantError("source size must be positive")
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Page:
+    """One page of a booklet. Before cleaning ``image`` is the original; afterwards the cleaned
+    page (``original`` always keeps what was uploaded)."""
+
     id: PageId
     college_id: CollegeId
     booklet_id: BookletId
@@ -74,12 +156,25 @@ class Page:
     image: BlobKey
     width: int
     height: int
+    original: BlobKey | None = None
+    cleaned: bool = True
+    metrics: PageMetrics | None = None
+    retake_reasons: tuple[RetakeReason, ...] = ()
+    use_anyway: bool = False
+    """The teacher chose to go on with this page although the gate flagged it."""
 
     def __post_init__(self) -> None:
         if self.index < 0 or self.width <= 0 or self.height <= 0:
             raise InvariantError("page index must be >= 0 and size positive")
-        if self.image.college_id != self.college_id:
-            raise InvariantError("page image must live under its own college's prefix")
+        for key in (self.image, self.original):
+            if key is not None and key.college_id != self.college_id:
+                raise InvariantError("page image must live under its own college's prefix")
+        if self.use_anyway and not self.retake_reasons:
+            raise InvariantError("only a flagged page can be used anyway")
+
+    @property
+    def needs_retake(self) -> bool:
+        return bool(self.retake_reasons) and not self.use_anyway
 
 
 class RegionKind(StrEnum):

@@ -23,7 +23,9 @@ identity = typer.Typer(
     help="The identity database (credentials, tenants): schema, role, encrypted backups."
 )
 tenants = typer.Typer(help="Tarn operator commands: list and approve tenant registrations.")
+pages = typer.Typer(help="Page cleaning without a database or queue.")
 app.add_typer(db, name="db")
+app.add_typer(pages, name="pages")
 app.add_typer(identity, name="identity")
 app.add_typer(tenants, name="tenants")
 
@@ -286,3 +288,32 @@ def tenants_approve(
         identity_db.dispose()
         app_db.dispose()
     typer.echo(f"{approved.institution_id}: {approved.status.value}")
+
+
+@pages.command("check")
+def pages_check(
+    paths: Annotated[list[Path], typer.Argument(exists=True, dir_okay=False, readable=True)],
+    out: Annotated[
+        Path | None, typer.Option(help="Write the cleaned pages and report.json here.")
+    ] = None,
+    max_pages: Annotated[int, typer.Option(help="Page limit per file.")] = 60,
+) -> None:
+    """Run PDFs or images through splitting, cleaning and the quality gate; print one line per
+    page (sharpness, glare, what was done). Flags: C cropped, P perspective corrected,
+    N neighbouring page removed, ? direction of a quarter turn guessed."""
+    from tarn_adapters.imaging.batch import check_files, write_report
+    from tarn_core.errors import DomainError
+
+    results = []
+    try:
+        for check in check_files(paths, out, max_pages=max_pages):
+            typer.echo(check.line())
+            results.append(check)
+    except DomainError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(1) from None
+    flagged = sum(1 for c in results if c.reasons)
+    typer.echo(f"{len(results)} pages, {flagged} flagged for retake")
+    if out is not None:
+        out.mkdir(parents=True, exist_ok=True)
+        write_report(results, out / "report.json")

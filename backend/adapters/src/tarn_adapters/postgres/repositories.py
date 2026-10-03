@@ -24,6 +24,7 @@ from tarn_adapters.postgres import codec
 from tarn_adapters.postgres import metadata as m
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import (
+    WAITING_STATUSES,
     Answer,
     AnswerStatus,
     Booklet,
@@ -32,6 +33,7 @@ from tarn_core.domain.booklet import (
     Page,
     Region,
     RegionKind,
+    RetakeReason,
     Segment,
     SegmentSource,
 )
@@ -730,6 +732,8 @@ def _booklet(r: Row[Any]) -> Booklet:
         uploaded_at=r.uploaded_at,
         status=BookletStatus(r.status),
         version=r.version,
+        sources=codec.sources_from_json(r.sources),
+        failure_reason=r.failure_reason,
     )
 
 
@@ -742,6 +746,11 @@ def _page(r: Row[Any]) -> Page:
         image=BlobKey(r.image_key),
         width=r.width,
         height=r.height,
+        original=None if r.original_key is None else BlobKey(r.original_key),
+        cleaned=r.cleaned,
+        metrics=None if r.metrics is None else codec.metrics_from_json(r.metrics),
+        retake_reasons=tuple(RetakeReason(x) for x in r.retake_reasons),
+        use_anyway=r.use_anyway,
     )
 
 
@@ -812,6 +821,18 @@ class PgBookletRepository:
         rows = self._rows(m.booklets, college_id, file_sha256=file_sha256)
         return [_booklet(r) for r in rows]
 
+    def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:
+        t = m.booklets
+        waiting = [s.value for s in WAITING_STATUSES]
+        stmt = (
+            select(func.count())
+            .select_from(t)
+            .where(
+                t.c.college_id == college_id, t.c.uploaded_by == user_id, t.c.status.in_(waiting)
+            )
+        )
+        return int(self._conn.execute(stmt).scalar_one())
+
     def save(self, college_id: CollegeId, booklet: Booklet) -> None:
         _check_tenant(college_id, booklet.college_id, "booklet")
         with writing(self._conn, f"booklet {booklet.id}"):
@@ -829,6 +850,8 @@ class PgBookletRepository:
                     "uploaded_at": booklet.uploaded_at,
                     "status": booklet.status.value,
                     "version": booklet.version,
+                    "sources": codec.sources_to_json(booklet.sources),
+                    "failure_reason": booklet.failure_reason,
                 },
             )
 
@@ -858,6 +881,13 @@ class PgBookletRepository:
                     "image_key": page.image.value,
                     "width": page.width,
                     "height": page.height,
+                    "original_key": None if page.original is None else page.original.value,
+                    "cleaned": page.cleaned,
+                    "metrics": None
+                    if page.metrics is None
+                    else codec.metrics_to_json(page.metrics),
+                    "retake_reasons": [r.value for r in page.retake_reasons],
+                    "use_anyway": page.use_anyway,
                 },
             )
 

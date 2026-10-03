@@ -14,6 +14,7 @@ from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.engine import make_url
 
 from tarn_adapters.postgres.audit import PgAuditSink
+from tarn_adapters.postgres.jobs import JobSettings, PgJobQueue
 from tarn_adapters.postgres.repositories import (
     PgBookletRepository,
     PgCollegeRepository,
@@ -59,6 +60,8 @@ class PostgresSession:
     scores: PgScoreRepository = field(init=False)
     sheets: PgResultSheetRepository = field(init=False)
     audit: PgAuditSink = field(init=False)
+    jobs: PgJobQueue = field(init=False)
+    job_settings: JobSettings = field(default_factory=JobSettings)
 
     def __post_init__(self) -> None:
         self.colleges = PgCollegeRepository(self.conn)
@@ -69,6 +72,7 @@ class PostgresSession:
         self.scores = PgScoreRepository(self.conn)
         self.sheets = PgResultSheetRepository(self.conn)
         self.audit = PgAuditSink(self.conn)
+        self.jobs = PgJobQueue(self.conn, self.job_settings)
 
     @property
     def runtime(self) -> Runtime:
@@ -76,10 +80,13 @@ class PostgresSession:
 
 
 class PostgresDatabase:
-    def __init__(self, url: str, *, pool_size: int = 5) -> None:
+    def __init__(
+        self, url: str, *, pool_size: int = 5, job_settings: JobSettings | None = None
+    ) -> None:
         self.engine: Engine = create_engine(
             sqlalchemy_url(url), pool_size=pool_size, pool_pre_ping=True
         )
+        self.job_settings = job_settings or JobSettings()
 
     @contextmanager
     def session(
@@ -97,7 +104,17 @@ class PostgresDatabase:
                     text("SELECT set_config('app.college_id', :college, true)"),
                     {"college": str(college_id)},
                 )
-            yield PostgresSession(conn, college_id, ids=ids, clock=clock, blobs=blobs)
+            yield PostgresSession(
+                conn, college_id, ids=ids, clock=clock, blobs=blobs, job_settings=self.job_settings
+            )
+
+    @contextmanager
+    def scheduler(self) -> Iterator[PgJobQueue]:
+        """A transaction for the worker's queue bookkeeping: no college, but allowed to see every
+        college's job rows (and only those: no other table has a scheduler policy)."""
+        with self.engine.begin() as conn:
+            conn.execute(text("SELECT set_config('app.scheduler', 'on', true)"))
+            yield PgJobQueue(conn, self.job_settings)
 
     def dispose(self) -> None:
         self.engine.dispose()

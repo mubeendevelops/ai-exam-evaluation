@@ -2,6 +2,7 @@
 adapters come in P20). Keys are ``college/{id}/...`` or ``global/...``."""
 
 import io
+from collections.abc import Iterable
 from typing import Protocol
 
 from minio.error import S3Error
@@ -24,6 +25,15 @@ class _Client(Protocol):
     def stat_object(self, bucket_name: str, object_name: str) -> object: ...
 
     def remove_object(self, bucket_name: str, object_name: str) -> None: ...
+
+    def list_objects(
+        self, bucket_name: str, prefix: str | None = None, recursive: bool = False
+    ) -> Iterable["_Listed"]: ...
+
+
+class _Listed(Protocol):
+    @property
+    def object_name(self) -> str | None: ...
 
 
 class _Response(Protocol):
@@ -68,3 +78,16 @@ class MinioBlobStore:
 
     def delete(self, key: BlobKey) -> None:
         self._client.remove_object(self._bucket, key.value)  # absent keys are not an error
+
+    def delete_prefix(self, prefix: BlobKey) -> int:
+        """Every object under ``prefix/`` (the trailing slash keeps ``booklet/1`` from matching
+        ``booklet/10``)."""
+        folder = prefix.value + "/"
+        names = [
+            o.object_name
+            for o in self._client.list_objects(self._bucket, prefix=folder, recursive=True)
+            if o.object_name
+        ]
+        for name in names:
+            self._client.remove_object(self._bucket, name)
+        return len(names)

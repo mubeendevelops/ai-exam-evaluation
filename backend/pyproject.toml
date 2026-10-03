@@ -56,6 +56,8 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "C4", "PTH", "RUF", "S", "T
 # The seed data is prose (keys, rubrics, K-EL text): long string lines are the content.
 "core/src/tarn_core/seed/data/**" = ["E501"]
 "**/tests/**" = ["S101", "S105", "S106"]
+# The queue contract is test code that lives in the package so adapters can reuse it.
+"core/src/tarn_core/testing/queue_contract.py" = ["S101"]
 # Migrations build DDL from constants (table names, policy expressions), never from input.
 "**/migrations/**" = ["S608"]
 
@@ -76,6 +78,11 @@ files = [
     "worker/src", "worker/tests",
     "cli/src", "cli/tests",
 ]
+
+# PyMuPDF ships no type information for its document API.
+[[tool.mypy.overrides]]
+module = ["tarn_adapters.imaging.pdf"]
+disallow_untyped_calls = false
 
 # torch is an optional dependency (installed from P10); its absence must not fail typechecking.
 [[tool.mypy.overrides]]

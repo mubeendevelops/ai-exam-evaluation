@@ -1,6 +1,7 @@
 """Smoke test for tarn_worker."""
 
 import threading
+from collections.abc import Iterator
 
 from tarn_adapters.config import Settings
 from tarn_worker.main import run
@@ -76,3 +77,42 @@ def test_health_endpoint_answers_while_the_worker_runs() -> None:
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_run_takes_queued_work_until_none_is_left_and_survives_a_failing_tick() -> None:
+    settings = Settings(_env_file=None, device="cpu", worker_poll_seconds=0.01)
+    stop = threading.Event()
+    answers: Iterator[bool | RuntimeError] = iter(
+        [True, True, RuntimeError("database down"), False, False]
+    )
+    seen: list[str] = []
+
+    def tick() -> bool:
+        answer = next(answers, None)
+        if answer is None:
+            stop.set()
+            return False
+        if isinstance(answer, RuntimeError):
+            seen.append("error")
+            raise answer
+        seen.append("busy" if answer else "idle")
+        return bool(answer)
+
+    run(settings, stop, heartbeat_s=60, tick=tick)
+    # Two busy ticks are taken back to back, the failing one is logged and the loop goes on.
+    assert seen[:4] == ["busy", "busy", "error", "idle"]
+    assert stop.is_set()
+
+
+def test_run_stops_after_the_job_in_hand_when_asked() -> None:
+    settings = Settings(_env_file=None, device="cpu", worker_poll_seconds=5)
+    stop = threading.Event()
+    calls = []
+
+    def tick() -> bool:
+        calls.append(1)
+        stop.set()  # SIGTERM arrives while a job runs
+        return True
+
+    run(settings, stop, heartbeat_s=60, tick=tick)
+    assert calls == [1]  # it did not start another

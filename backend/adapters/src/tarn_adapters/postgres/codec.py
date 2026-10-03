@@ -20,8 +20,8 @@ from tarn_core.domain.blueprint import (
     Step,
     SubPart,
 )
-from tarn_core.domain.booklet import SegmentSpan
-from tarn_core.domain.common import Box, ContentKind, ContentRef, EngineRef, JsonValue
+from tarn_core.domain.booklet import PageMetrics, SegmentSpan, SourceFile
+from tarn_core.domain.common import BlobKey, Box, ContentKind, ContentRef, EngineRef, JsonValue
 from tarn_core.domain.content import (
     CriterionParams,
     CriterionType,
@@ -387,4 +387,58 @@ def lines_from_json(value: object) -> tuple[ResultLine, ...]:
             reason=_str(o["reason"]),
         )
         for o in map(_obj, _list(value))
+    )
+
+
+def sources_to_json(sources: tuple[SourceFile, ...]) -> Json:
+    return [
+        {"key": s.key.value, "media_type": s.media_type, "size_bytes": s.size_bytes}
+        for s in sources
+    ]
+
+
+def sources_from_json(value: object) -> tuple[SourceFile, ...]:
+    return tuple(
+        SourceFile(
+            key=BlobKey(_str(_obj(item)["key"])),
+            media_type=_str(_obj(item)["media_type"]),
+            size_bytes=_int(_obj(item)["size_bytes"]),
+        )
+        for item in _list(value)
+    )
+
+
+def metrics_to_json(m: PageMetrics) -> Json:
+    return {
+        "sharpness": m.sharpness,
+        "glare_share": m.glare_share,
+        "page_found": m.page_found,
+        "page_area_share": m.page_area_share,
+        "source_width": m.source_width,
+        "source_height": m.source_height,
+        "rotation_degrees": m.rotation_degrees,
+        "rotation_guessed": m.rotation_guessed,
+        "skew_degrees": m.skew_degrees,
+        "cropped": m.cropped,
+        "perspective_corrected": m.perspective_corrected,
+        "neighbour_removed": m.neighbour_removed,
+    }
+
+
+def metrics_from_json(value: object) -> PageMetrics:
+    o = _obj(value)
+    sharpness = o["sharpness"]
+    return PageMetrics(
+        sharpness=None if sharpness is None else _float(sharpness),
+        glare_share=_float(o["glare_share"]),
+        page_found=_bool(o["page_found"]),
+        page_area_share=_float(o["page_area_share"]),
+        source_width=_int(o["source_width"]),
+        source_height=_int(o["source_height"]),
+        rotation_degrees=_int(o["rotation_degrees"]),
+        rotation_guessed=_bool(o["rotation_guessed"]),
+        skew_degrees=_float(o["skew_degrees"]),
+        cropped=_bool(o["cropped"]),
+        perspective_corrected=_bool(o["perspective_corrected"]),
+        neighbour_removed=_bool(o["neighbour_removed"]),
     )

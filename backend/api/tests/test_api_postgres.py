@@ -1,9 +1,12 @@
+# mypy: disable-error-code="no-untyped-call"
+# (PyMuPDF ships no type information for its document API.)
 """The API on PostgreSQL: tarn_app on a throwaway application database, tarn_auth on a
 throwaway identity database (``make up`` first; ``make test-integration``)."""
 
 from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -163,3 +166,100 @@ def test_question_bank_with_real_database_and_minio(
     assert copy.json()["owned"] is True and copy.json()["key_files"][0]["name"] == "key.pdf"
     mine = client.get("/api/v1/questions", params={"mine": "true"}, headers=b).json()
     assert [i["id"] for i in mine["items"]] == [copy.json()["id"]]
+
+
+def test_booklet_upload_worker_and_status_with_real_database_and_minio(
+    setup: tuple[TestClient, CapturingMailer],
+) -> None:
+    """Upload over HTTP, the worker's runner on the real queue, the cleaned pages in MinIO."""
+    import pymupdf
+
+    from tarn_adapters.imaging import testing as synth
+    from tarn_adapters.imaging.cleaner import OpenCvPageCleaner
+    from tarn_adapters.imaging.pdf import PyMuPdfSplitter
+    from tarn_adapters.runtime import SystemClock, UuidGenerator
+    from tarn_core.domain.common import BlobKey
+    from tarn_core.ids import CollegeId
+    from tarn_core.services.pipeline import QualityPolicy
+    from tarn_core.testing.builders import CollegeFixture, ci_shaped_blueprint
+    from tarn_worker.booklets import BookletJobRunner
+
+    client, mailer = setup
+    backends = client.app.state.backends  # type: ignore[attr-defined]
+    a = {"Authorization": f"Bearer {_register(client, mailer, 'PG_BK', 'admin@pg-bk.example')}"}
+    b = {"Authorization": f"Bearer {_register(client, mailer, 'PG_BK2', 'admin@pg-bk2.example')}"}
+    me = client.get("/api/v1/auth/me", headers=a).json()
+    college_id = CollegeId(UUID(me["user"]["college_id"]))
+    csv = "name,usn,class/section\nSynthetic Student,1BK21CS001,A\n"
+    client.post("/api/v1/roster/import", content=csv, headers=a | {"Content-Type": "text/csv"})
+    student = client.get("/api/v1/students", headers=a).json()[0]["id"]
+    ids, clock = UuidGenerator(), SystemClock()
+    with backends._app.session(college_id, ids=ids, clock=clock, blobs=backends._blobs) as s:
+        admin = s.users.list(college_id)[0]
+        blueprint = ci_shaped_blueprint(
+            s,
+            CollegeFixture(
+                college=s.colleges.get(college_id), teacher=admin, admin=admin, students=()
+            ),
+        )
+
+    page = synth.ruled_page(900, 1200, lines=10)
+    document = pymupdf.open()
+    for shot in (
+        synth.photograph(page, size=(900, 1200), margin=0.03),
+        synth.scan(page, size=(900, 1200)),
+    ):
+        sheet = document.new_page(width=595, height=842)
+        sheet.insert_image(sheet.rect, stream=synth.jpeg(shot))
+    pdf: bytes = document.tobytes()
+
+    def upload(**extra: str) -> object:
+        return client.post(
+            "/api/v1/booklets",
+            headers=a,
+            data={"student_id": student, "blueprint_id": str(blueprint.id), **extra},
+            files=[("files", ("booklet.pdf", pdf, "application/pdf"))],
+        )
+
+    created = upload()
+    assert created.status_code == 201, created.text  # type: ignore[attr-defined]
+    booklet = created.json()  # type: ignore[attr-defined]
+    assert booklet["status"] == "uploaded" and booklet["student"]["usn"] == "1BK21CS001"
+    assert upload().status_code == 409  # type: ignore[attr-defined]  # same file again
+
+    runner = BookletJobRunner(
+        db=backends._app,
+        blobs=backends._blobs,
+        splitter=PyMuPdfSplitter(),
+        cleaner=OpenCvPageCleaner(),
+        clock=clock,
+        ids=ids,
+        policy=QualityPolicy(),
+        max_pages=10,
+        worker="api-test",
+    )
+    assert runner.run_one() is True
+    assert runner.run_one() is False
+
+    detail = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()
+    assert detail["status"] == "pages_ready" and detail["page_count"] == 2
+    assert [p["cleaned"] for p in detail["pages"]] == [True, True]
+    assert detail["pages"][0]["cropped"] is True and detail["pages"][1]["cropped"] is False
+    cleaned = client.get(detail["pages"][0]["image_url"], headers=a)
+    assert cleaned.status_code == 200 and cleaned.content[:3] == b"\xff\xd8\xff"
+    original = client.get(detail["pages"][0]["original_url"], headers=a)
+    assert original.status_code == 200 and original.content[:3] == b"\xff\xd8\xff"
+    listing = client.get("/api/v1/booklets", headers=a).json()
+    assert [x["id"] for x in listing["items"]] == [booklet["id"]] and listing["waiting"] == 0
+    assert client.get(f"/api/v1/booklets/{booklet['id']}", headers=b).status_code == 404
+    assert client.get(detail["pages"][0]["image_url"], headers=b).status_code == 404
+
+    stored = [
+        f"college/{college_id}/booklet/{booklet['id']}/source/001.pdf",
+        f"college/{college_id}/booklet/{booklet['id']}/original/001.jpg",
+        f"college/{college_id}/booklet/{booklet['id']}/clean/001.jpg",
+        f"college/{college_id}/booklet/{booklet['id']}/clean/002.jpg",
+    ]
+    assert all(backends._blobs.exists(BlobKey(k)) for k in stored)
+    assert client.delete(f"/api/v1/booklets/{booklet['id']}", headers=a).status_code == 204
+    assert not any(backends._blobs.exists(BlobKey(k)) for k in stored)

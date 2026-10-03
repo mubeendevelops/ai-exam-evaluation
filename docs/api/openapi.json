@@ -3302,6 +3302,556 @@
           }
         }
       }
+    },
+    "/api/v1/booklets": {
+      "post": {
+        "tags": [
+          "booklets"
+        ],
+        "summary": "Upload a booklet: one PDF, or the page images in order",
+        "description": "`files` is one PDF, or JPEG/PNG images in page order (the order sent is the page order). The type is judged from the file's content. The booklet is queued for page cleaning (status `uploaded`). The same file hash within the college is refused with 409 unless `allow_duplicate` is true; a teacher may have a limited number of booklets waiting (429 beyond it).",
+        "operationId": "upload_booklet_api_v1_booklets_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_booklet_api_v1_booklets_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookletOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "description": "The same file was uploaded before (`duplicate_of` lists the booklets)"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "429": {
+            "description": "You already have the maximum waiting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "booklets"
+        ],
+        "summary": "Your college's booklets with their processing status, newest first",
+        "operationId": "list_booklets_api_v1_booklets_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mine",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Only booklets I uploaded",
+              "default": false,
+              "title": "Mine"
+            },
+            "description": "Only booklets I uploaded"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "uploaded",
+                    "processing",
+                    "needs_retake",
+                    "pages_ready",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookletPageOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}": {
+      "get": {
+        "tags": [
+          "booklets"
+        ],
+        "summary": "One booklet with its pages, their measurements and retake reasons",
+        "operationId": "get_booklet_api_v1_booklets__booklet_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookletDetailOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "booklets"
+        ],
+        "summary": "Delete a booklet: images, text and marks go; a content-free record stays",
+        "operationId": "delete_booklet_api_v1_booklets__booklet_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/pages/{number}/image": {
+      "get": {
+        "tags": [
+          "booklets"
+        ],
+        "summary": "The cleaned page image (or the original with `kind=original`)",
+        "operationId": "page_image_api_v1_booklets__booklet_id__pages__number__image_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Number"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "cleaned",
+                "original"
+              ],
+              "type": "string",
+              "default": "cleaned",
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "image/jpeg": {},
+              "image/png": {}
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/pages/{number}/use-anyway": {
+      "post": {
+        "tags": [
+          "booklets"
+        ],
+        "summary": "Go on with a page the quality gate flagged",
+        "description": "Overrides the retake request for that page. When no flagged page is left the booklet moves to `pages_ready`. Recorded in the audit log.",
+        "operationId": "use_page_anyway_api_v1_booklets__booklet_id__pages__number__use_anyway_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookletOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3590,6 +4140,344 @@
           "copied_from"
         ],
         "title": "BlueprintSummaryOut"
+      },
+      "Body_upload_booklet_api_v1_booklets_post": {
+        "properties": {
+          "student_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Student Id"
+          },
+          "blueprint_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Blueprint Id"
+          },
+          "files": {
+            "items": {
+              "type": "string",
+              "contentMediaType": "application/octet-stream"
+            },
+            "type": "array",
+            "title": "Files",
+            "description": "One PDF, or images in page order"
+          },
+          "allow_duplicate": {
+            "type": "boolean",
+            "title": "Allow Duplicate",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "student_id",
+          "blueprint_id",
+          "files"
+        ],
+        "title": "Body_upload_booklet_api_v1_booklets_post"
+      },
+      "BookletBlueprintOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "title"
+        ],
+        "title": "BookletBlueprintOut"
+      },
+      "BookletDetailOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "uploaded",
+              "processing",
+              "needs_retake",
+              "pages_ready",
+              "failed",
+              "scored",
+              "in_review",
+              "approved",
+              "amendment_in_progress"
+            ],
+            "title": "Status"
+          },
+          "student": {
+            "$ref": "#/components/schemas/BookletStudentOut"
+          },
+          "blueprint": {
+            "$ref": "#/components/schemas/BookletBlueprintOut"
+          },
+          "uploaded_by": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Uploaded By"
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Uploaded At"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "page_count": {
+            "type": "integer",
+            "title": "Page Count",
+            "description": "0 until the file has been split into pages."
+          },
+          "pages_cleaned": {
+            "type": "integer",
+            "title": "Pages Cleaned"
+          },
+          "flagged_pages": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Flagged Pages",
+            "description": "Numbers of the pages that still need a retake or a 'use anyway'."
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "unreadable_file",
+                  "too_many_pages",
+                  "processing_failed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "duplicate_of": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Duplicate Of",
+            "description": "Other booklets of this college with the same file (set on upload only)."
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageOut"
+            },
+            "type": "array",
+            "title": "Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "student",
+          "blueprint",
+          "uploaded_by",
+          "uploaded_at",
+          "version",
+          "page_count",
+          "pages_cleaned",
+          "flagged_pages",
+          "failure_reason",
+          "duplicate_of",
+          "pages"
+        ],
+        "title": "BookletDetailOut"
+      },
+      "BookletOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "uploaded",
+              "processing",
+              "needs_retake",
+              "pages_ready",
+              "failed",
+              "scored",
+              "in_review",
+              "approved",
+              "amendment_in_progress"
+            ],
+            "title": "Status"
+          },
+          "student": {
+            "$ref": "#/components/schemas/BookletStudentOut"
+          },
+          "blueprint": {
+            "$ref": "#/components/schemas/BookletBlueprintOut"
+          },
+          "uploaded_by": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Uploaded By"
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Uploaded At"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "page_count": {
+            "type": "integer",
+            "title": "Page Count",
+            "description": "0 until the file has been split into pages."
+          },
+          "pages_cleaned": {
+            "type": "integer",
+            "title": "Pages Cleaned"
+          },
+          "flagged_pages": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Flagged Pages",
+            "description": "Numbers of the pages that still need a retake or a 'use anyway'."
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "unreadable_file",
+                  "too_many_pages",
+                  "processing_failed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "duplicate_of": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Duplicate Of",
+            "description": "Other booklets of this college with the same file (set on upload only)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "student",
+          "blueprint",
+          "uploaded_by",
+          "uploaded_at",
+          "version",
+          "page_count",
+          "pages_cleaned",
+          "flagged_pages",
+          "failure_reason",
+          "duplicate_of"
+        ],
+        "title": "BookletOut"
+      },
+      "BookletPageOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BookletOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "waiting": {
+            "type": "integer",
+            "title": "Waiting",
+            "description": "Your booklets that are queued or being processed."
+          },
+          "max_waiting": {
+            "type": "integer",
+            "title": "Max Waiting",
+            "description": "How many you may have waiting at once."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "waiting",
+          "max_waiting"
+        ],
+        "title": "BookletPageOut"
+      },
+      "BookletStudentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "usn": {
+            "type": "string",
+            "title": "Usn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "usn"
+        ],
+        "title": "BookletStudentOut"
       },
       "ChangePasswordIn": {
         "properties": {
@@ -4281,6 +5169,193 @@
           "expected"
         ],
         "title": "NumericParamsBody"
+      },
+      "PageOut": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "title": "Number",
+            "description": "Page number in upload order, from 1."
+          },
+          "cleaned": {
+            "type": "boolean",
+            "title": "Cleaned"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "retake_reasons": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "blurry",
+                "glare",
+                "low_resolution",
+                "no_page_found"
+              ]
+            },
+            "type": "array",
+            "title": "Retake Reasons",
+            "description": "Why the quality gate asks for a retake; empty when the page passed."
+          },
+          "use_anyway": {
+            "type": "boolean",
+            "title": "Use Anyway",
+            "description": "The teacher chose to go on with a flagged page."
+          },
+          "sharpness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpness",
+            "description": "Edge strength of the writing; null when the page has too little writing."
+          },
+          "glare_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Glare Share"
+          },
+          "rotation_degrees": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotation Degrees",
+            "description": "Clockwise quarter turn applied to the page."
+          },
+          "rotation_guessed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotation Guessed",
+            "description": "The direction of that turn is a default, not a finding."
+          },
+          "skew_degrees": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skew Degrees"
+          },
+          "cropped": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cropped"
+          },
+          "perspective_corrected": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Perspective Corrected"
+          },
+          "neighbour_removed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Neighbour Removed",
+            "description": "A neighbouring page was cut away."
+          },
+          "page_found": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Found"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url",
+            "description": "The cleaned page (needs the bearer token)."
+          },
+          "original_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "number",
+          "cleaned",
+          "width",
+          "height",
+          "retake_reasons",
+          "use_anyway",
+          "sharpness",
+          "glare_share",
+          "rotation_degrees",
+          "rotation_guessed",
+          "skew_degrees",
+          "cropped",
+          "perspective_corrected",
+          "neighbour_removed",
+          "page_found",
+          "image_url",
+          "original_url"
+        ],
+        "title": "PageOut"
       },
       "PolicyErrorOut": {
         "properties": {

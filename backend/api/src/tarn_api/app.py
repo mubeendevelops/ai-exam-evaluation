@@ -13,7 +13,7 @@ from tarn_adapters.config import Settings, get_settings
 from tarn_adapters.logging_setup import configure_logging
 from tarn_api import __version__, errors
 from tarn_api.backends import Backends, PostgresBackends
-from tarn_api.routes import accounts, auth, blueprints, questions, registration, roster
+from tarn_api.routes import accounts, auth, blueprints, booklets, questions, registration, roster
 
 
 class DeviceOut(BaseModel):
@@ -73,6 +73,6 @@ def create_app(settings: Settings | None = None, backends: Backends | None = Non
             worker=probe_worker(settings.worker_health_url),
         )
 
-    for module in (auth, registration, accounts, roster, blueprints, questions):
+    for module in (auth, registration, accounts, roster, blueprints, questions, booklets):
         app.include_router(module.router)
     return app

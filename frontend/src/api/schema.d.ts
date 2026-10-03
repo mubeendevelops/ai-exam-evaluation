@@ -721,6 +721,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/booklets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your college's booklets with their processing status, newest first */
+        get: operations["list_booklets_api_v1_booklets_get"];
+        put?: never;
+        /**
+         * Upload a booklet: one PDF, or the page images in order
+         * @description `files` is one PDF, or JPEG/PNG images in page order (the order sent is the page order). The type is judged from the file's content. The booklet is queued for page cleaning (status `uploaded`). The same file hash within the college is refused with 409 unless `allow_duplicate` is true; a teacher may have a limited number of booklets waiting (429 beyond it).
+         */
+        post: operations["upload_booklet_api_v1_booklets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One booklet with its pages, their measurements and retake reasons */
+        get: operations["get_booklet_api_v1_booklets__booklet_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete a booklet: images, text and marks go; a content-free record stays */
+        delete: operations["delete_booklet_api_v1_booklets__booklet_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/pages/{number}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The cleaned page image (or the original with `kind=original`) */
+        get: operations["page_image_api_v1_booklets__booklet_id__pages__number__image_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/pages/{number}/use-anyway": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Go on with a page the quality gate flagged
+         * @description Overrides the retake request for that page. When no flagged page is left the booklet moves to `pages_ready`. Recorded in the audit log.
+         */
+        post: operations["use_page_anyway_api_v1_booklets__booklet_id__pages__number__use_anyway_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -839,6 +915,168 @@ export interface components {
              */
             owned: boolean;
             copied_from: components["schemas"]["ContentRefOut"] | null;
+        };
+        /** Body_upload_booklet_api_v1_booklets_post */
+        Body_upload_booklet_api_v1_booklets_post: {
+            /**
+             * Student Id
+             * Format: uuid
+             */
+            student_id: string;
+            /**
+             * Blueprint Id
+             * Format: uuid
+             */
+            blueprint_id: string;
+            /**
+             * Files
+             * @description One PDF, or images in page order
+             */
+            files: string[];
+            /**
+             * Allow Duplicate
+             * @default false
+             */
+            allow_duplicate: boolean;
+        };
+        /** BookletBlueprintOut */
+        BookletBlueprintOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /** Title */
+            title: string;
+        };
+        /** BookletDetailOut */
+        BookletDetailOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress";
+            student: components["schemas"]["BookletStudentOut"];
+            blueprint: components["schemas"]["BookletBlueprintOut"];
+            /**
+             * Uploaded By
+             * Format: uuid
+             */
+            uploaded_by: string;
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
+            /** Version */
+            version: number;
+            /**
+             * Page Count
+             * @description 0 until the file has been split into pages.
+             */
+            page_count: number;
+            /** Pages Cleaned */
+            pages_cleaned: number;
+            /**
+             * Flagged Pages
+             * @description Numbers of the pages that still need a retake or a 'use anyway'.
+             */
+            flagged_pages: number[];
+            /** Failure Reason */
+            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed") | null;
+            /**
+             * Duplicate Of
+             * @description Other booklets of this college with the same file (set on upload only).
+             */
+            duplicate_of: string[];
+            /** Pages */
+            pages: components["schemas"]["PageOut"][];
+        };
+        /** BookletOut */
+        BookletOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress";
+            student: components["schemas"]["BookletStudentOut"];
+            blueprint: components["schemas"]["BookletBlueprintOut"];
+            /**
+             * Uploaded By
+             * Format: uuid
+             */
+            uploaded_by: string;
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
+            /** Version */
+            version: number;
+            /**
+             * Page Count
+             * @description 0 until the file has been split into pages.
+             */
+            page_count: number;
+            /** Pages Cleaned */
+            pages_cleaned: number;
+            /**
+             * Flagged Pages
+             * @description Numbers of the pages that still need a retake or a 'use anyway'.
+             */
+            flagged_pages: number[];
+            /** Failure Reason */
+            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed") | null;
+            /**
+             * Duplicate Of
+             * @description Other booklets of this college with the same file (set on upload only).
+             */
+            duplicate_of: string[];
+        };
+        /** BookletPageOut */
+        BookletPageOut: {
+            /** Items */
+            items: components["schemas"]["BookletOut"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /**
+             * Waiting
+             * @description Your booklets that are queued or being processed.
+             */
+            waiting: number;
+            /**
+             * Max Waiting
+             * @description How many you may have waiting at once.
+             */
+            max_waiting: number;
+        };
+        /** BookletStudentOut */
+        BookletStudentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Usn */
+            usn: string;
         };
         /** ChangePasswordIn */
         ChangePasswordIn: {
@@ -1124,6 +1362,67 @@ export interface components {
              * @default
              */
             unit: string;
+        };
+        /** PageOut */
+        PageOut: {
+            /**
+             * Number
+             * @description Page number in upload order, from 1.
+             */
+            number: number;
+            /** Cleaned */
+            cleaned: boolean;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /**
+             * Retake Reasons
+             * @description Why the quality gate asks for a retake; empty when the page passed.
+             */
+            retake_reasons: ("blurry" | "glare" | "low_resolution" | "no_page_found")[];
+            /**
+             * Use Anyway
+             * @description The teacher chose to go on with a flagged page.
+             */
+            use_anyway: boolean;
+            /**
+             * Sharpness
+             * @description Edge strength of the writing; null when the page has too little writing.
+             */
+            sharpness: number | null;
+            /** Glare Share */
+            glare_share: number | null;
+            /**
+             * Rotation Degrees
+             * @description Clockwise quarter turn applied to the page.
+             */
+            rotation_degrees: number | null;
+            /**
+             * Rotation Guessed
+             * @description The direction of that turn is a default, not a finding.
+             */
+            rotation_guessed: boolean | null;
+            /** Skew Degrees */
+            skew_degrees: number | null;
+            /** Cropped */
+            cropped: boolean | null;
+            /** Perspective Corrected */
+            perspective_corrected: boolean | null;
+            /**
+             * Neighbour Removed
+             * @description A neighbouring page was cut away.
+             */
+            neighbour_removed: boolean | null;
+            /** Page Found */
+            page_found: boolean | null;
+            /**
+             * Image Url
+             * @description The cleaned page (needs the bearer token).
+             */
+            image_url: string | null;
+            /** Original Url */
+            original_url: string | null;
         };
         /** PolicyErrorOut */
         PolicyErrorOut: {
@@ -4050,6 +4349,380 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_booklets_api_v1_booklets_get: {
+        parameters: {
+            query?: {
+                /** @description Only booklets I uploaded */
+                mine?: boolean;
+                status?: ("uploaded" | "processing" | "needs_retake" | "pages_ready" | "failed") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookletPageOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_booklet_api_v1_booklets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_booklet_api_v1_booklets_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookletOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description The same file was uploaded before (`duplicate_of` lists the booklets) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description You already have the maximum waiting */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    get_booklet_api_v1_booklets__booklet_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookletDetailOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_booklet_api_v1_booklets__booklet_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    page_image_api_v1_booklets__booklet_id__pages__number__image_get: {
+        parameters: {
+            query?: {
+                kind?: "cleaned" | "original";
+            };
+            header?: never;
+            path: {
+                booklet_id: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/jpeg": unknown;
+                    "image/png": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    use_page_anyway_api_v1_booklets__booklet_id__pages__number__use_anyway_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookletOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
                 };
             };
         };

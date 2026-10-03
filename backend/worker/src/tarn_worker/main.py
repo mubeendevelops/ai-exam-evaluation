@@ -1,7 +1,8 @@
 """Worker entry point: ``python -m tarn_worker`` or ``tarn-worker``.
 
-Until the PostgreSQL-backed job queue arrives (procrastinate, confirmed in P9) the worker
-reports the compute device, runs its scheduled jobs and idles until SIGTERM/SIGINT.
+The worker reports the compute device, serves its health endpoint, runs its scheduled jobs and
+takes booklet jobs from the PostgreSQL queue one at a time (page cleaning, P9), until
+SIGTERM/SIGINT. A job in progress finishes its current step before the worker stops.
 
 Scheduled jobs: the encrypted identity backup of every tenant
 (``TARN_IDENTITY_BACKUP_INTERVAL_HOURS``, 0 = off)."""
@@ -12,6 +13,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from types import FrameType
+from uuid import uuid4
 
 import structlog
 
@@ -90,11 +92,61 @@ def scheduled_jobs(settings: Settings, clock: Clock) -> list[PeriodicJob]:
     return jobs
 
 
+def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
+    """The queue consumer: each call processes at most one booklet job; True if it did."""
+    from tarn_adapters.blob.minio_client import make_client
+    from tarn_adapters.blob.minio_store import MinioBlobStore
+    from tarn_adapters.imaging.cleaner import OpenCvPageCleaner
+    from tarn_adapters.imaging.pdf import PyMuPdfSplitter
+    from tarn_adapters.postgres.database import PostgresDatabase
+    from tarn_adapters.postgres.jobs import JobSettings
+    from tarn_adapters.runtime import UuidGenerator
+    from tarn_core.services.pipeline import QualityPolicy
+    from tarn_worker.booklets import BookletJobRunner
+
+    runner = BookletJobRunner(
+        db=PostgresDatabase(
+            settings.app_database_url,
+            pool_size=2,
+            job_settings=JobSettings(
+                max_attempts=settings.job_max_attempts,
+                lease_seconds=settings.job_lease_seconds,
+                backoff_seconds=settings.job_backoff_seconds,
+            ),
+        ),
+        blobs=MinioBlobStore(make_client(settings), settings.blob_bucket),
+        splitter=PyMuPdfSplitter(),
+        cleaner=OpenCvPageCleaner(
+            max_edge_px=settings.page_max_edge_px, max_bytes=settings.page_max_bytes
+        ),
+        clock=clock,
+        ids=UuidGenerator(),
+        policy=QualityPolicy(
+            min_sharpness=settings.quality_min_sharpness,
+            max_glare_share=settings.quality_max_glare_share,
+            min_page_edge_px=settings.quality_min_page_edge_px,
+        ),
+        max_pages=settings.upload_max_pages,
+        worker=f"worker-{uuid4().hex[:8]}",
+    )
+    return runner.run_one
+
+
+def _safe(tick: Callable[[], bool]) -> bool:
+    """A failing tick (the database is down) is logged and retried at the next poll."""
+    try:
+        return tick()
+    except Exception as exc:
+        structlog.get_logger("tarn_worker").error("queue.tick_failed", error=type(exc).__name__)
+        return False
+
+
 def run(
     settings: Settings,
     stop: threading.Event,
     heartbeat_s: float = HEARTBEAT_SECONDS,
     jobs: Sequence[PeriodicJob] = (),
+    tick: Callable[[], bool] | None = None,
 ) -> None:
     log = structlog.get_logger("tarn_worker")
     device = detect_device(settings.device)
@@ -104,13 +156,26 @@ def run(
         if settings.worker_health_port > 0
         else None
     )
+    quiet_since = 0.0
     try:
         while True:
             for job in jobs:
                 job.run_if_due()
-            if stop.wait(heartbeat_s):
+            if tick is not None and _safe(tick):
+                if stop.is_set():
+                    break
+                continue  # more may be waiting: look again at once
+            if tick is None:
+                if stop.wait(heartbeat_s):
+                    break
+                log.info("worker.idle")
+                continue
+            if stop.wait(settings.worker_poll_seconds):
                 break
-            log.info("worker.idle")
+            quiet_since += settings.worker_poll_seconds
+            if quiet_since >= heartbeat_s:
+                quiet_since = 0.0
+                log.info("worker.idle")
     finally:
         if health is not None:
             health.shutdown()
@@ -128,4 +193,5 @@ def main() -> None:
 
     signal.signal(signal.SIGTERM, _request_stop)
     signal.signal(signal.SIGINT, _request_stop)
-    run(settings, stop, jobs=scheduled_jobs(settings, SystemClock()))
+    clock = SystemClock()
+    run(settings, stop, jobs=scheduled_jobs(settings, clock), tick=booklet_runner(settings, clock))
