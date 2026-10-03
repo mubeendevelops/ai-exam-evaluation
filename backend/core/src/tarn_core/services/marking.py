@@ -125,6 +125,8 @@ def check_blueprint_questions(
     """Every leaf of the blueprint must point at a known question with the same max marks."""
     for slot in blueprint.slots():
         for label, question_id, marks in leaves(slot):
+            if question_id is None:
+                raise InvariantError(f"leaf {label}: no question linked yet")
             question = questions.get(question_id)
             if question is None:
                 raise InvariantError(f"leaf {label}: unknown question {question_id}")

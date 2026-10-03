@@ -13,6 +13,7 @@ from tarn_core.domain.blueprint import (
     AnyN,
     BlueprintItem,
     ChoiceRule,
+    EvaluationMethod,
     OrGroup,
     QuestionSlot,
     Section,
@@ -270,7 +271,7 @@ def _slot_to_json(slot: QuestionSlot) -> Json:
             {
                 "label": p.label,
                 "marks": str(p.marks),
-                "question_id": str(p.question_id),
+                "question_id": None if p.question_id is None else str(p.question_id),
                 "steps": _steps_to_json(p.steps),
             }
             for p in slot.parts
@@ -286,7 +287,7 @@ def _slot_from_json(value: object) -> QuestionSlot:
         SubPart(
             label=_str(p["label"]),
             marks=_dec(p["marks"]),
-            question_id=QuestionId(_uuid(p["question_id"])),
+            question_id=None if p["question_id"] is None else QuestionId(_uuid(p["question_id"])),
             steps=_steps_from_json(p["steps"]),
         )
         for p in map(_obj, _list(o["parts"]))
@@ -328,6 +329,7 @@ def sections_to_json(sections: tuple[Section, ...]) -> Json:
         {
             "label": s.label,
             "title": s.title,
+            "method": s.method.value,
             "rule": _rule_to_json(s.rule),
             "items": [_item_to_json(i) for i in s.items],
         }
@@ -340,6 +342,7 @@ def sections_from_json(value: object) -> tuple[Section, ...]:
         Section(
             label=_str(s["label"]),
             title=_str(s["title"]),
+            method=EvaluationMethod(_str(s["method"])),
             rule=_rule_from_json(s["rule"]),
             items=tuple(_item_from_json(i) for i in _list(s["items"])),
         )

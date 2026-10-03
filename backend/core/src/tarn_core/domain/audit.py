@@ -14,6 +14,7 @@ from tarn_core.ids import AnswerId, AuditEventId, BookletId, CollegeId, UserId
 class AuditAction(StrEnum):
     BOOKLET_REGISTERED = "booklet.registered"
     BOOKLET_DELETED = "booklet.deleted"
+    CONTENT_CREATED = "content.created"
     CONTENT_EDITED = "content.edited"
     CONTENT_COPIED = "content.copied"
     ANSWER_SCORED = "answer.scored"

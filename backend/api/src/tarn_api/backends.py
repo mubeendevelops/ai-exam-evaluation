@@ -22,12 +22,19 @@ from tarn_adapters.postgres.database import PostgresDatabase
 from tarn_adapters.runtime import SystemClock, UuidGenerator
 from tarn_core.ids import CollegeId
 from tarn_core.ports.identity import IdentityStore
-from tarn_core.ports.repositories import CollegeRepository, StudentRepository, UserRepository
+from tarn_core.ports.repositories import (
+    CollegeRepository,
+    ContentRepository,
+    StudentRepository,
+    UserRepository,
+)
 from tarn_core.ports.runtime import Clock, IdGenerator
 from tarn_core.services._support import Runtime
 from tarn_core.services.auth import AccountService, AuthKit, AuthService
+from tarn_core.services.blueprints import BlueprintService
 from tarn_core.services.registration import RegistrationService
 from tarn_core.services.roster import RosterService
+from tarn_core.services.subjects import SubjectService
 
 
 class CollegeScope(Protocol):
@@ -41,6 +48,9 @@ class CollegeScope(Protocol):
 
     @property
     def students(self) -> StudentRepository: ...
+
+    @property
+    def content(self) -> ContentRepository: ...
 
     @property
     def runtime(self) -> Runtime: ...
@@ -91,6 +101,18 @@ class Unit:
     def roster(self) -> RosterService:
         return RosterService(
             students=self.scope.students, users=self.scope.users, runtime=self.scope.runtime
+        )
+
+    @property
+    def subjects(self) -> SubjectService:
+        return SubjectService(
+            content=self.scope.content, users=self.scope.users, runtime=self.scope.runtime
+        )
+
+    @property
+    def blueprints(self) -> BlueprintService:
+        return BlueprintService(
+            content=self.scope.content, users=self.scope.users, runtime=self.scope.runtime
         )
 
 

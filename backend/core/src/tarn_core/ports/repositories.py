@@ -59,6 +59,10 @@ class ContentRepository(Protocol):
         """Every version, oldest first."""
         ...
 
+    def latest[T: GlobalItem](self, kind: type[T]) -> Sequence[T]:
+        """The newest version of every item of ``kind``, in no particular order."""
+        ...
+
     def for_question[T: QuestionPart](self, kind: type[T], question_id: QuestionId) -> Sequence[T]:
         """Latest version of each item of ``kind`` that belongs to the question."""
         ...

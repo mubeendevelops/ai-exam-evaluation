@@ -1,7 +1,7 @@
 """Request and response bodies (the OpenAPI contract, ``docs/api/openapi.json``)."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -196,3 +196,78 @@ class StudentOut(BaseModel):
     name: str
     usn: str
     class_section: str
+
+
+# --- subjects and exam blueprints -------------------------------------------------------------
+
+
+class SubjectIn(_In):
+    code: str = Field(min_length=1, max_length=40, examples=["PHY-501"])
+    name: str = Field(min_length=1, max_length=200, examples=["Physics"])
+
+
+class SubjectOut(BaseModel):
+    id: UUID
+    code: str
+    name: str
+    owning_college_id: UUID
+    owned: bool = Field(description="True if my college owns it.")
+
+
+class IssueOut(BaseModel):
+    path: str = Field(description="Where in the document, e.g. sections[1].items[3].marks.")
+    message: str
+
+
+class SectionSummaryOut(BaseModel):
+    label: str
+    method: str
+    items: int = Field(description="M in 'answer any N of M'.")
+    counted: int = Field(description="N: how many items count towards the total.")
+    max_marks: float = Field(description="Most this section can earn: the N largest items.")
+
+
+class ValidationOut(BaseModel):
+    valid: bool
+    issues: list[IssueOut]
+    warnings: list[IssueOut]
+    sections: list[SectionSummaryOut] = Field(
+        description="Empty if the document is too broken to read its sections."
+    )
+    computed_total: float | None = Field(
+        description="Sum of the section maximums with the choice rules applied; null if unknown."
+    )
+    question_count: int
+    unlinked: list[str] = Field(
+        description="Leaf labels (7, 12.a) not linked to a question yet. Allowed in a blueprint, "
+        "but booklets can only be registered once this is empty."
+    )
+
+
+class ContentRefOut(BaseModel):
+    kind: str
+    id: UUID
+    version: int
+
+
+class BlueprintSummaryOut(BaseModel):
+    id: UUID
+    version: int
+    title: str
+    course_code: str
+    subject_id: UUID
+    subject_name: str | None
+    total_marks: float
+    duration_minutes: int | None
+    section_count: int
+    question_count: int
+    unlinked_count: int
+    owning_college_id: UUID
+    owned: bool = Field(description="True if my college owns it and so may edit it.")
+    copied_from: ContentRefOut | None
+
+
+class BlueprintOut(BlueprintSummaryOut):
+    document: dict[str, Any] = Field(
+        description="The blueprint in the public form, see docs/api/blueprint.schema.json."
+    )

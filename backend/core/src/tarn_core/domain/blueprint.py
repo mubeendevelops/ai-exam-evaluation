@@ -3,16 +3,37 @@
 A section holds items; an item is one question slot or an OR group of slots. A section
 counts all its items, or the best N of them ("any N of M", C19). A slot either points at
 one question or is split into sub-parts that each point at a question (QP-IPR 12a + 12b).
-Step marks split a leaf's marks further (K-AI1)."""
+Step marks split a leaf's marks further (K-AI1).
+
+A slot or sub-part may be *unlinked*: the designer can lay out a paper before its questions
+exist. An unlinked blueprint is saved and checked like any other, but no booklet can be
+registered against it (``unlinked_leaves``)."""
 
 from collections.abc import Iterator
 from dataclasses import dataclass
 from decimal import Decimal
+from enum import StrEnum
 
 from tarn_core.domain.common import ContentKind, ContentRef, check_marks, check_text
 from tarn_core.domain.content import ContentMeta
 from tarn_core.errors import InvariantError
 from tarn_core.ids import BlueprintId, QuestionId, SubjectId
+
+
+class EvaluationMethod(StrEnum):
+    """How a section is meant to be evaluated (the designer's per-section choice)."""
+
+    EXACT_PATTERN_MATCH = "exact_pattern_match"
+    OMR_BUBBLE_SCAN = "omr_bubble_scan"
+    KEYWORD_FORMULA = "keyword_formula"
+    SEMANTIC_RUBRIC = "semantic_rubric"
+    DIAGRAM = "diagram"
+
+
+# Objective sections: a wrong answer there can carry negative marks.
+OBJECTIVE_METHODS = frozenset(
+    {EvaluationMethod.EXACT_PATTERN_MATCH, EvaluationMethod.OMR_BUBBLE_SCAN}
+)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -35,7 +56,7 @@ def _check_steps(owner: str, marks: Decimal, steps: tuple[Step, ...]) -> None:
 class SubPart:
     label: str
     marks: Decimal
-    question_id: QuestionId
+    question_id: QuestionId | None = None
     steps: tuple[Step, ...] = ()
 
     def __post_init__(self) -> None:
@@ -60,10 +81,8 @@ class QuestionSlot:
         check_text("question label", self.label)
         check_marks("question marks", self.marks, allow_zero=False)
         check_marks("negative marks", self.negative_marks)
-        if (self.question_id is None) == (not self.parts):
-            raise InvariantError(
-                f"slot {self.label} needs either a question or sub-parts, not both"
-            )
+        if self.question_id is not None and self.parts:
+            raise InvariantError(f"slot {self.label} has a question or sub-parts, not both")
         if self.parts:
             if self.steps:
                 raise InvariantError(f"slot {self.label}: put step marks on its sub-parts")
@@ -73,10 +92,11 @@ class QuestionSlot:
         _check_steps(f"slot {self.label}", self.marks, self.steps)
 
     @property
-    def question_ids(self) -> tuple[QuestionId, ...]:
-        if self.question_id is not None:
-            return (self.question_id,)
-        return tuple(p.question_id for p in self.parts)
+    def question_ids(self) -> tuple[QuestionId | None, ...]:
+        """One entry per answerable leaf; None where the leaf is not linked yet."""
+        if self.parts:
+            return tuple(p.question_id for p in self.parts)
+        return (self.question_id,)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -124,6 +144,7 @@ class Section:
     items: tuple[BlueprintItem, ...]
     rule: ChoiceRule = AllOf()
     title: str = ""
+    method: EvaluationMethod = EvaluationMethod.SEMANTIC_RUBRIC
 
     def __post_init__(self) -> None:
         check_text("section label", self.label)
@@ -161,9 +182,13 @@ class ExamBlueprint:
     total_marks: Decimal
     sections: tuple[Section, ...]
     mark_step: Decimal = Decimal("0.5")
+    course_code: str = ""
+    duration_minutes: int | None = None
 
     def __post_init__(self) -> None:
         check_text("blueprint title", self.title)
+        if self.duration_minutes is not None and self.duration_minutes < 1:
+            raise InvariantError(f"duration must be at least 1 minute, got {self.duration_minutes}")
         check_marks("exam total", self.total_marks, allow_zero=False)
         check_marks("mark step", self.mark_step, allow_zero=False)
         if not self.sections:
@@ -183,12 +208,21 @@ class ExamBlueprint:
             yield from section.slots()
 
     def leaf(self, label: str) -> tuple[QuestionSlot, QuestionId, Decimal]:
-        """The slot, question id and marks of a leaf label such as ``"7"`` or ``"12.a"``."""
+        """The slot, question id and marks of a leaf label such as ``"7"`` or ``"12.a"``.
+        Raises InvariantError while the leaf is not linked to a question."""
         for s in self.slots():
             for name, question_id, marks in leaves(s):
                 if name == label:
+                    if question_id is None:
+                        raise InvariantError(f"question {label} has no question linked yet")
                     return s, question_id, marks
         raise KeyError(label)
+
+    def unlinked_leaves(self) -> tuple[str, ...]:
+        """Labels of the leaves that do not point at a question yet, in paper order."""
+        return tuple(
+            name for s in self.slots() for name, question_id, _ in leaves(s) if question_id is None
+        )
 
     def slot(self, label: str) -> QuestionSlot:
         for s in self.slots():
@@ -208,8 +242,8 @@ def leaf_label(slot: QuestionSlot, part: SubPart | None = None) -> str:
     return slot.label if part is None else f"{slot.label}.{part.label}"
 
 
-def leaves(slot: QuestionSlot) -> tuple[tuple[str, QuestionId, Decimal], ...]:
-    """(leaf label, question id, marks) for each answerable part of the slot."""
-    if slot.question_id is not None:
-        return ((leaf_label(slot), slot.question_id, slot.marks),)
-    return tuple((leaf_label(slot, p), p.question_id, p.marks) for p in slot.parts)
+def leaves(slot: QuestionSlot) -> tuple[tuple[str, QuestionId | None, Decimal], ...]:
+    """(leaf label, question id or None, marks) for each answerable part of the slot."""
+    if slot.parts:
+        return tuple((leaf_label(slot, p), p.question_id, p.marks) for p in slot.parts)
+    return ((leaf_label(slot), slot.question_id, slot.marks),)

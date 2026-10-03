@@ -17,7 +17,7 @@ from typing import Any, NoReturn
 from uuid import UUID
 
 from sqlalchemy import Connection, Row, Table, delete, func, or_, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.postgresql import distinct_on, insert
 from sqlalchemy.exc import DBAPIError
 
 from tarn_adapters.postgres import codec
@@ -276,6 +276,8 @@ def _blueprint_values(b: ExamBlueprint) -> dict[str, object]:
         "id": b.id,
         "subject_id": b.subject_id,
         "title": b.title,
+        "course_code": b.course_code,
+        "duration_minutes": b.duration_minutes,
         "total_marks": b.total_marks,
         "mark_step": b.mark_step,
         "sections": codec.sections_to_json(b.sections),
@@ -288,6 +290,8 @@ def _blueprint(r: Row[Any]) -> ExamBlueprint:
         meta=_meta(r),
         subject_id=SubjectId(r.subject_id),
         title=r.title,
+        course_code=r.course_code,
+        duration_minutes=r.duration_minutes,
         total_marks=r.total_marks,
         mark_step=r.mark_step,
         sections=codec.sections_from_json(r.sections),
@@ -366,6 +370,26 @@ class PgContentRepository:
             spec = _KINDS[kind]
             stmt = (
                 select(spec.table).where(spec.table.c.id == item_id).order_by(spec.table.c.version)
+            )
+            decode = spec.decode
+        items = [decode(r) for r in self._conn.execute(stmt)]
+        return [i for i in items if isinstance(i, kind)]
+
+    def latest[T: GlobalItem](self, kind: type[T]) -> Sequence[T]:
+        if kind is Question:
+            stmt = (
+                select(*_QUESTION_COLUMNS)
+                .select_from(_QUESTION_FROM)
+                .ext(distinct_on(m.question_versions.c.question_id))
+                .order_by(m.question_versions.c.question_id, m.question_versions.c.version.desc())
+            )
+            decode: Callable[[Row[Any]], GlobalItem] = _question
+        else:
+            spec = _KINDS[kind]
+            stmt = (
+                select(spec.table)
+                .ext(distinct_on(spec.table.c.id))
+                .order_by(spec.table.c.id, spec.table.c.version.desc())
             )
             decode = spec.decode
         items = [decode(r) for r in self._conn.execute(stmt)]

@@ -205,6 +205,33 @@ export class FakeApi {
         return empty(204)
       }
 
+      case 'GET /subjects':
+        return json(200, [
+          {
+            id: '33333333-3333-4333-8333-333333333333',
+            code: 'PHY-501',
+            name: 'Physics',
+            owning_college_id: '11111111-1111-4111-8111-111111111111',
+            owned: true,
+          },
+        ])
+
+      case 'POST /blueprints/validate': {
+        // The real rules live in the backend (tests in Python); here only the title decides.
+        const issues = String(body.title ?? '').trim()
+          ? []
+          : [{ path: 'title', message: 'must not be empty' }]
+        return json(200, {
+          valid: issues.length === 0,
+          issues,
+          warnings: [],
+          sections: [],
+          computed_total: body.total_marks,
+          question_count: 0,
+          unlinked: [],
+        })
+      }
+
       case 'GET /accounts':
         return json(200, [])
       case 'GET /students':

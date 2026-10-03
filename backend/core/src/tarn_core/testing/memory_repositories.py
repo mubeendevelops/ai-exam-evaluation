@@ -93,6 +93,12 @@ class MemoryContentRepository:
     def versions[T: GlobalItem](self, kind: type[T], item_id: UUID) -> Sequence[T]:
         return [i for i in self._items.get((kind.__name__, item_id), []) if isinstance(i, kind)]
 
+    def latest[T: GlobalItem](self, kind: type[T]) -> Sequence[T]:
+        newest = (
+            history[-1] for (name, _), history in self._items.items() if name == kind.__name__
+        )
+        return [item for item in newest if isinstance(item, kind)]
+
     def for_question[T: QuestionPart](self, kind: type[T], question_id: QuestionId) -> Sequence[T]:
         found: list[T] = []
         for (kind_name, _), history in self._items.items():

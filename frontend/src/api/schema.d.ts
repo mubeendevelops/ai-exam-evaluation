@@ -382,6 +382,117 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/subjects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** All subjects, by name */
+        get: operations["list_subjects_api_v1_subjects_get"];
+        put?: never;
+        /** Create a subject owned by my college */
+        post: operations["create_subject_api_v1_subjects_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blueprints/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a blueprint document without saving it
+         * @description Reports every broken rule with its path and a plain sentence, and the totals with the choice rules applied (any N of M, OR pairs). Always 200: `valid` says the verdict.
+         */
+        post: operations["validate_blueprint_api_v1_blueprints_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blueprints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The newest version of every blueprint, from every college, by title */
+        get: operations["list_blueprints_api_v1_blueprints_get"];
+        put?: never;
+        /** Create a blueprint owned by my college */
+        post: operations["create_blueprint_api_v1_blueprints_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blueprints/{blueprint_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One blueprint: the newest version, or ?version= */
+        get: operations["get_blueprint_api_v1_blueprints__blueprint_id__get"];
+        /**
+         * Save the document as the next version (owning college only)
+         * @description Earlier versions stay valid for booklets pinned to them. Another college's blueprint is copied first (POST .../copy).
+         */
+        put: operations["update_blueprint_api_v1_blueprints__blueprint_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blueprints/{blueprint_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every version of a blueprint, oldest first */
+        get: operations["blueprint_versions_api_v1_blueprints__blueprint_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blueprints/{blueprint_id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Copy a blueprint to my college */
+        post: operations["copy_blueprint_api_v1_blueprints__blueprint_id__copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -410,12 +521,115 @@ export interface components {
             /** Problem */
             problem?: string | null;
         };
+        /** BlueprintOut */
+        BlueprintOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /** Title */
+            title: string;
+            /** Course Code */
+            course_code: string;
+            /**
+             * Subject Id
+             * Format: uuid
+             */
+            subject_id: string;
+            /** Subject Name */
+            subject_name: string | null;
+            /** Total Marks */
+            total_marks: number;
+            /** Duration Minutes */
+            duration_minutes: number | null;
+            /** Section Count */
+            section_count: number;
+            /** Question Count */
+            question_count: number;
+            /** Unlinked Count */
+            unlinked_count: number;
+            /**
+             * Owning College Id
+             * Format: uuid
+             */
+            owning_college_id: string;
+            /**
+             * Owned
+             * @description True if my college owns it and so may edit it.
+             */
+            owned: boolean;
+            copied_from: components["schemas"]["ContentRefOut"] | null;
+            /**
+             * Document
+             * @description The blueprint in the public form, see docs/api/blueprint.schema.json.
+             */
+            document: {
+                [key: string]: unknown;
+            };
+        };
+        /** BlueprintSummaryOut */
+        BlueprintSummaryOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /** Title */
+            title: string;
+            /** Course Code */
+            course_code: string;
+            /**
+             * Subject Id
+             * Format: uuid
+             */
+            subject_id: string;
+            /** Subject Name */
+            subject_name: string | null;
+            /** Total Marks */
+            total_marks: number;
+            /** Duration Minutes */
+            duration_minutes: number | null;
+            /** Section Count */
+            section_count: number;
+            /** Question Count */
+            question_count: number;
+            /** Unlinked Count */
+            unlinked_count: number;
+            /**
+             * Owning College Id
+             * Format: uuid
+             */
+            owning_college_id: string;
+            /**
+             * Owned
+             * @description True if my college owns it and so may edit it.
+             */
+            owned: boolean;
+            copied_from: components["schemas"]["ContentRefOut"] | null;
+        };
         /** ChangePasswordIn */
         ChangePasswordIn: {
             /** Current Password */
             current_password: string;
             /** New Password */
             new_password: string;
+        };
+        /** ContentRefOut */
+        ContentRefOut: {
+            /** Kind */
+            kind: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
         };
         /** CurrentPasswordIn */
         CurrentPasswordIn: {
@@ -478,6 +692,16 @@ export interface components {
              * @example evaluator@institution.edu
              */
             email: string;
+        };
+        /** IssueOut */
+        IssueOut: {
+            /**
+             * Path
+             * @description Where in the document, e.g. sections[1].items[3].marks.
+             */
+            path: string;
+            /** Message */
+            message: string;
         };
         /** LoginIn */
         LoginIn: {
@@ -626,6 +850,28 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** SectionSummaryOut */
+        SectionSummaryOut: {
+            /** Label */
+            label: string;
+            /** Method */
+            method: string;
+            /**
+             * Items
+             * @description M in 'answer any N of M'.
+             */
+            items: number;
+            /**
+             * Counted
+             * @description N: how many items count towards the total.
+             */
+            counted: number;
+            /**
+             * Max Marks
+             * @description Most this section can earn: the N largest items.
+             */
+            max_marks: number;
+        };
         /** StudentOut */
         StudentOut: {
             /**
@@ -639,6 +885,41 @@ export interface components {
             usn: string;
             /** Class Section */
             class_section: string;
+        };
+        /** SubjectIn */
+        SubjectIn: {
+            /**
+             * Code
+             * @example PHY-501
+             */
+            code: string;
+            /**
+             * Name
+             * @example Physics
+             */
+            name: string;
+        };
+        /** SubjectOut */
+        SubjectOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /**
+             * Owning College Id
+             * Format: uuid
+             */
+            owning_college_id: string;
+            /**
+             * Owned
+             * @description True if my college owns it.
+             */
+            owned: boolean;
         };
         /** TenantStatusOut */
         TenantStatusOut: {
@@ -706,6 +987,32 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** ValidationOut */
+        ValidationOut: {
+            /** Valid */
+            valid: boolean;
+            /** Issues */
+            issues: components["schemas"]["IssueOut"][];
+            /** Warnings */
+            warnings: components["schemas"]["IssueOut"][];
+            /**
+             * Sections
+             * @description Empty if the document is too broken to read its sections.
+             */
+            sections: components["schemas"]["SectionSummaryOut"][];
+            /**
+             * Computed Total
+             * @description Sum of the section maximums with the choice rules applied; null if unknown.
+             */
+            computed_total: number | null;
+            /** Question Count */
+            question_count: number;
+            /**
+             * Unlinked
+             * @description Leaf labels (7, 12.a) not linked to a question yet. Allowed in a blueprint, but booklets can only be registered once this is empty.
+             */
+            unlinked: string[];
         };
         /** VerifyEmailIn */
         VerifyEmailIn: {
@@ -1661,6 +1968,479 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_subjects_api_v1_subjects_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubjectOut"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    create_subject_api_v1_subjects_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubjectIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubjectOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    validate_blueprint_api_v1_blueprints_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_blueprints_api_v1_blueprints_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlueprintSummaryOut"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    create_blueprint_api_v1_blueprints_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlueprintOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description The blueprint breaks a rule; every broken rule is listed in the message (use /blueprints/validate for a structured list). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    get_blueprint_api_v1_blueprints__blueprint_id__get: {
+        parameters: {
+            query?: {
+                version?: number | null;
+            };
+            header?: never;
+            path: {
+                blueprint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlueprintOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_blueprint_api_v1_blueprints__blueprint_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                blueprint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlueprintOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description The blueprint breaks a rule; every broken rule is listed in the message (use /blueprints/validate for a structured list). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    blueprint_versions_api_v1_blueprints__blueprint_id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                blueprint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlueprintSummaryOut"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    copy_blueprint_api_v1_blueprints__blueprint_id__copy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                blueprint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlueprintOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

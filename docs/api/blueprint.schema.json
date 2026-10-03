@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tarn:schema:exam-blueprint:1.0",
+  "title": "Tarn exam blueprint",
+  "description": "The structure of one question paper: header, sections, choice rules (answer any N of M), OR pairs, sub-parts with their own marks, step marks, the evaluation method of each section and optional links to question ids. Version 1.0 (field schema_version). A document that satisfies this schema may still be refused by the API, because some rules are arithmetic and cannot be written here: question and sub-part marks use at most 2 decimal places; sub-part marks and step marks add up to the marks of the question they belong to; the alternatives of an OR pair carry equal marks; 'any N' has N between 1 and the number of items; question numbers, sub-part labels and step labels are unique; and total_marks equals the sum over sections of the marks of the N largest items (all items when the rule is 'all'). The API explains each broken rule with a path and a sentence (POST /api/v1/blueprints/validate). Negative marking is exam-wide and applies to wrong answers in sections evaluated by exact_pattern_match or omr_bubble_scan.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "title", "course_code", "subject_id", "total_marks", "sections"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "title": { "$ref": "#/$defs/text", "description": "Exam title, e.g. the header of the paper." },
+    "course_code": { "$ref": "#/$defs/text", "description": "Course code printed on the paper." },
+    "subject_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The subject (global content) this paper belongs to."
+    },
+    "duration_minutes": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "maximum": 1440,
+      "description": "Length of the exam; null when not stated."
+    },
+    "total_marks": { "$ref": "#/$defs/marks", "description": "Most a student can earn, choice rules applied." },
+    "negative_marking": {
+      "enum": [0, 0.25, 0.5],
+      "default": 0,
+      "description": "Marks deducted for a wrong answer in an objective section."
+    },
+    "mark_step": {
+      "enum": [0.25, 0.5, 1],
+      "default": 0.5,
+      "description": "Unit that marks for an answer are rounded to."
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/section" }
+    }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S" },
+    "marks": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000 },
+    "questionId": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "The question this slot is marked against; null until it is linked."
+    },
+    "method": {
+      "enum": [
+        "exact_pattern_match",
+        "omr_bubble_scan",
+        "keyword_formula",
+        "semantic_rubric",
+        "diagram"
+      ],
+      "description": "Exact Pattern Match, OMR Bubble Scan, Keyword + Formula, Semantic Rubric, Diagram."
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "marks"],
+      "properties": {
+        "label": { "$ref": "#/$defs/text" },
+        "marks": { "$ref": "#/$defs/marks" }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/step" },
+      "description": "Marks per step of a worked answer; they add up to the marks they split."
+    },
+    "part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "marks"],
+      "properties": {
+        "label": { "$ref": "#/$defs/text" },
+        "marks": { "$ref": "#/$defs/marks" },
+        "question_id": { "$ref": "#/$defs/questionId" },
+        "steps": { "$ref": "#/$defs/steps" }
+      }
+    },
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "marks"],
+      "properties": {
+        "label": { "$ref": "#/$defs/text", "description": "The number on the paper, e.g. \"7\" or \"12\"." },
+        "marks": { "$ref": "#/$defs/marks" },
+        "question_id": { "$ref": "#/$defs/questionId" },
+        "parts": {
+          "type": "array",
+          "maxItems": 10,
+          "items": { "$ref": "#/$defs/part" },
+          "description": "Sub-parts with their own marks (12a 10 + 12b 5). Link questions on the parts, not on the question."
+        },
+        "steps": { "$ref": "#/$defs/steps" }
+      }
+    },
+    "questionItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "label", "marks"],
+      "properties": {
+        "type": { "const": "question" },
+        "label": { "$ref": "#/$defs/question/properties/label" },
+        "marks": { "$ref": "#/$defs/marks" },
+        "question_id": { "$ref": "#/$defs/questionId" },
+        "parts": { "$ref": "#/$defs/question/properties/parts" },
+        "steps": { "$ref": "#/$defs/steps" }
+      }
+    },
+    "orItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "alternatives"],
+      "properties": {
+        "type": { "const": "or" },
+        "alternatives": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/question" },
+          "description": "Questions of which one counts (the higher score if both are answered). They carry equal marks."
+        }
+      }
+    },
+    "choice": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rule"],
+          "properties": { "rule": { "const": "all" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rule", "n"],
+          "properties": {
+            "rule": { "const": "any" },
+            "n": { "type": "integer", "minimum": 1, "maximum": 100 }
+          }
+        }
+      ],
+      "description": "\"all\": every item counts. \"any\" with n: answer any N of the M items; the best N count and the rest are shown as not counted."
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "method", "items"],
+      "properties": {
+        "label": { "$ref": "#/$defs/text" },
+        "title": { "type": "string", "maxLength": 200 },
+        "method": { "$ref": "#/$defs/method" },
+        "choice": { "$ref": "#/$defs/choice" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": { "oneOf": [{ "$ref": "#/$defs/questionItem" }, { "$ref": "#/$defs/orItem" }] }
+        }
+      }
+    }
+  }
+}

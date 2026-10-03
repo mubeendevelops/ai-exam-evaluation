@@ -1,0 +1,147 @@
+{
+  "schema_version": "1.0",
+  "title": "Synthetic paper, CI shape",
+  "course_code": "SYN-CI",
+  "subject_id": "00000000-0000-4000-8000-000000000001",
+  "duration_minutes": 180,
+  "total_marks": 50,
+  "negative_marking": 0,
+  "mark_step": 0.5,
+  "sections": [
+    {
+      "label": "A",
+      "title": "Short answers",
+      "method": "keyword_formula",
+      "choice": {
+        "rule": "any",
+        "n": 5
+      },
+      "items": [
+        {
+          "type": "question",
+          "label": "1",
+          "marks": 2,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "2",
+          "marks": 2,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "3",
+          "marks": 2,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "4",
+          "marks": 2,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "5",
+          "marks": 2,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "6",
+          "marks": 2,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "7",
+          "marks": 2,
+          "question_id": null
+        }
+      ]
+    },
+    {
+      "label": "B",
+      "title": "Short essays",
+      "method": "semantic_rubric",
+      "choice": {
+        "rule": "any",
+        "n": 4
+      },
+      "items": [
+        {
+          "type": "question",
+          "label": "8",
+          "marks": 5,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "9",
+          "marks": 5,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "10",
+          "marks": 5,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "11",
+          "marks": 5,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "12",
+          "marks": 5,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "13",
+          "marks": 5,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "14",
+          "marks": 5,
+          "question_id": null
+        }
+      ]
+    },
+    {
+      "label": "C",
+      "title": "Essays",
+      "method": "semantic_rubric",
+      "choice": {
+        "rule": "any",
+        "n": 2
+      },
+      "items": [
+        {
+          "type": "question",
+          "label": "15",
+          "marks": 10,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "16",
+          "marks": 10,
+          "question_id": null
+        },
+        {
+          "type": "question",
+          "label": "17",
+          "marks": 10,
+          "question_id": null
+        }
+      ]
+    }
+  ]
+}

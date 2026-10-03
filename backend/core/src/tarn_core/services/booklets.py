@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import Booklet
+from tarn_core.errors import InvariantError
 from tarn_core.ids import BlueprintId, BookletId, CollegeId, StudentId, UserId
 from tarn_core.ports.repositories import (
     BookletRepository,
@@ -62,6 +63,12 @@ class BookletService:
         self._users.get(college_id, actor_id)
         self._students.get(college_id, student_id)
         blueprint = self._content.get(ExamBlueprint, blueprint_id)
+        unlinked = blueprint.unlinked_leaves()
+        if unlinked:
+            raise InvariantError(
+                f"blueprint {blueprint.title!r} has no question linked for "
+                f"{', '.join(unlinked)}; link them before registering booklets"
+            )
         duplicates = tuple(b.id for b in self._booklets.find_by_hash(college_id, file_sha256))
         booklet = Booklet(
             id=self._rt.new_id(BookletId),

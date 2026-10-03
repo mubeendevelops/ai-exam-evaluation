@@ -56,9 +56,11 @@ from tarn_core.ports.repositories import (
 from tarn_core.ports.runtime import IdGenerator
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime
+from tarn_core.services.blueprints import BlueprintService
 from tarn_core.services.booklets import BookletService
 from tarn_core.services.content import ContentService
 from tarn_core.services.scoring import ScoringService
+from tarn_core.services.subjects import SubjectService
 from tarn_core.services.totals import TotalsService
 from tarn_core.testing import FixedCreditScorer
 
@@ -254,9 +256,11 @@ def ipr_shaped_blueprint(mem: Backend, owner: CollegeFixture) -> ExamBlueprint:
 
 @dataclass(frozen=True, slots=True)
 class Services:
+    blueprints: BlueprintService
     booklets: BookletService
     content: ContentService
     scoring: ScoringService
+    subjects: SubjectService
     totals: TotalsService
 
 
@@ -264,6 +268,8 @@ def make_services(mem: Backend, scorers: Sequence[Scorer] | None = None) -> Serv
     """Every core service wired to the in-memory adapters."""
     rt = mem.runtime
     return Services(
+        blueprints=BlueprintService(content=mem.content, users=mem.users, runtime=rt),
+        subjects=SubjectService(content=mem.content, users=mem.users, runtime=rt),
         booklets=BookletService(
             booklets=mem.booklets,
             students=mem.students,

@@ -1194,6 +1194,652 @@
           }
         }
       }
+    },
+    "/api/v1/subjects": {
+      "get": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "All subjects, by name",
+        "operationId": "list_subjects_api_v1_subjects_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SubjectOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Subjects Api V1 Subjects Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Create a subject owned by my college",
+        "operationId": "create_subject_api_v1_subjects_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubjectIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubjectOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/blueprints/validate": {
+      "post": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Check a blueprint document without saving it",
+        "description": "Reports every broken rule with its path and a plain sentence, and the totals with the choice rules applied (any N of M, OR pairs). Always 200: `valid` says the verdict.",
+        "operationId": "validate_blueprint_api_v1_blueprints_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Document",
+                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.0) and the examples next to it."
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/blueprints": {
+      "get": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "The newest version of every blueprint, from every college, by title",
+        "operationId": "list_blueprints_api_v1_blueprints_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BlueprintSummaryOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Blueprints Api V1 Blueprints Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Create a blueprint owned by my college",
+        "operationId": "create_blueprint_api_v1_blueprints_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Document",
+                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.0) and the examples next to it."
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlueprintOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The blueprint breaks a rule; every broken rule is listed in the message (use /blueprints/validate for a structured list).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/blueprints/{blueprint_id}": {
+      "get": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "One blueprint: the newest version, or ?version=",
+        "operationId": "get_blueprint_api_v1_blueprints__blueprint_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blueprint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Blueprint Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlueprintOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Save the document as the next version (owning college only)",
+        "description": "Earlier versions stay valid for booklets pinned to them. Another college's blueprint is copied first (POST .../copy).",
+        "operationId": "update_blueprint_api_v1_blueprints__blueprint_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blueprint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Blueprint Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.0) and the examples next to it.",
+                "title": "Document"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlueprintOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "The blueprint breaks a rule; every broken rule is listed in the message (use /blueprints/validate for a structured list).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/blueprints/{blueprint_id}/versions": {
+      "get": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Every version of a blueprint, oldest first",
+        "operationId": "blueprint_versions_api_v1_blueprints__blueprint_id__versions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blueprint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Blueprint Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BlueprintSummaryOut"
+                  },
+                  "title": "Response Blueprint Versions Api V1 Blueprints  Blueprint Id  Versions Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/blueprints/{blueprint_id}/copy": {
+      "post": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Copy a blueprint to my college",
+        "operationId": "copy_blueprint_api_v1_blueprints__blueprint_id__copy_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blueprint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Blueprint Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlueprintOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1272,6 +1918,217 @@
         ],
         "title": "AvailabilityOut"
       },
+      "BlueprintOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "course_code": {
+            "type": "string",
+            "title": "Course Code"
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Subject Id"
+          },
+          "subject_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Name"
+          },
+          "total_marks": {
+            "type": "number",
+            "title": "Total Marks"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "section_count": {
+            "type": "integer",
+            "title": "Section Count"
+          },
+          "question_count": {
+            "type": "integer",
+            "title": "Question Count"
+          },
+          "unlinked_count": {
+            "type": "integer",
+            "title": "Unlinked Count"
+          },
+          "owning_college_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owning College Id"
+          },
+          "owned": {
+            "type": "boolean",
+            "title": "Owned",
+            "description": "True if my college owns it and so may edit it."
+          },
+          "copied_from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentRefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "document": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Document",
+            "description": "The blueprint in the public form, see docs/api/blueprint.schema.json."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "title",
+          "course_code",
+          "subject_id",
+          "subject_name",
+          "total_marks",
+          "duration_minutes",
+          "section_count",
+          "question_count",
+          "unlinked_count",
+          "owning_college_id",
+          "owned",
+          "copied_from",
+          "document"
+        ],
+        "title": "BlueprintOut"
+      },
+      "BlueprintSummaryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "course_code": {
+            "type": "string",
+            "title": "Course Code"
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Subject Id"
+          },
+          "subject_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Name"
+          },
+          "total_marks": {
+            "type": "number",
+            "title": "Total Marks"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "section_count": {
+            "type": "integer",
+            "title": "Section Count"
+          },
+          "question_count": {
+            "type": "integer",
+            "title": "Question Count"
+          },
+          "unlinked_count": {
+            "type": "integer",
+            "title": "Unlinked Count"
+          },
+          "owning_college_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owning College Id"
+          },
+          "owned": {
+            "type": "boolean",
+            "title": "Owned",
+            "description": "True if my college owns it and so may edit it."
+          },
+          "copied_from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentRefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "title",
+          "course_code",
+          "subject_id",
+          "subject_name",
+          "total_marks",
+          "duration_minutes",
+          "section_count",
+          "question_count",
+          "unlinked_count",
+          "owning_college_id",
+          "owned",
+          "copied_from"
+        ],
+        "title": "BlueprintSummaryOut"
+      },
       "ChangePasswordIn": {
         "properties": {
           "current_password": {
@@ -1294,6 +2151,30 @@
           "new_password"
         ],
         "title": "ChangePasswordIn"
+      },
+      "ContentRefOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "version"
+        ],
+        "title": "ContentRefOut"
       },
       "CurrentPasswordIn": {
         "properties": {
@@ -1465,6 +2346,25 @@
           "email"
         ],
         "title": "InviteIn"
+      },
+      "IssueOut": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "Where in the document, e.g. sections[1].items[3].marks."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "message"
+        ],
+        "title": "IssueOut"
       },
       "LoginIn": {
         "properties": {
@@ -1808,6 +2708,42 @@
         ],
         "title": "RowErrorOut"
       },
+      "SectionSummaryOut": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method"
+          },
+          "items": {
+            "type": "integer",
+            "title": "Items",
+            "description": "M in 'answer any N of M'."
+          },
+          "counted": {
+            "type": "integer",
+            "title": "Counted",
+            "description": "N: how many items count towards the total."
+          },
+          "max_marks": {
+            "type": "number",
+            "title": "Max Marks",
+            "description": "Most this section can earn: the N largest items."
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "method",
+          "items",
+          "counted",
+          "max_marks"
+        ],
+        "title": "SectionSummaryOut"
+      },
       "StudentOut": {
         "properties": {
           "id": {
@@ -1836,6 +2772,71 @@
           "class_section"
         ],
         "title": "StudentOut"
+      },
+      "SubjectIn": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Code",
+            "examples": [
+              "PHY-501"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "examples": [
+              "Physics"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "SubjectIn"
+      },
+      "SubjectOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "owning_college_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owning College Id"
+          },
+          "owned": {
+            "type": "boolean",
+            "title": "Owned",
+            "description": "True if my college owns it."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name",
+          "owning_college_id",
+          "owned"
+        ],
+        "title": "SubjectOut"
       },
       "TenantStatusOut": {
         "properties": {
@@ -1973,6 +2974,71 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ValidationOut": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueOut"
+            },
+            "type": "array",
+            "title": "Issues"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/IssueOut"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SectionSummaryOut"
+            },
+            "type": "array",
+            "title": "Sections",
+            "description": "Empty if the document is too broken to read its sections."
+          },
+          "computed_total": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed Total",
+            "description": "Sum of the section maximums with the choice rules applied; null if unknown."
+          },
+          "question_count": {
+            "type": "integer",
+            "title": "Question Count"
+          },
+          "unlinked": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unlinked",
+            "description": "Leaf labels (7, 12.a) not linked to a question yet. Allowed in a blueprint, but booklets can only be registered once this is empty."
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid",
+          "issues",
+          "warnings",
+          "sections",
+          "computed_total",
+          "question_count",
+          "unlinked"
+        ],
+        "title": "ValidationOut"
       },
       "VerifyEmailIn": {
         "properties": {

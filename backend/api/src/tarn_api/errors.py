@@ -8,6 +8,7 @@ from tarn_core.errors import (
     DomainError,
     InvariantError,
     NotFoundError,
+    NotOwnerError,
     PasswordPolicyError,
     PermissionDeniedError,
     TenantViolationError,
@@ -19,6 +20,7 @@ _STATUS: list[tuple[type[DomainError], int]] = [
     (TokenError, status.HTTP_400_BAD_REQUEST),
     (AlreadyExistsError, status.HTTP_409_CONFLICT),
     (PermissionDeniedError, status.HTTP_403_FORBIDDEN),
+    (NotOwnerError, status.HTTP_403_FORBIDDEN),
     # Another college's rows look exactly like missing rows.
     (TenantViolationError, status.HTTP_404_NOT_FOUND),
     (NotFoundError, status.HTTP_404_NOT_FOUND),

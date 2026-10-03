@@ -144,6 +144,8 @@ exam_blueprints = _versioned(
     "exam_blueprints",
     _uuid("subject_id"),
     _text("title"),
+    Column("course_code", Text(), nullable=False, server_default=""),
+    Column("duration_minutes", Integer(), nullable=True),
     _num("total_marks"),
     _num("mark_step"),
     Column("sections", JSONB(), nullable=False),
