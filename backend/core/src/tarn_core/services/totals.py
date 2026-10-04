@@ -1,5 +1,6 @@
 """Totals for one booklet: the teacher's mark where approved, else the latest AI mark,
-through negative marking and the blueprint's choice rules."""
+through negative marking and the blueprint's choice rules. An answer without segments (emptied
+by a segment edit, kept for its score history) counts as not attempted."""
 
 from collections import defaultdict
 from dataclasses import dataclass
@@ -40,6 +41,8 @@ class TotalsService:
         leaf_marks: dict[str, Decimal] = {}
         unmarked: list[AnswerId] = []
         for answer in self._booklets.answers(college_id, booklet_id):
+            if not answer.segment_ids:
+                continue  # emptied by a teacher's segment edit: not attempted
             reviews = self._scores.reviews(college_id, answer.id)
             scores = self._scores.scores(college_id, answer.id)
             if answer.status is AnswerStatus.APPROVED and reviews:

@@ -17,6 +17,8 @@ from tarn_core.ids import BookletId, CollegeId
 from tarn_core.ports.engines import DetectedRegion, OcrEngine, TableCell
 from tarn_core.services.ocr.reader import BookletReader, OrientationPolicy
 from tarn_core.services.pipeline import PagePipeline
+from tarn_core.services.segmentation.service import BookletSegmenter
+from tarn_core.services.segmentation.similarity import TrigramEmbedder
 from tarn_core.services.uploads import UploadLimits
 from tarn_core.testing import (
     FakePageCleaner,
@@ -434,3 +436,27 @@ def test_page_text_of_another_college_is_not_found(s: Setup, other: dict[str, st
     s.read(booklet["id"])
     response = s.client.get(f"{BASE}/booklets/{booklet['id']}/pages/1/text", headers=other)
     assert response.status_code == 404
+
+
+# --- segmentation (P12) ---------------------------------------------------------------------------
+
+
+def test_a_segmented_booklet_and_a_failed_segmentation_are_served(s: Setup) -> None:
+    booklet = s.upload(fake_pdf(1)).json()
+    s.process(booklet["id"])
+    s.read(booklet["id"])
+    mem = s.backends.mem
+    booklet_id = BookletId(UUID(booklet["id"]))
+    segmenter = BookletSegmenter(
+        booklets=mem.booklets, content=mem.content, embedder=TrigramEmbedder(), runtime=mem.runtime
+    )
+    assert segmenter.step(s.college_id, booklet_id)
+    url = f"{BASE}/booklets/{booklet['id']}"
+    assert s.client.get(url, headers=s.teacher).json()["status"] == "segmented"
+
+    failed = s.upload(fake_pdf(1, "second")).json()
+    s.process(failed["id"])
+    s.read(failed["id"])
+    segmenter.abandon(s.college_id, BookletId(UUID(failed["id"])))
+    detail = s.client.get(f"{BASE}/booklets/{failed['id']}", headers=s.teacher).json()
+    assert detail["status"] == "failed" and detail["failure_reason"] == "segmentation_failed"

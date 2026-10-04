@@ -8,7 +8,7 @@ content class and the selector. It needs no repository, so the CLI uses it on pl
 
 ``BookletReader.step`` reads one page per call and is safe to repeat, so the worker runs every
 page in its own transaction and a crash resumes at the first unread page:
-PAGES_READY → READING (first step) → … → TEXT_READY (last step)."""
+PAGES_READY → READING (first step) → … → TEXT_READY (last step, which queues segmentation)."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -36,6 +36,7 @@ from tarn_core.ports.engines import (
     PageTransform,
     WordList,
 )
+from tarn_core.ports.jobs import JobQueue
 from tarn_core.ports.repositories import BookletRepository, ContentRepository
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime
@@ -48,6 +49,7 @@ from tarn_core.services.ocr.selector import (
     select,
 )
 from tarn_core.services.pipeline import booklet_key
+from tarn_core.services.segmentation.service import queue_segmenting
 
 FAILED_READING = "reading_failed"
 
@@ -286,6 +288,13 @@ def booklet_lexicon(
     """Glossary terms and key vocabulary of every question in the booklet's pinned exam, plus
     the English word list. The line's own question is not known before segmentation (P12)."""
     blueprint = content.get(ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version)
+    return exam_lexicon(content, blueprint, word_list)
+
+
+def exam_lexicon(
+    content: ContentRepository, blueprint: ExamBlueprint, word_list: WordList | None
+) -> Lexicon:
+    """The lexicon of ``booklet_lexicon`` for an exam without a booklet (benchmarks, CLI)."""
     question_ids: list[QuestionId] = []
     for slot in blueprint.slots():
         question_ids += [qid for _, qid, _ in leaves(slot) if qid is not None]
@@ -314,7 +323,9 @@ class BookletReader:
         runtime: Runtime,
         settings: SelectorSettings | None = None,
         orientation: OrientationPolicy | None = None,
+        jobs: JobQueue | None = None,
     ) -> None:
+        self._jobs = jobs
         self._booklets = booklets
         self._content = content
         self._blobs = blobs
@@ -428,6 +439,8 @@ class BookletReader:
                     lines += 1
                     flagged += region.flagged
         booklet = self._save(booklet, status=BookletStatus.TEXT_READY)
+        if self._jobs is not None:
+            queue_segmenting(self._jobs, booklet.college_id, booklet.id)
         self._rt.record(
             booklet.college_id,
             None,

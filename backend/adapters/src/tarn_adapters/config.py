@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     ocr_detection_model: str = "PP-OCRv5_mobile_det"
     ocr_recognition_model: str = "PP-OCRv5_server_rec"
     ocr_layout_model: str = "PP-DocLayout-L"
+    # Sentence embeddings for segmentation (P12): a sentence-transformers model, or "trigram"
+    # for the model-free embedder of the core (also the fallback when the library is missing).
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     # Downloaded model weights (Hugging Face, PaddleX); git-ignored.
     model_dir: Path = Path("../var/models")
     english_words: Path | None = None

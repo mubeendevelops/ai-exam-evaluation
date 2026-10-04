@@ -1,6 +1,7 @@
 """OCR on PostgreSQL: regions with every reading and its score, table cells, the page's OCR
 stage, calibrations as operator-only content, and the worker running a booklet from upload to
-``text_ready`` (real PDF splitter, cleaner and page transform; scripted layout and engines)."""
+``text_ready`` and on to ``segmented`` (real PDF splitter, cleaner and page transform; scripted
+layout and engines; the trigram embedder)."""
 
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -20,7 +21,7 @@ from tarn_core.domain.ocr import ContentClass, EngineCalibration, ReadingScore, 
 from tarn_core.errors import EngineFailedError, NotOwnerError
 from tarn_core.ids import RegionId
 from tarn_core.ports.engines import DetectedRegion, TableCell
-from tarn_core.ports.jobs import JOB_READ_BOOKLET
+from tarn_core.ports.jobs import JOB_READ_BOOKLET, JOB_SEGMENT_BOOKLET
 from tarn_core.services.ocr.reader import OrientationPolicy
 from tarn_core.testing import ScriptedLayoutDetector, ScriptedOcrEngine
 from tarn_worker.booklets import OcrKit
@@ -254,4 +255,16 @@ def test_the_worker_reads_a_booklet_after_its_pages_are_ready(ocr_env: Env) -> N
     assert regions[2].parent_id == regions[1].id
     ((actor, after),) = env.audit(AuditAction.BOOKLET_TEXT_READ)
     assert actor is None and '"lines": 4' in str(after)
+    # P12: the last reading step queued segmentation in the same transaction.
+    with env.test_db.owner() as conn:
+        kinds = [r[0] for r in conn.execute("SELECT kind FROM jobs ORDER BY seq").fetchall()]
+    assert kinds == ["booklet.prepare", JOB_READ_BOOKLET, JOB_SEGMENT_BOOKLET]
+    assert env.runner.run_one() is True  # booklet.segment
+    assert env.booklet(booklet).status is BookletStatus.SEGMENTED
+    with env.open(env.college.id) as s:
+        segments = list(s.booklets.segments(env.college.id, booklet.id))
+    assert segments and {rid for seg in segments for rid in seg.region_ids} >= {
+        r.id for r in regions
+    }
+    assert [p.reading_order for p in env.pages(booklet)] == [0, 1]
     assert env.runner.run_one() is False

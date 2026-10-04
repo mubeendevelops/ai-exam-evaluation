@@ -17,6 +17,8 @@ class AuditAction(StrEnum):
     BOOKLET_PROCESSED = "booklet.processed"  # by the page pipeline: no acting user
     BOOKLET_FAILED = "booklet.failed"  # by the page pipeline: no acting user
     BOOKLET_TEXT_READ = "booklet.text_read"  # by the OCR reader: no acting user
+    BOOKLET_SEGMENTED = "booklet.segmented"  # by segmentation: no acting user
+    SEGMENT_EDITED = "segment.edited"  # a teacher's merge, split, reassign or boundary move
     PAGE_USED_ANYWAY = "page.used_anyway"
     CONTENT_CREATED = "content.created"
     CONTENT_EDITED = "content.edited"
@@ -60,6 +62,7 @@ ANONYMOUS_ACTIONS = frozenset(
         AuditAction.BOOKLET_PROCESSED,
         AuditAction.BOOKLET_FAILED,
         AuditAction.BOOKLET_TEXT_READ,
+        AuditAction.BOOKLET_SEGMENTED,
     }
 )
 

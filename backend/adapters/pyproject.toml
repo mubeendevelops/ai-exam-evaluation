@@ -36,6 +36,8 @@ ocr = [
     "pytesseract==0.3.13",
     "transformers==5.18.0",
     "torch==2.14.1",
+    # Sentence embeddings for segmentation (P12) and semantic scoring (P13).
+    "sentence-transformers==6.1.0",
 ]
 # Cloud OCR engines, off by default (design decision 4).
 cloud-ocr = [

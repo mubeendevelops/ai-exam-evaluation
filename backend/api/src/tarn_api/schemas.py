@@ -463,6 +463,7 @@ BookletStatusName = Literal[
     "pages_ready",
     "reading",
     "text_ready",
+    "segmented",
     "failed",
     "scored",
     "in_review",
@@ -536,7 +537,14 @@ class BookletOut(BaseModel):
         description="Numbers of the pages no OCR engine could read."
     )
     failure_reason: (
-        Literal["unreadable_file", "too_many_pages", "processing_failed", "reading_failed"] | None
+        Literal[
+            "unreadable_file",
+            "too_many_pages",
+            "processing_failed",
+            "reading_failed",
+            "segmentation_failed",
+        ]
+        | None
     )
     duplicate_of: list[UUID] = Field(
         description="Other booklets of this college with the same file (set on upload only)."

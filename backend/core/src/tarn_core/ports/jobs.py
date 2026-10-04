@@ -18,6 +18,9 @@ JOB_PREPARE_BOOKLET = "booklet.prepare"
 JOB_READ_BOOKLET = "booklet.read"
 """Read the cleaned pages with every OCR engine and keep the best reading per line (P10)."""
 
+JOB_SEGMENT_BOOKLET = "booklet.segment"
+"""Split the read booklet into answers per question (P12)."""
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Job:

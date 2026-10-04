@@ -35,6 +35,7 @@ from tarn_core.domain.booklet import (
     RegionKind,
     RetakeReason,
     Segment,
+    SegmentFlag,
     SegmentSource,
 )
 from tarn_core.domain.common import (
@@ -755,6 +756,8 @@ def _page(r: Row[Any]) -> Page:
         text_read=r.text_read,
         needs_text=r.needs_text,
         ocr_failures=tuple(r.ocr_failures),
+        written_number=r.written_number,
+        reading_order=r.reading_order,
     )
 
 
@@ -812,6 +815,10 @@ def _segment(r: Row[Any]) -> Segment:
         spans=codec.spans_from_json(r.spans),
         source=SegmentSource(r.source),
         match_score=r.match_score,
+        region_ids=tuple(RegionId(x) for x in r.region_ids),
+        flags=tuple(SegmentFlag(f) for f in r.flags),
+        position=r.position,
+        proposed_label=r.proposed_label,
     )
 
 
@@ -930,6 +937,8 @@ class PgBookletRepository:
                     "text_read": page.text_read,
                     "needs_text": page.needs_text,
                     "ocr_failures": list(page.ocr_failures),
+                    "written_number": page.written_number,
+                    "reading_order": page.reading_order,
                 },
             )
 
@@ -1029,7 +1038,8 @@ class PgBookletRepository:
         self._conn.execute(insert(lr), rows)
 
     def segments(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Segment]:
-        return [_segment(r) for r in self._rows(m.segments, college_id, booklet_id=booklet_id)]
+        rows = self._rows(m.segments, college_id, booklet_id=booklet_id)
+        return sorted((_segment(r) for r in rows), key=lambda s: s.position)
 
     def save_segment(self, college_id: CollegeId, segment: Segment) -> None:
         _check_tenant(college_id, segment.college_id, "segment")
@@ -1045,7 +1055,19 @@ class PgBookletRepository:
                     "spans": codec.spans_to_json(segment.spans),
                     "source": segment.source.value,
                     "match_score": segment.match_score,
+                    "region_ids": list(segment.region_ids),
+                    "flags": [f.value for f in segment.flags],
+                    "position": segment.position,
+                    "proposed_label": segment.proposed_label,
                 },
+            )
+
+    def delete_segment(self, college_id: CollegeId, segment_id: SegmentId) -> None:
+        with writing(self._conn, f"segment {segment_id}"):
+            self._conn.execute(
+                delete(m.segments).where(
+                    m.segments.c.college_id == college_id, m.segments.c.id == segment_id
+                )
             )
 
     def answers(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Answer]:
@@ -1070,6 +1092,14 @@ class PgBookletRepository:
                     "status": answer.status.value,
                     "version": answer.version,
                 },
+            )
+
+    def delete_answer(self, college_id: CollegeId, answer_id: AnswerId) -> None:
+        with writing(self._conn, f"answer {answer_id}"):
+            self._conn.execute(
+                delete(m.answers).where(
+                    m.answers.c.college_id == college_id, m.answers.c.id == answer_id
+                )
             )
 
     def diagrams(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[StudentDiagram]:

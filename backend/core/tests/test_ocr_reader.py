@@ -15,7 +15,7 @@ from tarn_core.domain.ocr import ContentClass, EngineCalibration, SelectorSettin
 from tarn_core.errors import EngineFailedError, EngineTimeoutError, NotFoundError
 from tarn_core.ids import GlossaryId
 from tarn_core.ports.engines import DetectedRegion, OcrEngine, TableCell
-from tarn_core.ports.jobs import JOB_READ_BOOKLET
+from tarn_core.ports.jobs import JOB_READ_BOOKLET, JOB_SEGMENT_BOOKLET
 from tarn_core.services.ocr.reader import FAILED_READING, BookletReader, OrientationPolicy
 from tarn_core.services.pipeline import PageDecisions, PagePipeline
 from tarn_core.services.uploads import UploadLimits, UploadService
@@ -95,6 +95,7 @@ class World:
             runtime=self.mem.runtime,
             settings=settings,
             orientation=orientation or OrientationPolicy(enabled=False),
+            jobs=self.mem.jobs,
         )
 
     def read_all(self, reader: BookletReader, booklet: Booklet) -> Booklet:
@@ -176,6 +177,8 @@ def test_one_page_per_step_then_text_ready(w: World) -> None:
     done = w.read_all(reader, booklet)
     assert done.status is BookletStatus.TEXT_READY
     assert reader.step(w.college.id, booklet.id) is True  # nothing more to do
+    segmenting = [j for j in w.mem.jobs.jobs if j.kind == JOB_SEGMENT_BOOKLET]
+    assert [j.payload for j in segmenting] == [{"booklet_id": str(booklet.id)}]  # queued once
     (event,) = [e for e in w.mem.audit.events if e.action is AuditAction.BOOKLET_TEXT_READ]
     assert event.actor_id is None
     assert event.after["pages"] == 3  # type: ignore[index,call-overload]

@@ -18,6 +18,7 @@ from tarn_core.ids import (
     CollegeId,
     PageId,
     QuestionId,
+    SegmentId,
     StudentId,
     SubjectId,
     UserId,
@@ -294,10 +295,16 @@ class MemoryBookletRepository:
             self._regions.put(college_id, region.id, region)
 
     def segments(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Segment]:
-        return [s for s in self._segments.values(college_id) if s.booklet_id == booklet_id]
+        found = [s for s in self._segments.values(college_id) if s.booklet_id == booklet_id]
+        return sorted(found, key=lambda s: s.position)
 
     def save_segment(self, college_id: CollegeId, segment: Segment) -> None:
+        self._booklets.get(college_id, segment.booklet_id)
         self._segments.put(college_id, segment.id, segment)
+
+    def delete_segment(self, college_id: CollegeId, segment_id: SegmentId) -> None:
+        self._segments.drop_where(college_id, lambda s: s.id == segment_id)
+        self._diagrams.drop_where(college_id, lambda d: d.segment_id == segment_id)
 
     def answers(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Answer]:
         return [a for a in self._answers.values(college_id) if a.booklet_id == booklet_id]
@@ -307,6 +314,9 @@ class MemoryBookletRepository:
 
     def save_answer(self, college_id: CollegeId, answer: Answer) -> None:
         self._answers.put(college_id, answer.id, answer)
+
+    def delete_answer(self, college_id: CollegeId, answer_id: AnswerId) -> None:
+        self._answers.drop_where(college_id, lambda a: a.id == answer_id)
 
     def diagrams(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[StudentDiagram]:
         return [d for d in self._diagrams.values(college_id) if d.booklet_id == booklet_id]

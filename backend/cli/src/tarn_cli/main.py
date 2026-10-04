@@ -31,7 +31,7 @@ ocr = typer.Typer(help="OCR engines (P10): models, reading files, calibration.")
 ocr_models = typer.Typer(help="Model weights and the compute device.")
 ocr.add_typer(ocr_models, name="models")
 truth = typer.Typer(help="Ground truth for the OCR benchmark (P11): pre-fill, transcribe, status.")
-bench = typer.Typer(help="Benchmarks (P11).")
+bench = typer.Typer(help="Benchmarks (P11, P12).")
 app.add_typer(db, name="db")
 app.add_typer(pages, name="pages")
 app.add_typer(ocr, name="ocr")
@@ -354,8 +354,9 @@ def ocr_models_check() -> None:
 
 @ocr_models.command("fetch")
 def ocr_models_fetch() -> None:
-    """Download the weights of every local engine into TARN_MODEL_DIR (once; then offline) and
-    read a generated line with each, reporting the time and the GPU memory used."""
+    """Download the weights of every local engine and of the segmentation embedder into
+    TARN_MODEL_DIR (once; then offline) and run each on a generated line, reporting the time and
+    the GPU memory used."""
     import time
 
     import cv2
@@ -385,6 +386,22 @@ def ocr_models_fetch() -> None:
         import torch
 
         typer.echo(f"GPU memory peak: {torch.cuda.max_memory_allocated() // 2**20} MB")
+    from tarn_adapters.embed.wiring import build_embedder
+
+    embedding = build_embedder(get_settings())
+    if embedding.fallback_reason:
+        typer.echo(f"embedder: trigram ({embedding.fallback_reason})")
+    started = time.perf_counter()
+    try:
+        embedding.embedder.embed(["Tarn model check"])
+    except Exception as error:  # report it like an engine
+        typer.echo(f"embedder: FAILED ({type(error).__name__}: {error})")
+    else:
+        ref = embedding.embedder.ref
+        typer.echo(
+            f"embedder {ref.name} {ref.version} ({embedding.embedder.dimension} dimensions): "
+            f"{time.perf_counter() - started:.1f}s"
+        )
 
 
 @ocr.command("read")
@@ -669,4 +686,87 @@ def bench_ocr(
         )
     for warning in report.warnings:
         typer.echo(f"warning: {warning}")
+    typer.echo(f"report written to {target}")
+
+
+@bench.command("segment")
+def bench_segment(
+    root: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
+    out: Annotated[
+        Path | None,
+        typer.Option(help="Report file (default: docs/benchmarks/segmentation-<date>.md)."),
+    ] = None,
+    compare_trigram: Annotated[
+        bool, typer.Option(help="Also run the model-free trigram embedder.")
+    ] = True,
+    note: Annotated[
+        list[str] | None, typer.Option(help="A finding to state in the report (repeatable).")
+    ] = None,
+) -> None:
+    """Segment the sample booklets of a benchmark folder (one sub-folder per booklet with
+    ``booklet.json``, optional ``truth.json``; the OCR is read once and cached there) against
+    the seeded papers, and write the report: written order, answer starts, continuations and
+    page order against the labelling. Question labels and counts only: no text."""
+    from dataclasses import asdict
+
+    from tarn_adapters.embed.wiring import TRIGRAM, build_embedder
+    from tarn_adapters.segmentation.bench import discover, ensure_ocr, seeded_papers, segment
+    from tarn_core.services.segmentation.benchmark import EmbedderRuns, render_report
+    from tarn_core.services.segmentation.segmenter import SegmentationPolicy
+    from tarn_core.services.segmentation.similarity import TrigramEmbedder
+
+    settings = get_settings()
+    booklets = discover(root, _repo_root())
+    if not booklets:
+        typer.echo("error: no booklet folders (with booklet.json) found", err=True)
+        raise typer.Exit(1)
+    papers = seeded_papers()
+    setup_cache: list[OcrSetup] = []
+
+    def ocr_setup() -> "OcrSetup":
+        if not setup_cache:
+            setup_cache.append(_ocr_setup(settings))
+        return setup_cache[0]
+
+    cached = {b.label: ensure_ocr(b, papers, ocr_setup, typer.echo) for b in booklets}
+    policy = SegmentationPolicy()
+    embedders = [build_embedder(settings).embedder]
+    if compare_trigram and settings.embedding_model != TRIGRAM:
+        embedders.append(TrigramEmbedder())
+    compared = []
+    for embedder in embedders:
+        runs = [
+            run
+            for b in booklets
+            if (run := segment(b, cached[b.label], papers, embedder, policy)) is not None
+        ]
+        compared.append(
+            EmbedderRuns(name=f"{embedder.ref.name} {embedder.ref.version}", runs=tuple(runs))
+        )
+        typer.echo(f"{embedder.ref.name}: {len(runs)} booklets segmented")
+    unlabelled = [
+        f"{b.label}: no paper known, {len(cached[b.label])} pages read, not segmented"
+        if b.paper is None
+        else f"{b.label}: no labelling (truth.json), segmented but not scored"
+        for b in booklets
+        if b.paper is None or b.truth is None
+    ]
+    date = SystemClock().now().date().isoformat()
+    labellers: dict[str, list[str]] = {}
+    for b in booklets:
+        if b.truth is not None:
+            labellers.setdefault(b.labelled_by or "not stated", []).append(b.label)
+    provenance = [
+        f"Truth of {', '.join(names)}: {who}." for who, names in sorted(labellers.items())
+    ]
+    report = render_report(
+        date=date,
+        compared=compared,
+        policy={k: v for k, v in asdict(policy).items() if isinstance(v, (int, float))},
+        unlabelled=unlabelled,
+        notes=[*provenance, *(note or [])],
+    )
+    target = out or _repo_root() / "docs" / "benchmarks" / f"segmentation-{date}.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(report, encoding="utf-8")
     typer.echo(f"report written to {target}")

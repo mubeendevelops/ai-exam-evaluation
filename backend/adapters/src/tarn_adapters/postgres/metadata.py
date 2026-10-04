@@ -253,6 +253,8 @@ pages = Table(
     Column("text_read", Boolean(), nullable=False),
     Column("needs_text", Boolean(), nullable=False),
     Column("ocr_failures", ARRAY(Text()), nullable=False),
+    _int("written_number", nullable=True),
+    _int("reading_order", nullable=True),
 )
 
 regions = Table(
@@ -306,6 +308,10 @@ segments = Table(
     _text("source"),
     Column("match_score", Double(), nullable=True),
     _seq(),
+    Column("region_ids", ARRAY(Uuid()), nullable=False),
+    Column("flags", ARRAY(Text()), nullable=False),
+    _int("position"),
+    _text("proposed_label", nullable=True),
 )
 
 answers = Table(

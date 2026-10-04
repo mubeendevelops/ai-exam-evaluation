@@ -35,6 +35,7 @@ from tarn_core.ids import (
     CollegeId,
     PageId,
     QuestionId,
+    SegmentId,
     StudentId,
     SubjectId,
     UserId,
@@ -185,15 +186,27 @@ class BookletRepository(Protocol):
         order (parents before the cells that point at them)."""
         ...
 
-    def segments(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Segment]: ...
+    def segments(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Segment]:
+        """In written order (``position``)."""
+        ...
 
     def save_segment(self, college_id: CollegeId, segment: Segment) -> None: ...
+
+    def delete_segment(self, college_id: CollegeId, segment_id: SegmentId) -> None:
+        """Removes one segment (a re-segmentation or a teacher's merge); its diagrams go with
+        it. No error when it is already gone."""
+        ...
 
     def answers(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Answer]: ...
 
     def get_answer(self, college_id: CollegeId, answer_id: AnswerId) -> Answer: ...
 
     def save_answer(self, college_id: CollegeId, answer: Answer) -> None: ...
+
+    def delete_answer(self, college_id: CollegeId, answer_id: AnswerId) -> None:
+        """Removes an answer that lost all its segments; its scores and reviews must be
+        removed first (``ScoreRepository.delete_for_answers``)."""
+        ...
 
     def diagrams(
         self, college_id: CollegeId, booklet_id: BookletId

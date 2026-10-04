@@ -268,9 +268,12 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
     assert original.status_code == 200 and original.content[:3] == b"\xff\xd8\xff"
     assert client.get("/api/v1/booklets", headers=a).json()["waiting"] == 1  # waits for OCR
     assert runner.run_one() is True  # reading
-    assert runner.run_one() is False
     read = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()
     assert read["status"] == "text_ready" and read["pages_read"] == 2
+    assert runner.run_one() is True  # segmentation (P12)
+    assert runner.run_one() is False
+    segmented = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()
+    assert segmented["status"] == "segmented"
     text = client.get(read["pages"][0]["text_url"], headers=a).json()
     assert [r["text"] for r in text["regions"]] == ["synthetic line"]
     assert client.get(read["pages"][0]["text_url"], headers=b).status_code == 404

@@ -177,3 +177,21 @@ def test_the_benchmark_runs_end_to_end_on_a_verified_printed_set(setup, tmp_path
     text = render(report)
     assert "Gradient descent" not in text
     assert all(t.page_seconds > 0 for t in run.timings)
+
+
+def test_sentence_embedder_tells_questions_apart(settings: Settings) -> None:
+    from tarn_adapters.embed.wiring import build_embedder
+    from tarn_core.services.segmentation.similarity import cosine
+
+    if importlib.util.find_spec("sentence_transformers") is None:
+        pytest.skip("sentence-transformers is not installed")
+    embedder = build_embedder(settings).embedder
+    question, related, other = embedder.embed(
+        [
+            "What are the 3 types of emergency?",
+            "national emergency, state emergency and financial emergency",
+            "the writ of habeas corpus protects personal liberty",
+        ]
+    )
+    assert len(question) == embedder.dimension
+    assert cosine(question, related) > cosine(question, other) + 0.1

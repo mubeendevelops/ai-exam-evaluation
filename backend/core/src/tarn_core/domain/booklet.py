@@ -33,7 +33,8 @@ class BookletStatus(StrEnum):
     P9 moves a booklet UPLOADED → PROCESSING → PAGES_READY or NEEDS_RETAKE (a teacher's "use
     anyway" on every flagged page moves NEEDS_RETAKE → PAGES_READY), or → FAILED when the file
     cannot be read. PAGES_READY is where OCR (P10) takes over: PAGES_READY → READING →
-    TEXT_READY (where segmentation, P12, takes over)."""
+    TEXT_READY (where segmentation, P12, takes over) → SEGMENTED (where scoring, P13, takes
+    over)."""
 
     UPLOADED = "uploaded"
     PROCESSING = "processing"
@@ -41,6 +42,7 @@ class BookletStatus(StrEnum):
     PAGES_READY = "pages_ready"
     READING = "reading"
     TEXT_READY = "text_ready"
+    SEGMENTED = "segmented"
     FAILED = "failed"
     SCORED = "scored"
     IN_REVIEW = "in_review"
@@ -180,6 +182,11 @@ class Page:
     """Every OCR engine failed on this page: the teacher types it or retakes it."""
     ocr_failures: tuple[str, ...] = ()
     """Engines that failed on this page, as ``engine:reason`` (reason: timeout or error)."""
+    written_number: int | None = None
+    """The page number the student wrote on the page, when segmentation found one (P12)."""
+    reading_order: int | None = None
+    """Position in the booklet after segmentation's page-order check, from 0 (None: not
+    segmented yet; ``index`` stays the upload order, which names the stored files)."""
 
     def __post_init__(self) -> None:
         if self.index < 0 or self.width <= 0 or self.height <= 0:
@@ -191,6 +198,10 @@ class Page:
             raise InvariantError("only a flagged page can be used anyway")
         if self.needs_text and not self.text_read:
             raise InvariantError("only a page that went through OCR can need text")
+        if self.written_number is not None and self.written_number < 1:
+            raise InvariantError("a written page number counts from 1")
+        if self.reading_order is not None and self.reading_order < 0:
+            raise InvariantError("reading order counts from 0")
         for failure in self.ocr_failures:
             engine, _, reason = failure.partition(":")
             if not engine or reason not in ("timeout", "error"):
@@ -296,15 +307,38 @@ class SegmentSource(StrEnum):
     TEACHER = "teacher"
 
 
+class SegmentFlag(StrEnum):
+    """Why the teacher should look at a segment (design.md "Segmentation")."""
+
+    DUPLICATE = "duplicate"
+    """Another segment was given the same question: both are kept, the teacher decides."""
+    BEFORE_FIRST_ANSWER = "before_first_answer"
+    """Text before the booklet's first answer (cover, name, USN) that matched no question."""
+    LABEL_DISAGREES = "label_disagrees"
+    """The written label and the text's similarity point at different questions."""
+    NUMBER_UNREAD = "number_unread"
+    """An answer start ("Ans:", "Q no.") whose question number could not be read or is not on
+    the paper; the question comes from similarity, or the segment is unassigned."""
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SegmentSpan:
+    """A part of one page a segment covers: the box around a run of its lines there (a segment
+    edited by the teacher may have two runs on one page)."""
+
     page_id: PageId
     box: Box
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Segment:
-    """A piece of a booklet assigned to a question slot; ``slot_label`` None = unassigned tray."""
+    """A piece of a booklet assigned to an answerable leaf of the blueprint (``"7"``,
+    ``"12.a"``); ``slot_label`` None = the unassigned tray.
+
+    ``region_ids`` are the page regions (lines, table cells, diagrams) it holds, in reading
+    order; ``position`` is its place in the order the student wrote (from 0).
+    ``match_score`` is the similarity of its opening lines to the question it was matched to
+    (or, unassigned, to ``proposed_label``, the best question below the threshold)."""
 
     id: SegmentId
     college_id: CollegeId
@@ -313,12 +347,29 @@ class Segment:
     spans: tuple[SegmentSpan, ...]
     source: SegmentSource
     match_score: float | None = None
+    region_ids: tuple[RegionId, ...] = ()
+    flags: tuple[SegmentFlag, ...] = ()
+    position: int = 0
+    proposed_label: str | None = None
 
     def __post_init__(self) -> None:
         if not self.spans:
             raise InvariantError("a segment covers at least one page area")
         if self.match_score is not None:
             check_unit_interval("match score", self.match_score)
+        if self.position < 0:
+            raise InvariantError("segment position counts from 0")
+        if len(set(self.region_ids)) != len(self.region_ids):
+            raise InvariantError("a region appears twice in a segment")
+        if len(set(self.flags)) != len(self.flags):
+            raise InvariantError("a segment flag appears twice")
+        if self.slot_label is not None and self.proposed_label is not None:
+            raise InvariantError("only an unassigned segment carries a proposed question")
+
+    @property
+    def page_ids(self) -> tuple[PageId, ...]:
+        """The pages it covers, in reading order, each once."""
+        return tuple(dict.fromkeys(s.page_id for s in self.spans))
 
 
 class AnswerStatus(StrEnum):

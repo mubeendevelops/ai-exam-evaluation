@@ -1,5 +1,6 @@
-"""Runs queued booklet jobs: ``booklet.prepare`` (split, clean, gate; P9) and ``booklet.read``
-(best-of-N OCR, one page per step; P10). One booklet at a time, one transaction per step, so a
+"""Runs queued booklet jobs: ``booklet.prepare`` (split, clean, gate; P9), ``booklet.read``
+(best-of-N OCR, one page per step; P10) and ``booklet.segment`` (answers per question, one
+step; P12). One booklet at a time, one transaction per step, so a
 crash resumes from the last finished step (design.md "Reliability").
 
 Per tick: jobs whose worker vanished on their last attempt are reaped (their booklets end as
@@ -13,7 +14,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 from uuid import UUID
 
@@ -23,13 +24,16 @@ from tarn_adapters.postgres.database import PostgresDatabase, PostgresSession
 from tarn_core.domain.ocr import SelectorSettings
 from tarn_core.errors import NotFoundError
 from tarn_core.ids import BookletId, CollegeId
-from tarn_core.ports.engines import LayoutDetector, OcrEngine, PageTransform, WordList
-from tarn_core.ports.jobs import JOB_PREPARE_BOOKLET, JOB_READ_BOOKLET, Job
+from tarn_core.ports.engines import Embedder, LayoutDetector, OcrEngine, PageTransform, WordList
+from tarn_core.ports.jobs import JOB_PREPARE_BOOKLET, JOB_READ_BOOKLET, JOB_SEGMENT_BOOKLET, Job
 from tarn_core.ports.pages import PageCleaner, PageSplitter
 from tarn_core.ports.runtime import Clock, IdGenerator
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services.ocr.reader import BookletReader, OrientationPolicy, abandon_reading
 from tarn_core.services.pipeline import PagePipeline, QualityPolicy
+from tarn_core.services.segmentation.segmenter import SegmentationPolicy
+from tarn_core.services.segmentation.service import BookletSegmenter
+from tarn_core.services.segmentation.similarity import TrigramEmbedder
 
 
 @dataclass(frozen=True)
@@ -83,6 +87,8 @@ class BookletJobRunner:
     """None: OCR could not be set up; reading jobs fail (with retries) until a worker with OCR
     takes them, and in the end their booklets fail as ``reading_failed``."""
     heartbeat_seconds: float = 40.0
+    embedder: Embedder = field(default_factory=TrigramEmbedder)
+    segmentation: SegmentationPolicy = field(default_factory=SegmentationPolicy)
 
     def _pipeline(self, session: PostgresSession) -> PagePipeline:
         return PagePipeline(
@@ -111,6 +117,16 @@ class BookletJobRunner:
             runtime=session.runtime,
             settings=self.ocr.settings,
             orientation=self.ocr.orientation,
+            jobs=session.jobs,
+        )
+
+    def _segmenter(self, session: PostgresSession) -> BookletSegmenter:
+        return BookletSegmenter(
+            booklets=session.booklets,
+            content=session.content,
+            embedder=self.embedder,
+            runtime=session.runtime,
+            policy=self.segmentation,
         )
 
     def _stepper(self, kind: str) -> Callable[[PostgresSession], _Stepper] | None:
@@ -118,6 +134,8 @@ class BookletJobRunner:
             return self._pipeline
         if kind == JOB_READ_BOOKLET:
             return self._reader if self.ocr is not None else _NoOcr
+        if kind == JOB_SEGMENT_BOOKLET:
+            return self._segmenter
         return None
 
     def run_one(self) -> bool:

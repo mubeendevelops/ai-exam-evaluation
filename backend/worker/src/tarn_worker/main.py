@@ -96,6 +96,7 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
     """The queue consumer: each call processes at most one booklet job; True if it did."""
     from tarn_adapters.blob.minio_client import make_client
     from tarn_adapters.blob.minio_store import MinioBlobStore
+    from tarn_adapters.embed.wiring import build_embedder
     from tarn_adapters.imaging.cleaner import OpenCvPageCleaner
     from tarn_adapters.imaging.pdf import PyMuPdfSplitter
     from tarn_adapters.ocr.wiring import build_ocr
@@ -132,6 +133,11 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
             orientation=ocr.orientation,
         )
 
+    embedding = build_embedder(settings)
+    if embedding.fallback_reason is not None:
+        log.warning("segmentation.embedder_fallback", reason=embedding.fallback_reason)
+    log.info("segmentation.embedder", embedder=embedding.embedder.ref.name)
+
     runner = BookletJobRunner(
         db=PostgresDatabase(
             settings.app_database_url,
@@ -158,6 +164,7 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
         worker=f"worker-{uuid4().hex[:8]}",
         ocr=kit,
         heartbeat_seconds=settings.job_lease_seconds / 3,
+        embedder=embedding.embedder,
     )
     return runner.run_one
 
