@@ -4304,6 +4304,7 @@
               "pages_ready",
               "reading",
               "text_ready",
+              "segmented",
               "failed",
               "scored",
               "in_review",
@@ -4370,7 +4371,8 @@
                   "unreadable_file",
                   "too_many_pages",
                   "processing_failed",
-                  "reading_failed"
+                  "reading_failed",
+                  "segmentation_failed"
                 ]
               },
               {
@@ -4432,6 +4434,7 @@
               "pages_ready",
               "reading",
               "text_ready",
+              "segmented",
               "failed",
               "scored",
               "in_review",
@@ -4498,7 +4501,8 @@
                   "unreadable_file",
                   "too_many_pages",
                   "processing_failed",
-                  "reading_failed"
+                  "reading_failed",
+                  "segmentation_failed"
                 ]
               },
               {

@@ -982,7 +982,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress";
+            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "segmented" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress";
             student: components["schemas"]["BookletStudentOut"];
             blueprint: components["schemas"]["BookletBlueprintOut"];
             /**
@@ -1020,7 +1020,7 @@ export interface components {
              */
             needs_text_pages: number[];
             /** Failure Reason */
-            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed" | "reading_failed") | null;
+            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed" | "reading_failed" | "segmentation_failed") | null;
             /**
              * Duplicate Of
              * @description Other booklets of this college with the same file (set on upload only).
@@ -1040,7 +1040,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress";
+            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "segmented" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress";
             student: components["schemas"]["BookletStudentOut"];
             blueprint: components["schemas"]["BookletBlueprintOut"];
             /**
@@ -1078,7 +1078,7 @@ export interface components {
              */
             needs_text_pages: number[];
             /** Failure Reason */
-            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed" | "reading_failed") | null;
+            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed" | "reading_failed" | "segmentation_failed") | null;
             /**
              * Duplicate Of
              * @description Other booklets of this college with the same file (set on upload only).
