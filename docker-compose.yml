@@ -131,14 +131,15 @@ services:
     command: ["python", "-m", "tarn_worker"]
     environment:
       <<: *backend-env
-      # Model caches survive rebuilds (filled from P10 on).
-      HF_HOME: /models/huggingface
-      PADDLE_PDX_CACHE_HOME: /models/paddlex
+      # OCR model weights (P10): the host's git-ignored var/models (TrOCR under huggingface/,
+      # Paddle under paddlex/), shared with `uv run tarn ocr …` on the host, so the weights
+      # exist once and not on the Docker disk. Filled by `tarn ocr models fetch`.
+      TARN_MODEL_DIR: /models
     volumes:
       - ./backend:/app/backend
       - ./var/keys:/app/var/keys
       - ./var/backups:/app/var/backups
-      - model-cache:/models
+      - ./var/models:/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -164,5 +165,4 @@ services:
 volumes:
   postgres-data:
   minio-data:
-  model-cache:
   frontend-node-modules:

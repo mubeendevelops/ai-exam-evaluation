@@ -13,6 +13,7 @@ from tarn_core.domain.common import (
     check_text,
     check_unit_interval,
 )
+from tarn_core.domain.ocr import ContentClass, ReadingScore
 from tarn_core.errors import InvariantError
 from tarn_core.ids import (
     AnswerId,
@@ -31,12 +32,15 @@ class BookletStatus(StrEnum):
 
     P9 moves a booklet UPLOADED → PROCESSING → PAGES_READY or NEEDS_RETAKE (a teacher's "use
     anyway" on every flagged page moves NEEDS_RETAKE → PAGES_READY), or → FAILED when the file
-    cannot be read. PAGES_READY is where OCR (P10) takes over."""
+    cannot be read. PAGES_READY is where OCR (P10) takes over: PAGES_READY → READING →
+    TEXT_READY (where segmentation, P12, takes over)."""
 
     UPLOADED = "uploaded"
     PROCESSING = "processing"
     NEEDS_RETAKE = "needs_retake"
     PAGES_READY = "pages_ready"
+    READING = "reading"
+    TEXT_READY = "text_ready"
     FAILED = "failed"
     SCORED = "scored"
     IN_REVIEW = "in_review"
@@ -49,8 +53,16 @@ def check_aware(name: str, value: datetime) -> None:
         raise InvariantError(f"{name} must be timezone-aware")
 
 
-# Statuses in which a booklet still counts against its teacher's queue limit.
-WAITING_STATUSES = frozenset({BookletStatus.UPLOADED, BookletStatus.PROCESSING})
+# Statuses in which a booklet still counts against its teacher's queue limit: waiting for, or
+# in, the machine stages (page cleaning, then OCR). NEEDS_RETAKE waits for the teacher.
+WAITING_STATUSES = frozenset(
+    {
+        BookletStatus.UPLOADED,
+        BookletStatus.PROCESSING,
+        BookletStatus.PAGES_READY,
+        BookletStatus.READING,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -162,6 +174,12 @@ class Page:
     retake_reasons: tuple[RetakeReason, ...] = ()
     use_anyway: bool = False
     """The teacher chose to go on with this page although the gate flagged it."""
+    text_read: bool = False
+    """OCR stage marker (P10): the page's regions and readings are stored."""
+    needs_text: bool = False
+    """Every OCR engine failed on this page: the teacher types it or retakes it."""
+    ocr_failures: tuple[str, ...] = ()
+    """Engines that failed on this page, as ``engine:reason`` (reason: timeout or error)."""
 
     def __post_init__(self) -> None:
         if self.index < 0 or self.width <= 0 or self.height <= 0:
@@ -171,6 +189,12 @@ class Page:
                 raise InvariantError("page image must live under its own college's prefix")
         if self.use_anyway and not self.retake_reasons:
             raise InvariantError("only a flagged page can be used anyway")
+        if self.needs_text and not self.text_read:
+            raise InvariantError("only a page that went through OCR can need text")
+        for failure in self.ocr_failures:
+            engine, _, reason = failure.partition(":")
+            if not engine or reason not in ("timeout", "error"):
+                raise InvariantError(f"malformed OCR failure {failure!r}")
 
     @property
     def needs_retake(self) -> bool:
@@ -206,8 +230,11 @@ class LineReading:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Region:
-    """A detected area of a page. Text lines keep every engine's reading (best-of-N),
-    the index of the chosen one, and the teacher's correction if any."""
+    """A detected area of a page. Text lines keep every engine's reading (best-of-N), the
+    selector's score of each, the index of the chosen one, and the teacher's correction if any.
+
+    A table is one TABLE region; its cells are TEXT_LINE regions with ``parent_id`` pointing at
+    it and their ``row``/``col`` (from 0)."""
 
     id: RegionId
     college_id: CollegeId
@@ -217,10 +244,44 @@ class Region:
     readings: tuple[LineReading, ...] = ()
     chosen: int | None = None
     teacher_text: str | None = None
+    content_class: ContentClass | None = None
+    scores: tuple[ReadingScore, ...] = ()
+    """One per reading, same order (empty for regions that were not read)."""
+    line_score: float | None = None
+    """The winner's score over the best score the line could have had (0..1)."""
+    flagged: bool = False
+    """The best reading is below the line threshold: highlighted for the teacher."""
+    calibrations: tuple[ContentRef, ...] = ()
+    """The calibration versions the selector used (rule 11)."""
+    parent_id: RegionId | None = None
+    row: int | None = None
+    col: int | None = None
 
     def __post_init__(self) -> None:
         if self.chosen is not None and not 0 <= self.chosen < len(self.readings):
             raise InvariantError("chosen reading index out of range")
+        if self.scores and len(self.scores) != len(self.readings):
+            raise InvariantError("one selector score per reading")
+        if self.chosen is not None and self.scores and not self.scores[self.chosen].competing:
+            raise InvariantError("the chosen reading must be one that competed")
+        if self.line_score is not None:
+            check_unit_interval("line score", self.line_score)
+        if (self.row is None) != (self.col is None):
+            raise InvariantError("a table cell has both a row and a column")
+        if self.row is not None and (self.row < 0 or self.col is None or self.col < 0):
+            raise InvariantError("row and column count from 0")
+        if self.row is not None and self.parent_id is None:
+            raise InvariantError("a table cell points at its table")
+        if self.parent_id == self.id:
+            raise InvariantError("a region cannot contain itself")
+        for ref in self.calibrations:
+            if ref.kind is not ContentKind.OCR_CALIBRATION:
+                raise InvariantError("region calibrations must be OCR calibrations")
+
+    @property
+    def read_by(self) -> tuple[str, ...]:
+        """The engines that read this region, in reading order."""
+        return tuple(r.engine.name for r in self.readings)
 
     @property
     def text(self) -> str | None:

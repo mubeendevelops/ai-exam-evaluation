@@ -56,6 +56,7 @@ from tarn_core.domain.content import (
     Subject,
 )
 from tarn_core.domain.diagram import StudentDiagram
+from tarn_core.domain.ocr import ContentClass, ReadingScore
 from tarn_core.domain.review import ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, CriterionScore
 from tarn_core.domain.tenancy import College, Role, Student, User
@@ -751,6 +752,9 @@ def _page(r: Row[Any]) -> Page:
         metrics=None if r.metrics is None else codec.metrics_from_json(r.metrics),
         retake_reasons=tuple(RetakeReason(x) for x in r.retake_reasons),
         use_anyway=r.use_anyway,
+        text_read=r.text_read,
+        needs_text=r.needs_text,
+        ocr_failures=tuple(r.ocr_failures),
     )
 
 
@@ -761,6 +765,41 @@ def _reading(r: Row[Any]) -> LineReading:
         box=codec.box_from_list(r.box),
         confidence=r.confidence,
         char_confidences=None if r.char_confidences is None else tuple(r.char_confidences),
+    )
+
+
+def _reading_score(r: Row[Any]) -> ReadingScore | None:
+    if r.score is None:
+        return None
+    return ReadingScore(
+        calibrated=r.p_calibrated,
+        agreement=r.agreement,
+        lexicon=r.lexicon,
+        weight=r.weight,
+        score=r.score,
+        competing=r.competing,
+    )
+
+
+def _region(r: Row[Any], readings: Sequence[Row[Any]]) -> Region:
+    scores = [_reading_score(x) for x in readings]
+    return Region(
+        id=RegionId(r.id),
+        college_id=CollegeId(r.college_id),
+        page_id=PageId(r.page_id),
+        kind=RegionKind(r.kind),
+        box=codec.box_from_list(r.box),
+        readings=tuple(_reading(x) for x in readings),
+        chosen=r.chosen,
+        teacher_text=r.teacher_text,
+        content_class=None if r.content_class is None else ContentClass(r.content_class),
+        scores=tuple(x for x in scores if x is not None) if all(scores) else (),
+        line_score=r.line_score,
+        flagged=r.flagged,
+        calibrations=tuple(codec.ref_from_json(x) for x in r.calibrations),
+        parent_id=None if r.parent_id is None else RegionId(r.parent_id),
+        row=r.row_index,
+        col=r.col_index,
     )
 
 
@@ -888,6 +927,9 @@ class PgBookletRepository:
                     else codec.metrics_to_json(page.metrics),
                     "retake_reasons": [r.value for r in page.retake_reasons],
                     "use_anyway": page.use_anyway,
+                    "text_read": page.text_read,
+                    "needs_text": page.needs_text,
+                    "ocr_failures": list(page.ocr_failures),
                 },
             )
 
@@ -896,68 +938,95 @@ class PgBookletRepository:
         if not rows:
             return []
         lr = m.line_readings
-        readings: dict[UUID, list[LineReading]] = {}
+        readings: dict[UUID, list[Row[Any]]] = {}
         for r in self._conn.execute(
             select(lr)
             .where(lr.c.college_id == college_id, lr.c.region_id.in_([r.id for r in rows]))
             .order_by(lr.c.region_id, lr.c.ordinal)
         ):
-            readings.setdefault(r.region_id, []).append(_reading(r))
-        return [
-            Region(
-                id=RegionId(r.id),
-                college_id=CollegeId(r.college_id),
-                page_id=PageId(r.page_id),
-                kind=RegionKind(r.kind),
-                box=codec.box_from_list(r.box),
-                readings=tuple(readings.get(r.id, ())),
-                chosen=r.chosen,
-                teacher_text=r.teacher_text,
-            )
-            for r in rows
-        ]
+            readings.setdefault(r.region_id, []).append(r)
+        return [_region(r, readings.get(r.id, [])) for r in rows]
 
     def save_region(self, college_id: CollegeId, region: Region) -> None:
-        """All N engine readings are kept, in order; re-saving replaces them."""
+        """All N engine readings are kept, in order, with their selector scores; re-saving
+        replaces them."""
         _check_tenant(college_id, region.college_id, "region")
-        lr = m.line_readings
         with writing(self._conn, f"region {region.id}"):
-            _upsert(
-                self._conn,
-                m.regions,
-                {
-                    "id": region.id,
-                    "college_id": region.college_id,
-                    "page_id": region.page_id,
-                    "kind": region.kind.value,
-                    "box": codec.box_to_list(region.box),
-                    "chosen": region.chosen,
-                    "teacher_text": region.teacher_text,
-                },
-            )
+            self._write_region(region)
+
+    def replace_regions(
+        self, college_id: CollegeId, page_id: PageId, regions: Sequence[Region]
+    ) -> None:
+        for region in regions:
+            _check_tenant(college_id, region.college_id, "region")
+            if region.page_id != page_id:
+                raise InvariantError("every region must belong to the page being replaced")
+        with writing(self._conn, f"regions of page {page_id}"):
+            if not self._rows(m.pages, college_id, id=page_id):
+                raise NotFoundError(f"page {page_id}")
+            # Cells go with their table (FK cascade); readings with their region.
             self._conn.execute(
-                delete(lr).where(lr.c.region_id == region.id, lr.c.college_id == college_id)
-            )
-            if region.readings:
-                self._conn.execute(
-                    insert(lr),
-                    [
-                        {
-                            "college_id": region.college_id,
-                            "region_id": region.id,
-                            "ordinal": n,
-                            "engine_name": reading.engine.name,
-                            "engine_version": reading.engine.version,
-                            "text": reading.text,
-                            "box": codec.box_to_list(reading.box),
-                            "confidence": reading.confidence,
-                            "char_confidences": None
-                            if reading.char_confidences is None
-                            else list(reading.char_confidences),
-                        }
-                        for n, reading in enumerate(region.readings)
-                    ],
+                delete(m.regions).where(
+                    m.regions.c.college_id == college_id, m.regions.c.page_id == page_id
                 )
+            )
+            for region in regions:
+                self._write_region(region)
+
+    def _write_region(self, region: Region) -> None:
+        lr = m.line_readings
+        _upsert(
+            self._conn,
+            m.regions,
+            {
+                "id": region.id,
+                "college_id": region.college_id,
+                "page_id": region.page_id,
+                "kind": region.kind.value,
+                "box": codec.box_to_list(region.box),
+                "chosen": region.chosen,
+                "teacher_text": region.teacher_text,
+                "content_class": None
+                if region.content_class is None
+                else region.content_class.value,
+                "line_score": region.line_score,
+                "flagged": region.flagged,
+                "calibrations": [codec.ref_to_json(ref) for ref in region.calibrations],
+                "parent_id": region.parent_id,
+                "row_index": region.row,
+                "col_index": region.col,
+            },
+        )
+        self._conn.execute(
+            delete(lr).where(lr.c.region_id == region.id, lr.c.college_id == region.college_id)
+        )
+        if not region.readings:
+            return
+        rows = []
+        for n, reading in enumerate(region.readings):
+            score = region.scores[n] if region.scores else None
+            rows.append(
+                {
+                    "college_id": region.college_id,
+                    "region_id": region.id,
+                    "ordinal": n,
+                    "engine_name": reading.engine.name,
+                    "engine_version": reading.engine.version,
+                    "text": reading.text,
+                    "box": codec.box_to_list(reading.box),
+                    "confidence": reading.confidence,
+                    "char_confidences": None
+                    if reading.char_confidences is None
+                    else list(reading.char_confidences),
+                    "p_calibrated": None if score is None else score.calibrated,
+                    "agreement": None if score is None else score.agreement,
+                    "lexicon": None if score is None else score.lexicon,
+                    "weight": None if score is None else score.weight,
+                    "score": None if score is None else score.score,
+                    "competing": None if score is None else score.competing,
+                }
+            )
+        self._conn.execute(insert(lr), rows)
 
     def segments(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Segment]:
         return [_segment(r) for r in self._rows(m.segments, college_id, booklet_id=booklet_id)]

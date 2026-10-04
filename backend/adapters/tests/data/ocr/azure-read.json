@@ -1,0 +1,20 @@
+{
+  "_comment": "Synthetic analyzeResult in the documented shape of Azure AI Document Intelligence prebuilt-read (pages[].words[] with 8-number polygons in the page unit, pixels for images; confidence 0-1). Not recorded from the service (see the Textract fixture). Text is invented.",
+  "apiVersion": "2024-11-30",
+  "modelId": "prebuilt-read",
+  "content": "Gradient descent\n42.5",
+  "pages": [
+    {
+      "pageNumber": 1, "angle": 0.0, "width": 2000, "height": 1000, "unit": "pixel",
+      "words": [
+        {"content": "Gradient", "polygon": [200, 100, 600, 100, 600, 150, 200, 150], "confidence": 0.991, "span": {"offset": 0, "length": 8}},
+        {"content": "descent", "polygon": [640, 102, 1000, 98, 1001, 151, 641, 152], "confidence": 0.87, "span": {"offset": 9, "length": 7}},
+        {"content": "42.5", "polygon": [200, 300, 400, 300, 400, 350, 200, 350], "confidence": 0.6, "span": {"offset": 17, "length": 4}},
+        {"content": "", "polygon": [10, 10, 20, 10, 20, 20, 10, 20], "confidence": 0.1, "span": {"offset": 0, "length": 0}}
+      ],
+      "lines": [
+        {"content": "Gradient descent", "polygon": [200, 100, 1000, 100, 1000, 150, 200, 150], "spans": [{"offset": 0, "length": 16}]}
+      ]
+    }
+  ]
+}

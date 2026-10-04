@@ -55,7 +55,7 @@ Keys without a faculty source (QP-CI, QP-IPR, Assignment 1 and 2) are written fo
 
 ## GPU (optional)
 
-Nothing requires a GPU. `TARN_DEVICE=auto` (the default) uses CUDA when torch can see a device and the CPU otherwise; `cpu` forces the CPU; `cuda` fails loudly if CUDA is missing. `tarn doctor` and `GET /api/v1/health` show what was chosen and, when a GPU exists but is unusable, why. `torch` itself is installed from P10 on, so until then the device is always the CPU.
+Nothing requires a GPU. `TARN_DEVICE=auto` (the default) uses CUDA when torch can see a device and the CPU otherwise; `cpu` forces the CPU; `cuda` fails loudly if CUDA is missing. `tarn doctor` and `GET /api/v1/health` show what was chosen and, when a GPU exists but is unusable, why. `torch` (CUDA build) comes with the `ocr` dependency group (P10), installed by `make setup`. Only TrOCR uses the GPU (in fp32 on the GTX 1650, about 1.8 GB for the base model: this card is slower in fp16, see `TARN_TROCR_PRECISION`); Paddle and Tesseract run on the CPU.
 
 The development laptop's GTX 1650 has 4 GB: load one model at a time.
 
@@ -98,3 +98,41 @@ Settings (all in `.env.example`): `TARN_MAX_QUEUED_BOOKLETS_PER_TEACHER` (5), `T
 
 The job queue is the `jobs` table. To look at it: `docker compose exec postgres psql -U tarn -d tarn -c "select kind, status, attempts, last_error from jobs order by seq desc limit 10"`. A job whose worker died is handed out again after `TARN_JOB_LEASE_SECONDS`; a booklet whose job ran out of attempts ends as `failed` (`processing_failed`).
 
+
+## OCR engines (P10)
+
+Booklets that reach `pages_ready` are read by the worker (job `booklet.read`, one page per step) and end as `text_ready`. Every configured engine reads every detected line; the best reading per line is kept with every other reading and its score (`GET /api/v1/booklets/{id}/pages/{n}/text`).
+
+| Engine | Name in settings | Runs | Used for (default sets) |
+| --- | --- | --- | --- |
+| PaddleOCR PP-OCRv5 (mobile det + server rec), PP-DocLayout-L | `paddle` (+ the layout) | CPU | lines, tables, diagrams; print, cursive, numeric |
+| Tesseract (host 4.1.1, image 5.3.0) | `tesseract` | CPU | print, numeric |
+| TrOCR `microsoft/trocr-base-handwritten` | `trocr` | CUDA (fp16) or CPU | cursive, numeric |
+| Amazon Textract DetectDocumentText | `textract` | cloud, **off** | print, cursive, numeric |
+| Azure Document Intelligence Read | `azure` | cloud, **off** | print, cursive, numeric |
+
+First time (downloads about 1 GB of weights into `var/models/`, git-ignored; offline afterwards):
+
+```bash
+cd backend
+uv run tarn ocr models check     # device, engines, which are skipped and why
+uv run tarn ocr models fetch     # download and read one generated line with each engine
+make test-models                 # the real engines on generated pages
+```
+
+Inside Compose the worker mounts the host's `var/models` at `/models`, so the host and the container share one copy of the weights (and nothing large lands on the Docker disk). The worker image includes the `ocr` group with CUDA torch (about 11 GB); `make up` runs TrOCR on the CPU, `make up-gpu` on the GPU. If the OCR libraries are missing the worker logs `ocr.unavailable` and keeps cleaning pages.
+
+Try the engines on files without the stack (prints counts, scores and timings, never text):
+
+```bash
+uv run tarn ocr read "../samples/Some Booklet.pdf" --out ../var/ocr-check
+# --text ../var/ocr-check/text  also writes the recognised text per booklet (student data!)
+```
+
+**Cloud engines** stay off: in development student pages must not leave this machine (design decision 4). Enabling them needs `TARN_CLOUD_OCR_ENABLED=true`, outside production also `TARN_CLOUD_OCR_ALLOW_IN_DEVELOPMENT=true`, the SDKs (`uv sync --group cloud-ocr`) and credentials: Textract uses the standard AWS chain (`AWS_PROFILE` or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`) in `TARN_AWS_REGION` (`ap-south-1`); Azure needs `TARN_AZURE_DI_ENDPOINT` and `TARN_AZURE_DI_KEY`. The worker logs which engines run and why the others were skipped (`ocr.engines`).
+
+**Calibration.** Until fitted, every engine's confidence is used as it is and every weight is 1. To fit (Tarn operator, owner role): write a JSON-lines manifest of hand-transcribed lines (`{"image": "lines/001.png", "box": [x0, y0, x1, y1], "text": "...", "class": "cursive"}`; `box` optional, paths relative to the manifest) and run `uv run tarn ocr calibrate manifest.jsonl --dry-run`, then without `--dry-run` to store the next versions in `ocr_calibrations`. At least 30 lines per engine and class.
+
+**Selector settings:** `TARN_OCR_DETECTION_MODEL`, `TARN_OCR_RECOGNITION_MODEL`, `TARN_TROCR_PRECISION`, `TARN_OCR_ENGINES_PRINT|CURSIVE|NUMERIC`, `TARN_OCR_ALPHA` (0.5), `TARN_OCR_BETA` (0.25), `TARN_OCR_FLAG_THRESHOLD` (0.6), `TARN_OCR_ENGINE_TIMEOUT_SECONDS` (120), `TARN_OCR_ORIENTATION_CHECK`, `TARN_OCR_ORIENTATION_MARGIN` (0.1), `TARN_OCR_LAYOUT_MODEL`, `TARN_TROCR_MODEL`, `TARN_TROCR_BATCH`, `TARN_MODEL_DIR`, `TARN_ENGLISH_WORDS`.
+
+**Notes.** Paddle's detection and layout run with oneDNN off (Paddle 3.3 fails on the CPU with it); recognition runs with it. A page takes about 13 s warm on the development laptop (D79). PaddleX asks for `opencv-contrib-python`; a local empty package of that name (`backend/shims/`) satisfies it so that the one `cv2` is our pinned `opencv-python-headless`. CI installs without the `ocr` group (`uv sync --no-group ocr`).

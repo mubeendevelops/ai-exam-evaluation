@@ -11,6 +11,8 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-24.04
+    env:
+      UV_NO_SYNC: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10
@@ -18,7 +20,9 @@ jobs:
           python-version: "3.12.14"
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
-      - run: cd backend && uv sync --frozen
+      # The OCR libraries (torch, Paddle: several GB) are left out; their tests are marked
+      # `models` and run locally (make test-models). UV_NO_SYNC keeps `uv run` from adding them.
+      - run: cd backend && uv sync --frozen --no-group ocr
       - run: cd backend && uv run ruff check .
       - run: cd backend && uv run ruff format --check .
       - run: cd backend && uv run lint-imports

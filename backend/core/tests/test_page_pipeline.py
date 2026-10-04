@@ -2,7 +2,7 @@
 quality gate, "use anyway", failures, and resuming after a crash. Image work is faked."""
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pytest
 
@@ -99,9 +99,10 @@ def make_world(*, max_waiting: int = 5, max_pages: int = 40, **limits: int) -> W
             splitter=FakePageSplitter(),
             cleaner=cleaner,
             runtime=mem.runtime,
+            jobs=mem.jobs,
             max_pages=max_pages,
         ),
-        decisions=PageDecisions(booklets=mem.booklets, runtime=mem.runtime),
+        decisions=PageDecisions(booklets=mem.booklets, runtime=mem.runtime, jobs=mem.jobs),
     )
 
 
@@ -215,8 +216,14 @@ def test_a_teacher_may_have_a_limited_number_of_booklets_waiting() -> None:
         w.upload(fake_pdf(1, "3"))
     # Another user of the college has their own queue.
     w.upload(fake_pdf(1, "4"), who="admin")
-    # Processing frees a slot; a booklet that needs a retake no longer waits either.
-    w.finish(first)
+    # Clean pages still wait for OCR (P10); text read frees the slot.
+    ready = w.finish(first)
+    assert ready.status is BookletStatus.PAGES_READY
+    with pytest.raises(QueueFullError):
+        w.upload(fake_pdf(1, "5"))
+    w.mem.booklets.save(
+        w.college.id, replace(ready, status=BookletStatus.TEXT_READY, version=ready.version + 1)
+    )
     w.upload(fake_pdf(1, "5"))
 
 
@@ -449,6 +456,7 @@ def test_a_crash_resumes_from_the_last_finished_step(w: World) -> None:
         splitter=FakePageSplitter(),
         cleaner=w.cleaner,
         runtime=w.mem.runtime,
+        jobs=w.mem.jobs,
     )
     while not revived.step(college, booklet.id):
         pass

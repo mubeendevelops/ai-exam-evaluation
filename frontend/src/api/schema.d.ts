@@ -777,6 +777,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/booklets/{booklet_id}/pages/{number}/text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What OCR read on one page: every line with every engine's reading and score
+         * @description Lines keep every engine's reading, the selector's terms for each, the chosen one and whether the line is flagged for the teacher. Tables come as a `table` region followed by its cells (`parent_id`, `row`, `col`). Empty until the page has been read.
+         */
+        get: operations["page_text_api_v1_booklets__booklet_id__pages__number__text_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/booklets/{booklet_id}/pages/{number}/use-anyway": {
         parameters: {
             query?: never;
@@ -962,7 +982,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress";
+            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress";
             student: components["schemas"]["BookletStudentOut"];
             blueprint: components["schemas"]["BookletBlueprintOut"];
             /**
@@ -989,8 +1009,18 @@ export interface components {
              * @description Numbers of the pages that still need a retake or a 'use anyway'.
              */
             flagged_pages: number[];
+            /**
+             * Pages Read
+             * @description Pages OCR has read.
+             */
+            pages_read: number;
+            /**
+             * Needs Text Pages
+             * @description Numbers of the pages no OCR engine could read.
+             */
+            needs_text_pages: number[];
             /** Failure Reason */
-            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed") | null;
+            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed" | "reading_failed") | null;
             /**
              * Duplicate Of
              * @description Other booklets of this college with the same file (set on upload only).
@@ -1010,7 +1040,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress";
+            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress";
             student: components["schemas"]["BookletStudentOut"];
             blueprint: components["schemas"]["BookletBlueprintOut"];
             /**
@@ -1037,8 +1067,18 @@ export interface components {
              * @description Numbers of the pages that still need a retake or a 'use anyway'.
              */
             flagged_pages: number[];
+            /**
+             * Pages Read
+             * @description Pages OCR has read.
+             */
+            pages_read: number;
+            /**
+             * Needs Text Pages
+             * @description Numbers of the pages no OCR engine could read.
+             */
+            needs_text_pages: number[];
             /** Failure Reason */
-            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed") | null;
+            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed" | "reading_failed") | null;
             /**
              * Duplicate Of
              * @description Other booklets of this college with the same file (set on upload only).
@@ -1423,6 +1463,42 @@ export interface components {
             image_url: string | null;
             /** Original Url */
             original_url: string | null;
+            /**
+             * Text Read
+             * @description OCR has read this page (P10).
+             */
+            text_read: boolean;
+            /**
+             * Needs Text
+             * @description Every OCR engine failed on this page: the teacher types it or retakes it.
+             */
+            needs_text: boolean;
+            /**
+             * Ocr Failures
+             * @description Engines that failed on this page, as `engine:timeout` or `engine:error`.
+             */
+            ocr_failures: string[];
+            /**
+             * Text Url
+             * @description The page's lines and readings, once read.
+             */
+            text_url: string | null;
+        };
+        /** PageTextOut */
+        PageTextOut: {
+            /** Number */
+            number: number;
+            /** Text Read */
+            text_read: boolean;
+            /** Needs Text */
+            needs_text: boolean;
+            /** Ocr Failures */
+            ocr_failures: string[];
+            /**
+             * Regions
+             * @description In reading order; table cells after their table.
+             */
+            regions: components["schemas"]["RegionOut"][];
         };
         /** PolicyErrorOut */
         PolicyErrorOut: {
@@ -1603,6 +1679,46 @@ export interface components {
              */
             criteria?: (components["schemas"]["ListCriterion"] | components["schemas"]["NumericCriterion"] | components["schemas"]["SemanticCriterion"] | components["schemas"]["DiagramCriterion"])[] | null;
         };
+        /** ReadingOut */
+        ReadingOut: {
+            /** Engine */
+            engine: string;
+            /** Engine Version */
+            engine_version: string;
+            /** Text */
+            text: string;
+            /**
+             * Confidence
+             * @description The engine's raw confidence, 0..1.
+             */
+            confidence: number;
+            /**
+             * Box
+             * @description x0, y0, x1, y1 in page pixels.
+             */
+            box: number[];
+            /**
+             * Calibrated
+             * @description p̂: the confidence through the calibration.
+             */
+            calibrated: number | null;
+            /** Agreement */
+            agreement: number | null;
+            /** Lexicon */
+            lexicon: number | null;
+            /** Weight */
+            weight: number | null;
+            /**
+             * Score
+             * @description S = weight·p̂ + α·agreement + β·lexicon.
+             */
+            score: number | null;
+            /**
+             * Competing
+             * @description False when the engine is not in the line's class set (kept, never chosen).
+             */
+            competing: boolean | null;
+        };
         /** RecoverIn */
         RecoverIn: {
             /** Institution Id */
@@ -1672,6 +1788,56 @@ export interface components {
             labels: string[];
             /** Content Url */
             content_url: string;
+        };
+        /** RegionOut */
+        RegionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "text_line" | "text_block" | "diagram" | "table" | "label";
+            /** Box */
+            box: number[];
+            /**
+             * Text
+             * @description The teacher's text if corrected, else the chosen one.
+             */
+            text: string | null;
+            /**
+             * Chosen
+             * @description Index of the chosen reading.
+             */
+            chosen: number | null;
+            /** Content Class */
+            content_class: ("print" | "cursive" | "numeric") | null;
+            /**
+             * Line Score
+             * @description Winner's S over the best S possible, 0..1.
+             */
+            line_score: number | null;
+            /**
+             * Flagged
+             * @description Below the line threshold: highlighted for the teacher.
+             */
+            flagged: boolean;
+            /** Read By */
+            read_by: string[];
+            /**
+             * Parent Id
+             * @description The table a cell belongs to.
+             */
+            parent_id: string | null;
+            /** Row */
+            row: number | null;
+            /** Col */
+            col: number | null;
+            /** Readings */
+            readings: components["schemas"]["ReadingOut"][];
         };
         /** RegistrationIn */
         RegistrationIn: {
@@ -4628,6 +4794,65 @@ export interface operations {
                     "application/json": unknown;
                     "image/jpeg": unknown;
                     "image/png": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    page_text_api_v1_booklets__booklet_id__pages__number__text_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageTextOut"];
                 };
             };
             /** @description Unauthorized */

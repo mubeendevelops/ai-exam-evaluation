@@ -98,16 +98,44 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
     from tarn_adapters.blob.minio_store import MinioBlobStore
     from tarn_adapters.imaging.cleaner import OpenCvPageCleaner
     from tarn_adapters.imaging.pdf import PyMuPdfSplitter
+    from tarn_adapters.ocr.wiring import build_ocr
     from tarn_adapters.postgres.database import PostgresDatabase
     from tarn_adapters.postgres.jobs import JobSettings
     from tarn_adapters.runtime import UuidGenerator
+    from tarn_core.errors import EngineFailedError
     from tarn_core.services.pipeline import QualityPolicy
-    from tarn_worker.booklets import BookletJobRunner
+    from tarn_worker.booklets import BookletJobRunner, OcrKit
+
+    log = structlog.get_logger("tarn_worker")
+    kit: OcrKit | None = None
+    try:
+        ocr = build_ocr(settings)
+    except EngineFailedError as error:
+        # Page cleaning still runs; reading jobs fail visibly until OCR is available.
+        log.error("ocr.unavailable", reason=str(error))
+    else:
+        log.info(
+            "ocr.engines",
+            engines=list(ocr.engines),
+            skipped=ocr.skipped,
+            device=ocr.device.kind,
+            layout=f"{ocr.layout.ref.name} {ocr.layout.ref.version}",
+        )
+        if not ocr.engines:
+            log.error("ocr.no_engines", skipped=ocr.skipped)
+        kit = OcrKit(
+            layout=ocr.layout,
+            engines=ocr.engines,
+            transform=ocr.transform,
+            word_list=ocr.word_list,
+            settings=ocr.settings,
+            orientation=ocr.orientation,
+        )
 
     runner = BookletJobRunner(
         db=PostgresDatabase(
             settings.app_database_url,
-            pool_size=2,
+            pool_size=3,
             job_settings=JobSettings(
                 max_attempts=settings.job_max_attempts,
                 lease_seconds=settings.job_lease_seconds,
@@ -128,6 +156,8 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
         ),
         max_pages=settings.upload_max_pages,
         worker=f"worker-{uuid4().hex[:8]}",
+        ocr=kit,
+        heartbeat_seconds=settings.job_lease_seconds / 3,
     )
     return runner.run_one
 

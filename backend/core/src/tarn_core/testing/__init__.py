@@ -5,11 +5,15 @@ from dataclasses import dataclass, field
 from tarn_core.services._support import Runtime
 from tarn_core.services.auth import AuthKit, AuthSettings
 from tarn_core.testing.fake_engines import (
+    FakePageTransform,
     FixedCreditScorer,
     HashEmbedder,
+    MemoryCalibrationStore,
+    PageOcrEngine,
     ScriptedDiagramRecognizer,
     ScriptedLayoutDetector,
     ScriptedOcrEngine,
+    SetWordList,
 )
 from tarn_core.testing.fake_pages import FakePageCleaner, FakePageSplitter, fake_image, fake_pdf
 from tarn_core.testing.memory_identity import (
@@ -55,6 +59,7 @@ class InMemory:
     blobs: MemoryBlobStore = field(default_factory=MemoryBlobStore)
     page_source: MemoryPageSource = field(default_factory=MemoryPageSource)
     content: MemoryContentRepository = field(default_factory=MemoryContentRepository)
+    calibrations: MemoryCalibrationStore = field(default_factory=MemoryCalibrationStore)
     hasher: FakeHasher = field(default_factory=FakeHasher)
     keys: FakeKeyManager = field(default_factory=FakeKeyManager)
     cipher: FakeCipher = field(default_factory=FakeCipher)
@@ -97,6 +102,7 @@ __all__ = [
     "FakeKeyManager",
     "FakePageCleaner",
     "FakePageSplitter",
+    "FakePageTransform",
     "FixedClock",
     "FixedCreditScorer",
     "HashEmbedder",
@@ -104,6 +110,7 @@ __all__ = [
     "MemoryAuditSink",
     "MemoryBlobStore",
     "MemoryBookletRepository",
+    "MemoryCalibrationStore",
     "MemoryCollegeRepository",
     "MemoryContentRepository",
     "MemoryIdentityStore",
@@ -115,12 +122,14 @@ __all__ = [
     "MemoryScoreRepository",
     "MemoryStudentRepository",
     "MemoryUserRepository",
+    "PageOcrEngine",
     "QueuedJob",
     "ScriptedDiagramRecognizer",
     "ScriptedLayoutDetector",
     "ScriptedOcrEngine",
     "SequentialIds",
     "SetPasswords",
+    "SetWordList",
     "TenantLog",
     "fake_image",
     "fake_pdf",

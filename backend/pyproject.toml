@@ -20,10 +20,15 @@ dev = [
     "ruff==0.16.10",
     "types-jsonschema==4.26.0.20260518",
 ]
+# The local OCR engines (P10): torch (CUDA build), transformers, Paddle, pytesseract. A default
+# group, so `make setup` and the Docker image get them; CI skips them (`--no-group ocr`).
+ocr = ["tarn-adapters[ocr]"]
+# The cloud OCR SDKs (Textract, Azure Read): off by default, install with `--group cloud-ocr`.
+cloud-ocr = ["tarn-adapters[cloud-ocr]"]
 
 [tool.uv]
 package = false
-default-groups = ["dev"]
+default-groups = ["dev", "ocr"]
 
 [tool.uv.workspace]
 members = ["core", "adapters", "api", "worker", "cli"]
@@ -38,9 +43,10 @@ tarn-cli = { workspace = true }
 # --- pytest -----------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["core/tests", "adapters/tests", "api/tests", "worker/tests", "cli/tests"]
-addopts = "-ra --strict-markers --import-mode=importlib -m 'not integration'"
+addopts = "-ra --strict-markers --import-mode=importlib -m 'not integration and not models'"
 markers = [
     "integration: needs the Docker Compose stack (make up); run with `make test-integration`",
+    "models: runs the real OCR engines (the `ocr` group and downloaded weights: `tarn ocr models fetch`); run with `make test-models`",
 ]
 
 # --- ruff -------------------------------------------------------------------
@@ -51,6 +57,10 @@ src = ["core/src", "adapters/src", "api/src", "worker/src", "cli/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "C4", "PTH", "RUF", "S", "T20"]
+
+# Maths and OCR text use these on purpose (the selector formula, minus and times signs in
+# numeric answers, the typographic apostrophe in handwriting).
+allowed-confusables = ["α", "β", "−", "×", "’"]
 
 [tool.ruff.lint.per-file-ignores]
 # The seed data is prose (keys, rubrics, K-EL text): long string lines are the content.
@@ -84,10 +94,16 @@ files = [
 module = ["tarn_adapters.imaging.pdf"]
 disallow_untyped_calls = false
 
-# torch is an optional dependency (installed from P10); its absence must not fail typechecking.
+# The OCR libraries (P10) are optional (the `ocr` and `cloud-ocr` groups) and untyped or huge:
+# they are used through narrow adapters, typed as Any, and never analysed (CI has none of them).
 [[tool.mypy.overrides]]
-module = ["torch"]
+module = [
+    "torch", "torch.*", "transformers", "transformers.*", "paddle", "paddle.*",
+    "paddleocr", "paddleocr.*", "paddlex", "paddlex.*", "pytesseract", "pytesseract.*",
+    "boto3", "boto3.*", "botocore", "botocore.*", "azure.ai.*", "azure.core.*",
+]
 ignore_missing_imports = true
+follow_imports = "skip"
 
 # --- import-linter: the architecture rules of CLAUDE.md / design.md ----------
 [tool.importlinter]

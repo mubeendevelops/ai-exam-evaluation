@@ -1,14 +1,17 @@
 """Choose the compute device at run time: CUDA when available, otherwise the CPU.
 
 The GPU is optional. The development laptop has a 4 GB GTX 1650, so callers load one model
-at a time. ``torch`` is imported lazily: it is not installed until the OCR prompt (P10), and
-without it the answer is always the CPU, with the reason recorded in ``detail``.
+at a time (``GPU_SLOT``). ``torch`` is imported lazily (it is an optional dependency, the
+``ocr`` group); without it the answer is always the CPU, with the reason recorded in
+``detail``.
 """
 
 import shutil
 import subprocess
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 DeviceKind = Literal["cpu", "cuda"]
 DevicePreference = Literal["auto", "cpu", "cuda"]
@@ -79,3 +82,41 @@ def detect_device(preference: DevicePreference = "auto") -> DeviceInfo:
     if gpu is not None:
         return DeviceInfo("cpu", "cpu", None, f"GPU '{gpu}' present but torch+CUDA unavailable")
     return DeviceInfo("cpu", "cpu", None, "no CUDA device found")
+
+
+class ModelSlot:
+    """One GPU model at a time (the development GPU has 4 GB): asking for another model
+    releases the one held before. Models on the CPU do not need the slot."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._name: str | None = None
+        self._model: object | None = None
+        self._release: Callable[[object], None] | None = None
+
+    @property
+    def holder(self) -> str | None:
+        return self._name
+
+    def acquire[T](self, name: str, load: Callable[[], T], release: Callable[[T], None]) -> T:
+        with self._lock:
+            if self._name == name and self._model is not None:
+                return cast(T, self._model)
+            self._free()
+            model = load()
+            self._name, self._model = name, model
+            self._release = cast(Callable[[object], None], release)
+            return model
+
+    def free(self) -> None:
+        with self._lock:
+            self._free()
+
+    def _free(self) -> None:
+        if self._model is not None and self._release is not None:
+            self._release(self._model)
+        self._name, self._model, self._release = None, None, None
+
+
+GPU_SLOT = ModelSlot()
+"""The process-wide slot (TrOCR now; the embedding model of P13 will share it)."""

@@ -39,8 +39,45 @@ class Settings(BaseSettings):
     # "auto" uses CUDA when the GPU and torch are present, otherwise the CPU.
     device: Literal["auto", "cpu", "cuda"] = "auto"
 
-    # Cloud OCR engines (Textract, Azure Read, Document AI) stay off in development.
+    # --- OCR (P10) -------------------------------------------------------------------------
+    # Engines per content class, comma-separated, in tie-break order. Cloud engines named here
+    # are used only when enabled below; engines that are not installed are skipped (logged).
+    ocr_engines_print: str = "paddle,tesseract,textract,azure"
+    ocr_engines_cursive: str = "trocr,paddle,textract,azure"
+    ocr_engines_numeric: str = "trocr,paddle,tesseract,textract,azure"
+    # Selector S = w·p̂ + alpha·agreement + beta·lexicon fit; lines whose normalised score is
+    # below the threshold are flagged for the teacher. Placeholders until P11.
+    ocr_alpha: float = Field(0.5, ge=0)
+    ocr_beta: float = Field(0.25, ge=0)
+    ocr_flag_threshold: float = Field(0.6, ge=0, le=1)
+    ocr_engine_timeout_seconds: float = Field(120.0, gt=0)
+    # 180° check of every page by the probe engine (D63/O34).
+    ocr_orientation_check: bool = True
+    ocr_orientation_margin: float = Field(0.1, ge=0, le=1)
+    # TrOCR model (Hugging Face id) and line crops per batch (0 = 8 on CUDA, 4 on the CPU).
+    trocr_model: str = "microsoft/trocr-base-handwritten"
+    trocr_batch: int = Field(0, ge=0)
+    # fp16 | fp32 | auto (time both on the GPU, take the faster: fp32 on a GTX 1650).
+    trocr_precision: Literal["auto", "fp16", "fp32"] = "auto"
+    # PaddleX models: line detection, recognition (the `paddle` engine), layout for tables and
+    # diagrams ("" = text lines only). Mobile detection is ~18× faster than server on the CPU.
+    ocr_detection_model: str = "PP-OCRv5_mobile_det"
+    ocr_recognition_model: str = "PP-OCRv5_server_rec"
+    ocr_layout_model: str = "PP-DocLayout-L"
+    # Downloaded model weights (Hugging Face, PaddleX); git-ignored.
+    model_dir: Path = Path("../var/models")
+    english_words: Path | None = None
+    """A word list (one word per line, .txt or .txt.gz); default: the bundled list."""
+
+    # Cloud OCR engines (Textract, Azure Read) stay off in development: student data must not
+    # leave the machine (design decision 4). Production needs this flag plus credentials;
+    # development additionally needs cloud_ocr_allow_in_development.
     cloud_ocr_enabled: bool = False
+    cloud_ocr_allow_in_development: bool = False
+    aws_region: str = "ap-south-1"
+    """Textract region; credentials come from the standard AWS chain (env, profile, role)."""
+    azure_di_endpoint: str = ""
+    azure_di_key: SecretStr = SecretStr("")
 
     # --- Identity store (P4): a separate database with its own roles --------------------
     # Owner role of the identity database: migrations only.

@@ -9,7 +9,7 @@ BACKEND  := backend
 FRONTEND := frontend
 COMPOSE  := docker compose
 
-.PHONY: help setup up up-gpu down logs test test-integration test-e2e lint typecheck fmt migrate seed openapi ci
+.PHONY: help setup up up-gpu down logs test test-integration test-models test-e2e lint typecheck fmt migrate seed openapi ci
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -43,6 +43,9 @@ test-e2e: ## Playwright browser tests (API stubbed in the browser; first run: cd
 
 test-integration: ## Tests that need the running stack (make up first)
 	cd $(BACKEND) && uv run pytest -m integration
+
+test-models: ## Real OCR engines on generated pages (needs the ocr group and `tarn ocr models fetch`)
+	cd $(BACKEND) && uv run pytest -m models
 
 lint: ## ruff check + format --check, import-linter, eslint, prettier --check
 	cd $(BACKEND) && uv run ruff check .

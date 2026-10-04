@@ -15,6 +15,9 @@ from tarn_core.ids import CollegeId, JobId
 JOB_PREPARE_BOOKLET = "booklet.prepare"
 """Split the upload into pages, clean them, run the quality gate (P9)."""
 
+JOB_READ_BOOKLET = "booklet.read"
+"""Read the cleaned pages with every OCR engine and keep the best reading per line (P10)."""
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Job:

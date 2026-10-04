@@ -9,7 +9,8 @@ every step in its own transaction and a crash resumes from the last finished one
    (skipped when the pages exist);
 2. *clean*: one page per step, the first not yet cleaned (stored under ``clean/``);
 3. *gate*: every page cleaned → PAGES_READY, or NEEDS_RETAKE when a page is flagged and the
-   teacher has not chosen to use it anyway.
+   teacher has not chosen to use it anyway. PAGES_READY queues the OCR job (``booklet.read``,
+   P10) in the same unit of work, as does the teacher's last "use anyway".
 
 A file that cannot be read ends the booklet as FAILED (a retry cannot help); any other error
 propagates to the caller, which retries with backoff."""
@@ -28,6 +29,7 @@ from tarn_core.domain.booklet import (
 from tarn_core.domain.common import BlobKey, college_blob_key
 from tarn_core.errors import InvariantError, NotFoundError, UnreadableFileError
 from tarn_core.ids import BookletId, CollegeId, PageId, UserId
+from tarn_core.ports.jobs import JOB_READ_BOOKLET, JobQueue
 from tarn_core.ports.pages import PageCleaner, PageSplitter
 from tarn_core.ports.repositories import BookletRepository
 from tarn_core.ports.storage import BlobStore
@@ -68,6 +70,16 @@ def booklet_key(college_id: CollegeId, booklet_id: BookletId, *parts: str) -> Bl
     return college_blob_key(college_id, "booklet", str(booklet_id), *parts)
 
 
+def queue_reading(jobs: JobQueue, college_id: CollegeId, booklet_id: BookletId) -> None:
+    """Queue the OCR job of a booklet whose pages are ready (idempotent per booklet)."""
+    jobs.enqueue(
+        college_id,
+        JOB_READ_BOOKLET,
+        {"booklet_id": str(booklet_id)},
+        key=f"{JOB_READ_BOOKLET}:{booklet_id}",
+    )
+
+
 class PagePipeline:
     def __init__(
         self,
@@ -77,10 +89,12 @@ class PagePipeline:
         splitter: PageSplitter,
         cleaner: PageCleaner,
         runtime: Runtime,
+        jobs: JobQueue,
         policy: QualityPolicy | None = None,
         max_pages: int = 40,
     ) -> None:
         self._booklets = booklets
+        self._jobs = jobs
         self._blobs = blobs
         self._splitter = splitter
         self._cleaner = cleaner
@@ -200,6 +214,8 @@ class PagePipeline:
         flagged = [p for p in pages if p.needs_retake]
         status = BookletStatus.NEEDS_RETAKE if flagged else BookletStatus.PAGES_READY
         booklet = self._save(booklet, status=status)
+        if status is BookletStatus.PAGES_READY:
+            queue_reading(self._jobs, booklet.college_id, booklet.id)
         self._rt.record(
             booklet.college_id,
             None,
@@ -236,9 +252,10 @@ class _TooManyPagesError(Exception):
 class PageDecisions:
     """What a teacher decides about flagged pages."""
 
-    def __init__(self, *, booklets: BookletRepository, runtime: Runtime) -> None:
+    def __init__(self, *, booklets: BookletRepository, runtime: Runtime, jobs: JobQueue) -> None:
         self._booklets = booklets
         self._rt = runtime
+        self._jobs = jobs
 
     def use_anyway(
         self, college_id: CollegeId, actor_id: UserId, booklet_id: BookletId, page_index: int
@@ -259,6 +276,8 @@ class PageDecisions:
         status = BookletStatus.NEEDS_RETAKE if remaining else BookletStatus.PAGES_READY
         updated = replace(booklet, status=status, version=booklet.version + 1)
         self._booklets.save(college_id, updated)
+        if status is BookletStatus.PAGES_READY:
+            queue_reading(self._jobs, college_id, booklet_id)
         self._rt.record(
             college_id,
             actor_id,

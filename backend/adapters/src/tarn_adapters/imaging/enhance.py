@@ -24,7 +24,7 @@ def reduce_shadows(image: Image) -> Image:
     background = cv2.GaussianBlur(background, (0, 0), 8)
     background = cv2.resize(background, (width, height), interpolation=cv2.INTER_LINEAR)
     flat = image.astype(np.float32) / np.maximum(background.astype(np.float32), 1.0)
-    return np.clip(flat * 255.0 * 0.97, 0, 255).astype(np.uint8)
+    return np.asarray(np.clip(flat * 255.0 * 0.97, 0, 255), dtype=np.uint8)
 
 
 def glare_share(image: Image) -> float:

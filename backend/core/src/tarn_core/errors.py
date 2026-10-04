@@ -64,3 +64,12 @@ class DuplicateBookletError(DomainError, ValueError):
     def __init__(self, duplicates: tuple[object, ...]) -> None:
         super().__init__("This file was uploaded before in your college.")
         self.duplicates = duplicates
+
+
+class EngineFailedError(DomainError, RuntimeError):
+    """An OCR engine could not read a page (it raised, or its service refused). The reader
+    records the engine and carries on with the others (design.md "Reliability")."""
+
+
+class EngineTimeoutError(EngineFailedError, TimeoutError):
+    """An OCR engine took longer than its time limit."""

@@ -14,6 +14,7 @@ from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.engine import make_url
 
 from tarn_adapters.postgres.audit import PgAuditSink
+from tarn_adapters.postgres.calibrations import PgCalibrationStore
 from tarn_adapters.postgres.jobs import JobSettings, PgJobQueue
 from tarn_adapters.postgres.repositories import (
     PgBookletRepository,
@@ -61,6 +62,7 @@ class PostgresSession:
     sheets: PgResultSheetRepository = field(init=False)
     audit: PgAuditSink = field(init=False)
     jobs: PgJobQueue = field(init=False)
+    calibrations: PgCalibrationStore = field(init=False)
     job_settings: JobSettings = field(default_factory=JobSettings)
 
     def __post_init__(self) -> None:
@@ -73,6 +75,7 @@ class PostgresSession:
         self.sheets = PgResultSheetRepository(self.conn)
         self.audit = PgAuditSink(self.conn)
         self.jobs = PgJobQueue(self.conn, self.job_settings)
+        self.calibrations = PgCalibrationStore(self.conn)
 
     @property
     def runtime(self) -> Runtime:

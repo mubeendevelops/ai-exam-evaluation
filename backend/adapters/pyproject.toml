@@ -20,9 +20,32 @@ dependencies = [
     "jsonschema==4.26.0",
     "pymupdf==1.28.2",
     "opencv-python-headless==4.14.0.94",
-    "numpy==2.5.3",
+    "numpy==2.3.5",  # PaddleX 3.7 needs numpy < 2.4 (P10)
+]
+
+[project.optional-dependencies]
+# Local OCR engines (P10). Heavy (torch with CUDA, Paddle); imported lazily, so the core, the
+# API and the unit tests run without them. `make setup` and the worker image install them.
+ocr = [
+    # PaddleX pins opencv-contrib-python 4.10, a second build of the `cv2` module that would
+    # overwrite our pinned headless 4.14 (the page cleaner's) and needs GUI libraries. The
+    # local shim of that name ships nothing and depends on the headless build (P10, D74).
+    "opencv-contrib-python",
+    "paddleocr==3.7.0",
+    "paddlepaddle==3.3.1",
+    "pytesseract==0.3.13",
+    "transformers==5.18.0",
+    "torch==2.14.1",
+]
+# Cloud OCR engines, off by default (design decision 4).
+cloud-ocr = [
+    "boto3==1.43.108",
+    "azure-ai-documentintelligence==1.0.2",
 ]
 
 [build-system]
 requires = ["uv_build>=0.12.6,<0.13"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+opencv-contrib-python = { path = "../shims/opencv-contrib-python" }

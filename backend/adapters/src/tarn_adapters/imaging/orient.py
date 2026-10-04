@@ -58,8 +58,8 @@ def skew_degrees(image: Image) -> float:
         return _periodicity(turned, 1)
 
     baseline = score(0.0)
-    coarse = max(np.arange(-_SKEW_RANGE, _SKEW_RANGE + 0.01, 1.0), key=score)
-    fine = max(np.arange(coarse - 0.9, coarse + 0.91, 0.3), key=score)
+    coarse = max((float(a) for a in np.arange(-_SKEW_RANGE, _SKEW_RANGE + 0.01, 1.0)), key=score)
+    fine = max((float(a) for a in np.arange(coarse - 0.9, coarse + 0.91, 0.3)), key=score)
     if abs(fine) < 0.4 or score(float(fine)) < baseline * 1.03:
         return 0.0
     return float(fine)

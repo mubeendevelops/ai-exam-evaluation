@@ -172,11 +172,23 @@ exam_blueprints = _versioned(
     Column("sections", JSONB(), nullable=False),
 )
 
-ocr_calibrations = _versioned(
+# Tarn-operator content (0006): no owning college and no creating user (both NULL).
+ocr_calibrations = Table(
     "ocr_calibrations",
+    metadata,
+    _uuid("id", primary_key=True),
+    _int("version", primary_key=True),
     _text("engine_name"),
     _text("engine_version"),
     Column("params", JSONB(), nullable=False),
+    _uuid("owning_college_id", nullable=True),
+    _uuid("created_by", nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    _text("copied_from_kind", nullable=True),
+    _uuid("copied_from_id", nullable=True),
+    _int("copied_from_version", nullable=True),
+    _seq(),
+    _text("content_class"),
 )
 
 # --- college data -----------------------------------------------------------------------------
@@ -238,6 +250,9 @@ pages = Table(
     Column("metrics", JSONB(), nullable=True),
     Column("retake_reasons", ARRAY(Text()), nullable=False),
     _seq(),
+    Column("text_read", Boolean(), nullable=False),
+    Column("needs_text", Boolean(), nullable=False),
+    Column("ocr_failures", ARRAY(Text()), nullable=False),
 )
 
 regions = Table(
@@ -251,6 +266,13 @@ regions = Table(
     _int("chosen", nullable=True),
     _text("teacher_text", nullable=True),
     _seq(),
+    _text("content_class", nullable=True),
+    Column("line_score", Double(), nullable=True),
+    Column("flagged", Boolean(), nullable=False),
+    Column("calibrations", JSONB(), nullable=False),
+    _uuid("parent_id", nullable=True),
+    _int("row_index", nullable=True),
+    _int("col_index", nullable=True),
 )
 
 line_readings = Table(
@@ -265,6 +287,12 @@ line_readings = Table(
     _box(),
     Column("confidence", Double(), nullable=False),
     Column("char_confidences", ARRAY(Double()), nullable=True),
+    Column("p_calibrated", Double(), nullable=True),
+    Column("agreement", Double(), nullable=True),
+    Column("lexicon", Double(), nullable=True),
+    Column("weight", Double(), nullable=True),
+    Column("score", Double(), nullable=True),
+    Column("competing", Boolean(), nullable=True),
 )
 
 segments = Table(

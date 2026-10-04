@@ -1,5 +1,6 @@
-"""Booklets: upload (one PDF, or a set of images), the page-cleaning status the UI shows,
-the cleaned and original page images, and the teacher's "use anyway" and delete."""
+"""Booklets: upload (one PDF, or a set of images), the page-cleaning and reading status the UI
+shows, the cleaned and original page images, what OCR read on a page, and the teacher's "use
+anyway" and delete."""
 
 from typing import Annotated, Literal
 from uuid import UUID
@@ -25,10 +26,13 @@ from tarn_api.schemas import (
     BookletStudentOut,
     ErrorOut,
     PageOut,
+    PageTextOut,
+    ReadingOut,
+    RegionOut,
 )
 from tarn_api.security import BackendsDep, PrincipalDep, current_user
 from tarn_core.domain.blueprint import ExamBlueprint
-from tarn_core.domain.booklet import Booklet, Page
+from tarn_core.domain.booklet import Booklet, Page, Region
 from tarn_core.domain.common import BlobKey
 from tarn_core.domain.tenancy import Role
 from tarn_core.errors import UploadTooLargeError
@@ -64,6 +68,10 @@ def _page_out(base: str, page: Page) -> PageOut:
         page_found=None if m is None else m.page_found,
         image_url=f"{base}/pages/{number}/image" if page.cleaned else None,
         original_url=f"{base}/pages/{number}/image?kind=original" if page.original else None,
+        text_read=page.text_read,
+        needs_text=page.needs_text,
+        ocr_failures=list(page.ocr_failures),
+        text_url=f"{base}/pages/{number}/text" if page.text_read else None,
     )
 
 
@@ -92,6 +100,8 @@ def _booklet_out(
         page_count=len(pages),
         pages_cleaned=sum(1 for p in pages if p.cleaned),
         flagged_pages=[p.index + 1 for p in pages if p.needs_retake],
+        pages_read=sum(1 for p in pages if p.text_read),
+        needs_text_pages=[p.index + 1 for p in pages if p.needs_text],
         failure_reason=booklet.failure_reason,
         duplicate_of=list(duplicates),
     )
@@ -238,6 +248,68 @@ def page_image(
         media_type=_MEDIA.get(extension, "application/octet-stream"),
         headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
     )
+
+
+def _region_out(region: Region) -> RegionOut:
+    scores = region.scores or (None,) * len(region.readings)
+    return RegionOut(
+        id=region.id,
+        kind=region.kind.value,
+        box=[region.box.x0, region.box.y0, region.box.x1, region.box.y1],
+        text=region.text,
+        chosen=region.chosen,
+        content_class=None if region.content_class is None else region.content_class.value,
+        line_score=region.line_score,
+        flagged=region.flagged,
+        read_by=list(region.read_by),
+        parent_id=region.parent_id,
+        row=region.row,
+        col=region.col,
+        readings=[
+            ReadingOut(
+                engine=r.engine.name,
+                engine_version=r.engine.version,
+                text=r.text,
+                confidence=r.confidence,
+                box=[r.box.x0, r.box.y0, r.box.x1, r.box.y1],
+                calibrated=None if s is None else s.calibrated,
+                agreement=None if s is None else s.agreement,
+                lexicon=None if s is None else s.lexicon,
+                weight=None if s is None else s.weight,
+                score=None if s is None else s.score,
+                competing=None if s is None else s.competing,
+            )
+            for r, s in zip(region.readings, scores, strict=True)
+        ],
+    )
+
+
+@router.get(
+    "/booklets/{booklet_id}/pages/{number}/text",
+    response_model=PageTextOut,
+    responses={404: {"model": ErrorOut}},
+    summary="What OCR read on one page: every line with every engine's reading and score",
+    description="Lines keep every engine's reading, the selector's terms for each, the chosen "
+    "one and whether the line is flagged for the teacher. Tables come as a `table` region "
+    "followed by its cells (`parent_id`, `row`, `col`). Empty until the page has been read.",
+)
+def page_text(
+    booklet_id: UUID, number: int, who: PrincipalDep, backends: BackendsDep
+) -> PageTextOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        pages = unit.scope.booklets.pages(who.college_id, BookletId(booklet_id))
+        page = next((p for p in pages if p.index + 1 == number), None)
+        if page is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found.")
+        regions = unit.scope.booklets.regions(who.college_id, page.id)
+        return PageTextOut(
+            number=number,
+            text_read=page.text_read,
+            needs_text=page.needs_text,
+            ocr_failures=list(page.ocr_failures),
+            regions=[_region_out(r) for r in regions],
+        )
 
 
 @router.post(

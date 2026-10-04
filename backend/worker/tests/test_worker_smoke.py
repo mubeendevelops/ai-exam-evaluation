@@ -116,3 +116,54 @@ def test_run_stops_after_the_job_in_hand_when_asked() -> None:
 
     run(settings, stop, heartbeat_s=60, tick=tick)
     assert calls == [1]  # it did not start another
+
+
+def test_a_worker_without_ocr_fails_reading_jobs_and_finally_their_booklets() -> None:
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    import pytest
+
+    from tarn_core.domain.booklet import BookletStatus
+    from tarn_core.ports.jobs import JOB_PREPARE_BOOKLET, JOB_READ_BOOKLET
+    from tarn_core.testing import InMemory
+    from tarn_core.testing.builders import add_college, ci_shaped_blueprint, make_services
+    from tarn_worker.booklets import BookletJobRunner, OcrUnavailableError
+
+    runner = BookletJobRunner(
+        db=cast(Any, None),
+        blobs=cast(Any, None),
+        splitter=cast(Any, None),
+        cleaner=cast(Any, None),
+        clock=cast(Any, None),
+        ids=cast(Any, None),
+        policy=cast(Any, None),
+        max_pages=1,
+        ocr=None,
+    )
+    assert runner._stepper(JOB_PREPARE_BOOKLET) is not None
+    no_ocr = runner._stepper(JOB_READ_BOOKLET)
+    assert no_ocr is not None
+
+    mem = InMemory()
+    college = add_college(mem, "A")
+    blueprint = ci_shaped_blueprint(mem, college)
+    booklet = (
+        make_services(mem)
+        .booklets.register(
+            college.id,
+            college.teacher.id,
+            student_id=college.students[0].id,
+            blueprint_id=blueprint.id,
+            file_sha256="a" * 64,
+        )
+        .booklet
+    )
+    mem.booklets.save(college.id, replace(booklet, status=BookletStatus.PAGES_READY, version=2))
+    stepper = no_ocr(cast(Any, SimpleNamespace(booklets=mem.booklets, runtime=mem.runtime)))
+    with pytest.raises(OcrUnavailableError):
+        stepper.step(college.id, booklet.id)
+    stepper.abandon(college.id, booklet.id)
+    failed = mem.booklets.get(college.id, booklet.id)
+    assert failed.status is BookletStatus.FAILED and failed.failure_reason == "reading_failed"

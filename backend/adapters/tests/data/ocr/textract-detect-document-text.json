@@ -1,0 +1,19 @@
+{
+  "_comment": "Synthetic response in the documented shape of Amazon Textract DetectDocumentText (Blocks: PAGE, LINE, WORD; Geometry in fractions of the page; Confidence 0-100). Not recorded from the service: no credentials exist in development and student pages must not be sent (design decision 4). Text is invented.",
+  "DocumentMetadata": {"Pages": 1},
+  "Blocks": [
+    {"BlockType": "PAGE", "Id": "p1", "Confidence": 99.9,
+     "Geometry": {"BoundingBox": {"Width": 1.0, "Height": 1.0, "Left": 0.0, "Top": 0.0}}},
+    {"BlockType": "LINE", "Id": "l1", "Confidence": 97.1, "Text": "Gradient descent",
+     "Geometry": {"BoundingBox": {"Width": 0.4, "Height": 0.05, "Left": 0.1, "Top": 0.1}}},
+    {"BlockType": "WORD", "Id": "w1", "Confidence": 98.5, "Text": "Gradient", "TextType": "HANDWRITING",
+     "Geometry": {"BoundingBox": {"Width": 0.2, "Height": 0.05, "Left": 0.1, "Top": 0.1},
+                  "Polygon": [{"X": 0.1, "Y": 0.1}, {"X": 0.3, "Y": 0.1}, {"X": 0.3, "Y": 0.15}, {"X": 0.1, "Y": 0.15}]}},
+    {"BlockType": "WORD", "Id": "w2", "Confidence": 95.7, "Text": "descent", "TextType": "HANDWRITING",
+     "Geometry": {"BoundingBox": {"Width": 0.18, "Height": 0.05, "Left": 0.32, "Top": 0.1}}},
+    {"BlockType": "WORD", "Id": "w3", "Confidence": 61.0, "Text": "42.5", "TextType": "HANDWRITING",
+     "Geometry": {"BoundingBox": {"Width": 0.1, "Height": 0.05, "Left": 0.1, "Top": 0.3}}},
+    {"BlockType": "WORD", "Id": "w4", "Confidence": 50.0, "Text": "   ",
+     "Geometry": {"BoundingBox": {"Width": 0.1, "Height": 0.05, "Left": 0.5, "Top": 0.5}}}
+  ]
+}

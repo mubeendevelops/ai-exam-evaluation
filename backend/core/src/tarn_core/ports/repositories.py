@@ -178,6 +178,13 @@ class BookletRepository(Protocol):
 
     def save_region(self, college_id: CollegeId, region: Region) -> None: ...
 
+    def replace_regions(
+        self, college_id: CollegeId, page_id: PageId, regions: Sequence[Region]
+    ) -> None:
+        """Removes the page's regions (with their readings) and stores ``regions`` in this
+        order (parents before the cells that point at them)."""
+        ...
+
     def segments(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Segment]: ...
 
     def save_segment(self, college_id: CollegeId, segment: Segment) -> None: ...

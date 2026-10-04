@@ -258,7 +258,7 @@ def _expand(quad: Quad, factor: float, width: int, height: int) -> Quad:
     grown = centre + (quad - centre) * (1 + factor)
     grown[:, 0] = np.clip(grown[:, 0], 0, width - 1)
     grown[:, 1] = np.clip(grown[:, 1], 0, height - 1)
-    return grown.astype(np.float32)
+    return np.asarray(grown, dtype=np.float32)
 
 
 def locate_page(small: Image) -> PageLocation:

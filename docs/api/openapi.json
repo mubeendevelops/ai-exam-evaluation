@@ -3765,6 +3765,94 @@
         }
       }
     },
+    "/api/v1/booklets/{booklet_id}/pages/{number}/text": {
+      "get": {
+        "tags": [
+          "booklets"
+        ],
+        "summary": "What OCR read on one page: every line with every engine's reading and score",
+        "description": "Lines keep every engine's reading, the selector's terms for each, the chosen one and whether the line is flagged for the teacher. Tables come as a `table` region followed by its cells (`parent_id`, `row`, `col`). Empty until the page has been read.",
+        "operationId": "page_text_api_v1_booklets__booklet_id__pages__number__text_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageTextOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/booklets/{booklet_id}/pages/{number}/use-anyway": {
       "post": {
         "tags": [
@@ -4214,6 +4302,8 @@
               "processing",
               "needs_retake",
               "pages_ready",
+              "reading",
+              "text_ready",
               "failed",
               "scored",
               "in_review",
@@ -4259,6 +4349,19 @@
             "title": "Flagged Pages",
             "description": "Numbers of the pages that still need a retake or a 'use anyway'."
           },
+          "pages_read": {
+            "type": "integer",
+            "title": "Pages Read",
+            "description": "Pages OCR has read."
+          },
+          "needs_text_pages": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Needs Text Pages",
+            "description": "Numbers of the pages no OCR engine could read."
+          },
           "failure_reason": {
             "anyOf": [
               {
@@ -4266,7 +4369,8 @@
                 "enum": [
                   "unreadable_file",
                   "too_many_pages",
-                  "processing_failed"
+                  "processing_failed",
+                  "reading_failed"
                 ]
               },
               {
@@ -4304,6 +4408,8 @@
           "page_count",
           "pages_cleaned",
           "flagged_pages",
+          "pages_read",
+          "needs_text_pages",
           "failure_reason",
           "duplicate_of",
           "pages"
@@ -4324,6 +4430,8 @@
               "processing",
               "needs_retake",
               "pages_ready",
+              "reading",
+              "text_ready",
               "failed",
               "scored",
               "in_review",
@@ -4369,6 +4477,19 @@
             "title": "Flagged Pages",
             "description": "Numbers of the pages that still need a retake or a 'use anyway'."
           },
+          "pages_read": {
+            "type": "integer",
+            "title": "Pages Read",
+            "description": "Pages OCR has read."
+          },
+          "needs_text_pages": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Needs Text Pages",
+            "description": "Numbers of the pages no OCR engine could read."
+          },
           "failure_reason": {
             "anyOf": [
               {
@@ -4376,7 +4497,8 @@
                 "enum": [
                   "unreadable_file",
                   "too_many_pages",
-                  "processing_failed"
+                  "processing_failed",
+                  "reading_failed"
                 ]
               },
               {
@@ -4407,6 +4529,8 @@
           "page_count",
           "pages_cleaned",
           "flagged_pages",
+          "pages_read",
+          "needs_text_pages",
           "failure_reason",
           "duplicate_of"
         ],
@@ -5333,6 +5457,36 @@
               }
             ],
             "title": "Original Url"
+          },
+          "text_read": {
+            "type": "boolean",
+            "title": "Text Read",
+            "description": "OCR has read this page (P10)."
+          },
+          "needs_text": {
+            "type": "boolean",
+            "title": "Needs Text",
+            "description": "Every OCR engine failed on this page: the teacher types it or retakes it."
+          },
+          "ocr_failures": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ocr Failures",
+            "description": "Engines that failed on this page, as `engine:timeout` or `engine:error`."
+          },
+          "text_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Url",
+            "description": "The page's lines and readings, once read."
           }
         },
         "type": "object",
@@ -5353,9 +5507,53 @@
           "neighbour_removed",
           "page_found",
           "image_url",
-          "original_url"
+          "original_url",
+          "text_read",
+          "needs_text",
+          "ocr_failures",
+          "text_url"
         ],
         "title": "PageOut"
+      },
+      "PageTextOut": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "text_read": {
+            "type": "boolean",
+            "title": "Text Read"
+          },
+          "needs_text": {
+            "type": "boolean",
+            "title": "Needs Text"
+          },
+          "ocr_failures": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ocr Failures"
+          },
+          "regions": {
+            "items": {
+              "$ref": "#/components/schemas/RegionOut"
+            },
+            "type": "array",
+            "title": "Regions",
+            "description": "In reading order; table cells after their table."
+          }
+        },
+        "type": "object",
+        "required": [
+          "number",
+          "text_read",
+          "needs_text",
+          "ocr_failures",
+          "regions"
+        ],
+        "title": "PageTextOut"
       },
       "PolicyErrorOut": {
         "properties": {
@@ -5837,6 +6035,119 @@
         ],
         "title": "QuestionUpdateIn"
       },
+      "ReadingOut": {
+        "properties": {
+          "engine": {
+            "type": "string",
+            "title": "Engine"
+          },
+          "engine_version": {
+            "type": "string",
+            "title": "Engine Version"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence",
+            "description": "The engine's raw confidence, 0..1."
+          },
+          "box": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Box",
+            "description": "x0, y0, x1, y1 in page pixels."
+          },
+          "calibrated": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibrated",
+            "description": "p̂: the confidence through the calibration."
+          },
+          "agreement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agreement"
+          },
+          "lexicon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lexicon"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score",
+            "description": "S = weight·p̂ + α·agreement + β·lexicon."
+          },
+          "competing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Competing",
+            "description": "False when the engine is not in the line's class set (kept, never chosen)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "engine",
+          "engine_version",
+          "text",
+          "confidence",
+          "box",
+          "calibrated",
+          "agreement",
+          "lexicon",
+          "weight",
+          "score",
+          "competing"
+        ],
+        "title": "ReadingOut"
+      },
       "RecoverIn": {
         "properties": {
           "institution_id": {
@@ -5994,6 +6305,156 @@
           "content_url"
         ],
         "title": "ReferenceDiagramOut"
+      },
+      "RegionOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text_line",
+              "text_block",
+              "diagram",
+              "table",
+              "label"
+            ],
+            "title": "Kind"
+          },
+          "box": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Box"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text",
+            "description": "The teacher's text if corrected, else the chosen one."
+          },
+          "chosen": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chosen",
+            "description": "Index of the chosen reading."
+          },
+          "content_class": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "print",
+                  "cursive",
+                  "numeric"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Class"
+          },
+          "line_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Score",
+            "description": "Winner's S over the best S possible, 0..1."
+          },
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged",
+            "description": "Below the line threshold: highlighted for the teacher."
+          },
+          "read_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Read By"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id",
+            "description": "The table a cell belongs to."
+          },
+          "row": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row"
+          },
+          "col": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Col"
+          },
+          "readings": {
+            "items": {
+              "$ref": "#/components/schemas/ReadingOut"
+            },
+            "type": "array",
+            "title": "Readings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "box",
+          "text",
+          "chosen",
+          "content_class",
+          "line_score",
+          "flagged",
+          "read_by",
+          "parent_id",
+          "row",
+          "col",
+          "readings"
+        ],
+        "title": "RegionOut"
       },
       "RegistrationIn": {
         "properties": {

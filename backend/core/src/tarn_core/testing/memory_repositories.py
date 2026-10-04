@@ -278,6 +278,21 @@ class MemoryBookletRepository:
     def save_region(self, college_id: CollegeId, region: Region) -> None:
         self._regions.put(college_id, region.id, region)
 
+    def replace_regions(
+        self, college_id: CollegeId, page_id: PageId, regions: Sequence[Region]
+    ) -> None:
+        self._pages.get(college_id, page_id)
+        for region in regions:
+            if region.page_id != page_id:
+                raise InvariantError("every region must belong to the page being replaced")
+            if region.college_id != college_id:
+                raise TenantViolationError(
+                    f"region of another college written through {college_id}"
+                )
+        self._regions.drop_where(college_id, lambda r: r.page_id == page_id)
+        for region in regions:
+            self._regions.put(college_id, region.id, region)
+
     def segments(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Segment]:
         return [s for s in self._segments.values(college_id) if s.booklet_id == booklet_id]
 

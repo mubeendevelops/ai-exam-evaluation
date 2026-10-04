@@ -186,7 +186,9 @@ class Unit:
 
     @property
     def page_decisions(self) -> PageDecisions:
-        return PageDecisions(booklets=self.scope.booklets, runtime=self.scope.runtime)
+        return PageDecisions(
+            booklets=self.scope.booklets, runtime=self.scope.runtime, jobs=self.scope.jobs
+        )
 
 
 @contextmanager

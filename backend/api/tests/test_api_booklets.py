@@ -10,10 +10,23 @@ from fastapi.testclient import TestClient
 
 from tarn_api.testing import MemoryBackends
 from tarn_core.domain.audit import AuditAction
+from tarn_core.domain.booklet import RegionKind
+from tarn_core.domain.common import Box
+from tarn_core.errors import EngineTimeoutError
 from tarn_core.ids import BookletId, CollegeId
+from tarn_core.ports.engines import DetectedRegion, OcrEngine, TableCell
+from tarn_core.services.ocr.reader import BookletReader, OrientationPolicy
 from tarn_core.services.pipeline import PagePipeline
 from tarn_core.services.uploads import UploadLimits
-from tarn_core.testing import FakePageCleaner, FakePageSplitter, fake_image, fake_pdf
+from tarn_core.testing import (
+    FakePageCleaner,
+    FakePageSplitter,
+    FakePageTransform,
+    ScriptedLayoutDetector,
+    ScriptedOcrEngine,
+    fake_image,
+    fake_pdf,
+)
 from tarn_core.testing.auth_world import ADMIN_PASSWORD, TEACHER_PASSWORD, AuthWorld
 from tarn_core.testing.builders import CollegeFixture, ci_shaped_blueprint
 
@@ -67,8 +80,43 @@ class Setup:
             splitter=FakePageSplitter(),
             cleaner=FakePageCleaner(),
             runtime=mem.runtime,
+            jobs=mem.jobs,
         )
         while not pipeline.step(self.college_id, BookletId(UUID(booklet_id))):
+            pass
+
+    def read(self, booklet_id: str, engines: dict[str, OcrEngine] | None = None) -> None:
+        """What the worker does next: read the clean pages (scripted layout and engines)."""
+        mem = self.backends.mem
+        reader = BookletReader(
+            booklets=mem.booklets,
+            content=mem.content,
+            blobs=mem.blobs,
+            layout=ScriptedLayoutDetector(
+                [
+                    DetectedRegion(kind=RegionKind.TEXT_LINE, box=Box(x0=10, y0=10, x1=500, y1=60)),
+                    DetectedRegion(
+                        kind=RegionKind.TABLE,
+                        box=Box(x0=10, y0=100, x1=500, y1=300),
+                        cells=(
+                            TableCell(row=0, col=0, box=Box(x0=10, y0=100, x1=250, y1=200)),
+                            TableCell(row=0, col=1, box=Box(x0=250, y0=100, x1=500, y1=200)),
+                        ),
+                    ),
+                ]
+            ),
+            engines=engines
+            or {
+                "trocr": ScriptedOcrEngine("trocr", ["neural network", "a", "b"], 0.8),
+                "paddle": ScriptedOcrEngine("paddle", ["neural netwark", "a", "b"], 0.6),
+            },
+            transform=FakePageTransform(),
+            calibrations=mem.calibrations,
+            word_list=None,
+            runtime=mem.runtime,
+            orientation=OrientationPolicy(enabled=False),
+        )
+        while not reader.step(self.college_id, BookletId(UUID(booklet_id))):
             pass
 
 
@@ -168,6 +216,8 @@ def test_a_teacher_may_have_a_limited_number_waiting(s: Setup) -> None:
     listing = s.client.get(f"{BASE}/booklets", headers=s.teacher).json()
     assert listing["waiting"] == 2 and listing["max_waiting"] == 2
     s.process(first["id"])
+    assert s.upload(fake_pdf(1, "5")).status_code == 429  # clean pages still wait for OCR
+    s.read(first["id"])
     assert s.upload(fake_pdf(1, "5")).status_code == 201  # a slot freed up
     assert s.client.get(f"{BASE}/booklets", headers=s.teacher).json()["waiting"] == 2
 
@@ -333,3 +383,54 @@ def test_another_college_sees_nothing_of_the_booklet(s: Setup, other: dict[str, 
     listing = s.client.get(f"{BASE}/booklets", headers=other).json()
     assert listing["items"] == [] and listing["total"] == 0 and listing["waiting"] == 0
     assert s.client.get(url, headers=s.teacher).status_code == 200  # still there
+
+
+# --- OCR (P10) -----------------------------------------------------------------------------------
+
+
+def test_reading_shows_every_engine_and_the_chosen_line(s: Setup) -> None:
+    booklet = s.upload(fake_pdf(2)).json()
+    s.process(booklet["id"])
+    before = s.client.get(f"{BASE}/booklets/{booklet['id']}", headers=s.teacher).json()
+    assert before["pages_read"] == 0 and before["pages"][0]["text_url"] is None
+    s.read(booklet["id"])
+    detail = s.client.get(f"{BASE}/booklets/{booklet['id']}", headers=s.teacher).json()
+    assert detail["status"] == "text_ready" and detail["pages_read"] == 2
+    assert detail["needs_text_pages"] == []
+    page = detail["pages"][0]
+    assert page["text_read"] and page["text_url"].endswith("/pages/1/text")
+    text = s.client.get(page["text_url"], headers=s.teacher).json()
+    assert text["number"] == 1 and text["text_read"]
+    line, table, *cells = text["regions"]
+    assert line["kind"] == "text_line" and line["text"] == "neural network"
+    # Readings in the configured engine order (the print set names paddle first).
+    assert line["read_by"] == ["paddle", "trocr"] and line["flagged"] is False
+    assert [r["engine"] for r in line["readings"]] == ["paddle", "trocr"]
+    chosen = line["readings"][line["chosen"]]
+    assert chosen["score"] == max(r["score"] for r in line["readings"])
+    assert table["kind"] == "table"
+    assert [(c["row"], c["col"], c["parent_id"]) for c in cells] == [
+        (0, 0, table["id"]),
+        (0, 1, table["id"]),
+    ]
+    assert (
+        s.client.get(f"{BASE}/booklets/{booklet['id']}/pages/9/text", headers=s.teacher).status_code
+        == 404
+    )
+
+
+def test_a_page_no_engine_read_is_listed(s: Setup) -> None:
+    booklet = s.upload(fake_pdf(1)).json()
+    s.process(booklet["id"])
+    s.read(booklet["id"], {"trocr": ScriptedOcrEngine("trocr", ["x"], fail=EngineTimeoutError())})
+    detail = s.client.get(f"{BASE}/booklets/{booklet['id']}", headers=s.teacher).json()
+    assert detail["needs_text_pages"] == [1]
+    assert detail["pages"][0]["ocr_failures"] == ["trocr:timeout"]
+
+
+def test_page_text_of_another_college_is_not_found(s: Setup, other: dict[str, str]) -> None:
+    booklet = s.upload(fake_pdf(1)).json()
+    s.process(booklet["id"])
+    s.read(booklet["id"])
+    response = s.client.get(f"{BASE}/booklets/{booklet['id']}/pages/1/text", headers=other)
+    assert response.status_code == 404

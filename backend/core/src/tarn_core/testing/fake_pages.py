@@ -3,7 +3,8 @@
 Test "files" are tiny byte strings: ``b"%PDF-fake:3#"`` is a PDF of 3 pages, ``b"%PDF-bad"`` an
 unreadable one, and an image is ``b"\\xff\\xd8\\xff" + tag`` where the tag steers what the fake
 cleaner measures: ``blur``, ``glare``, ``nopage``, ``small`` (low resolution), ``bad`` (cannot
-be decoded), ``boom`` (an infrastructure error)."""
+be decoded), ``boom`` (an infrastructure error), ``guess`` (a quarter turn whose direction was
+guessed)."""
 
 from collections.abc import Sequence
 
@@ -62,8 +63,8 @@ class FakePageCleaner:
             page_area_share=0.9,
             source_width=width,
             source_height=height,
-            rotation_degrees=0,
-            rotation_guessed=False,
+            rotation_degrees=90 if "guess" in tag else 0,
+            rotation_guessed="guess" in tag,
             skew_degrees=0.0,
             cropped=False,
             perspective_corrected=False,

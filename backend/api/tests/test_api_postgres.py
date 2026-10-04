@@ -14,10 +14,18 @@ from fastapi.testclient import TestClient
 from tarn_adapters.auth.mail import ConsoleMailer
 from tarn_adapters.config import Settings
 from tarn_adapters.identity.testing import create_test_identity_database
+from tarn_adapters.ocr.transform import OpenCvPageTransform
 from tarn_adapters.postgres.testing import create_test_database, drop_test_database
 from tarn_api.app import create_app
 from tarn_api.backends import PostgresBackends
+from tarn_core.domain.booklet import RegionKind
+from tarn_core.domain.common import Box
+from tarn_core.domain.ocr import SelectorSettings
+from tarn_core.ports.engines import DetectedRegion
 from tarn_core.ports.identity import EmailMessage
+from tarn_core.services.ocr.reader import OrientationPolicy
+from tarn_core.testing import ScriptedLayoutDetector, ScriptedOcrEngine
+from tarn_worker.booklets import OcrKit
 
 pytestmark = pytest.mark.integration
 
@@ -237,9 +245,18 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
         policy=QualityPolicy(),
         max_pages=10,
         worker="api-test",
+        ocr=OcrKit(
+            layout=ScriptedLayoutDetector(
+                [DetectedRegion(kind=RegionKind.TEXT_LINE, box=Box(x0=20, y0=20, x1=400, y1=80))]
+            ),
+            engines={"trocr": ScriptedOcrEngine("trocr", ["synthetic line"], 0.9)},
+            transform=OpenCvPageTransform(),
+            word_list=None,
+            settings=SelectorSettings(),
+            orientation=OrientationPolicy(enabled=False),
+        ),
     )
-    assert runner.run_one() is True
-    assert runner.run_one() is False
+    assert runner.run_one() is True  # page cleaning; the reading job is queued next
 
     detail = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()
     assert detail["status"] == "pages_ready" and detail["page_count"] == 2
@@ -249,6 +266,14 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
     assert cleaned.status_code == 200 and cleaned.content[:3] == b"\xff\xd8\xff"
     original = client.get(detail["pages"][0]["original_url"], headers=a)
     assert original.status_code == 200 and original.content[:3] == b"\xff\xd8\xff"
+    assert client.get("/api/v1/booklets", headers=a).json()["waiting"] == 1  # waits for OCR
+    assert runner.run_one() is True  # reading
+    assert runner.run_one() is False
+    read = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()
+    assert read["status"] == "text_ready" and read["pages_read"] == 2
+    text = client.get(read["pages"][0]["text_url"], headers=a).json()
+    assert [r["text"] for r in text["regions"]] == ["synthetic line"]
+    assert client.get(read["pages"][0]["text_url"], headers=b).status_code == 404
     listing = client.get("/api/v1/booklets", headers=a).json()
     assert [x["id"] for x in listing["items"]] == [booklet["id"]] and listing["waiting"] == 0
     assert client.get(f"/api/v1/booklets/{booklet['id']}", headers=b).status_code == 404

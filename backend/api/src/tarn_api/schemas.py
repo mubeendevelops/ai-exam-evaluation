@@ -461,6 +461,8 @@ BookletStatusName = Literal[
     "processing",
     "needs_retake",
     "pages_ready",
+    "reading",
+    "text_ready",
     "failed",
     "scored",
     "in_review",
@@ -506,6 +508,14 @@ class PageOut(BaseModel):
     page_found: bool | None
     image_url: str | None = Field(description="The cleaned page (needs the bearer token).")
     original_url: str | None
+    text_read: bool = Field(description="OCR has read this page (P10).")
+    needs_text: bool = Field(
+        description="Every OCR engine failed on this page: the teacher types it or retakes it."
+    )
+    ocr_failures: list[str] = Field(
+        description="Engines that failed on this page, as `engine:timeout` or `engine:error`."
+    )
+    text_url: str | None = Field(description="The page's lines and readings, once read.")
 
 
 class BookletOut(BaseModel):
@@ -521,7 +531,13 @@ class BookletOut(BaseModel):
     flagged_pages: list[int] = Field(
         description="Numbers of the pages that still need a retake or a 'use anyway'."
     )
-    failure_reason: Literal["unreadable_file", "too_many_pages", "processing_failed"] | None
+    pages_read: int = Field(description="Pages OCR has read.")
+    needs_text_pages: list[int] = Field(
+        description="Numbers of the pages no OCR engine could read."
+    )
+    failure_reason: (
+        Literal["unreadable_file", "too_many_pages", "processing_failed", "reading_failed"] | None
+    )
     duplicate_of: list[UUID] = Field(
         description="Other booklets of this college with the same file (set on upload only)."
     )
@@ -529,6 +545,49 @@ class BookletOut(BaseModel):
 
 class BookletDetailOut(BookletOut):
     pages: list[PageOut]
+
+
+ContentClassName = Literal["print", "cursive", "numeric"]
+
+
+class ReadingOut(BaseModel):
+    engine: str
+    engine_version: str
+    text: str
+    confidence: float = Field(description="The engine's raw confidence, 0..1.")
+    box: list[int] = Field(description="x0, y0, x1, y1 in page pixels.")
+    calibrated: float | None = Field(description="p̂: the confidence through the calibration.")
+    agreement: float | None
+    lexicon: float | None
+    weight: float | None
+    score: float | None = Field(description="S = weight·p̂ + α·agreement + β·lexicon.")
+    competing: bool | None = Field(
+        description="False when the engine is not in the line's class set (kept, never chosen)."
+    )
+
+
+class RegionOut(BaseModel):
+    id: UUID
+    kind: Literal["text_line", "text_block", "diagram", "table", "label"]
+    box: list[int]
+    text: str | None = Field(description="The teacher's text if corrected, else the chosen one.")
+    chosen: int | None = Field(description="Index of the chosen reading.")
+    content_class: ContentClassName | None
+    line_score: float | None = Field(description="Winner's S over the best S possible, 0..1.")
+    flagged: bool = Field(description="Below the line threshold: highlighted for the teacher.")
+    read_by: list[str]
+    parent_id: UUID | None = Field(description="The table a cell belongs to.")
+    row: int | None
+    col: int | None
+    readings: list[ReadingOut]
+
+
+class PageTextOut(BaseModel):
+    number: int
+    text_read: bool
+    needs_text: bool
+    ocr_failures: list[str]
+    regions: list[RegionOut] = Field(description="In reading order; table cells after their table.")
 
 
 class BookletPageOut(BaseModel):

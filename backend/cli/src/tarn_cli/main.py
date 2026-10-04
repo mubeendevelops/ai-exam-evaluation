@@ -1,7 +1,7 @@
 """``tarn`` command-line interface."""
 
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
@@ -17,6 +17,9 @@ from tarn_adapters.postgres.health import check_database
 from tarn_adapters.runtime import SystemClock
 from tarn_cli import __version__
 
+if TYPE_CHECKING:
+    from tarn_adapters.ocr.wiring import OcrSetup
+
 app = typer.Typer(help="Tarn AI Evaluation command-line interface.", no_args_is_help=True)
 db = typer.Typer(help="Database schema and roles (uses the owner role, TARN_DATABASE_URL).")
 identity = typer.Typer(
@@ -24,8 +27,12 @@ identity = typer.Typer(
 )
 tenants = typer.Typer(help="Tarn operator commands: list and approve tenant registrations.")
 pages = typer.Typer(help="Page cleaning without a database or queue.")
+ocr = typer.Typer(help="OCR engines (P10): models, reading files, calibration.")
+ocr_models = typer.Typer(help="Model weights and the compute device.")
+ocr.add_typer(ocr_models, name="models")
 app.add_typer(db, name="db")
 app.add_typer(pages, name="pages")
+app.add_typer(ocr, name="ocr")
 app.add_typer(identity, name="identity")
 app.add_typer(tenants, name="tenants")
 
@@ -317,3 +324,147 @@ def pages_check(
     if out is not None:
         out.mkdir(parents=True, exist_ok=True)
         write_report(results, out / "report.json")
+
+
+# --- OCR (P10) ----------------------------------------------------------------------------------
+
+
+def _ocr_setup(settings: Settings) -> "OcrSetup":
+    from tarn_adapters.ocr.wiring import build_ocr
+
+    setup = build_ocr(settings)
+    typer.echo(
+        f"device {setup.device.kind} ({setup.device.detail}); engines: "
+        f"{', '.join(setup.engines) or 'none'}"
+    )
+    for name, reason in setup.skipped.items():
+        typer.echo(f"  skipped {name}: {reason}")
+    return setup
+
+
+@ocr_models.command("check")
+def ocr_models_check() -> None:
+    """Show the device, the configured engines, which can run, and which are left out why."""
+    _ocr_setup(get_settings())
+
+
+@ocr_models.command("fetch")
+def ocr_models_fetch() -> None:
+    """Download the weights of every local engine into TARN_MODEL_DIR (once; then offline) and
+    read a generated line with each, reporting the time and the GPU memory used."""
+    import time
+
+    import cv2
+    import numpy as np
+
+    from tarn_adapters.ocr.images import encode_jpeg
+    from tarn_core.domain.common import Box
+
+    setup = _ocr_setup(get_settings())
+    line = np.full((64, 640, 3), 255, np.uint8)
+    cv2.putText(line, "Tarn model check 42", (10, 45), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 2)
+    image = encode_jpeg(line)
+    box = [Box(x0=0, y0=0, x1=640, y1=64)]
+    started = time.perf_counter()
+    setup.layout.detect(image)
+    typer.echo(f"layout {setup.layout.ref.version}: {time.perf_counter() - started:.1f}s")
+    for name, engine in setup.engines.items():
+        started = time.perf_counter()
+        try:
+            readings = engine.read(image, box)
+        except Exception as error:  # report and go on with the next engine
+            typer.echo(f"{name}: FAILED ({type(error).__name__}: {error})")
+            continue
+        text = readings[0].text if readings else ""
+        typer.echo(f"{name} {engine.ref.version}: {text!r} in {time.perf_counter() - started:.1f}s")
+    if setup.device.kind == "cuda":
+        import torch
+
+        typer.echo(f"GPU memory peak: {torch.cuda.max_memory_allocated() // 2**20} MB")
+
+
+@ocr.command("read")
+def ocr_read(
+    paths: Annotated[list[Path], typer.Argument(exists=True, dir_okay=False, readable=True)],
+    out: Annotated[Path | None, typer.Option(help="Write report.json here.")] = None,
+    text: Annotated[
+        Path | None,
+        typer.Option(
+            help="Also write the recognised text per booklet here. It is student data: "
+            "use a local, git-ignored folder."
+        ),
+    ] = None,
+    max_pages: Annotated[int, typer.Option(help="Page limit per file.")] = 60,
+) -> None:
+    """Clean and read PDFs or images page by page without the stack: one line per page with
+    the orientation decision, lines, flagged lines, mean line score and failed engines. No
+    recognised text is printed."""
+    from tarn_adapters.ocr.batch import read_files, write_report
+    from tarn_core.errors import DomainError
+
+    setup = _ocr_setup(get_settings())
+    results = []
+    try:
+        for page in read_files(paths, setup, text_dir=text, max_pages=max_pages):
+            typer.echo(page.line())
+            results.append(page)
+    except DomainError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(1) from None
+    lines = sum(r.lines for r in results)
+    flagged = sum(r.flagged for r in results)
+    turned = sum(r.turned for r in results)
+    typer.echo(f"{len(results)} pages, {lines} lines, {flagged} flagged, {turned} turned 180")
+    if out is not None:
+        out.mkdir(parents=True, exist_ok=True)
+        write_report(results, out / "report.json")
+
+
+@ocr.command("calibrate")
+def ocr_calibrate(
+    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    min_samples: Annotated[int, typer.Option(help="Lines needed per engine and class.")] = 30,
+    dry_run: Annotated[bool, typer.Option(help="Print the fit; write nothing.")] = False,
+) -> None:
+    """Fit isotonic calibrations and engine weights from hand-transcribed lines and store them
+    as the next versions in ocr_calibrations (Tarn operator: uses the owner role,
+    TARN_DATABASE_URL). MANIFEST is JSON lines: {"image", "box"?, "text", "class"}."""
+    from tarn_adapters.ocr.batch import read_ground_truth, read_manifest
+    from tarn_adapters.postgres.database import PostgresDatabase
+    from tarn_adapters.runtime import UuidGenerator
+    from tarn_core.errors import DomainError
+    from tarn_core.services.ocr.calibration import fit_calibrations
+
+    settings = get_settings()
+    try:
+        truth = read_manifest(manifest)
+    except DomainError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(1) from None
+    setup = _ocr_setup(settings)
+    samples = read_ground_truth(truth, setup)
+    typer.echo(f"{len(truth)} ground-truth lines, {len(samples)} readings")
+    database = PostgresDatabase(settings.database_url, pool_size=1)
+    try:
+        with database.session(
+            None, ids=UuidGenerator(), clock=SystemClock(), blobs=NoBlobStore()
+        ) as session:
+            previous = {(c.engine, c.content_class): c for c in session.calibrations.latest()}
+            fitted = fit_calibrations(
+                samples,
+                previous=previous,
+                fitted_at=SystemClock().now(),
+                min_samples=min_samples,
+            )
+            for cal in fitted:
+                typer.echo(
+                    f"{cal.engine:<10} {cal.content_class.value:<8} v{cal.version}  "
+                    f"n={cal.samples:<5} CER {cal.error_rate or 0:.3f}  weight {cal.weight:.3f}  "
+                    f"{len(cal.xs)} breakpoints"
+                )
+                if not dry_run:
+                    session.calibrations.save(cal)
+            if not fitted:
+                typer.echo(f"nothing fitted: no engine and class has {min_samples} lines")
+    finally:
+        database.dispose()

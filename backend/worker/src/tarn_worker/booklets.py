@@ -1,26 +1,71 @@
-"""Runs queued ``booklet.prepare`` jobs: one booklet at a time, one transaction per pipeline
-step, so a crash resumes from the last finished step (design.md "Reliability").
+"""Runs queued booklet jobs: ``booklet.prepare`` (split, clean, gate; P9) and ``booklet.read``
+(best-of-N OCR, one page per step; P10). One booklet at a time, one transaction per step, so a
+crash resumes from the last finished step (design.md "Reliability").
 
 Per tick: jobs whose worker vanished on their last attempt are reaped (their booklets end as
 FAILED); then the next job is claimed, fairly across colleges. While the booklet is processed
-the job's lease is extended after every step. A failure that is not the file's fault is retried
+the job's lease is extended after every step, and by a heartbeat thread while a slow step
+(OCR on the CPU) runs. A failure that is not the file's fault is retried
 with backoff; when the attempts run out the booklet ends as FAILED. Logs carry ids and counts
 only, never names or file contents."""
 
+import threading
 import time
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Protocol
 from uuid import UUID
 
 import structlog
 
 from tarn_adapters.postgres.database import PostgresDatabase, PostgresSession
+from tarn_core.domain.ocr import SelectorSettings
 from tarn_core.errors import NotFoundError
-from tarn_core.ids import BookletId
-from tarn_core.ports.jobs import JOB_PREPARE_BOOKLET, Job
+from tarn_core.ids import BookletId, CollegeId
+from tarn_core.ports.engines import LayoutDetector, OcrEngine, PageTransform, WordList
+from tarn_core.ports.jobs import JOB_PREPARE_BOOKLET, JOB_READ_BOOKLET, Job
 from tarn_core.ports.pages import PageCleaner, PageSplitter
 from tarn_core.ports.runtime import Clock, IdGenerator
 from tarn_core.ports.storage import BlobStore
+from tarn_core.services.ocr.reader import BookletReader, OrientationPolicy, abandon_reading
 from tarn_core.services.pipeline import PagePipeline, QualityPolicy
+
+
+@dataclass(frozen=True)
+class OcrKit:
+    """What the reading job needs besides the session: built once per worker process."""
+
+    layout: LayoutDetector
+    engines: Mapping[str, OcrEngine]
+    transform: PageTransform
+    word_list: WordList | None
+    settings: SelectorSettings
+    orientation: OrientationPolicy
+
+
+class _Stepper(Protocol):
+    def step(self, college_id: CollegeId, booklet_id: BookletId) -> bool: ...
+
+    def abandon(self, college_id: CollegeId, booklet_id: BookletId) -> None: ...
+
+
+class OcrUnavailableError(RuntimeError):
+    """This worker could not set up OCR (see the ``ocr.unavailable`` log line)."""
+
+
+@dataclass
+class _NoOcr:
+    """A reading job on a worker without OCR: every attempt fails (and is retried with
+    backoff, so a fixed worker can still take it); out of attempts, the booklet fails."""
+
+    session: PostgresSession
+
+    def step(self, college_id: CollegeId, booklet_id: BookletId) -> bool:
+        raise OcrUnavailableError("OCR is not available on this worker")
+
+    def abandon(self, college_id: CollegeId, booklet_id: BookletId) -> None:
+        abandon_reading(self.session.booklets, self.session.runtime, college_id, booklet_id)
 
 
 @dataclass
@@ -34,6 +79,10 @@ class BookletJobRunner:
     policy: QualityPolicy
     max_pages: int
     worker: str = "worker"
+    ocr: OcrKit | None = None
+    """None: OCR could not be set up; reading jobs fail (with retries) until a worker with OCR
+    takes them, and in the end their booklets fail as ``reading_failed``."""
+    heartbeat_seconds: float = 40.0
 
     def _pipeline(self, session: PostgresSession) -> PagePipeline:
         return PagePipeline(
@@ -42,9 +91,34 @@ class BookletJobRunner:
             splitter=self.splitter,
             cleaner=self.cleaner,
             runtime=session.runtime,
+            jobs=session.jobs,
             policy=self.policy,
             max_pages=self.max_pages,
         )
+
+    def _reader(self, session: PostgresSession) -> BookletReader:
+        if self.ocr is None:  # pragma: no cover  (_stepper hands out _NoOcr instead)
+            raise OcrUnavailableError("this worker has no OCR engines")
+        return BookletReader(
+            booklets=session.booklets,
+            content=session.content,
+            blobs=self.blobs,
+            layout=self.ocr.layout,
+            engines=self.ocr.engines,
+            transform=self.ocr.transform,
+            calibrations=session.calibrations,
+            word_list=self.ocr.word_list,
+            runtime=session.runtime,
+            settings=self.ocr.settings,
+            orientation=self.ocr.orientation,
+        )
+
+    def _stepper(self, kind: str) -> Callable[[PostgresSession], _Stepper] | None:
+        if kind == JOB_PREPARE_BOOKLET:
+            return self._pipeline
+        if kind == JOB_READ_BOOKLET:
+            return self._reader if self.ocr is not None else _NoOcr
+        return None
 
     def run_one(self) -> bool:
         """Process at most one job; True when there was something to do."""
@@ -52,27 +126,57 @@ class BookletJobRunner:
             reaped = queue.reap()
             job = queue.claim(self.worker)
         for lost in reaped:
-            self._abandon(lost)
+            lost_stepper = self._stepper(lost.kind)
+            if lost_stepper is not None:
+                self._abandon(lost, lost_stepper)
         if job is None:
             return bool(reaped)
-        if job.kind != JOB_PREPARE_BOOKLET:
+        stepper = self._stepper(job.kind)
+        if stepper is None:
             with self.db.scheduler() as queue:
                 queue.fail(job.id, "unknown job kind", retry=False)
             return True
-        self._run(job)
+        self._run(job, stepper)
         return True
 
-    def _run(self, job: Job) -> None:
+    @contextmanager
+    def _keep_alive(self, job: Job) -> Iterator[None]:
+        """Extend the lease while a long step runs (a page of OCR on the CPU can take
+        longer than the lease)."""
+        stop = threading.Event()
+
+        def beat() -> None:
+            while not stop.wait(self.heartbeat_seconds):
+                try:
+                    with self.db.scheduler() as queue:
+                        queue.heartbeat(job.id)
+                except Exception as error:  # the step's own error handling decides
+                    structlog.get_logger("tarn_worker").warning(
+                        "booklet.heartbeat_failed", job=str(job.id), error=type(error).__name__
+                    )
+
+        thread = threading.Thread(target=beat, name=f"heartbeat-{job.id}", daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            thread.join()
+
+    def _run(self, job: Job, stepper: Callable[[PostgresSession], _Stepper]) -> None:
         log = structlog.get_logger("tarn_worker")
         booklet_id = BookletId(UUID(str(job.payload["booklet_id"])))
         started = time.perf_counter()
         steps = 0
         try:
             while True:
-                with self.db.session(
-                    job.college_id, ids=self.ids, clock=self.clock, blobs=self.blobs
-                ) as session:
-                    done = self._pipeline(session).step(job.college_id, booklet_id)
+                with (
+                    self._keep_alive(job),
+                    self.db.session(
+                        job.college_id, ids=self.ids, clock=self.clock, blobs=self.blobs
+                    ) as session,
+                ):
+                    done = stepper(session).step(job.college_id, booklet_id)
                 steps += 1
                 with self.db.scheduler() as queue:
                     queue.heartbeat(job.id)
@@ -97,26 +201,27 @@ class BookletJobRunner:
                 will_retry=will_retry,
             )
             if not will_retry:
-                self._abandon(job)
+                self._abandon(job, stepper)
             return
         with self.db.scheduler() as queue:
             queue.succeed(job.id)
         log.info(
             "booklet.job_done",
             job=str(job.id),
+            kind=job.kind,
             college=str(job.college_id),
             booklet=str(booklet_id),
             steps=steps,
             seconds=round(time.perf_counter() - started, 2),
         )
 
-    def _abandon(self, job: Job) -> None:
+    def _abandon(self, job: Job, stepper: Callable[[PostgresSession], _Stepper]) -> None:
         booklet_id = BookletId(UUID(str(job.payload["booklet_id"])))
         try:
             with self.db.session(
                 job.college_id, ids=self.ids, clock=self.clock, blobs=self.blobs
             ) as session:
-                self._pipeline(session).abandon(job.college_id, booklet_id)
+                stepper(session).abandon(job.college_id, booklet_id)
         except NotFoundError:
             pass
         structlog.get_logger("tarn_worker").error(

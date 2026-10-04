@@ -16,6 +16,7 @@ class AuditAction(StrEnum):
     BOOKLET_DELETED = "booklet.deleted"
     BOOKLET_PROCESSED = "booklet.processed"  # by the page pipeline: no acting user
     BOOKLET_FAILED = "booklet.failed"  # by the page pipeline: no acting user
+    BOOKLET_TEXT_READ = "booklet.text_read"  # by the OCR reader: no acting user
     PAGE_USED_ANYWAY = "page.used_anyway"
     CONTENT_CREATED = "content.created"
     CONTENT_EDITED = "content.edited"
@@ -58,6 +59,7 @@ ANONYMOUS_ACTIONS = frozenset(
         AuditAction.TENANT_APPROVED,
         AuditAction.BOOKLET_PROCESSED,
         AuditAction.BOOKLET_FAILED,
+        AuditAction.BOOKLET_TEXT_READ,
     }
 )
 

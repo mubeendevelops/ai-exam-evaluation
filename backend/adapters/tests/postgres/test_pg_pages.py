@@ -125,7 +125,10 @@ def test_waiting_booklets_are_counted_per_user_and_status(session: Opener, world
         assert s.booklets.count_waiting(cid, teacher) == 1  # UPLOADED counts
         s.booklets.save(cid, replace(base, status=BookletStatus.PROCESSING))
         assert s.booklets.count_waiting(cid, teacher) == 1
-        for status in (BookletStatus.NEEDS_RETAKE, BookletStatus.PAGES_READY, BookletStatus.SCORED):
+        for status in (BookletStatus.PAGES_READY, BookletStatus.READING):  # waiting for OCR
+            s.booklets.save(cid, replace(base, status=status))
+            assert s.booklets.count_waiting(cid, teacher) == 1
+        for status in (BookletStatus.NEEDS_RETAKE, BookletStatus.TEXT_READY, BookletStatus.SCORED):
             s.booklets.save(cid, replace(base, status=status))
             assert s.booklets.count_waiting(cid, teacher) == 0
         assert s.booklets.count_waiting(cid, admin) == 0
@@ -196,7 +199,9 @@ class Env:
 
     def job(self) -> tuple[str, int]:
         with self.test_db.owner() as conn:
-            row = conn.execute("SELECT status, attempts FROM jobs").fetchone()
+            row = conn.execute(
+                "SELECT status, attempts FROM jobs WHERE kind = 'booklet.prepare'"
+            ).fetchone()
         assert row is not None
         return str(row[0]), int(str(row[1]))
 
@@ -314,6 +319,7 @@ def test_a_crashed_worker_is_replaced_and_continues_from_the_last_finished_step(
             splitter=PyMuPdfSplitter(),
             cleaner=OpenCvPageCleaner(),
             runtime=s.runtime,
+            jobs=s.jobs,
         )
         crashed.step(env.college.id, booklet.id)
     with env.open(env.college.id) as s:
@@ -323,6 +329,7 @@ def test_a_crashed_worker_is_replaced_and_continues_from_the_last_finished_step(
             splitter=PyMuPdfSplitter(),
             cleaner=OpenCvPageCleaner(),
             runtime=s.runtime,
+            jobs=s.jobs,
         ).step(env.college.id, booklet.id)
     assert [p.cleaned for p in env.pages(booklet)] == [True, False, False]
     assert env.runner.run_one() is False  # its lease is still alive: nobody else may take it
