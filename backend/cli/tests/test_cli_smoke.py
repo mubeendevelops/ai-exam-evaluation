@@ -1,5 +1,7 @@
 """Smoke test for tarn_cli."""
 
+from pathlib import Path
+
 import pytest
 from typer.testing import CliRunner
 
@@ -48,3 +50,55 @@ def test_seed_command_is_listed_and_documented() -> None:
     result = runner.invoke(app, ["seed", "--help"])
     assert result.exit_code == 0
     assert "development seed" in result.output.lower()
+
+
+def test_ground_truth_and_benchmark_commands_are_listed() -> None:
+    assert "prefill" in runner.invoke(app, ["truth", "--help"]).output
+    assert "transcribe" in runner.invoke(app, ["truth", "--help"]).output
+    assert "ocr" in runner.invoke(app, ["bench", "--help"]).output
+
+
+def test_truth_status_counts_and_an_empty_set_is_refused(tmp_path: Path) -> None:
+    from tarn_adapters.groundtruth.store import DirectoryGroundTruthStore
+    from tarn_core.domain.common import Box
+    from tarn_core.domain.groundtruth import CaptureType
+    from tarn_core.domain.ocr import ContentClass
+    from tarn_core.services.groundtruth import GroundTruthService, PrefillLine
+
+    service = GroundTruthService(DirectoryGroundTruthStore(tmp_path))
+    service.add_prefilled(
+        page_id="x-p01",
+        capture=CaptureType.PHONE_PHOTO,
+        image=b"\xff\xd8",
+        image_name="x-p01.jpg",
+        width=100,
+        height=100,
+        lines=[
+            PrefillLine(
+                box=Box(x0=1, y0=1, x1=50, y1=20), text="a", content_class=ContentClass.PRINT
+            )
+        ],
+    )
+    service.record_correction(
+        page_id="x-p01",
+        box=Box(x0=1, y0=1, x1=50, y1=20),
+        text="b",
+        content_class=ContentClass.PRINT,
+    )
+    result = runner.invoke(app, ["truth", "status", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "1 pages, 1 lines: 1 verified, 0 to check, 0 ignored" in result.output
+    assert "phone_photo 1" in result.output and "print 1" in result.output
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert runner.invoke(app, ["bench", "ocr", str(empty)]).exit_code == 1
+    assert runner.invoke(app, ["truth", "transcribe", str(empty)]).exit_code == 1
+
+
+def test_page_numbers_are_parsed_and_checked() -> None:
+    from tarn_cli.main import _page_numbers
+
+    assert _page_numbers("3,5,7-9") == [3, 5, 7, 8, 9]
+    for bad in ("0", "a", "", "5-"):
+        with pytest.raises(Exception):  # noqa: B017  (typer.BadParameter)
+            _page_numbers(bad)

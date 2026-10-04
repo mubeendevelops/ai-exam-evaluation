@@ -6,7 +6,7 @@ written only when asked (``--text``), to a folder the operator chooses, never pr
 
 import json
 import time
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Collection, Iterable, Iterator, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -20,7 +20,7 @@ from tarn_core.domain.common import Box
 from tarn_core.domain.ocr import ContentClass, EngineCalibration
 from tarn_core.errors import InvariantError
 from tarn_core.services.ocr.calibration import GroundTruthSample
-from tarn_core.services.ocr.reader import PageOcr, PageText
+from tarn_core.services.ocr.reader import OrientationCheck, PageOcr, PageText
 from tarn_core.services.ocr.selector import Lexicon
 
 
@@ -110,6 +110,56 @@ def page_ocr(setup: OcrSetup, calibrations: Sequence[EngineCalibration] = ()) ->
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ReadPage:
+    """One page cleaned, oriented and read: the image the engines saw and what they read."""
+
+    index: int
+    """0-based position in the file."""
+    image: bytes
+    text: PageText
+    check: OrientationCheck
+    rotation_degrees: int
+    seconds: float
+
+
+def read_pages(
+    data: bytes,
+    setup: OcrSetup,
+    ocr: PageOcr,
+    lexicon: Lexicon,
+    *,
+    max_pages: int = 60,
+    only: Collection[int] | None = None,
+    splitter: PyMuPdfSplitter | None = None,
+    cleaner: OpenCvPageCleaner | None = None,
+) -> Iterator[ReadPage]:
+    """Split a PDF (or take an image), then for each page (or each index of ``only``, 0-based)
+    clean it, settle its orientation and read it. Shared by ``tarn ocr read`` and the
+    ground-truth pre-fill."""
+    splitter = splitter or PyMuPdfSplitter()
+    cleaner = cleaner or OpenCvPageCleaner()
+    for image in _pages(data, splitter, max_pages):
+        if only is not None and image.index not in only:
+            continue
+        started = time.perf_counter()
+        cleaned = cleaner.clean(image.data)
+        pixels = cleaned.image
+        check = ocr.check_orientation(pixels)
+        if check.turned:
+            pixels = setup.transform.rotate(pixels, 180)
+        rotation = (cleaned.metrics.rotation_degrees + (180 if check.turned else 0)) % 360
+        text = ocr.read(pixels, lexicon)
+        yield ReadPage(
+            index=image.index,
+            image=pixels,
+            text=text,
+            check=check,
+            rotation_degrees=rotation,
+            seconds=time.perf_counter() - started,
+        )
+
+
 def read_files(
     paths: Iterable[Path],
     setup: OcrSetup,
@@ -125,29 +175,30 @@ def read_files(
     lexicon = Lexicon(frozenset(), setup.word_list)
     for number, path in enumerate(paths, start=1):
         texts: list[dict[str, object]] = []
-        for image in _pages(path.read_bytes(), splitter, max_pages):
-            started = time.perf_counter()
-            cleaned = cleaner.clean(image.data)
-            data = cleaned.image
-            check = ocr.check_orientation(data)
-            if check.turned:
-                data = setup.transform.rotate(data, 180)
-            rotation = (cleaned.metrics.rotation_degrees + (180 if check.turned else 0)) % 360
-            text = ocr.read(data, lexicon)
+        for read in read_pages(
+            path.read_bytes(),
+            setup,
+            ocr,
+            lexicon,
+            max_pages=max_pages,
+            splitter=splitter,
+            cleaner=cleaner,
+        ):
+            text = read.text
             yield _summary(
                 number,
-                image.index + 1,
-                rotation,
-                check.turned,
-                check.decided,
-                (check.upright_quality, check.turned_quality),
+                read.index + 1,
+                read.rotation_degrees,
+                read.check.turned,
+                read.check.decided,
+                (read.check.upright_quality, read.check.turned_quality),
                 text,
-                time.perf_counter() - started,
+                read.seconds,
             )
             if text_dir is not None:
                 texts.append(
                     {
-                        "page": image.index + 1,
+                        "page": read.index + 1,
                         "lines": [
                             {
                                 "box": [ln.box.x0, ln.box.y0, ln.box.x1, ln.box.y1],
@@ -194,24 +245,40 @@ class TruthLine:
 
 def read_manifest(path: Path) -> list[TruthLine]:
     """JSON lines: ``{"image": "...", "box": [x0, y0, x1, y1] (optional), "text": "...",
-    "class": "print" | "cursive" | "numeric"}``; image paths relative to the manifest."""
+    "class": "print" | "cursive" | "numeric"}``; image paths relative to the file.
+
+    ``path`` may also be a ground-truth folder (P11): every ``*.jsonl`` page file in it is read,
+    and only the lines a person verified (the pre-filled and ignored ones are not truth)."""
+    files = sorted(path.glob("*.jsonl")) if path.is_dir() else [path]
     lines = []
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        if not raw.strip():
-            continue
-        try:
-            item = json.loads(raw)
-            box = item.get("box")
-            lines.append(
-                TruthLine(
-                    image=(path.parent / item["image"]).resolve(),
-                    box=None if box is None else Box(x0=box[0], y0=box[1], x1=box[2], y1=box[3]),
-                    text=str(item["text"]),
-                    content_class=ContentClass(item["class"]),
+    for file in files:
+        for number, raw in enumerate(file.read_text(encoding="utf-8").splitlines(), start=1):
+            if not raw.strip():
+                continue
+            try:
+                item = json.loads(raw)
+                if item.get("status", "verified") != "verified":
+                    continue
+                box = item.get("box")
+                lines.append(
+                    TruthLine(
+                        image=(file.parent / item["image"]).resolve(),
+                        box=None
+                        if box is None
+                        else Box(x0=box[0], y0=box[1], x1=box[2], y1=box[3]),
+                        text=str(item["text"]),
+                        content_class=ContentClass(item["class"]),
+                    )
                 )
-            )
-        except (KeyError, ValueError, TypeError, IndexError, InvariantError) as error:
-            raise InvariantError(f"manifest line {number}: {error}") from None
+            except (
+                KeyError,
+                ValueError,
+                TypeError,
+                IndexError,
+                AttributeError,
+                InvariantError,
+            ) as error:
+                raise InvariantError(f"manifest line {number}: {error}") from None
     return lines
 
 

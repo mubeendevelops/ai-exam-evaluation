@@ -3,6 +3,7 @@ error rate and words."""
 
 import re
 import unicodedata
+from collections.abc import Sequence
 
 _SPACE = re.compile(r"\s+")
 _WORD = re.compile(r"[^\W\d_]+(?:['’-][^\W\d_]+)*")
@@ -13,8 +14,9 @@ def normalise(text: str) -> str:
     return _SPACE.sub(" ", unicodedata.normalize("NFC", text)).strip().casefold()
 
 
-def levenshtein(a: str, b: str) -> int:
-    """Edit distance (insertions, deletions, substitutions of one character each)."""
+def levenshtein[T](a: Sequence[T], b: Sequence[T]) -> int:
+    """Edit distance (insertions, deletions, substitutions of one item each) between two
+    strings, or between two lists of words."""
     if len(a) < len(b):
         a, b = b, a
     if not b:

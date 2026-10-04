@@ -30,9 +30,13 @@ pages = typer.Typer(help="Page cleaning without a database or queue.")
 ocr = typer.Typer(help="OCR engines (P10): models, reading files, calibration.")
 ocr_models = typer.Typer(help="Model weights and the compute device.")
 ocr.add_typer(ocr_models, name="models")
+truth = typer.Typer(help="Ground truth for the OCR benchmark (P11): pre-fill, transcribe, status.")
+bench = typer.Typer(help="Benchmarks (P11).")
 app.add_typer(db, name="db")
 app.add_typer(pages, name="pages")
 app.add_typer(ocr, name="ocr")
+app.add_typer(truth, name="truth")
+app.add_typer(bench, name="bench")
 app.add_typer(identity, name="identity")
 app.add_typer(tenants, name="tenants")
 
@@ -468,3 +472,201 @@ def ocr_calibrate(
                 typer.echo(f"nothing fitted: no engine and class has {min_samples} lines")
     finally:
         database.dispose()
+
+
+# --- ground truth and the OCR benchmark (P11) ----------------------------------------------------
+
+
+def _page_numbers(spec: str) -> list[int]:
+    """``3,5,7-9`` → [3, 5, 7, 8, 9] (1-based)."""
+    numbers: list[int] = []
+    try:
+        for part in spec.split(","):
+            low, dash, high = part.strip().partition("-")
+            first, last = int(low), int(high) if dash else int(low)
+            if last < first:
+                raise ValueError(part)
+            numbers += range(first, last + 1)
+    except ValueError:
+        raise typer.BadParameter("pages are like 3,5,7-9") from None
+    if not numbers or min(numbers) < 1:
+        raise typer.BadParameter("pages count from 1")
+    return numbers
+
+
+def _repo_root() -> Path:
+    here = Path.cwd().resolve()
+    for folder in (here, *here.parents):
+        if (folder / "docs").is_dir() and (folder / "backend").is_dir():
+            return folder
+    return here
+
+
+@truth.command("prefill")
+def truth_prefill(
+    file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    set_dir: Annotated[Path, typer.Option("--set", help="The ground-truth folder.")],
+    label: Annotated[
+        str, typer.Option(help="Neutral name of the source, e.g. b-ci2 (page ids are LABEL-pNN).")
+    ],
+    capture: Annotated[str, typer.Option(help="scanning_app, clean_scan or phone_photo.")],
+    pages: Annotated[str, typer.Option(help="Pages to take (1-based), e.g. 3,5,7-9.")],
+    replace: Annotated[
+        bool, typer.Option(help="Redo pages that are only pre-filled (verified work is kept).")
+    ] = False,
+    max_pages: Annotated[int, typer.Option(help="Page limit per file.")] = 60,
+) -> None:
+    """Clean, orient and read pages of a PDF or image with every engine and store them as
+    ground-truth pages whose lines are pre-filled with the selector's reading, for a person to
+    correct (`tarn truth transcribe`). The set is student data: keep it under var/."""
+    from tarn_adapters.groundtruth.prefill import prefill_file
+    from tarn_adapters.groundtruth.store import DirectoryGroundTruthStore
+    from tarn_core.domain.groundtruth import CaptureType
+    from tarn_core.errors import DomainError
+    from tarn_core.services.groundtruth import GroundTruthService
+
+    try:
+        capture_type = CaptureType(capture)
+    except ValueError:
+        raise typer.BadParameter(
+            f"one of {', '.join(c.value for c in CaptureType)}", param_hint="--capture"
+        ) from None
+    wanted = _page_numbers(pages)
+    service = GroundTruthService(DirectoryGroundTruthStore(set_dir))
+    setup = _ocr_setup(get_settings())
+    try:
+        for stored in prefill_file(
+            file,
+            setup,
+            service,
+            label=label,
+            capture=capture_type,
+            pages=wanted,
+            replace=replace,
+            max_pages=max_pages,
+        ):
+            typer.echo(f"{stored.id}: {len(stored.lines)} lines pre-filled ({capture_type.value})")
+    except DomainError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(1) from None
+
+
+@truth.command("transcribe")
+def truth_transcribe(
+    set_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
+    port: Annotated[int, typer.Option(help="Port on 127.0.0.1 (0: any free one).")] = 0,
+    open_browser: Annotated[
+        bool, typer.Option("--open", help="Open the page in a browser.")
+    ] = False,
+) -> None:
+    """Serve the transcription page for a ground-truth folder on 127.0.0.1 (student data: it
+    never leaves this computer). The printed address carries a one-time token. Ctrl+C stops."""
+    from tarn_adapters.groundtruth.server import TranscriptionServer
+    from tarn_adapters.groundtruth.store import DirectoryGroundTruthStore
+
+    store = DirectoryGroundTruthStore(set_dir)
+    if not store.page_ids():
+        typer.echo("error: the folder has no pages (tarn truth prefill first)", err=True)
+        raise typer.Exit(1)
+    server = TranscriptionServer(store, port=port)
+    typer.echo(f"transcription page: {server.url}")
+    typer.echo("Ctrl+C to stop")
+    if open_browser:
+        import webbrowser
+
+        webbrowser.open(server.url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        typer.echo("stopped")
+
+
+@truth.command("status")
+def truth_status(set_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False)]) -> None:
+    """Counts only: pages and lines by status, verified lines by capture type and class."""
+    from tarn_adapters.groundtruth.store import DirectoryGroundTruthStore
+    from tarn_core.services.groundtruth import GroundTruthService
+
+    progress = GroundTruthService(DirectoryGroundTruthStore(set_dir)).progress()
+    typer.echo(
+        f"{progress.pages} pages, {progress.lines} lines: {progress.verified} verified, "
+        f"{progress.prefilled} to check, {progress.ignored} ignored"
+    )
+    typer.echo(
+        "verified by capture: "
+        + (", ".join(f"{k.value} {v}" for k, v in progress.by_capture.items()) or "none")
+    )
+    typer.echo(
+        "verified by class  : "
+        + (", ".join(f"{k.value} {v}" for k, v in progress.by_class.items()) or "none")
+    )
+
+
+@bench.command("ocr")
+def bench_ocr(
+    set_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
+    out: Annotated[
+        Path | None,
+        typer.Option(help="Report file (default: docs/benchmarks/ocr-<date>[-<label>].md)."),
+    ] = None,
+    label: Annotated[str, typer.Option(help="Names the run (a model or setting compared).")] = "",
+    cpu_timing: Annotated[
+        bool, typer.Option(help="Also time the first pages with the engines forced onto the CPU.")
+    ] = True,
+    cpu_pages: Annotated[int, typer.Option(help="Pages timed on the CPU.")] = 3,
+) -> None:
+    """Run every enabled engine and the selector on a ground-truth folder and write the report:
+    character and word error rates per engine, content class and capture type, the selector
+    against the best single engine, line-detection coverage and seconds per page (the device
+    in use, and the CPU). Numbers only: no text goes into the report. Only verified lines count
+    as truth; the rest of the set is still read for timing and coverage."""
+    from tarn_adapters.compute import CPU_ONLY, GPU_SLOT
+    from tarn_adapters.groundtruth.store import DirectoryGroundTruthStore
+    from tarn_adapters.ocr.bench import collect
+    from tarn_adapters.ocr.wiring import build_ocr
+    from tarn_core.services.ocr.benchmark import SELECTOR, build_report
+    from tarn_core.services.ocr.benchmark_report import render
+    from tarn_core.services.ocr.selector import Lexicon
+
+    settings = get_settings()
+    store = DirectoryGroundTruthStore(set_dir)
+    if not store.page_ids():
+        typer.echo("error: the folder has no pages (tarn truth prefill first)", err=True)
+        raise typer.Exit(1)
+    setup = _ocr_setup(settings)
+    now = SystemClock().now()
+    date = now.date().isoformat()
+
+    def cpu_setup() -> "OcrSetup":
+        GPU_SLOT.free()
+        typer.echo("timing on the CPU")
+        return build_ocr(settings, device=CPU_ONLY, layout=setup.layout)
+
+    run = collect(
+        setup,
+        store,
+        settings=settings,
+        date=date,
+        label=label,
+        cpu_setup=cpu_setup if cpu_timing else None,
+        cpu_pages=cpu_pages,
+        progress=typer.echo,
+    )
+    report = build_report(run, lexicon=Lexicon(frozenset(), setup.word_list), now=now)
+    name = f"ocr-{date}" + (f"-{label}" if label else "") + ".md"
+    target = out or _repo_root() / "docs" / "benchmarks" / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(render(report), encoding="utf-8")
+    accuracy = report.accuracy
+    if accuracy is None:
+        typer.echo("no verified lines yet: report has timing, coverage and engine output only")
+    else:
+        overall = accuracy.methods[SELECTOR].groups.get("all")
+        cer = overall.cer if overall is not None else None
+        typer.echo(
+            f"{accuracy.verified_lines} verified lines; selector CER "
+            f"{'n/a' if cer is None else f'{cer * 100:.1f} %'}"
+        )
+    for warning in report.warnings:
+        typer.echo(f"warning: {warning}")
+    typer.echo(f"report written to {target}")

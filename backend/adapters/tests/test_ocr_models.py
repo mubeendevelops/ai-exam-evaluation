@@ -128,3 +128,52 @@ def test_an_upside_down_page_is_found(setup) -> None:  # type: ignore[no-untyped
     upside_down = setup.transform.rotate(upright, 180)
     check = ocr.check_orientation(upside_down)
     assert check.decided and check.turned, check
+
+
+def test_the_benchmark_runs_end_to_end_on_a_verified_printed_set(setup, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Ground truth made from drawn text: the real engines read the truth boxes, the report holds
+    real error rates (small for print) and none of the text."""
+    from datetime import UTC, datetime
+
+    from tarn_adapters.groundtruth.store import DirectoryGroundTruthStore
+    from tarn_adapters.ocr.bench import collect
+    from tarn_core.domain.groundtruth import CaptureType, TruthLine, TruthPage, TruthStatus
+    from tarn_core.domain.ocr import ContentClass
+    from tarn_core.services.ocr.benchmark import ALL, SELECTOR, build_report
+    from tarn_core.services.ocr.benchmark_report import render
+
+    store = DirectoryGroundTruthStore(tmp_path)
+    image = printed_page()
+    boxes = [r.box for r in setup.layout.detect(image) if r.kind is RegionKind.TEXT_LINE]
+    assert len(boxes) == 3
+    for n in range(5):  # five pages: enough for intervals
+        store.save(
+            TruthPage(
+                id=f"gen-p{n}",
+                capture=CaptureType.CLEAN_SCAN,
+                image=f"gen-p{n}.jpg",
+                width=1000,
+                height=1400,
+                lines=tuple(
+                    TruthLine(
+                        box=box,
+                        text=text,
+                        content_class=ContentClass.PRINT,
+                        status=TruthStatus.VERIFIED,
+                    )
+                    for box, text in zip(boxes, LINES, strict=True)
+                ),
+            ),
+            image,
+        )
+    run = collect(setup, store, settings=Settings(), date="2026-10-04")
+    report = build_report(run, lexicon=Lexicon(frozenset(), setup.word_list), now=datetime.now(UTC))
+    assert report.accuracy is not None
+    selector = report.accuracy.methods[SELECTOR].groups[ALL]
+    assert selector.lines == 15
+    assert selector.cer is not None and selector.cer <= 0.1
+    assert report.accuracy.methods[SELECTOR].ci is not None
+    assert report.detection.matched == report.detection.truth_lines == 15
+    text = render(report)
+    assert "Gradient descent" not in text
+    assert all(t.page_seconds > 0 for t in run.timings)

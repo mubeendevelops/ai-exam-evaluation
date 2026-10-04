@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Tarn ground-truth transcription</title>
+<style>
+  :root { --bg:#0b0f17; --card:#161b26; --line:#232d3f; --fg:#e6e9ef; --dim:#8b95a7;
+          --amber:#f59e0b; --green:#10b981; --grey:#64748b; --accent:#8b5cf6; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 Inter, system-ui, sans-serif; }
+  header { position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+           padding:8px 14px; background:var(--card); border-bottom:1px solid var(--line); }
+  header h1 { font-size:14px; margin:0 8px 0 0; }
+  select, input[type=text], button { background:#0f1420; color:var(--fg); border:1px solid var(--line);
+           border-radius:6px; padding:6px 8px; font:inherit; }
+  button { cursor:pointer; } button:hover { border-color:var(--accent); }
+  button.on { background:var(--accent); border-color:var(--accent); }
+  #counts span { margin-right:10px; } #saved { margin-left:auto; color:var(--dim); } #saved.err { color:#f87171; }
+  main { display:grid; grid-template-columns: minmax(280px, 42%) 1fr; gap:14px; padding:14px; align-items:start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  #pane { position:sticky; top:52px; max-height:calc(100vh - 66px); overflow:auto; border:1px solid var(--line);
+          border-radius:8px; background:#000; }
+  #stage { position:relative; line-height:0; }
+  #img { width:100%; display:block; user-select:none; -webkit-user-drag:none; }
+  #overlay { position:absolute; inset:0; }
+  #overlay.draw { cursor:crosshair; }
+  .box { position:absolute; border:2px solid var(--amber); background:rgba(245,158,11,.10); }
+  .box.verified { border-color:var(--green); background:rgba(16,185,129,.10); }
+  .box.ignored { border-color:var(--grey); background:rgba(100,116,139,.12); }
+  .box.current { box-shadow:0 0 0 3px var(--accent); }
+  #draft { position:absolute; border:2px dashed var(--accent); }
+  #rows { display:flex; flex-direction:column; gap:8px; }
+  .row { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--amber);
+         border-radius:8px; padding:8px 10px; }
+  .row.verified { border-left-color:var(--green); } .row.ignored { border-left-color:var(--grey); opacity:.7; }
+  .row.current { outline:2px solid var(--accent); }
+  .crop { background-repeat:no-repeat; background-color:#fff; border-radius:4px; max-width:100%; }
+  .meta { display:flex; gap:6px; align-items:center; margin:6px 0 4px; color:var(--dim); font-size:12px; }
+  .row input[type=text] { width:100%; font-size:15px; }
+  .hint { color:var(--dim); font-size:12px; margin-top:3px; word-break:break-word; }
+  .help { color:var(--dim); max-width:70ch; margin:0 0 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ground-truth transcription</h1>
+  <select id="page" title="Page"></select>
+  <button id="next" title="Go to the next page that still has lines to check">Next page to check</button>
+  <button id="add" title="Draw a box on the page for a line the detector missed">Add line</button>
+  <span id="counts"></span>
+  <span id="saved"></span>
+</header>
+<main>
+  <section id="pane"><div id="stage"><img id="img" alt="Page"><div id="overlay"></div></div></section>
+  <section>
+    <p class="help">Each line shows the engines' best reading. Correct it to exactly what the student wrote,
+      then press <b>Enter</b> (or &#10003;) to mark it <b>verified</b>; nothing counts until you do.
+      <b>Ignore</b> a box that is not text or cannot be read. The class is what the writing is:
+      print, cursive or numeric. Nothing leaves this computer.</p>
+    <div id="rows"></div>
+  </section>
+</main>
+<script>
+"use strict";
+const token = new URLSearchParams(location.search).get("t") || "";
+const $ = (id) => document.getElementById(id);
+const CLASSES = ["print", "cursive", "numeric"];
+let pages = [], page = null, lines = [], dirty = false, timer = null, saving = false, drawing = false, current = -1;
+
+async function api(path, options = {}) {
+  const response = await fetch(path, { ...options, headers: { "X-Tarn-Token": token, "Content-Type": "application/json" } });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || response.status);
+  return body;
+}
+
+function setSaved(text, error = false) {
+  $("saved").textContent = text; $("saved").className = error ? "err" : "";
+}
+
+async function loadList(selectId) {
+  pages = await api("/api/pages");
+  const select = $("page"); select.textContent = "";
+  for (const p of pages) {
+    const option = document.createElement("option");
+    option.value = p.id;
+    option.textContent = `${p.id} — ${p.capture} — ${p.verified + p.ignored}/${p.verified + p.ignored + p.prefilled}`;
+    select.appendChild(option);
+  }
+  if (selectId) select.value = selectId;
+}
+
+async function openPage(id) {
+  await flush();
+  page = await api(`/api/pages/${encodeURIComponent(id)}`);
+  lines = page.lines; current = -1;
+  const img = $("img");
+  img.onload = render;
+  img.src = `/api/pages/${encodeURIComponent(id)}/image?t=${encodeURIComponent(token)}`;
+  if (img.complete && img.naturalWidth) render();
+}
+
+function counts() {
+  const n = (s) => lines.filter((l) => l.status === s).length;
+  $("counts").textContent = `verified ${n("verified")} · ignored ${n("ignored")} · to check ${n("prefilled")}`;
+}
+
+function render() {
+  counts();
+  renderOverlay();
+  const rows = $("rows"); rows.textContent = "";
+  const available = Math.max(200, rows.clientWidth - 24);
+  lines.forEach((line, i) => rows.appendChild(buildRow(line, i, available)));
+}
+
+function renderOverlay() {
+  const overlay = $("overlay");
+  for (const el of [...overlay.querySelectorAll(".box")]) el.remove();
+  lines.forEach((line, i) => {
+    const [x0, y0, x1, y1] = line.box;
+    const box = document.createElement("div");
+    box.className = `box ${line.status}${i === current ? " current" : ""}`;
+    box.style.left = `${(x0 / page.width) * 100}%`; box.style.top = `${(y0 / page.height) * 100}%`;
+    box.style.width = `${((x1 - x0) / page.width) * 100}%`; box.style.height = `${((y1 - y0) / page.height) * 100}%`;
+    box.title = `line ${i + 1}`;
+    box.addEventListener("click", (event) => { if (!drawing) { event.stopPropagation(); focusRow(i); } });
+    overlay.appendChild(box);
+  });
+}
+
+function buildRow(line, i, available) {
+  const row = document.createElement("div");
+  row.className = `row ${line.status}${i === current ? " current" : ""}`; row.dataset.index = i;
+  const [x0, y0, x1, y1] = line.box, pad = 6;
+  const cx0 = Math.max(0, x0 - pad), cy0 = Math.max(0, y0 - pad);
+  const cx1 = Math.min(page.width, x1 + pad), cy1 = Math.min(page.height, y1 + pad);
+  const scale = Math.min(available / (cx1 - cx0), 130 / (cy1 - cy0), 3);
+  const crop = document.createElement("div"); crop.className = "crop";
+  crop.style.width = `${(cx1 - cx0) * scale}px`; crop.style.height = `${(cy1 - cy0) * scale}px`;
+  crop.style.backgroundImage = `url("${$("img").src}")`;
+  crop.style.backgroundSize = `${page.width * scale}px ${page.height * scale}px`;
+  crop.style.backgroundPosition = `${-cx0 * scale}px ${-cy0 * scale}px`;
+  row.appendChild(crop);
+
+  const input = document.createElement("input");
+  input.type = "text"; input.value = line.text; input.spellcheck = false; input.autocomplete = "off";
+  input.setAttribute("aria-label", `Text of line ${i + 1}`);
+  input.addEventListener("input", () => { line.text = input.value; changed(); updateHint(); });
+  input.addEventListener("focus", () => mark(i));
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { event.preventDefault(); verify(i, true); }
+    else if (event.key === "i" && event.altKey) { event.preventDefault(); ignore(i); }
+  });
+
+  const meta = document.createElement("div"); meta.className = "meta";
+  const label = document.createElement("span"); label.textContent = `#${i + 1}`;
+  const select = document.createElement("select");
+  for (const c of CLASSES) { const o = document.createElement("option"); o.value = c; o.textContent = c; select.appendChild(o); }
+  select.value = line.class; select.title = "What kind of writing this is";
+  select.addEventListener("change", () => { line.class = select.value; changed(); });
+  const ok = document.createElement("button"); ok.textContent = "✓ Verify"; ok.title = "Enter";
+  ok.addEventListener("click", () => verify(i, false));
+  const skip = document.createElement("button"); skip.textContent = line.status === "ignored" ? "Restore" : "Ignore";
+  skip.title = "Alt+I"; skip.addEventListener("click", () => ignore(i));
+  const reset = document.createElement("button"); reset.textContent = "Reset to engines'";
+  reset.disabled = line.prefill === null; reset.addEventListener("click", () => { line.text = line.prefill; line.status = "prefilled"; changed(); render(); focusRow(i); });
+  meta.append(label, select, ok, skip, reset);
+
+  const hint = document.createElement("div"); hint.className = "hint";
+  function updateHint() {
+    hint.textContent = line.prefill !== null && line.prefill !== line.text ? `engines read: ${line.prefill}` : "";
+  }
+  updateHint();
+  row.append(meta, input, hint);
+  row.addEventListener("click", () => mark(i));
+  return row;
+}
+
+function mark(i) {
+  if (current === i) return;
+  current = i; renderOverlay();
+  document.querySelectorAll(".row").forEach((r) => r.classList.toggle("current", Number(r.dataset.index) === i));
+  const el = $("overlay").querySelectorAll(".box")[i];
+  if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+function focusRow(i) {
+  const row = document.querySelector(`.row[data-index="${i}"]`);
+  if (!row) return;
+  row.scrollIntoView({ block: "center" });
+  row.querySelector("input[type=text]").focus();
+  mark(i);
+}
+
+function verify(i, advance) {
+  const line = lines[i];
+  line.status = line.text.trim() ? "verified" : "ignored";
+  changed(); render();
+  if (advance) {
+    const next = lines.findIndex((l, j) => j > i && l.status === "prefilled");
+    focusRow(next >= 0 ? next : Math.min(i + 1, lines.length - 1));
+  } else focusRow(i);
+}
+
+function ignore(i) {
+  lines[i].status = lines[i].status === "ignored" ? "prefilled" : "ignored";
+  changed(); render(); focusRow(i);
+}
+
+function changed() { dirty = true; counts(); setSaved("unsaved…"); clearTimeout(timer); timer = setTimeout(flush, 600); }
+
+async function flush() {
+  clearTimeout(timer);
+  if (!dirty || !page || saving) return;
+  saving = true; const snapshot = page.id;
+  try {
+    const saved = await api(`/api/pages/${encodeURIComponent(snapshot)}`, { method: "PUT", body: JSON.stringify({ lines }) });
+    dirty = false; setSaved(`saved ${new Date().toLocaleTimeString()}`);
+    const entry = pages.find((p) => p.id === saved.id);
+    if (entry) { Object.assign(entry, { verified: saved.verified, ignored: saved.ignored, prefilled: saved.prefilled }); }
+    const option = [...$("page").options].find((o) => o.value === saved.id);
+    if (option) option.textContent = `${saved.id} — ${saved.capture} — ${saved.verified + saved.ignored}/${saved.verified + saved.ignored + saved.prefilled}`;
+  } catch (error) { setSaved(`NOT SAVED: ${error.message}`, true); }
+  finally { saving = false; }
+}
+
+$("page").addEventListener("change", (e) => openPage(e.target.value));
+$("next").addEventListener("click", () => {
+  const ids = pages.map((p) => p.id), at = ids.indexOf(page.id);
+  const order = [...pages.slice(at + 1), ...pages.slice(0, at)];
+  const target = order.find((p) => p.prefilled > 0);
+  if (target) { $("page").value = target.id; openPage(target.id); } else setSaved("every page is checked");
+});
+$("add").addEventListener("click", () => { drawing = !drawing; $("add").classList.toggle("on", drawing); $("overlay").classList.toggle("draw", drawing); });
+
+let start = null;
+$("overlay").addEventListener("mousedown", (e) => {
+  if (!drawing) return;
+  const r = $("overlay").getBoundingClientRect();
+  start = { x: e.clientX - r.left, y: e.clientY - r.top, r };
+  const draft = document.createElement("div"); draft.id = "draft"; $("overlay").appendChild(draft);
+  e.preventDefault();
+});
+window.addEventListener("mousemove", (e) => {
+  const draft = $("draft"); if (!start || !draft) return;
+  const x = e.clientX - start.r.left, y = e.clientY - start.r.top;
+  draft.style.left = `${Math.min(start.x, x)}px`; draft.style.top = `${Math.min(start.y, y)}px`;
+  draft.style.width = `${Math.abs(x - start.x)}px`; draft.style.height = `${Math.abs(y - start.y)}px`;
+});
+window.addEventListener("mouseup", (e) => {
+  if (!start) return;
+  const draft = $("draft"); if (draft) draft.remove();
+  const k = page.width / start.r.width, x = e.clientX - start.r.left, y = e.clientY - start.r.top;
+  const clampX = (v) => Math.max(0, Math.min(page.width, Math.round(v * k))), clampY = (v) => Math.max(0, Math.min(page.height, Math.round(v * k)));
+  const box = [clampX(Math.min(start.x, x)), clampY(Math.min(start.y, y)), clampX(Math.max(start.x, x)), clampY(Math.max(start.y, y))];
+  start = null;
+  if (box[2] - box[0] < 12 || box[3] - box[1] < 8) return;
+  lines.push({ box, text: "", class: "cursive", status: "prefilled", origin: "transcription", prefill: null, region_id: null });
+  drawing = false; $("add").classList.remove("on"); $("overlay").classList.remove("draw");
+  changed(); render(); focusRow(lines.length - 1);
+});
+window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("resize", () => { if (page) render(); });
+
+loadList().then(() => { if (pages.length) { const first = pages.find((p) => p.prefilled > 0) || pages[0]; $("page").value = first.id; return openPage(first.id); } setSaved("the set has no pages"); }).catch((e) => setSaved(e.message, true));
+</script>
+</body>
+</html>
