@@ -22,6 +22,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 
+SCORING_DIMENSION = 384
+"""Dimension of ``sentence_embeddings.embedding`` (migration 0008): the scoring model's (D99)."""
+
 metadata = MetaData()
 
 
@@ -152,6 +155,7 @@ glossaries = _versioned(
     _uuid("question_id"),
     Column("teacher_terms", ARRAY(Text()), nullable=False),
     Column("reference_labels", ARRAY(Text()), nullable=False),
+    Column("off_target_terms", ARRAY(Text()), nullable=False, server_default="{}"),
 )
 
 reference_diagrams = _versioned(
@@ -275,6 +279,7 @@ regions = Table(
     _uuid("parent_id", nullable=True),
     _int("row_index", nullable=True),
     _int("col_index", nullable=True),
+    Column("struck_out", Boolean(), nullable=False, server_default="false"),
 )
 
 line_readings = Table(
@@ -349,10 +354,15 @@ answer_scores = Table(
     _uuid("question_id"),
     _int("question_version"),
     _num("mark_step"),
-    _num("mark"),
+    _num("mark", nullable=True),
     Column("content_versions", JSONB(), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     _seq(),
+    Column("flags", ARRAY(Text()), nullable=False, server_default="{}"),
+    Column("relevance", Double(), nullable=True),
+    _text("embedder_name", nullable=True),
+    _text("embedder_version", nullable=True),
+    Column("reasons", ARRAY(Text()), nullable=False, server_default="{}"),
 )
 
 criterion_scores = Table(
@@ -369,6 +379,8 @@ criterion_scores = Table(
     _text("scorer_version"),
     _text("evidence"),
     Column("flags", ARRAY(Text()), nullable=False),
+    Column("similarity", Double(), nullable=True),
+    Column("reason", JSONB(), nullable=True),
 )
 
 reviews = Table(
@@ -411,8 +423,19 @@ sentence_embeddings = Table(
     _int("sentence_index"),
     _text("embedder_name"),
     _text("embedder_version"),
-    _int("dimension"),
-    Column("embedding", VECTOR(), nullable=False),
+    Column("embedding", VECTOR(SCORING_DIMENSION), nullable=False),
+    _text("text_sha256"),
+)
+
+# Tarn-operator content (0008): scoring bands and flag thresholds per embedding model.
+scoring_calibrations = Table(
+    "scoring_calibrations",
+    metadata,
+    _uuid("id", primary_key=True),
+    _int("version", primary_key=True),
+    _text("embedder_name"),
+    Column("params", JSONB(), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 audit_events = Table(
@@ -493,4 +516,5 @@ GLOBAL_TABLES: tuple[Table, ...] = (
     key_files,
     exam_blueprints,
     ocr_calibrations,
+    scoring_calibrations,
 )

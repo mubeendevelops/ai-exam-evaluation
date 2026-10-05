@@ -8,7 +8,7 @@ import pytest
 from tarn_core.domain.blueprint import ExamBlueprint, QuestionSlot, Section
 from tarn_core.domain.common import ContentRef, EngineRef
 from tarn_core.domain.content import Question, ReferenceAnswer, RubricCriterion, Subject
-from tarn_core.domain.scoring import AnswerScore, CriterionScore
+from tarn_core.domain.scoring import AnswerFlag, AnswerScore, CriterionScore
 from tarn_core.errors import InvariantError
 from tarn_core.ids import AnswerId, AnswerScoreId, BlueprintId, ReferenceAnswerId, SubjectId
 from tarn_core.ports.engines import ScoringInput
@@ -139,7 +139,7 @@ def test_scorer_answering_for_another_criterion_version_is_rejected(
         svc.scoring.score_answer(college.id, college.teacher.id, answer.id, answer_text="x")
 
 
-def test_guidance_only_key_gets_no_ai_score() -> None:
+def test_guidance_only_key_gets_a_mark_manually_score() -> None:
     mem = InMemory()
     college = add_college(mem, "A")
     subject = Subject(id=SubjectId(mem.ids.new()), meta=meta(college), code="S", name="S")
@@ -178,9 +178,11 @@ def test_guidance_only_key_gets_no_ai_score() -> None:
     ).booklet
     answer = add_answer(mem, booklet, "1")
 
-    assert (
-        svc.scoring.score_answer(college.id, college.teacher.id, answer.id, answer_text="x") is None
-    )
+    score = svc.scoring.score_answer(college.id, college.teacher.id, answer.id, answer_text="x")
+    assert score.flags == (AnswerFlag.MARK_MANUALLY,)
+    assert score.mark is None and score.criterion_scores == ()
+    assert question.ref in score.content_versions  # the guidance key's version too
+    assert mem.scores.scores(college.id, answer.id) == [score]
     preview = svc.totals.preview(college.id, booklet.id)
     assert preview.unmarked == (answer.id,)
     assert preview.result.total == 0

@@ -6,10 +6,11 @@ from typing import Protocol
 from uuid import UUID
 
 from tarn_core.domain.booklet import WAITING_STATUSES, Answer, Booklet, Page, Region, Segment
+from tarn_core.domain.common import EngineRef
 from tarn_core.domain.content import KeyFile, Question, ReferenceAnswer
 from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import ResultSheet, Review
-from tarn_core.domain.scoring import AnswerScore
+from tarn_core.domain.scoring import AnswerScore, SentenceVector
 from tarn_core.domain.tenancy import College, Student, User
 from tarn_core.errors import InvariantError, NotFoundError, TenantViolationError
 from tarn_core.ids import (
@@ -329,6 +330,8 @@ class MemoryScoreRepository:
     def __init__(self, log: TenantLog) -> None:
         self._scores: _Table[UUID, AnswerScore] = _Table(log, "answer score")
         self._reviews: _Table[UUID, Review] = _Table(log, "review")
+        self._log = log
+        self._vectors: dict[tuple[CollegeId, AnswerId, EngineRef], tuple[SentenceVector, ...]] = {}
 
     def save_score(self, college_id: CollegeId, score: AnswerScore) -> None:
         self._scores.put(college_id, score.id, score)
@@ -346,6 +349,26 @@ class MemoryScoreRepository:
         doomed = set(answer_ids)
         self._scores.drop_where(college_id, lambda s: s.answer_id in doomed)
         self._reviews.drop_where(college_id, lambda r: r.answer_id in doomed)
+        for key in [k for k in self._vectors if k[0] == college_id and k[1] in doomed]:
+            del self._vectors[key]
+
+    def vectors(
+        self, college_id: CollegeId, answer_id: AnswerId, embedder: EngineRef
+    ) -> Sequence[SentenceVector]:
+        self._log.touch(college_id)
+        return list(self._vectors.get((college_id, answer_id, embedder), ()))
+
+    def replace_vectors(
+        self,
+        college_id: CollegeId,
+        answer_id: AnswerId,
+        embedder: EngineRef,
+        vectors: Sequence[SentenceVector],
+    ) -> None:
+        self._log.touch(college_id)
+        self._vectors[(college_id, answer_id, embedder)] = tuple(
+            sorted(vectors, key=lambda v: v.index)
+        )
 
 
 class MemoryResultSheetRepository:

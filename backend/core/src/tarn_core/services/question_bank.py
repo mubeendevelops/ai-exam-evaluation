@@ -535,6 +535,20 @@ class QuestionBankService:
         cleaned = _clean_list(terms, what="term", limit=MAX_TERMS, longest=MAX_TERM_LENGTH)
         return self._sync_glossary(college_id, actor_id, question_id, terms=cleaned)
 
+    def set_off_target_terms(
+        self,
+        college_id: CollegeId,
+        actor_id: UserId,
+        question_id: QuestionId,
+        terms: Sequence[str],
+    ) -> Glossary | None:
+        """Names that contradict the key (the off-target guard, C13), e.g. "Congress" for a
+        question on the Indian President."""
+        self._users.get(college_id, actor_id)
+        ensure_can_edit(college_id, self._content.get(Question, question_id))
+        cleaned = _clean_list(terms, what="term", limit=MAX_TERMS, longest=MAX_TERM_LENGTH)
+        return self._sync_glossary(college_id, actor_id, question_id, off_target=cleaned)
+
     def _sync_glossary(
         self,
         college_id: CollegeId,
@@ -542,6 +556,7 @@ class QuestionBankService:
         question_id: QuestionId,
         *,
         terms: tuple[str, ...] | None = None,
+        off_target: tuple[str, ...] | None = None,
     ) -> Glossary | None:
         existing = next(iter(self._content.for_question(Glossary, question_id)), None)
         labels = _clean_list(
@@ -555,7 +570,10 @@ class QuestionBankService:
             longest=MAX_TERM_LENGTH,
         )
         wanted_terms = (existing.teacher_terms if existing else ()) if terms is None else terms
-        if existing is None and not wanted_terms and not labels:
+        wanted_off = (
+            (existing.off_target_terms if existing else ()) if off_target is None else off_target
+        )
+        if existing is None and not wanted_terms and not labels and not wanted_off:
             return None
         if existing is None:
             glossary = Glossary(
@@ -564,8 +582,13 @@ class QuestionBankService:
                 question_id=question_id,
                 teacher_terms=wanted_terms,
                 reference_labels=labels,
+                off_target_terms=wanted_off,
             )
-        elif (existing.teacher_terms, existing.reference_labels) == (wanted_terms, labels):
+        elif (existing.teacher_terms, existing.reference_labels, existing.off_target_terms) == (
+            wanted_terms,
+            labels,
+            wanted_off,
+        ):
             return existing
         else:
             glossary = replace(
@@ -573,6 +596,7 @@ class QuestionBankService:
                 meta=replace(existing.meta, version=existing.meta.version + 1, created_by=actor_id),
                 teacher_terms=wanted_terms,
                 reference_labels=labels,
+                off_target_terms=wanted_off,
             )
         self._content.save(glossary)
         self._rt.record(

@@ -1,7 +1,8 @@
 """Runs queued booklet jobs: ``booklet.prepare`` (split, clean, gate; P9), ``booklet.read``
-(best-of-N OCR, one page per step; P10) and ``booklet.segment`` (answers per question, one
-step; P12). One booklet at a time, one transaction per step, so a
-crash resumes from the last finished step (design.md "Reliability").
+(best-of-N OCR, one page per step; P10), ``booklet.segment`` (answers per question, one
+step; P12) and ``booklet.score`` (a suggested mark per answer, one step; P13). One booklet
+at a time, one transaction per step, so a crash resumes from the last finished step
+(design.md "Reliability").
 
 Per tick: jobs whose worker vanished on their last attempt are reaped (their booklets end as
 FAILED); then the next job is claimed, fairly across colleges. While the booklet is processed
@@ -25,12 +26,19 @@ from tarn_core.domain.ocr import SelectorSettings
 from tarn_core.errors import NotFoundError
 from tarn_core.ids import BookletId, CollegeId
 from tarn_core.ports.engines import Embedder, LayoutDetector, OcrEngine, PageTransform, WordList
-from tarn_core.ports.jobs import JOB_PREPARE_BOOKLET, JOB_READ_BOOKLET, JOB_SEGMENT_BOOKLET, Job
+from tarn_core.ports.jobs import (
+    JOB_PREPARE_BOOKLET,
+    JOB_READ_BOOKLET,
+    JOB_SCORE_BOOKLET,
+    JOB_SEGMENT_BOOKLET,
+    Job,
+)
 from tarn_core.ports.pages import PageCleaner, PageSplitter
 from tarn_core.ports.runtime import Clock, IdGenerator
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services.ocr.reader import BookletReader, OrientationPolicy, abandon_reading
 from tarn_core.services.pipeline import PagePipeline, QualityPolicy
+from tarn_core.services.scoring import BookletScorer, ScoringService
 from tarn_core.services.segmentation.segmenter import SegmentationPolicy
 from tarn_core.services.segmentation.service import BookletSegmenter
 from tarn_core.services.segmentation.similarity import TrigramEmbedder
@@ -89,6 +97,9 @@ class BookletJobRunner:
     heartbeat_seconds: float = 40.0
     embedder: Embedder = field(default_factory=TrigramEmbedder)
     segmentation: SegmentationPolicy = field(default_factory=SegmentationPolicy)
+    scoring_embedder: Embedder = field(default_factory=TrigramEmbedder)
+    """Local only (``build_scoring_embedder``): scoring sends no text off the machine."""
+    word_list: WordList | None = None
 
     def _pipeline(self, session: PostgresSession) -> PagePipeline:
         return PagePipeline(
@@ -126,8 +137,21 @@ class BookletJobRunner:
             content=session.content,
             embedder=self.embedder,
             runtime=session.runtime,
+            jobs=session.jobs,
             policy=self.segmentation,
         )
+
+    def _scorer(self, session: PostgresSession) -> BookletScorer:
+        scoring = ScoringService.standard(
+            booklets=session.booklets,
+            scores=session.scores,
+            content=session.content,
+            runtime=session.runtime,
+            embedder=self.scoring_embedder,
+            calibrations=session.scoring_calibrations,
+            word_list=self.word_list,
+        )
+        return BookletScorer(booklets=session.booklets, scoring=scoring, runtime=session.runtime)
 
     def _stepper(self, kind: str) -> Callable[[PostgresSession], _Stepper] | None:
         if kind == JOB_PREPARE_BOOKLET:
@@ -136,6 +160,8 @@ class BookletJobRunner:
             return self._reader if self.ocr is not None else _NoOcr
         if kind == JOB_SEGMENT_BOOKLET:
             return self._segmenter
+        if kind == JOB_SCORE_BOOKLET:
+            return self._scorer
         return None
 
     def run_one(self) -> bool:

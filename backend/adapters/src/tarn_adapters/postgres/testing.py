@@ -9,7 +9,6 @@ from uuid import uuid4
 
 import psycopg
 from psycopg import sql
-from sqlalchemy import insert
 from sqlalchemy.engine import make_url
 
 from tarn_adapters.postgres import metadata as m
@@ -34,6 +33,7 @@ from tarn_core.domain.diagram import (
     StudentDiagram,
 )
 from tarn_core.domain.review import ResultLine, ResultSheet, Review
+from tarn_core.domain.scoring import SentenceVector
 from tarn_core.ids import (
     BlueprintId,
     BookletId,
@@ -253,17 +253,17 @@ def _seed(open_: Opener, college: CollegeFixture, blueprint_id: BlueprintId) -> 
                 pdf=college_blob_key(cid, "sheets", f"{booklet.id}-v1.pdf"),
             ),
         )
-        s.conn.execute(
-            insert(m.sentence_embeddings).values(
-                id=s.ids.new(),
-                college_id=cid,
-                answer_id=answers[0].id,
-                sentence_index=0,
-                embedder_name="synthetic-embedder",
-                embedder_version="1",
-                dimension=3,
-                embedding=[1.0, 0.0, 0.0],
-            )
+        s.scores.replace_vectors(
+            cid,
+            answers[0].id,
+            EngineRef(name="synthetic-embedder", version="1"),
+            [
+                SentenceVector(
+                    index=0,
+                    text_sha256="0" * 64,
+                    vector=(1.0,) + (0.0,) * (m.SCORING_DIMENSION - 1),
+                )
+            ],
         )
         s.jobs.enqueue(
             cid, "booklet.prepare", {"booklet_id": str(booklet.id)}, key=f"seed:{booklet.id}"

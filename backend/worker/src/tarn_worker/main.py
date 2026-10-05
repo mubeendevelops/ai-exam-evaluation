@@ -96,7 +96,7 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
     """The queue consumer: each call processes at most one booklet job; True if it did."""
     from tarn_adapters.blob.minio_client import make_client
     from tarn_adapters.blob.minio_store import MinioBlobStore
-    from tarn_adapters.embed.wiring import build_embedder
+    from tarn_adapters.embed.wiring import build_embedder, build_scoring_embedder
     from tarn_adapters.imaging.cleaner import OpenCvPageCleaner
     from tarn_adapters.imaging.pdf import PyMuPdfSplitter
     from tarn_adapters.ocr.wiring import build_ocr
@@ -137,6 +137,10 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
     if embedding.fallback_reason is not None:
         log.warning("segmentation.embedder_fallback", reason=embedding.fallback_reason)
     log.info("segmentation.embedder", embedder=embedding.embedder.ref.name)
+    scoring = build_scoring_embedder(settings)  # refuses a non-local embedder: fails start-up
+    if scoring.fallback_reason is not None:
+        log.warning("scoring.embedder_fallback", reason=scoring.fallback_reason)
+    log.info("scoring.embedder", embedder=scoring.embedder.ref.name)
 
     runner = BookletJobRunner(
         db=PostgresDatabase(
@@ -165,6 +169,8 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
         ocr=kit,
         heartbeat_seconds=settings.job_lease_seconds / 3,
         embedder=embedding.embedder,
+        scoring_embedder=scoring.embedder,
+        word_list=None if kit is None else kit.word_list,
     )
     return runner.run_one
 

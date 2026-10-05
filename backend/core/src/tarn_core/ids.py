@@ -18,6 +18,7 @@ ReferenceDiagramId = NewType("ReferenceDiagramId", UUID)
 KeyFileId = NewType("KeyFileId", UUID)
 BlueprintId = NewType("BlueprintId", UUID)
 OcrCalibrationId = NewType("OcrCalibrationId", UUID)
+ScoringCalibrationId = NewType("ScoringCalibrationId", UUID)
 
 # College data
 BookletId = NewType("BookletId", UUID)

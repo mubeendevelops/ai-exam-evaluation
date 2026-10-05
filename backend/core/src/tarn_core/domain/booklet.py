@@ -34,7 +34,7 @@ class BookletStatus(StrEnum):
     anyway" on every flagged page moves NEEDS_RETAKE → PAGES_READY), or → FAILED when the file
     cannot be read. PAGES_READY is where OCR (P10) takes over: PAGES_READY → READING →
     TEXT_READY (where segmentation, P12, takes over) → SEGMENTED (where scoring, P13, takes
-    over)."""
+    over) → SCORED (where the teacher's review, P15, takes over)."""
 
     UPLOADED = "uploaded"
     PROCESSING = "processing"
@@ -267,6 +267,9 @@ class Region:
     parent_id: RegionId | None = None
     row: int | None = None
     col: int | None = None
+    struck_out: bool = False
+    """The student struck this text out: it is left out of scoring (design.md "Reliability").
+    Nothing detects strike-outs yet (O58); the teacher sets or clears it."""
 
     def __post_init__(self) -> None:
         if self.chosen is not None and not 0 <= self.chosen < len(self.readings):

@@ -35,6 +35,7 @@ from tarn_core.domain.content import (
 )
 from tarn_core.domain.diagram import DiagramEdge, DiagramGraph, DiagramNode, NodeShape
 from tarn_core.domain.review import ResultLine
+from tarn_core.domain.scoring import CriterionReason
 from tarn_core.ids import PageId, QuestionId, ReferenceDiagramId
 
 type Json = JsonValue
@@ -133,6 +134,29 @@ def _engine_from_json(value: object) -> EngineRef:
 
 
 # --- rubric criterion params -----------------------------------------------------------------
+
+
+def reason_to_json(reason: CriterionReason) -> Json:
+    return {
+        "summary": reason.summary,
+        "matched": list(reason.matched),
+        "missing": list(reason.missing),
+        "sentences": list(reason.sentences),
+        "found": reason.found,
+        "expected": reason.expected,
+    }
+
+
+def reason_from_json(value: object) -> CriterionReason:
+    d = _obj(value)
+    return CriterionReason(
+        summary=_str(d["summary"]),
+        matched=tuple(_str(x) for x in _list(d.get("matched", []))),
+        missing=tuple(_str(x) for x in _list(d.get("missing", []))),
+        sentences=tuple(_int(x) for x in _list(d.get("sentences", []))),
+        found=None if d.get("found") is None else _str(d["found"]),
+        expected=None if d.get("expected") is None else _str(d["expected"]),
+    )
 
 
 def params_to_json(params: CriterionParams) -> Json:

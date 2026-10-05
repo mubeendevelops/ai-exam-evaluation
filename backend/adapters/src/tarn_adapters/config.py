@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     # Sentence embeddings for segmentation (P12): a sentence-transformers model, or "trigram"
     # for the model-free embedder of the core (also the fallback when the library is missing).
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    # Sentence embeddings for scoring (P13): a sentence-transformers model loaded from the local
+    # cache only (fetch it with `tarn score models fetch`), or "trigram". Chosen by benchmark
+    # (D99); student text never leaves the machine.
+    scoring_embedding_model: str = "thenlper/gte-small"
     # Downloaded model weights (Hugging Face, PaddleX); git-ignored.
     model_dir: Path = Path("../var/models")
     english_words: Path | None = None

@@ -271,9 +271,10 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
     read = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()
     assert read["status"] == "text_ready" and read["pages_read"] == 2
     assert runner.run_one() is True  # segmentation (P12)
+    assert runner.run_one() is True  # scoring (P13)
     assert runner.run_one() is False
-    segmented = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()
-    assert segmented["status"] == "segmented"
+    scored = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()
+    assert scored["status"] == "scored"
     text = client.get(read["pages"][0]["text_url"], headers=a).json()
     assert [r["text"] for r in text["regions"]] == ["synthetic line"]
     assert client.get(read["pages"][0]["text_url"], headers=b).status_code == 404

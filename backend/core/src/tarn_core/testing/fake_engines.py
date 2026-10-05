@@ -10,7 +10,7 @@ from tarn_core.domain.common import Box, EngineRef
 from tarn_core.domain.content import CriterionType
 from tarn_core.domain.diagram import DiagramGraph
 from tarn_core.domain.ocr import ContentClass, EngineCalibration
-from tarn_core.domain.scoring import CriterionScore
+from tarn_core.domain.scoring import CriterionScore, ScoringCalibration
 from tarn_core.errors import InvariantError
 from tarn_core.ports.engines import DetectedRegion, ScoringInput
 
@@ -134,6 +134,23 @@ class MemoryCalibrationStore:
 
     def save(self, calibration: EngineCalibration) -> None:
         versions = self._items.setdefault((calibration.engine, calibration.content_class), [])
+        if calibration.version != len(versions) + 1:
+            raise InvariantError(
+                f"calibration version {calibration.version} is not the next ({len(versions) + 1})"
+            )
+        versions.append(calibration)
+
+
+class MemoryScoringCalibrationStore:
+    def __init__(self) -> None:
+        self._items: dict[str, list[ScoringCalibration]] = {}
+
+    def latest(self, embedder: str) -> ScoringCalibration | None:
+        versions = self._items.get(embedder)
+        return versions[-1] if versions else None
+
+    def save(self, calibration: ScoringCalibration) -> None:
+        versions = self._items.setdefault(calibration.embedder, [])
         if calibration.version != len(versions) + 1:
             raise InvariantError(
                 f"calibration version {calibration.version} is not the next ({len(versions) + 1})"

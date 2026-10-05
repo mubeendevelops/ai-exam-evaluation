@@ -24,8 +24,9 @@ from tarn_core.domain.booklet import (
 from tarn_core.domain.common import college_blob_key
 from tarn_core.errors import InvariantError, NotFoundError
 from tarn_core.ids import BookletId, CollegeId, StudentId, UserId
-from tarn_core.ports.jobs import JOB_SEGMENT_BOOKLET
+from tarn_core.ports.jobs import JOB_SCORE_BOOKLET, JOB_SEGMENT_BOOKLET
 from tarn_core.services.marking import Outcome, apply_choice_rules
+from tarn_core.services.scoring import BookletScorer, ScoringService
 from tarn_core.services.segmentation.edits import SegmentEditor
 from tarn_core.services.segmentation.service import (
     FAILED_SEGMENTING,
@@ -101,6 +102,7 @@ class World:
             content=self.mem.content,
             embedder=TrigramEmbedder(),
             runtime=self.mem.runtime,
+            jobs=self.mem.jobs,
         )
 
     def editor(self) -> SegmentEditor:
@@ -157,6 +159,24 @@ def test_segmenting_stores_segments_answers_and_page_order(world: World) -> None
     assert answers["9"].segment_ids == (nine.id,)
     pages = world.mem.booklets.pages(world.college, booklet.id)
     assert [p.reading_order for p in pages] == [0, 1]
+
+
+def test_segmenting_queues_scoring_and_the_scorer_takes_over(world: World) -> None:
+    booklet = world.segmented()
+    queued = [j for j in world.mem.jobs.jobs if j.kind == JOB_SCORE_BOOKLET]
+    assert [j.payload for j in queued] == [{"booklet_id": str(booklet.id)}]
+    scoring = ScoringService.standard(
+        booklets=world.mem.booklets,
+        scores=world.mem.scores,
+        content=world.mem.content,
+        runtime=world.mem.runtime,
+        embedder=TrigramEmbedder(),
+    )
+    stage = BookletScorer(booklets=world.mem.booklets, scoring=scoring, runtime=world.mem.runtime)
+    assert stage.step(world.college, booklet.id)
+    assert world.mem.booklets.get(world.college, booklet.id).status is BookletStatus.SCORED
+    for answer in world.answers(booklet).values():
+        assert world.mem.scores.scores(world.college, answer.id)
 
 
 def test_segmenting_audits_counts_only(world: World) -> None:

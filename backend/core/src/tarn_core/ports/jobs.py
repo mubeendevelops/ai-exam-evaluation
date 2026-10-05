@@ -21,6 +21,9 @@ JOB_READ_BOOKLET = "booklet.read"
 JOB_SEGMENT_BOOKLET = "booklet.segment"
 """Split the read booklet into answers per question (P12)."""
 
+JOB_SCORE_BOOKLET = "booklet.score"
+"""Suggest a mark for every answer of the segmented booklet (P13)."""
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Job:

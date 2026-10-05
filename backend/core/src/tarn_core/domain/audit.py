@@ -25,6 +25,7 @@ class AuditAction(StrEnum):
     CONTENT_COPIED = "content.copied"
     CONTENT_RETIRED = "content.retired"
     ANSWER_SCORED = "answer.scored"
+    BOOKLET_SCORED = "booklet.scored"  # by scoring: no acting user
     ANSWER_APPROVED = "answer.approved"
     RESULT_SHEET_ISSUED = "result_sheet.issued"
     # Authentication (P4)
@@ -54,7 +55,7 @@ class AuditAction(StrEnum):
 
 # Events that may have no acting user: a failed sign-in for an unknown email, the approval of
 # a tenant by a Tarn operator (who is not a user of any college), and what the page pipeline
-# does on its own.
+# does on its own (cleaning, reading, segmenting, scoring).
 ANONYMOUS_ACTIONS = frozenset(
     {
         AuditAction.LOGIN_FAILED,
@@ -63,6 +64,8 @@ ANONYMOUS_ACTIONS = frozenset(
         AuditAction.BOOKLET_FAILED,
         AuditAction.BOOKLET_TEXT_READ,
         AuditAction.BOOKLET_SEGMENTED,
+        AuditAction.BOOKLET_SCORED,
+        AuditAction.ANSWER_SCORED,  # scored by the pipeline; a teacher's re-score names them
     }
 )
 

@@ -16,14 +16,26 @@ from tarn_core.errors import EngineFailedError
 
 DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
+_PREFIXES = {"/e5-": "query: "}
+"""Models trained with an input prefix: E5 expects "query: " on symmetric tasks."""
+
 
 class SentenceTransformerEmbedder:
     def __init__(
-        self, model: str = DEFAULT_MODEL, *, cache_dir: Path | None = None, device: str = "cpu"
+        self,
+        model: str = DEFAULT_MODEL,
+        *,
+        cache_dir: Path | None = None,
+        device: str = "cpu",
+        local_files_only: bool = False,
     ) -> None:
+        """``local_files_only``: load the weights from ``cache_dir`` and never contact the
+        model hub (scoring: no request leaves the machine once the model is fetched)."""
         self._name = model
         self._cache_dir = cache_dir
         self._device = device
+        self.local_files_only = local_files_only
+        self._prefix = next((v for k, v in _PREFIXES.items() if k in model), "")
 
     @cached_property
     def _model(self) -> Any:
@@ -35,6 +47,7 @@ class SentenceTransformerEmbedder:
             self._name,
             device=self._device,
             cache_folder=None if self._cache_dir is None else str(self._cache_dir),
+            local_files_only=self.local_files_only,
         )
 
     @property
@@ -55,6 +68,9 @@ class SentenceTransformerEmbedder:
         if not texts:
             return []
         vectors = self._model.encode(
-            list(texts), batch_size=32, normalize_embeddings=True, show_progress_bar=False
+            [self._prefix + t for t in texts],
+            batch_size=32,
+            normalize_embeddings=True,
+            show_progress_bar=False,
         )
         return [tuple(float(x) for x in v) for v in vectors]

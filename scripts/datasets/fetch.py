@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download public handwritten-material datasets for OCR and diagram tests (P11).
+"""Download public datasets for OCR and diagram tests (P11) and for scoring calibration (P13).
 
 Standard library only. Nothing is downloaded by default and nothing is committed: files go to
 ``var/datasets/<name>/`` (git-ignored). The sources are those of docs/requirements.md "Public
@@ -121,6 +121,32 @@ SOURCES: dict[str, Source] = {
             "Copyrighted scripts of UPSC candidates, indexed by a third party. Internal "
             "testing only (requirements Q11); do not redistribute or commit.",
             "manual",
+        ),
+        Source(
+            "mohler",
+            "Texas short-answer grading data v2.0 (Mohler, Bunescu and Mihalcea, ACL 2011)",
+            "https://web.eecs.umich.edu/~mihalcea/downloads.html",
+            "80 data-structures questions with a reference answer each and about 2,270 student "
+            "answers, every one marked 0-5 by two human graders (typed text, not handwriting).",
+            "Choosing the scoring embedding model and fitting the credit bands (P13): human "
+            "marks against a reference answer, the shape of Tarn's semantic criteria.",
+            "Distributed by the authors for research; the page's licence text was not checked "
+            "by Tarn. Read the page, cite the paper, use it internally for testing only, do not "
+            "redistribute or commit it. Give the archive's URL with --url.",
+            "url",
+        ),
+        Source(
+            "scientsbank",
+            "SemEval-2013 Task 7 (Student Response Analysis): SciEntsBank and Beetle",
+            "https://aclanthology.org/S13-2045/",
+            "Science and electronics questions with reference answers and student answers "
+            "labelled correct, partially correct, contradictory, irrelevant or non-domain.",
+            "A second check of the scoring model and of the off-target guard (P13): labels map "
+            "to credit 1, 1/2, 0 and 'irrelevant'/'non-domain' to off-target.",
+            "Released for the shared task; the licence was not checked by Tarn. Find the data "
+            "release from the task paper, read its terms, internal testing only, do not "
+            "redistribute or commit it. Give the archive's URL with --url.",
+            "url",
         ),
     )
 }

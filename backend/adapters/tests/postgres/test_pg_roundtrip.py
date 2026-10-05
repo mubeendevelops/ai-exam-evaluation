@@ -31,6 +31,7 @@ from tarn_core.domain.content import (
     Subject,
 )
 from tarn_core.domain.review import Review
+from tarn_core.domain.scoring import SentenceVector
 from tarn_core.ids import (
     BlueprintId,
     CriterionId,
@@ -208,30 +209,36 @@ def test_college_data_roundtrip(session: Opener, world: World) -> None:
         assert s.sheets.versions(a.id, a.booklet.id) == [sheets[0], v2]
 
 
+def _unit(*head: float) -> tuple[float, ...]:
+    return tuple(head) + (0.0,) * (m.SCORING_DIMENSION - len(head))
+
+
 def test_sentence_embeddings_use_pgvector(session: Opener, world: World) -> None:
     a, b = world.a, world.b
     t = m.sentence_embeddings
+    embedder = EngineRef(name="synthetic-embedder", version="1")
     with session(a.id) as s:
-        for index, vector in enumerate(([0.0, 1.0, 0.0], [0.7, 0.7, 0.0]), start=1):
-            s.conn.execute(
-                insert(t).values(
-                    id=s.ids.new(),
-                    college_id=a.id,
-                    answer_id=a.answers[0].id,
-                    sentence_index=index,
-                    embedder_name="synthetic-embedder",
-                    embedder_version="1",
-                    dimension=3,
-                    embedding=vector,
-                )
-            )
+        vectors = [
+            SentenceVector(index=k, text_sha256=f"{k:064x}", vector=v)
+            for k, v in enumerate((_unit(1.0), _unit(0.0, 1.0), _unit(0.7, 0.7)))
+        ]
+        s.scores.replace_vectors(a.id, a.answers[0].id, embedder, vectors)
+        assert s.scores.vectors(a.id, a.answers[0].id, embedder) == vectors
         nearest = s.conn.execute(
             select(t.c.sentence_index)
             .where(t.c.answer_id == a.answers[0].id)
-            .order_by(t.c.embedding.cosine_distance([1.0, 0.1, 0.0]))
+            .order_by(t.c.embedding.cosine_distance(list(_unit(1.0, 0.1))))
         ).scalars()
         assert list(nearest) == [0, 2, 1]
-        with pytest.raises(DBAPIError), s.conn.begin_nested():  # dimension must match
+        # Another dimension (the trigram fallback) is not kept: the table is a cache.
+        s.scores.replace_vectors(
+            a.id,
+            a.answers[0].id,
+            embedder,
+            [SentenceVector(index=0, text_sha256="0" * 64, vector=(1.0, 0.0, 0.0))],
+        )
+        assert s.scores.vectors(a.id, a.answers[0].id, embedder) == []
+        with pytest.raises(DBAPIError), s.conn.begin_nested():  # dimension is fixed
             s.conn.execute(
                 insert(t).values(
                     id=s.ids.new(),
@@ -240,8 +247,8 @@ def test_sentence_embeddings_use_pgvector(session: Opener, world: World) -> None
                     sentence_index=9,
                     embedder_name="synthetic-embedder",
                     embedder_version="1",
-                    dimension=4,
                     embedding=[1.0, 0.0, 0.0],
+                    text_sha256="0" * 64,
                 )
             )
     with session(b.id) as s:

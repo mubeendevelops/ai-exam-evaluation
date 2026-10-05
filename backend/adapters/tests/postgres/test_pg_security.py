@@ -191,8 +191,18 @@ def test_global_content_is_read_by_all_written_by_owner(
         )
         for table in GLOBAL_TABLES:
             t = sql.Identifier(table)
-            assert _refused(conn, sql.SQL("UPDATE {} SET created_by = created_by").format(t))
+            column = sql.Identifier("version" if table == "scoring_calibrations" else "created_by")
+            assert _refused(conn, sql.SQL("UPDATE {} SET {} = {}").format(t, column, column))
             assert _refused(conn, sql.SQL("DELETE FROM {}").format(t))
+        # Scoring calibrations are Tarn-operator content: colleges read them, never write.
+        conn.execute("SELECT count(*) FROM scoring_calibrations")
+        assert _refused(
+            conn,
+            sql.SQL(
+                "INSERT INTO scoring_calibrations (id, version, embedder_name, params) "
+                "VALUES ({}, 1, 'all-MiniLM-L6-v2', '{{}}')"
+            ).format(sql.Literal(str(uuid4()))),
+        )
 
 
 def test_audit_is_append_only(test_database: TestDatabase, world: World) -> None:

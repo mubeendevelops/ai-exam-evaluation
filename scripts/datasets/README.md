@@ -1,4 +1,4 @@
-# Public datasets for OCR and diagram tests
+# Public datasets for OCR, diagram and scoring tests
 
 `fetch.py` downloads the public handwritten material listed in `docs/requirements.md`
 ("Public handwritten material for development") into `var/datasets/` (git-ignored).
@@ -16,3 +16,16 @@ python scripts/datasets/fetch.py fetch fc-offline --accept-terms --url <direct l
 Pages of a downloaded PDF or image go into a ground-truth set with
 `tarn truth prefill FILE --set var/groundtruth/<set> --label <name> --capture <type> --pages …`
 (`docs`: CLAUDE.md, "OCR benchmark (P11)").
+
+Scoring calibration (P13) uses a human-marked short-answer set. The UNT short-answer grading
+data v2.0 (`mohler`, Mohler, Bunescu and Mihalcea, ACL 2011) goes, unpacked, in
+`var/datasets/mohler/` (its `data/` folder and `README`); the download page's certificate may
+fail for scripts, so fetch it in a browser after reading the terms and note where it came
+from in `PROVENANCE.jsonl`. Then:
+
+```bash
+cd backend
+uv run tarn score import mohler ../var/datasets/mohler   # → var/scoring/mohler/
+uv run tarn score bench ../var/scoring/mohler            # → docs/benchmarks/scoring-models-<date>.md
+uv run tarn score calibrate ../var/scoring/mohler        # → docs/benchmarks/scoring-mohler-<date>.md
+```

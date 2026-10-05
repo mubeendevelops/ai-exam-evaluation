@@ -25,6 +25,7 @@ from tarn_adapters.postgres.repositories import (
     PgStudentRepository,
     PgUserRepository,
 )
+from tarn_adapters.postgres.scoring_calibrations import PgScoringCalibrationStore
 from tarn_core.ids import CollegeId
 from tarn_core.ports.runtime import Clock, IdGenerator
 from tarn_core.ports.storage import BlobStore
@@ -76,6 +77,7 @@ class PostgresSession:
         self.audit = PgAuditSink(self.conn)
         self.jobs = PgJobQueue(self.conn, self.job_settings)
         self.calibrations = PgCalibrationStore(self.conn)
+        self.scoring_calibrations = PgScoringCalibrationStore(self.conn)
 
     @property
     def runtime(self) -> Runtime:

@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, NoReturn
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import Connection, Row, Table, and_, delete, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import distinct_on, insert
@@ -59,7 +59,7 @@ from tarn_core.domain.content import (
 from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.ocr import ContentClass, ReadingScore
 from tarn_core.domain.review import ResultSheet, Review
-from tarn_core.domain.scoring import AnswerScore, CriterionScore
+from tarn_core.domain.scoring import AnswerFlag, AnswerScore, CriterionScore, SentenceVector
 from tarn_core.domain.tenancy import College, Role, Student, User
 from tarn_core.errors import (
     DomainError,
@@ -250,6 +250,7 @@ def _glossary_values(g: Glossary) -> dict[str, object]:
         "question_id": g.question_id,
         "teacher_terms": list(g.teacher_terms),
         "reference_labels": list(g.reference_labels),
+        "off_target_terms": list(g.off_target_terms),
     }
 
 
@@ -260,6 +261,7 @@ def _glossary(r: Row[Any]) -> Glossary:
         question_id=QuestionId(r.question_id),
         teacher_terms=tuple(r.teacher_terms),
         reference_labels=tuple(r.reference_labels),
+        off_target_terms=tuple(r.off_target_terms),
     )
 
 
@@ -803,6 +805,7 @@ def _region(r: Row[Any], readings: Sequence[Row[Any]]) -> Region:
         parent_id=None if r.parent_id is None else RegionId(r.parent_id),
         row=r.row_index,
         col=r.col_index,
+        struck_out=r.struck_out,
     )
 
 
@@ -1004,6 +1007,7 @@ class PgBookletRepository:
                 "parent_id": region.parent_id,
                 "row_index": region.row,
                 "col_index": region.col,
+                "struck_out": region.struck_out,
             },
         )
         self._conn.execute(
@@ -1147,8 +1151,15 @@ class PgScoreRepository:
                     mark=score.mark,
                     content_versions=codec.refs_to_json(score.content_versions),
                     created_at=score.created_at,
+                    flags=[f.value for f in score.flags],
+                    relevance=score.relevance,
+                    embedder_name=None if score.embedder is None else score.embedder.name,
+                    embedder_version=None if score.embedder is None else score.embedder.version,
+                    reasons=list(score.reasons),
                 )
             )
+            if not score.criterion_scores:
+                return
             self._conn.execute(
                 insert(m.criterion_scores),
                 [
@@ -1164,6 +1175,8 @@ class PgScoreRepository:
                         "scorer_version": c.scorer.version,
                         "evidence": c.evidence,
                         "flags": list(c.flags),
+                        "similarity": c.similarity,
+                        "reason": None if c.reason is None else codec.reason_to_json(c.reason),
                     }
                     for n, c in enumerate(score.criterion_scores)
                 ],
@@ -1198,6 +1211,8 @@ class PgScoreRepository:
                     scorer=EngineRef(name=c.scorer_name, version=c.scorer_version),
                     evidence=c.evidence,
                     flags=tuple(c.flags),
+                    similarity=c.similarity,
+                    reason=None if c.reason is None else codec.reason_from_json(c.reason),
                 )
             )
         return [
@@ -1213,6 +1228,12 @@ class PgScoreRepository:
                 mark=r.mark,
                 content_versions=codec.refs_from_json(r.content_versions),
                 created_at=r.created_at,
+                flags=tuple(AnswerFlag(f) for f in r.flags),
+                relevance=r.relevance,
+                embedder=None
+                if r.embedder_name is None
+                else EngineRef(name=r.embedder_name, version=r.embedder_version),
+                reasons=tuple(r.reasons),
             )
             for r in rows
         ]
@@ -1265,10 +1286,72 @@ class PgScoreRepository:
             return
         ids = list(answer_ids)
         with writing(self._conn, "scores of deleted answers"):
-            for t in (m.reviews, m.answer_scores):  # criterion scores cascade
-                self._conn.execute(
+            for t in (m.reviews, m.answer_scores, m.sentence_embeddings):
+                self._conn.execute(  # criterion scores cascade
                     delete(t).where(t.c.college_id == college_id, t.c.answer_id.in_(ids))
                 )
+
+    def vectors(
+        self, college_id: CollegeId, answer_id: AnswerId, embedder: EngineRef
+    ) -> Sequence[SentenceVector]:
+        t = m.sentence_embeddings
+        rows = self._conn.execute(
+            select(t.c.sentence_index, t.c.text_sha256, t.c.embedding)
+            .where(
+                t.c.college_id == college_id,
+                t.c.answer_id == answer_id,
+                t.c.embedder_name == embedder.name,
+                t.c.embedder_version == embedder.version,
+            )
+            .order_by(t.c.sentence_index)
+        )
+        return [
+            SentenceVector(
+                index=r.sentence_index,
+                text_sha256=r.text_sha256,
+                vector=tuple(float(x) for x in r.embedding),
+            )
+            for r in rows
+        ]
+
+    def replace_vectors(
+        self,
+        college_id: CollegeId,
+        answer_id: AnswerId,
+        embedder: EngineRef,
+        vectors: Sequence[SentenceVector],
+    ) -> None:
+        """Vectors of another dimension than the column's (the trigram fallback) are not kept:
+        the table is a cache, and scoring works without it."""
+        t = m.sentence_embeddings
+        with writing(self._conn, f"sentence vectors of answer {answer_id}"):
+            self._conn.execute(
+                delete(t).where(
+                    t.c.college_id == college_id,
+                    t.c.answer_id == answer_id,
+                    t.c.embedder_name == embedder.name,
+                    t.c.embedder_version == embedder.version,
+                )
+            )
+            kept = [v for v in vectors if len(v.vector) == m.SCORING_DIMENSION]
+            if not kept or len(kept) != len(vectors):
+                return
+            self._conn.execute(
+                insert(t),
+                [
+                    {
+                        "id": uuid4(),
+                        "college_id": college_id,
+                        "answer_id": answer_id,
+                        "sentence_index": v.index,
+                        "embedder_name": embedder.name,
+                        "embedder_version": embedder.version,
+                        "embedding": list(v.vector),
+                        "text_sha256": v.text_sha256,
+                    }
+                    for v in vectors
+                ],
+            )
 
 
 class PgResultSheetRepository:

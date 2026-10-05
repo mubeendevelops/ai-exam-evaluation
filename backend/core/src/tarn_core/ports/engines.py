@@ -10,7 +10,7 @@ from tarn_core.domain.common import Box, ContentRef, EngineRef
 from tarn_core.domain.content import CriterionType, RubricCriterion
 from tarn_core.domain.diagram import DiagramGraph
 from tarn_core.domain.ocr import ContentClass, EngineCalibration
-from tarn_core.domain.scoring import CriterionScore
+from tarn_core.domain.scoring import CriterionScore, ScoringCalibration
 from tarn_core.errors import InvariantError
 
 
@@ -99,7 +99,20 @@ class CalibrationStore(Protocol):
         ...
 
 
+class ScoringCalibrationStore(Protocol):
+    """Global scoring calibrations (numbers only), one item per embedding model."""
+
+    def latest(self, embedder: str) -> ScoringCalibration | None: ...
+
+    def save(self, calibration: ScoringCalibration) -> None:
+        """Writes the next version; raises InvariantError when the version is not the next."""
+        ...
+
+
 class Embedder(Protocol):
+    """Sentence vectors. Scoring accepts only embedders that run on this machine (no student
+    text leaves Tarn in the non-LLM phase, design.md "Embedding model")."""
+
     @property
     def ref(self) -> EngineRef: ...
 
@@ -120,10 +133,17 @@ class ScoringInput:
     reference_text: str = ""
     glossary: tuple[str, ...] = ()
     extra_content: Mapping[str, ContentRef] = field(default_factory=dict)
+    sentences: tuple[str, ...] = ()
+    """The answer split into sentences (struck-out text already left out); empty = the
+    scorer splits ``answer_text`` itself."""
+    sentence_vectors: tuple[tuple[float, ...], ...] = ()
+    """One vector per sentence, computed once per answer by ``embedder``."""
+    embedder: EngineRef | None = None
 
 
 class Scorer(Protocol):
-    """Scores one criterion; non-LLM scorers first, an LLM scorer later and off by default."""
+    """Scores one criterion; non-LLM scorers first, an LLM scorer later and off by default.
+    ``credit`` is in [0, 1]; the result names the criterion version and the scorer version."""
 
     @property
     def ref(self) -> EngineRef: ...

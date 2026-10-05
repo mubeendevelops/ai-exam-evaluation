@@ -448,7 +448,11 @@ def test_a_segmented_booklet_and_a_failed_segmentation_are_served(s: Setup) -> N
     mem = s.backends.mem
     booklet_id = BookletId(UUID(booklet["id"]))
     segmenter = BookletSegmenter(
-        booklets=mem.booklets, content=mem.content, embedder=TrigramEmbedder(), runtime=mem.runtime
+        booklets=mem.booklets,
+        content=mem.content,
+        embedder=TrigramEmbedder(),
+        runtime=mem.runtime,
+        jobs=mem.jobs,
     )
     assert segmenter.step(s.college_id, booklet_id)
     url = f"{BASE}/booklets/{booklet['id']}"

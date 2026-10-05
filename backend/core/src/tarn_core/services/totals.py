@@ -17,7 +17,8 @@ from tarn_core.services.marking import ExamResult, apply_choice_rules, slot_mark
 class TotalsPreview:
     result: ExamResult
     unmarked: tuple[AnswerId, ...]
-    """Answers with neither an approval nor an AI score (e.g. guidance-only keys)."""
+    """Answers with neither an approval nor an AI mark (e.g. "mark manually": guidance-only
+    keys)."""
 
 
 class TotalsService:
@@ -47,7 +48,7 @@ class TotalsService:
             scores = self._scores.scores(college_id, answer.id)
             if answer.status is AnswerStatus.APPROVED and reviews:
                 leaf_marks[answer.slot_label] = reviews[-1].teacher_mark
-            elif scores:
+            elif scores and scores[-1].mark is not None:
                 leaf_marks[answer.slot_label] = scores[-1].mark
             else:
                 unmarked.append(answer.id)

@@ -11,6 +11,19 @@ from tarn_core.seed.model import QuestionSeed, SubjectSeed, lst, question, sem, 
 SUBJECT = SubjectSeed(code="19AU0003", name="Constitution of India and Human Rights")
 FR = "Fundamental rights"
 GOV = "Union government"
+
+US_GOVERNMENT = [
+    "Congress",
+    "Senate",
+    "House of Representatives",
+    "United States",
+    "Americans",
+    "Marines",
+    "White House",
+    "State of the Union",
+]
+"""Off-target terms (P13): the American institutions an answer on the Indian Union executive or
+Parliament should not be about (requirements: B-CI2 Q12 describes the US President)."""
 JUD = "Judiciary"
 DPSP = "Directive principles"
 EASY, MEDIUM, HARD = Difficulty.EASY, Difficulty.MEDIUM, Difficulty.HARD
@@ -159,6 +172,7 @@ QUESTIONS: tuple[QuestionSeed, ...] = (
         ],
         difficulty=EASY,
         terms=["Lok Sabha", "Rajya Sabha", "bicameral"],
+        off_target=US_GOVERNMENT,
     ),
     question(
         "QP-CI-Q5",
@@ -347,6 +361,7 @@ QUESTIONS: tuple[QuestionSeed, ...] = (
             ),
         ],
         terms=["question hour", "no-confidence motion", "committee", "collective responsibility"],
+        off_target=US_GOVERNMENT,
     ),
     question(
         "QP-CI-Q10",
@@ -383,6 +398,7 @@ QUESTIONS: tuple[QuestionSeed, ...] = (
             ),
         ],
         terms=["money bill", "Article 249", "joint sitting", "no-confidence motion"],
+        off_target=US_GOVERNMENT,
     ),
     question(
         "QP-CI-Q11",
@@ -456,6 +472,7 @@ QUESTIONS: tuple[QuestionSeed, ...] = (
             )
         ],
         terms=["President", "Article 53", "appointment", "Supreme Commander"],
+        off_target=US_GOVERNMENT,
     ),
     question(
         "QP-CI-Q13",
@@ -508,6 +525,7 @@ QUESTIONS: tuple[QuestionSeed, ...] = (
             ),
         ],
         terms=["Article 72", "pardon", "commutation", "remission", "reprieve"],
+        off_target=US_GOVERNMENT,
     ),
     question(
         "QP-CI-Q14",

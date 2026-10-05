@@ -4,7 +4,7 @@ booklet past ``text_ready`` is left alone, and a re-run replaces earlier segment
 
 Writes each page's written number and reading order, one segment per answer found (in written
 order), one answer per question leaf with at least one segment, and an audit event with counts
-only (``booklet.segmented``). Scoring (P13) takes over from ``segmented``."""
+only (``booklet.segmented``), and queues scoring (P13) in the same transaction."""
 
 from collections.abc import Mapping
 from dataclasses import replace
@@ -24,6 +24,7 @@ from tarn_core.ports.engines import Embedder
 from tarn_core.ports.jobs import JOB_SEGMENT_BOOKLET, JobQueue
 from tarn_core.ports.repositories import BookletRepository, ContentRepository
 from tarn_core.services._support import Runtime
+from tarn_core.services.scoring.booklet import queue_scoring
 from tarn_core.services.segmentation.lines import PageInput
 from tarn_core.services.segmentation.segmenter import (
     SegmentationPolicy,
@@ -107,9 +108,11 @@ class BookletSegmenter:
         content: ContentRepository,
         embedder: Embedder,
         runtime: Runtime,
+        jobs: JobQueue,
         policy: SegmentationPolicy | None = None,
     ) -> None:
         self._booklets = booklets
+        self._jobs = jobs
         self._content = content
         self._embedder = embedder
         self._rt = runtime
@@ -194,6 +197,7 @@ class BookletSegmenter:
             college_id,
             replace(booklet, status=BookletStatus.SEGMENTED, version=booklet.version + 1),
         )
+        queue_scoring(self._jobs, college_id, booklet.id)
         self._rt.record(
             college_id,
             None,

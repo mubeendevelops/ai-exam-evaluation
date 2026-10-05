@@ -9,6 +9,7 @@ from tarn_core.testing.fake_engines import (
     FixedCreditScorer,
     HashEmbedder,
     MemoryCalibrationStore,
+    MemoryScoringCalibrationStore,
     PageOcrEngine,
     ScriptedDiagramRecognizer,
     ScriptedLayoutDetector,
@@ -60,6 +61,9 @@ class InMemory:
     page_source: MemoryPageSource = field(default_factory=MemoryPageSource)
     content: MemoryContentRepository = field(default_factory=MemoryContentRepository)
     calibrations: MemoryCalibrationStore = field(default_factory=MemoryCalibrationStore)
+    scoring_calibrations: MemoryScoringCalibrationStore = field(
+        default_factory=MemoryScoringCalibrationStore
+    )
     hasher: FakeHasher = field(default_factory=FakeHasher)
     keys: FakeKeyManager = field(default_factory=FakeKeyManager)
     cipher: FakeCipher = field(default_factory=FakeCipher)

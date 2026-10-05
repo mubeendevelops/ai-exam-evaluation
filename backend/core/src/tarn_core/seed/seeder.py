@@ -285,7 +285,10 @@ def _seed_question(
     )
     if existing.items:
         report.found("questions")
-        return existing.items[0].question.id
+        found = existing.items[0].question.id
+        if seed.off_target:  # added in P13: top up databases seeded before it
+            bank.set_off_target_terms(college_id, author, found, seed.off_target)
+        return found
 
     question = bank.create_question(
         college_id,
@@ -331,6 +334,8 @@ def _seed_question(
         report.made("criteria", len(seed.criteria))
     if seed.terms:
         bank.set_glossary_terms(college_id, author, question.id, seed.terms)
+    if seed.off_target:
+        bank.set_off_target_terms(college_id, author, question.id, seed.off_target)
     report.made("questions")
     return question.id
 

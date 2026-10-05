@@ -21,7 +21,7 @@ from tarn_core.domain.ocr import ContentClass, EngineCalibration, ReadingScore, 
 from tarn_core.errors import EngineFailedError, NotOwnerError
 from tarn_core.ids import RegionId
 from tarn_core.ports.engines import DetectedRegion, TableCell
-from tarn_core.ports.jobs import JOB_READ_BOOKLET, JOB_SEGMENT_BOOKLET
+from tarn_core.ports.jobs import JOB_READ_BOOKLET, JOB_SCORE_BOOKLET, JOB_SEGMENT_BOOKLET
 from tarn_core.services.ocr.reader import OrientationPolicy
 from tarn_core.testing import ScriptedLayoutDetector, ScriptedOcrEngine
 from tarn_worker.booklets import OcrKit
@@ -267,4 +267,20 @@ def test_the_worker_reads_a_booklet_after_its_pages_are_ready(ocr_env: Env) -> N
         r.id for r in regions
     }
     assert [p.reading_order for p in env.pages(booklet)] == [0, 1]
+    # P13: segmentation queued scoring in the same transaction; the worker scores the answers.
+    with env.test_db.owner() as conn:
+        kinds = [r[0] for r in conn.execute("SELECT kind FROM jobs ORDER BY seq").fetchall()]
+    assert kinds[-1] == JOB_SCORE_BOOKLET
+    assert env.runner.run_one() is True  # booklet.score
+    assert env.booklet(booklet).status is BookletStatus.SCORED
+    with env.open(env.college.id) as s:
+        answers = list(s.booklets.answers(env.college.id, booklet.id))
+        scores = [x for a in answers for x in s.scores.scores(env.college.id, a.id)]
+    # This fixture's text matches no question (every segment is in the unassigned tray), so
+    # the booklet is scored with no answer to score; the core tests score real answers.
+    assert len(scores) == len([a for a in answers if a.segment_ids])
+    assert all(x.embedder is not None and x.embedder.name == "trigram" for x in scores)
+    with env.test_db.owner() as conn:
+        actions = [r[0] for r in conn.execute("SELECT action FROM audit_events").fetchall()]
+    assert "booklet.scored" in actions
     assert env.runner.run_one() is False

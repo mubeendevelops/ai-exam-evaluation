@@ -282,6 +282,9 @@ class Glossary:
     question_id: QuestionId
     teacher_terms: tuple[str, ...] = ()
     reference_labels: tuple[str, ...] = ()
+    off_target_terms: tuple[str, ...] = ()
+    """Names that contradict the key (the off-target guard, C13): e.g. "Congress" in an answer
+    on the Indian President. Teacher-written; not part of ``terms``."""
 
     @property
     def terms(self) -> tuple[str, ...]:

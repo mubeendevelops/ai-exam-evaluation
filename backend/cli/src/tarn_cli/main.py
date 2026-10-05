@@ -19,6 +19,8 @@ from tarn_cli import __version__
 
 if TYPE_CHECKING:
     from tarn_adapters.ocr.wiring import OcrSetup
+    from tarn_adapters.scoring.sets import CalibrationSet
+    from tarn_core.ports.engines import WordList
 
 app = typer.Typer(help="Tarn AI Evaluation command-line interface.", no_args_is_help=True)
 db = typer.Typer(help="Database schema and roles (uses the owner role, TARN_DATABASE_URL).")
@@ -32,11 +34,15 @@ ocr_models = typer.Typer(help="Model weights and the compute device.")
 ocr.add_typer(ocr_models, name="models")
 truth = typer.Typer(help="Ground truth for the OCR benchmark (P11): pre-fill, transcribe, status.")
 bench = typer.Typer(help="Benchmarks (P11, P12).")
+score = typer.Typer(help="Text scoring (P13): model weights, calibration sets, benchmark, fit.")
+score_models = typer.Typer(help="Sentence-embedding model weights for scoring.")
+score.add_typer(score_models, name="models")
 app.add_typer(db, name="db")
 app.add_typer(pages, name="pages")
 app.add_typer(ocr, name="ocr")
 app.add_typer(truth, name="truth")
 app.add_typer(bench, name="bench")
+app.add_typer(score, name="score")
 app.add_typer(identity, name="identity")
 app.add_typer(tenants, name="tenants")
 
@@ -770,3 +776,247 @@ def bench_segment(
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(report, encoding="utf-8")
     typer.echo(f"report written to {target}")
+
+
+# --- text scoring (P13) --------------------------------------------------------------------------
+
+
+def _scoring_cache(settings: Settings) -> Path:
+    return settings.model_dir / "huggingface"
+
+
+@score_models.command("fetch")
+def score_models_fetch(
+    models: Annotated[
+        list[str] | None,
+        typer.Argument(help="Model ids (default: TARN_SCORING_EMBEDDING_MODEL)."),
+    ] = None,
+    candidates: Annotated[
+        bool, typer.Option(help="Fetch every benchmark candidate (tarn score bench).")
+    ] = False,
+) -> None:
+    """Download sentence-model weights into TARN_MODEL_DIR (model files only: no student text
+    is sent), then load each from the local files and embed a fixed sentence."""
+    import time
+
+    from tarn_adapters.embed.sentence import SentenceTransformerEmbedder
+    from tarn_adapters.embed.wiring import MODEL_ID, TRIGRAM
+    from tarn_adapters.scoring.bench import CANDIDATES
+
+    settings = get_settings()
+    names = list(CANDIDATES) if candidates else models or [settings.scoring_embedding_model]
+    cache_dir = _scoring_cache(settings)
+    for name in names:
+        if name == TRIGRAM:
+            continue
+        if not MODEL_ID.fullmatch(name):
+            typer.echo(f"{name}: not a model id, skipped", err=True)
+            continue
+        started = time.perf_counter()
+        try:
+            SentenceTransformerEmbedder(name, cache_dir=cache_dir).embed(["Tarn model check"])
+            local = SentenceTransformerEmbedder(name, cache_dir=cache_dir, local_files_only=True)
+            local.embed(["Tarn model check"])
+        except Exception as error:  # report and go on with the next model
+            typer.echo(f"{name}: FAILED ({type(error).__name__}: {error})")
+            continue
+        typer.echo(
+            f"{name}: {local.dimension} dimensions, ready offline "
+            f"({time.perf_counter() - started:.1f}s)"
+        )
+
+
+@score.command("samples")
+def score_samples(
+    root: Annotated[
+        Path, typer.Argument(exists=True, file_okay=False, help="The segmentation benchmark.")
+    ] = Path("../var/segmentation"),
+    out: Annotated[Path, typer.Option(help="The calibration set folder.")] = Path(
+        "../var/scoring/samples"
+    ),
+) -> None:
+    """Cut the sample booklets (cached OCR of `tarn bench segment`) into answers with the
+    segmenter and write them as a calibration set (student data: stays under var/). Marks go
+    in marks.json beside answers.jsonl."""
+    from tarn_adapters.embed.wiring import build_embedder
+    from tarn_adapters.scoring.samples import build_samples
+    from tarn_adapters.segmentation.bench import seeded_papers
+
+    settings = get_settings()
+    path, count = build_samples(
+        root, _repo_root(), out, seeded_papers(), build_embedder(settings).embedder, typer.echo
+    )
+    typer.echo(f"{count} answers written to {path}")
+
+
+@score.command("import")
+def score_import(
+    dataset: Annotated[str, typer.Argument(help="Dataset: mohler.")],
+    path: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
+    out: Annotated[
+        Path | None, typer.Option(help="Set folder (default: ../var/scoring/<dataset>).")
+    ] = None,
+) -> None:
+    """Turn a public human-marked dataset (var/datasets/, fetched by you after reading its
+    terms) into a calibration set: questions.json + answers.jsonl with the human marks."""
+    from tarn_adapters.scoring.mohler import import_mohler
+
+    if dataset != "mohler":
+        raise typer.BadParameter("known datasets: mohler")
+    target = out or Path("../var/scoring") / dataset
+    questions, answers = import_mohler(path, target)
+    typer.echo(f"{questions} questions, {answers} marked answers written to {target}")
+
+
+def _load_set(folder: Path) -> "CalibrationSet":
+    from tarn_adapters.scoring.sets import load_set
+    from tarn_core.testing import InMemory
+    from tarn_core.testing.seed_world import seed_in_memory
+
+    seeded = None
+    if not (folder / "questions.json").exists():
+        seeded = InMemory()
+        seed_in_memory(seeded)
+    data = load_set(folder, seeded)
+    typer.echo(
+        f"set {data.name}: {len(data.answers)} marked answers ({data.marked_by}), "
+        f"{data.unmarked} unmarked, {len(data.questions)} questions"
+    )
+    if not data.answers:
+        typer.echo("error: no marked answers in the set", err=True)
+        raise typer.Exit(1)
+    return data
+
+
+def _word_list(settings: Settings) -> "WordList":
+    from tarn_adapters.ocr.words import FileWordList
+
+    return FileWordList.load(settings.english_words)
+
+
+@score.command("bench")
+def score_bench(
+    set_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
+    model: Annotated[
+        list[str] | None, typer.Option(help="Models to compare (default: every candidate).")
+    ] = None,
+    out: Annotated[
+        Path | None,
+        typer.Option(help="Report file (default: docs/benchmarks/scoring-models-<date>.md)."),
+    ] = None,
+    note: Annotated[list[str] | None, typer.Option(help="A finding to state (repeatable).")] = None,
+) -> None:
+    """Compare sentence-embedding models on a calibration set (local weights only) and write
+    the report: rank correlation with the marks, cross-validated and fitted mean absolute
+    difference, time per answer. Question codes and numbers only."""
+    from tarn_adapters.scoring.bench import CANDIDATES, bench
+    from tarn_core.services.scoring.calibration import render_models
+
+    settings = get_settings()
+    data = _load_set(set_dir)
+    results, baseline = bench(
+        model or list(CANDIDATES),
+        data,
+        _scoring_cache(settings),
+        typer.echo,
+        word_list=_word_list(settings),
+    )
+    date = SystemClock().now().date().isoformat()
+    notes = [
+        f"Set `{data.name}`: {len(data.answers)} answers to {len(data.questions)} questions, "
+        f"marked by {data.marked_by}. Models run on the CPU from local files.",
+        "Cross-validated: the bands are fitted with each group of questions held out (5 groups) "
+        "and measured on it; fitted: fitted and measured on every answer. Balanced MAE: the mean "
+        "of the mean absolute differences of the low, middle and high thirds of the marks (the "
+        "fitting objective); models are ranked by its cross-validated value.",
+        *(note or []),
+    ]
+    report = render_models(f"Scoring models, {date}", notes, results, baseline)
+    target = out or _repo_root() / "docs" / "benchmarks" / f"scoring-models-{date}.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(report, encoding="utf-8")
+    typer.echo(f"report written to {target}")
+
+
+@score.command("calibrate")
+def score_calibrate(
+    set_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
+    model: Annotated[
+        str | None, typer.Option(help="Embedding model (default: TARN_SCORING_EMBEDDING_MODEL).")
+    ] = None,
+    max_flag_rate: Annotated[
+        float, typer.Option(min=0.0, max=1.0, help="Most answers the flags may mark.")
+    ] = 0.4,
+    save: Annotated[
+        bool, typer.Option(help="Store the fit as the next scoring calibration (owner role).")
+    ] = False,
+    out: Annotated[
+        Path | None,
+        typer.Option(help="Report file (default: docs/benchmarks/scoring-<set>-<date>.md)."),
+    ] = None,
+    note: Annotated[list[str] | None, typer.Option(help="A finding to state (repeatable).")] = None,
+) -> None:
+    """Fit the semantic credit bands and the flag thresholds on teacher-marked answers and
+    report, per question, the mean absolute difference from the teacher and the share within
+    ½ mark. With --save, store them as the next scoring calibration of the model (Tarn
+    operator: uses the owner role, TARN_DATABASE_URL)."""
+    from tarn_adapters.scoring.bench import local_embedder
+    from tarn_core.domain.scoring import ScoringCalibration
+    from tarn_core.services.scoring.calibration import accuracy, features, fit, render_accuracy
+
+    settings = get_settings()
+    name = model or settings.scoring_embedding_model
+    data = _load_set(set_dir)
+    embedder = local_embedder(name, _scoring_cache(settings))
+    items = features(data.questions, data.answers, embedder, word_list=_word_list(settings))
+    fitted = fit(items, max_flag_rate=max_flag_rate)
+    report = accuracy(items, fitted.policy)
+    p = fitted.policy
+    typer.echo(
+        f"bands {p.half:.3f} / {p.full:.3f}, margin {p.margin:.3f}, relevance "
+        f"{p.relevance_min:.3f} / {p.relevance_soft:.3f}: MAE {report.overall.mean_abs_diff:.3f},"
+        f" within ½ {report.overall.within_half:.0%}, flagged {fitted.rate:.0%}, "
+        f"disagreements flagged {fitted.recall:.0%}"
+    )
+    date = SystemClock().now().date().isoformat()
+    notes = [
+        f"Set `{data.name}`: {len(data.answers)} answers to {len(data.questions)} questions, "
+        f"marked by {data.marked_by}; model `{name}`. Fitted and measured on the same answers "
+        "(in-sample): `tarn score bench` gives the cross-validated difference.",
+        *(note or []),
+    ]
+    text = render_accuracy(
+        f"Scoring accuracy, {data.name}, {date}", notes, report, p, flag_rate=fitted.rate
+    )
+    target = out or _repo_root() / "docs" / "benchmarks" / f"scoring-{data.name}-{date}.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+    typer.echo(f"report written to {target}")
+    if not save:
+        return
+    from tarn_adapters.postgres.database import PostgresDatabase
+    from tarn_adapters.runtime import UuidGenerator
+
+    database = PostgresDatabase(settings.database_url, pool_size=1)
+    try:
+        with database.session(
+            None, ids=UuidGenerator(), clock=SystemClock(), blobs=NoBlobStore()
+        ) as session:
+            ref_name = embedder.ref.name
+            previous = session.scoring_calibrations.latest(ref_name)
+            calibration = ScoringCalibration(
+                embedder=ref_name,
+                version=1 if previous is None else previous.version + 1,
+                half=p.half,
+                full=p.full,
+                margin=p.margin,
+                relevance_min=p.relevance_min,
+                relevance_soft=p.relevance_soft,
+                samples=len(items),
+                mean_abs_diff=report.overall.mean_abs_diff,
+                fitted_at=SystemClock().now(),
+            )
+            session.scoring_calibrations.save(calibration)
+            typer.echo(f"saved scoring calibration {ref_name} v{calibration.version}")
+    finally:
+        database.dispose()

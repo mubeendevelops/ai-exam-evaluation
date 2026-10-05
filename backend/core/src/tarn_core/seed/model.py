@@ -71,6 +71,8 @@ class QuestionSeed:
     criteria: tuple[CriterionSeed, ...] = ()
     terms: tuple[str, ...] = ()
     """The teacher's glossary terms."""
+    off_target: tuple[str, ...] = ()
+    """Names that contradict the key (the off-target guard, P13)."""
     diagrams: tuple[DiagramSeed, ...] = ()
 
     def __post_init__(self) -> None:
@@ -231,6 +233,7 @@ def question(
     difficulty: Difficulty = Difficulty.MEDIUM,
     terms: list[str] | None = None,
     diagrams: list[DiagramSeed] | None = None,
+    off_target: list[str] | None = None,
 ) -> QuestionSeed:
     return QuestionSeed(
         code=code,
@@ -242,4 +245,5 @@ def question(
         criteria=tuple(criteria or ()),
         terms=tuple(terms or ()),
         diagrams=tuple(diagrams or ()),
+        off_target=tuple(off_target or ()),
     )

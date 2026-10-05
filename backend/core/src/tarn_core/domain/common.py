@@ -65,6 +65,7 @@ class ContentKind(StrEnum):
     KEY_FILE = "key_file"
     BLUEPRINT = "blueprint"
     OCR_CALIBRATION = "ocr_calibration"
+    SCORING_CALIBRATION = "scoring_calibration"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

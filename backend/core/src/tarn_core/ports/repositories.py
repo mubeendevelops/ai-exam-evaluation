@@ -15,6 +15,7 @@ from uuid import UUID
 
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import Answer, Booklet, Page, Region, Segment
+from tarn_core.domain.common import EngineRef
 from tarn_core.domain.content import (
     Difficulty,
     Glossary,
@@ -27,7 +28,7 @@ from tarn_core.domain.content import (
 )
 from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import ResultSheet, Review
-from tarn_core.domain.scoring import AnswerScore
+from tarn_core.domain.scoring import AnswerScore, SentenceVector
 from tarn_core.domain.tenancy import College, Student, User
 from tarn_core.ids import (
     AnswerId,
@@ -232,6 +233,23 @@ class ScoreRepository(Protocol):
 
     def delete_for_answers(self, college_id: CollegeId, answer_ids: Sequence[AnswerId]) -> None:
         """Booklet deletion only (D14)."""
+        ...
+
+    def vectors(
+        self, college_id: CollegeId, answer_id: AnswerId, embedder: EngineRef
+    ) -> Sequence[SentenceVector]:
+        """The answer's stored sentence vectors from this embedder version, by index."""
+        ...
+
+    def replace_vectors(
+        self,
+        college_id: CollegeId,
+        answer_id: AnswerId,
+        embedder: EngineRef,
+        vectors: Sequence[SentenceVector],
+    ) -> None:
+        """Replace the answer's vectors from this embedder version (the text changed). A store
+        whose vector column has another dimension keeps nothing (the vectors are a cache)."""
         ...
 
 

@@ -6,6 +6,7 @@
 /docs/design.md
 /docs/requirements.md
 /CLAUDE.md
+/docs/notes/
 
 # --- Environment and secrets ---
 .env

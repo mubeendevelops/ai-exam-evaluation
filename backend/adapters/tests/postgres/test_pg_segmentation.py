@@ -66,6 +66,7 @@ def _segmenter(s: object) -> BookletSegmenter:
         content=s.content,  # type: ignore[attr-defined]
         embedder=TrigramEmbedder(),
         runtime=s.runtime,  # type: ignore[attr-defined]
+        jobs=s.jobs,  # type: ignore[attr-defined]
     )
 
 
