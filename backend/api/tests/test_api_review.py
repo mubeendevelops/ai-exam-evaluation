@@ -301,3 +301,141 @@ def test_an_approved_booklet_lists_its_total(s: Setup) -> None:
     assert result["sheet_version"] == 1 and 0 <= result["total"] <= result["max_marks"]
     listed = c.get(f"{BASE}/booklets", headers=s.teacher).json()["items"]
     assert listed[0]["result"] == result
+
+
+# --- result sheet PDFs and the evaluated booklets list (P18) -----------------------------------
+
+
+def _pdf_text(data: bytes) -> str:
+    import pymupdf
+
+    opened: Any = pymupdf.open
+    doc = opened("pdf", data)
+    return " ".join(" ".join(doc[n].get_text().split()) for n in range(len(doc)))
+
+
+def _approve_booklet(s: Setup) -> None:
+    c = s.client
+    c.post(f"{s.url}/lock", headers=s.teacher)
+    for label in ("1", "2"):
+        a = s.answer(label)
+        done = c.post(
+            f"{s.url}/answers/{a['id']}/approve",
+            json={"expected_version": a["version"], "remarks": f"Remark on {label}."},
+            headers=s.teacher,
+        )
+        assert done.status_code == 200, done.text
+    approved = c.post(
+        f"{s.url}/approve", json={"expected_version": s.review()["version"]}, headers=s.teacher
+    )
+    assert approved.status_code == 200, approved.text
+
+
+def _amend_two(s: Setup) -> None:
+    c = s.client
+    two = s.answer("2")
+    reopened = c.post(
+        f"{s.url}/answers/{two['id']}/reopen",
+        json={"expected_version": two["version"], "reason": "Recount"},
+        headers=s.teacher,
+    )
+    assert reopened.status_code == 200, reopened.text
+    fresh = s.answer("2")
+    done = c.post(
+        f"{s.url}/answers/{two['id']}/approve",
+        json={"expected_version": fresh["version"], "teacher_mark": 2},
+        headers=s.teacher,
+    )
+    assert done.status_code == 200, done.text
+
+
+def test_approval_stores_a_downloadable_pdf_per_version(s: Setup) -> None:
+    c = s.client
+    _approve_booklet(s)
+    (v1,) = s.review()["sheets"]
+    assert v1["pdf_url"] == f"{s.url}/result-sheets/1/pdf"
+    download = c.get(v1["pdf_url"], headers=s.teacher)
+    assert download.status_code == 200, download.text
+    assert download.headers["content-type"] == "application/pdf"
+    assert download.headers["content-disposition"] == (
+        'attachment; filename="result-sheet-TST001-v1.pdf"'
+    )
+    assert download.headers["cache-control"] == "private, no-store"
+    first = download.content
+    text = _pdf_text(first)
+    for wanted in (
+        "S One",
+        "TST001",
+        "Result sheet · version 1",
+        "Synthetic paper, CI shape",
+        "SYN101 · Synthetic Civics",
+        "Remark on 1.",
+        "Remark on 2.",
+        "Teacher T",
+    ):
+        assert wanted in text, wanted
+    assert f"{v1['total']:g} / 50" in text
+    assert c.get(f"{s.url}/result-sheets/1/pdf").status_code == 401  # needs the token
+
+    _amend_two(s)
+    sheets = c.get(f"{s.url}/result-sheets", headers=s.teacher).json()
+    assert [x["version"] for x in sheets] == [1, 2] and all(x["pdf_url"] for x in sheets)
+    again = c.get(f"{s.url}/result-sheets/1/pdf", headers=s.teacher).content
+    assert again == first  # v1 is what was issued
+    second = c.get(f"{s.url}/result-sheets/2/pdf", headers=s.teacher)
+    assert second.status_code == 200 and second.content != first
+    text2 = _pdf_text(second.content)
+    assert "Result sheet · version 2" in text2 and "Amendment note (version 2): 2: Recount" in text2
+    assert c.get(f"{s.url}/result-sheets/3/pdf", headers=s.teacher).status_code == 404
+
+
+def test_the_pdf_is_the_colleges_own(s: Setup) -> None:
+    c = s.client
+    _approve_booklet(s)
+    assert c.get(f"{s.url}/result-sheets/1/pdf", headers=s.other).status_code == 404
+    other = c.get(f"{BASE}/evaluated-booklets", headers=s.other).json()
+    assert other["items"] == [] and other["total"] == 0
+
+
+def test_the_evaluated_list_searches_and_pages(s: Setup) -> None:
+    c = s.client
+    listing = f"{BASE}/evaluated-booklets"
+    assert c.get(listing, headers=s.teacher).json()["total"] == 0  # nothing approved yet
+    _approve_booklet(s)
+
+    def found(**params: str) -> list[dict[str, Any]]:
+        response = c.get(listing, params=params, headers=s.teacher)
+        assert response.status_code == 200, response.text
+        items: list[dict[str, Any]] = response.json()["items"]
+        return items
+
+    (item,) = found()
+    assert item["id"] == str(s.booklet.id) and item["status"] == "approved"
+    assert item["student"]["name"] == "S One" and item["student"]["usn"] == "TST001"
+    assert item["exam"] == "Synthetic paper, CI shape" and item["sheet_version"] == 1
+    assert item["max_marks"] == 50.0 and item["sheets"][0]["pdf_url"].endswith("/1/pdf")
+    assert [i["id"] for i in found(exam="ci shape")] == [item["id"]] and found(exam="physics") == []
+    assert found(student="one") and found(student="two") == []
+    assert found(usn="tst0") and found(usn="999") == []
+    assert found(status="approved") and found(status="approved_amended") == []
+    assert found(student="one", usn="999") == []
+    assert found(limit="1", offset="1") == []
+    assert c.get(listing, params={"status": "scored"}, headers=s.teacher).status_code == 422
+    assert c.get(listing).status_code == 401
+
+    _amend_two(s)
+    (amended,) = found(status="approved_amended")
+    assert amended["sheet_version"] == 2 and [x["version"] for x in amended["sheets"]] == [1, 2]
+
+
+def test_deleting_from_the_list_removes_every_sheet_and_leaves_a_bare_record(s: Setup) -> None:
+    c = s.client
+    _approve_booklet(s)
+    _amend_two(s)
+    assert [k for k in s.mem.blobs.keys if "/sheets/" in k.value]  # two PDFs stored
+    assert c.delete(s.url, headers=s.teacher).status_code == 204
+    assert not [k for k in s.mem.blobs.keys if "/sheets/" in k.value]
+    assert c.get(f"{BASE}/evaluated-booklets", headers=s.teacher).json()["items"] == []
+    assert c.get(f"{s.url}/result-sheets/1/pdf", headers=s.teacher).status_code == 404
+    event = s.mem.audit.events[-1]
+    assert event.action.value == "booklet.deleted" and event.before is None and event.after is None

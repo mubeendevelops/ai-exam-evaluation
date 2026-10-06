@@ -51,7 +51,7 @@ describe('route guards', () => {
 })
 
 describe('app shell (project_idea.html)', () => {
-  it('has the three tabs, the mobile bar and the footer; tabs switch the page', async () => {
+  it('has the tabs, the mobile bar and the footer; tabs switch the page', async () => {
     signedIn()
     const user = userEvent.setup()
     renderApp('/qna')
@@ -64,13 +64,13 @@ describe('app shell (project_idea.html)', () => {
       within(main)
         .getAllByRole('link')
         .map((a) => a.textContent),
-    ).toEqual(['Q&A DB', 'AI Evaluation', 'Schema Designer'])
+    ).toEqual(['Q&A DB', 'AI Evaluation', 'Evaluated', 'Schema Designer'])
     const mobile = screen.getByRole('navigation', { name: 'Main (mobile)' })
     expect(
       within(mobile)
         .getAllByRole('link')
         .map((a) => a.textContent),
-    ).toEqual(['Q&A DB', 'AI Eval', 'Schema'])
+    ).toEqual(['Q&A DB', 'AI Eval', 'Evaluated', 'Schema'])
     expect(screen.getByText('TARN KNOWLEDGE SERVICES')).toBeInTheDocument()
 
     await user.click(within(main).getByRole('link', { name: 'AI Evaluation' }))

@@ -846,15 +846,42 @@ class TotalsOut(BaseModel):
     slots: list[SlotResultOut]
 
 
-class ResultSheetOut(BaseModel):
-    id: UUID
+class SheetVersionOut(BaseModel):
     version: int
     total: float
     max_marks: float
-    issued_by: UUID
     issued_at: datetime
     note: str = Field(description="What this version amended (empty on version 1).")
+    pdf_url: str | None = Field(
+        description="Where to download the PDF (with the bearer token); null for a sheet that "
+        "was issued before PDFs were stored."
+    )
+
+
+class ResultSheetOut(SheetVersionOut):
+    id: UUID
+    issued_by: UUID
     lines: list[SlotResultOut]
+
+
+class EvaluatedBookletOut(BaseModel):
+    id: UUID
+    status: Literal["approved", "amendment_in_progress", "approved_amended"]
+    student: BookletStudentOut
+    exam: str = Field(description="Title of the exam blueprint the booklet was marked against.")
+    course_code: str
+    total: float = Field(description="Total of the latest result sheet.")
+    max_marks: float
+    sheet_version: int = Field(description="The latest result sheet's version.")
+    evaluated_at: datetime = Field(description="When the latest result sheet was issued.")
+    sheets: list[SheetVersionOut] = Field(description="Every version, oldest first.")
+
+
+class EvaluatedPageOut(BaseModel):
+    items: list[EvaluatedBookletOut]
+    total: int
+    limit: int
+    offset: int
 
 
 class ReviewOut(BaseModel):

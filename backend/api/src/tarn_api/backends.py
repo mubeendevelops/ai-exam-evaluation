@@ -23,9 +23,11 @@ from tarn_adapters.identity.database import IdentityDatabase
 from tarn_adapters.postgres.database import PostgresDatabase
 from tarn_adapters.postgres.jobs import JobSettings
 from tarn_adapters.runtime import SystemClock, UuidGenerator
+from tarn_adapters.sheets import PyMuPdfSheetRenderer
 from tarn_core.ids import BookletId, CollegeId
 from tarn_core.ports.identity import IdentityStore
 from tarn_core.ports.jobs import JobQueue
+from tarn_core.ports.rendering import SheetRenderer
 from tarn_core.ports.repositories import (
     BookletRepository,
     CollegeRepository,
@@ -44,6 +46,7 @@ from tarn_core.services.booklets import BookletService
 from tarn_core.services.content import ContentService
 from tarn_core.services.diagrams.jobs import QueuedRescore
 from tarn_core.services.diagrams.service import ReferenceDiagrams
+from tarn_core.services.evaluated import EvaluatedBooklets
 from tarn_core.services.pipeline import PageDecisions
 from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.registration import RegistrationService
@@ -58,6 +61,8 @@ from tarn_core.services.workflow import (
     ResegmentRequests,
     ReviewService,
     SegmentEdits,
+    SheetBuilder,
+    SheetPublisher,
     StudentGraphEdits,
     TextEditor,
 )
@@ -106,6 +111,7 @@ class Backends(Protocol):
     access_token_minutes: int
     upload_limits: UploadLimits
     lock_minutes: float
+    sheet_renderer: SheetRenderer
 
     def identity(self) -> AbstractContextManager[IdentityStore]: ...
 
@@ -118,6 +124,7 @@ class Unit:
     scope: CollegeScope
     kit: AuthKit
     limits: UploadLimits
+    renderer: SheetRenderer
     lock_minutes: float = 15.0
 
     @property
@@ -251,6 +258,34 @@ class Unit:
             runtime=self.scope.runtime,
             guard=self.guard,
             rescore=self.rescore(booklet_id),
+            publisher=self.sheet_publisher,
+        )
+
+    @property
+    def sheet_publisher(self) -> SheetPublisher:
+        """Result sheet PDFs are drawn and stored when a sheet is issued (P18)."""
+        return SheetPublisher(
+            builder=SheetBuilder(
+                booklets=self.scope.booklets,
+                scores=self.scope.scores,
+                content=self.scope.content,
+                colleges=self.scope.colleges,
+                students=self.scope.students,
+                users=self.scope.users,
+                blobs=self.scope.blobs,
+            ),
+            renderer=self.renderer,
+            blobs=self.scope.blobs,
+        )
+
+    @property
+    def evaluated(self) -> EvaluatedBooklets:
+        return EvaluatedBooklets(
+            booklets=self.scope.booklets,
+            students=self.scope.students,
+            content=self.scope.content,
+            sheets=self.scope.sheets,
+            blobs=self.scope.blobs,
         )
 
     def text_editor(self, booklet_id: BookletId) -> TextEditor:
@@ -297,6 +332,7 @@ def unit_of_work(backends: Backends, college_id: CollegeId) -> Iterator[Unit]:
             scope=scope,
             kit=replace(backends.kit, mailer=mailer),
             limits=backends.upload_limits,
+            renderer=backends.sheet_renderer,
             lock_minutes=backends.lock_minutes,
         )
     mailer.flush()
@@ -319,6 +355,7 @@ class PostgresBackends:
             max_files=settings.upload_max_pages,
         )
         self.lock_minutes = settings.booklet_lock_minutes
+        self.sheet_renderer: SheetRenderer = PyMuPdfSheetRenderer()
         self._app = PostgresDatabase(
             settings.app_database_url,
             job_settings=JobSettings(

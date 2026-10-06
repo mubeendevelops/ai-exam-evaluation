@@ -29,6 +29,12 @@ from tarn_core.services.workflow.review import (
     Opened,
     ReviewService,
 )
+from tarn_core.services.workflow.sheets import (
+    SheetBuilder,
+    SheetPublisher,
+    paper_order,
+    sheet_key,
+)
 from tarn_core.services.workflow.truth import BookletTruthStore, CorrectionTruth, truth_page_id
 
 __all__ = [
@@ -48,10 +54,14 @@ __all__ = [
     "ResegmentRequests",
     "ReviewService",
     "SegmentEdits",
+    "SheetBuilder",
+    "SheetPublisher",
     "StaleAnswer",
     "StudentGraphEdits",
     "TextEditor",
     "clear_pending",
+    "paper_order",
+    "sheet_key",
     "stale_answers",
     "truth_page_id",
 ]

@@ -91,7 +91,7 @@ files = [
 
 # PyMuPDF ships no type information for its document API.
 [[tool.mypy.overrides]]
-module = ["tarn_adapters.imaging.pdf"]
+module = ["tarn_adapters.imaging.pdf", "tarn_adapters.sheets.pdf"]
 disallow_untyped_calls = false
 
 # The OCR libraries (P10) are optional (the `ocr` and `cloud-ocr` groups) and untyped or huge:

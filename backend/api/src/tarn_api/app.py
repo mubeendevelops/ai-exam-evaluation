@@ -19,6 +19,7 @@ from tarn_api.routes import (
     blueprints,
     booklets,
     diagrams,
+    evaluated,
     questions,
     registration,
     review,
@@ -93,6 +94,7 @@ def create_app(settings: Settings | None = None, backends: Backends | None = Non
         questions,
         booklets,
         diagrams,
+        evaluated,
         review,
         segments,
     ):

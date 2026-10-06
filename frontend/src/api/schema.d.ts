@@ -931,6 +931,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evaluated-booklets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Approved booklets with their result sheet versions, newest first
+         * @description `exam` matches the exam title or course code, `student` the name and `usn` the USN, each as a case-insensitive part of it. `status` is `approved`, `amendment_in_progress` (a result sheet stands while an answer is being amended) or `approved_amended`.
+         */
+        get: operations["list_evaluated_api_v1_evaluated_booklets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/result-sheets/{version}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download one version of a booklet's result sheet as a PDF */
+        get: operations["download_sheet_api_v1_booklets__booklet_id__result_sheets__version__pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/booklets/{booklet_id}/lock": {
         parameters: {
             query?: never;
@@ -1767,6 +1804,61 @@ export interface components {
         ErrorOut: {
             /** Detail */
             detail: string;
+        };
+        /** EvaluatedBookletOut */
+        EvaluatedBookletOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "approved" | "amendment_in_progress" | "approved_amended";
+            student: components["schemas"]["BookletStudentOut"];
+            /**
+             * Exam
+             * @description Title of the exam blueprint the booklet was marked against.
+             */
+            exam: string;
+            /** Course Code */
+            course_code: string;
+            /**
+             * Total
+             * @description Total of the latest result sheet.
+             */
+            total: number;
+            /** Max Marks */
+            max_marks: number;
+            /**
+             * Sheet Version
+             * @description The latest result sheet's version.
+             */
+            sheet_version: number;
+            /**
+             * Evaluated At
+             * Format: date-time
+             * @description When the latest result sheet was issued.
+             */
+            evaluated_at: string;
+            /**
+             * Sheets
+             * @description Every version, oldest first.
+             */
+            sheets: components["schemas"]["SheetVersionOut"][];
+        };
+        /** EvaluatedPageOut */
+        EvaluatedPageOut: {
+            /** Items */
+            items: components["schemas"]["EvaluatedBookletOut"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
         /** ExpectedVersionIn */
         ExpectedVersionIn: {
@@ -2756,22 +2848,12 @@ export interface components {
         };
         /** ResultSheetOut */
         ResultSheetOut: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
             /** Version */
             version: number;
             /** Total */
             total: number;
             /** Max Marks */
             max_marks: number;
-            /**
-             * Issued By
-             * Format: uuid
-             */
-            issued_by: string;
             /**
              * Issued At
              * Format: date-time
@@ -2782,6 +2864,21 @@ export interface components {
              * @description What this version amended (empty on version 1).
              */
             note: string;
+            /**
+             * Pdf Url
+             * @description Where to download the PDF (with the bearer token); null for a sheet that was issued before PDFs were stored.
+             */
+            pdf_url: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Issued By
+             * Format: uuid
+             */
+            issued_by: string;
             /** Lines */
             lines: components["schemas"]["SlotResultOut"][];
         };
@@ -3015,6 +3112,30 @@ export interface components {
         SemanticParamsBody: {
             /** Reference Statement */
             reference_statement: string;
+        };
+        /** SheetVersionOut */
+        SheetVersionOut: {
+            /** Version */
+            version: number;
+            /** Total */
+            total: number;
+            /** Max Marks */
+            max_marks: number;
+            /**
+             * Issued At
+             * Format: date-time
+             */
+            issued_at: string;
+            /**
+             * Note
+             * @description What this version amended (empty on version 1).
+             */
+            note: string;
+            /**
+             * Pdf Url
+             * @description Where to download the PDF (with the bearer token); null for a sheet that was issued before PDFs were stored.
+             */
+            pdf_url: string | null;
         };
         /** SlotResultOut */
         SlotResultOut: {
@@ -6458,6 +6579,120 @@ export interface operations {
                 };
             };
             /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_evaluated_api_v1_evaluated_booklets_get: {
+        parameters: {
+            query?: {
+                exam?: string;
+                student?: string;
+                usn?: string;
+                status?: ("approved" | "amendment_in_progress" | "approved_amended") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluatedPageOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_sheet_api_v1_booklets__booklet_id__result_sheets__version__pdf_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description No such booklet or version, or no PDF stored. */
             404: {
                 headers: {
                     [name: string]: unknown;

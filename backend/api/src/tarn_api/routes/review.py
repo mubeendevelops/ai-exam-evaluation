@@ -29,6 +29,7 @@ from tarn_api.schemas import (
     ResultSheetOut,
     ReviewAnswerOut,
     ReviewOut,
+    SheetVersionOut,
     SlotResultOut,
     SuggestionOut,
     TotalsOut,
@@ -106,15 +107,28 @@ def _suggestion(score: AnswerScore) -> SuggestionOut:
     )
 
 
-def _sheet_out(sheet: ResultSheet) -> ResultSheetOut:
-    return ResultSheetOut(
-        id=sheet.id,
+def sheet_pdf_url(booklet_id: BookletId, sheet: ResultSheet) -> str | None:
+    if sheet.pdf is None:
+        return None
+    return f"/api/v1/booklets/{booklet_id}/result-sheets/{sheet.version}/pdf"
+
+
+def sheet_version_out(booklet_id: BookletId, sheet: ResultSheet) -> SheetVersionOut:
+    return SheetVersionOut(
         version=sheet.version,
         total=float(sheet.total),
         max_marks=float(sheet.max_marks),
-        issued_by=sheet.issued_by,
         issued_at=sheet.issued_at,
         note=sheet.note,
+        pdf_url=sheet_pdf_url(booklet_id, sheet),
+    )
+
+
+def _sheet_out(booklet_id: BookletId, sheet: ResultSheet) -> ResultSheetOut:
+    return ResultSheetOut(
+        **sheet_version_out(booklet_id, sheet).model_dump(),
+        id=sheet.id,
+        issued_by=sheet.issued_by,
         lines=[
             SlotResultOut(
                 section_label=ln.section_label,
@@ -194,7 +208,7 @@ def review_out(
                 for s in result.slots
             ],
         ),
-        sheets=[_sheet_out(s) for s in view.sheets],
+        sheets=[_sheet_out(view.booklet.id, s) for s in view.sheets],
         rescoring=list(rescoring),
         notices=list(notices),
     )
@@ -271,7 +285,7 @@ def result_sheets(
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
         unit.scope.booklets.get(who.college_id, BookletId(booklet_id))
         sheets = unit.scope.sheets.versions(who.college_id, BookletId(booklet_id))
-    return [_sheet_out(s) for s in sheets]
+    return [_sheet_out(BookletId(booklet_id), s) for s in sheets]
 
 
 # --- decisions ------------------------------------------------------------------------------

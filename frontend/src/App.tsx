@@ -5,6 +5,7 @@ import { PublicLayout } from './components/public/PublicLayout'
 import AcceptInvitePage from './pages/AcceptInvitePage'
 import AdminPage from './pages/AdminPage'
 import EvaluatePage from './pages/EvaluatePage'
+import EvaluatedPage from './pages/EvaluatedPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import LandingPage from './pages/LandingPage'
 import QnaPage from './pages/QnaPage'
@@ -35,6 +36,7 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route path="qna" element={<QnaPage />} />
           <Route path="evaluate" element={<EvaluatePage />} />
+          <Route path="evaluated" element={<EvaluatedPage />} />
           <Route path="schema" element={<SchemaPage />} />
           <Route element={<RequireAdmin />}>
             <Route path="admin" element={<AdminPage />} />

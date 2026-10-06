@@ -113,6 +113,7 @@ const sheet = (version: number, total: number): Sheet => ({
   issued_by: 'u-1',
   issued_at: '2026-10-06T09:00:00Z',
   note: version > 1 ? 'Amended: question 1' : '',
+  pdf_url: `/api/v1/booklets/b-1/result-sheets/${version}/pdf`,
   lines: [],
 })
 
@@ -672,6 +673,7 @@ describe('step 3: evaluation view', () => {
       expect(await screen.findByText(/Booklet approved\. Result sheet v1 is stored/)).toBeVisible()
       const sheets = await screen.findByRole('region', { name: 'Result sheets' })
       expect(sheets).toHaveTextContent('Result sheet v1')
+      expect(within(sheets).getByRole('button', { name: 'Download PDF v1' })).toBeVisible()
       expect(screen.queryByRole('button', { name: 'Approve booklet' })).toBeNull()
     })
 
@@ -733,6 +735,8 @@ describe('step 3: evaluation view', () => {
       expect(sheets).toHaveTextContent('Result sheet v1')
       expect(sheets).toHaveTextContent('Amended: question 1')
       expect(within(sheets).getByText('Current').closest('li')).toHaveTextContent('v2')
+      expect(within(sheets).getByRole('button', { name: 'Download PDF v1' })).toBeVisible()
+      expect(within(sheets).getByRole('button', { name: 'Download PDF v2' })).toBeVisible()
     })
 
     it('withdraws an amendment draft from the summary', async () => {

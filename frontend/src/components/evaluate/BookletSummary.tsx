@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { formatMark, progressOf, stageOf, type Stage } from '../../lib/review'
+import { DownloadSheetButton, sheetFileName } from '../evaluated/DownloadSheetButton'
 import { SmallButton, TextArea } from '../schema/controls'
 import { Badge, GlassPanel, type Tone } from '../ui'
 import type { Review, ReviewAnswer } from './queries'
@@ -304,11 +305,22 @@ export function BookletSummary({
                   {when(sheet.issued_at)}
                   {sheet.note && ` · ${sheet.note}`}
                 </span>
+                {sheet.pdf_url ? (
+                  <DownloadSheetButton
+                    url={sheet.pdf_url}
+                    filename={sheetFileName(undefined, sheet.version)}
+                    label={`Download PDF v${sheet.version}`}
+                    tone={sheet.version === latest?.version ? 'purple' : 'gray'}
+                  />
+                ) : (
+                  <span className="text-[11px] text-gray-500">No PDF stored</span>
+                )}
               </li>
             ))}
           </ul>
           <p className="mt-2 text-[10px] text-gray-400">
-            Earlier versions stay valid. The printable PDF is not available yet.
+            Earlier versions stay valid and keep their own PDF. All versions are listed under the
+            Evaluated tab.
           </p>
         </GlassPanel>
       )}

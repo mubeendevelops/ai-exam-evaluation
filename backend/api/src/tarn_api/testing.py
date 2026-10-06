@@ -3,9 +3,11 @@
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 
+from tarn_adapters.sheets import PyMuPdfSheetRenderer
 from tarn_api.backends import CollegeScope
 from tarn_core.ids import CollegeId
 from tarn_core.ports.identity import IdentityStore
+from tarn_core.ports.rendering import SheetRenderer
 from tarn_core.ports.runtime import Clock, IdGenerator
 from tarn_core.services.auth import AuthKit
 from tarn_core.services.uploads import UploadLimits
@@ -20,6 +22,8 @@ class MemoryBackends:
     access_token_minutes: int = 15
     upload_limits: UploadLimits = field(default_factory=UploadLimits)
     lock_minutes: float = 15.0
+    sheet_renderer: SheetRenderer = field(default_factory=PyMuPdfSheetRenderer)
+    """The real PDF renderer: API tests read the sheets they download."""
 
     def __post_init__(self) -> None:
         self.kit: AuthKit = self.mem.auth_kit

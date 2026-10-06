@@ -69,6 +69,7 @@ from tarn_core.services.scoring.changes import change_notice
 from tarn_core.services.totals import TotalsPreview, TotalsService
 from tarn_core.services.workflow.guard import BookletGuard
 from tarn_core.services.workflow.rescore import CONTENT_CHANGED, RescoreRequests, stale_answers
+from tarn_core.services.workflow.sheets import SheetPublisher, paper_order
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -133,6 +134,7 @@ class ReviewService:
         runtime: Runtime,
         guard: BookletGuard,
         rescore: RescoreRequests,
+        publisher: SheetPublisher | None = None,
     ) -> None:
         self._booklets = booklets
         self._scores = scores
@@ -142,6 +144,7 @@ class ReviewService:
         self._rt = runtime
         self._guard = guard
         self._rescore = rescore
+        self._publisher = publisher
         self._totals = TotalsService(booklets=booklets, scores=scores, content=content)
 
     # --- opening and closing -------------------------------------------------------------
@@ -212,7 +215,7 @@ class ReviewService:
         answers: list[AnswerReview] = []
         waiting: list[str] = []
         for answer in sorted(
-            self._booklets.answers(college_id, booklet_id), key=lambda a: _order(a.slot_label)
+            self._booklets.answers(college_id, booklet_id), key=lambda a: paper_order(a.slot_label)
         ):
             scores = self._scores.scores(college_id, answer.id)
             reviews = self._scores.reviews(college_id, answer.id)
@@ -568,7 +571,7 @@ class ReviewService:
         self._check_all_approved(college_id, booklet.id)
         labels = {a.id: a.slot_label for a in self._booklets.answers(college_id, booklet.id)}
         parts = []
-        for a in sorted(unsheeted, key=lambda a: _order(labels.get(a.answer_id, ""))):
+        for a in sorted(unsheeted, key=lambda a: paper_order(labels.get(a.answer_id, ""))):
             label = labels.get(a.answer_id, "?")
             parts.append(f"{label}: {a.reason}" if a.reason else f"{label} amended")
         sheet = self._issue(college_id, actor, booklet, note="; ".join(parts))
@@ -586,7 +589,7 @@ class ReviewService:
                 for a in self._booklets.answers(college_id, booklet_id)
                 if a.segment_ids and (a.status is not AnswerStatus.APPROVED or a.rescore_pending)
             ),
-            key=_order,
+            key=paper_order,
         )
         if waiting:
             raise InvariantError(
@@ -621,6 +624,8 @@ class ReviewService:
             issued_at=self._rt.clock.now(),
             note=note,
         )
+        if self._publisher is not None:
+            sheet = replace(sheet, pdf=self._publisher.publish(sheet))
         self._sheets.save(college_id, sheet)
         self._rt.record(
             college_id,
@@ -633,6 +638,7 @@ class ReviewService:
                 "version": sheet.version,
                 "total": _num(sheet.total),
                 "max_marks": _num(sheet.max_marks),
+                "pdf_stored": sheet.pdf is not None,
                 "not_counted": [
                     ln.slot_label for ln in sheet.lines if ln.mark is not None and not ln.counted
                 ],
@@ -681,8 +687,3 @@ def _tags(tags: Sequence[str]) -> tuple[str, ...]:
 
 def _num(value: Decimal | None) -> str | None:
     return None if value is None else str(value)
-
-
-def _order(label: str) -> tuple[tuple[int, int | str], ...]:
-    """Paper order of leaf labels: "2" < "10" < "10.a"."""
-    return tuple((0, int(p)) if p.isdigit() else (1, p) for p in label.split("."))

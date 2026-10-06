@@ -4541,6 +4541,228 @@
         }
       }
     },
+    "/api/v1/evaluated-booklets": {
+      "get": {
+        "tags": [
+          "evaluated booklets"
+        ],
+        "summary": "Approved booklets with their result sheet versions, newest first",
+        "description": "`exam` matches the exam title or course code, `student` the name and `usn` the USN, each as a case-insensitive part of it. `status` is `approved`, `amendment_in_progress` (a result sheet stands while an answer is being amended) or `approved_amended`.",
+        "operationId": "list_evaluated_api_v1_evaluated_booklets_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "exam",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "",
+              "title": "Exam"
+            }
+          },
+          {
+            "name": "student",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "",
+              "title": "Student"
+            }
+          },
+          {
+            "name": "usn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 40,
+              "default": "",
+              "title": "Usn"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "approved",
+                    "amendment_in_progress",
+                    "approved_amended"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluatedPageOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/result-sheets/{version}/pdf": {
+      "get": {
+        "tags": [
+          "evaluated booklets"
+        ],
+        "summary": "Download one version of a booklet's result sheet as a PDF",
+        "operationId": "download_sheet_api_v1_booklets__booklet_id__result_sheets__version__pdf_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/pdf": {}
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "No such booklet or version, or no PDF stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/booklets/{booklet_id}/lock": {
       "post": {
         "tags": [
@@ -7479,6 +7701,109 @@
         ],
         "title": "ErrorOut"
       },
+      "EvaluatedBookletOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "amendment_in_progress",
+              "approved_amended"
+            ],
+            "title": "Status"
+          },
+          "student": {
+            "$ref": "#/components/schemas/BookletStudentOut"
+          },
+          "exam": {
+            "type": "string",
+            "title": "Exam",
+            "description": "Title of the exam blueprint the booklet was marked against."
+          },
+          "course_code": {
+            "type": "string",
+            "title": "Course Code"
+          },
+          "total": {
+            "type": "number",
+            "title": "Total",
+            "description": "Total of the latest result sheet."
+          },
+          "max_marks": {
+            "type": "number",
+            "title": "Max Marks"
+          },
+          "sheet_version": {
+            "type": "integer",
+            "title": "Sheet Version",
+            "description": "The latest result sheet's version."
+          },
+          "evaluated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Evaluated At",
+            "description": "When the latest result sheet was issued."
+          },
+          "sheets": {
+            "items": {
+              "$ref": "#/components/schemas/SheetVersionOut"
+            },
+            "type": "array",
+            "title": "Sheets",
+            "description": "Every version, oldest first."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "student",
+          "exam",
+          "course_code",
+          "total",
+          "max_marks",
+          "sheet_version",
+          "evaluated_at",
+          "sheets"
+        ],
+        "title": "EvaluatedBookletOut"
+      },
+      "EvaluatedPageOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluatedBookletOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "EvaluatedPageOut"
+      },
       "ExpectedVersionIn": {
         "properties": {
           "expected_version": {
@@ -10002,11 +10327,6 @@
       },
       "ResultSheetOut": {
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
           "version": {
             "type": "integer",
             "title": "Version"
@@ -10019,11 +10339,6 @@
             "type": "number",
             "title": "Max Marks"
           },
-          "issued_by": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Issued By"
-          },
           "issued_at": {
             "type": "string",
             "format": "date-time",
@@ -10033,6 +10348,28 @@
             "type": "string",
             "title": "Note",
             "description": "What this version amended (empty on version 1)."
+          },
+          "pdf_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Url",
+            "description": "Where to download the PDF (with the bearer token); null for a sheet that was issued before PDFs were stored."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "issued_by": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Issued By"
           },
           "lines": {
             "items": {
@@ -10044,13 +10381,14 @@
         },
         "type": "object",
         "required": [
-          "id",
           "version",
           "total",
           "max_marks",
-          "issued_by",
           "issued_at",
           "note",
+          "pdf_url",
+          "id",
+          "issued_by",
           "lines"
         ],
         "title": "ResultSheetOut"
@@ -10623,6 +10961,54 @@
           "reference_statement"
         ],
         "title": "SemanticParamsBody"
+      },
+      "SheetVersionOut": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "total": {
+            "type": "number",
+            "title": "Total"
+          },
+          "max_marks": {
+            "type": "number",
+            "title": "Max Marks"
+          },
+          "issued_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Issued At"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "description": "What this version amended (empty on version 1)."
+          },
+          "pdf_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Url",
+            "description": "Where to download the PDF (with the bearer token); null for a sheet that was issued before PDFs were stored."
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "total",
+          "max_marks",
+          "issued_at",
+          "note",
+          "pdf_url"
+        ],
+        "title": "SheetVersionOut"
       },
       "SlotResultOut": {
         "properties": {

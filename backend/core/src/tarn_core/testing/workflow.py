@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import Booklet, BookletStatus
+from tarn_core.ports.rendering import SheetRenderer
 from tarn_core.services.diagrams.service import Rescorer
 from tarn_core.services.scoring import BookletScorer, ScoringPolicy, ScoringService
 from tarn_core.services.segmentation.resegment import BookletResegmenter
@@ -20,9 +21,11 @@ from tarn_core.services.workflow import (
     StudentGraphEdits,
     TextEditor,
 )
+from tarn_core.services.workflow.sheets import SheetBuilder, SheetPublisher
 from tarn_core.services.workflow.truth import CorrectionTruth
 from tarn_core.testing.builders import Backend, CollegeFixture, make_services
 from tarn_core.testing.scoring import Line, written_answer
+from tarn_core.testing.sheets import FakeSheetRenderer
 
 POLICY = ScoringPolicy(half=0.25, full=0.45, relevance_min=0.0, relevance_soft=0.0)
 GOOD = ["alpha and beta.", "The idea follows from alpha and beta."]
@@ -45,6 +48,22 @@ def booklet_scorer(mem: Backend) -> BookletScorer:
     )
 
 
+def sheet_publisher(mem: Backend, renderer: SheetRenderer) -> SheetPublisher:
+    return SheetPublisher(
+        builder=SheetBuilder(
+            booklets=mem.booklets,
+            scores=mem.scores,
+            content=mem.content,
+            colleges=mem.colleges,
+            students=mem.students,
+            users=mem.users,
+            blobs=mem.blobs,
+        ),
+        renderer=renderer,
+        blobs=mem.blobs,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Workflow:
     guard: BookletGuard
@@ -56,6 +75,8 @@ class Workflow:
     resegment: ResegmentRequests
     resegmenter: BookletResegmenter
     """What the worker's ``booklet.resegment`` job runs."""
+    renderer: FakeSheetRenderer
+    """Draws the result sheets ``review`` issues; keeps what it drew."""
 
 
 def workflow(
@@ -66,7 +87,9 @@ def workflow(
     rescore = RescoreRequests(
         booklets=mem.booklets, runtime=rt, rescorer=rescorer or booklet_scorer(mem)
     )
+    renderer = FakeSheetRenderer()
     return Workflow(
+        renderer=renderer,
         guard=guard,
         rescore=rescore,
         review=ReviewService(
@@ -78,6 +101,7 @@ def workflow(
             runtime=rt,
             guard=guard,
             rescore=rescore,
+            publisher=sheet_publisher(mem, renderer),
         ),
         text=TextEditor(
             booklets=mem.booklets,

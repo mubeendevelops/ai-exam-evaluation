@@ -17,7 +17,8 @@ from tarn_core.domain.review import AmendmentOutcome
 from tarn_core.domain.tenancy import Role, User
 from tarn_core.errors import BookletLockedError, StaleWriteError
 from tarn_core.ids import CollegeId, UserId
-from tarn_core.services.workflow import LockPolicy
+from tarn_core.services.evaluated import EvaluatedBooklets
+from tarn_core.services.workflow import LockPolicy, sheet_key
 from tarn_core.testing.builders import add_college, ci_shaped_blueprint
 from tarn_core.testing.workflow import GOOD, HALF, scored_booklet, workflow
 
@@ -69,6 +70,17 @@ def test_review_with_amendment_round_trips(session: Opener) -> None:
         sheets = s.sheets.versions(cid, booklet.id)
         assert [x.version for x in sheets] == [1, 2]
         assert sheets[1].note == "2: Recount" and sheets[0].note == ""
+        # Each version keeps its own PDF key (the CHECK holds it under the college's prefix).
+        assert [x.pdf for x in sheets] == [sheet_key(cid, booklet.id, v) for v in (1, 2)]
+        found = EvaluatedBooklets(
+            booklets=s.booklets,
+            students=s.students,
+            content=s.content,
+            sheets=s.sheets,
+            blobs=s.blobs,
+        ).search(cid, usn=college.students[0].usn, status=BookletStatus.APPROVED_AMENDED)
+        assert [e.booklet.id for e in found.items] == [booklet.id]
+        assert [x.version for x in found.items[0].sheets] == [1, 2]
         amendment = s.booklets.amendments(cid, booklet.id)[0]
         assert amendment.outcome is AmendmentOutcome.APPROVED and amendment.sheet_version == 2
         assert s.booklets.get(cid, booklet.id).status is BookletStatus.APPROVED_AMENDED

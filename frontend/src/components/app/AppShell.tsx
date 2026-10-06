@@ -8,10 +8,12 @@ import { RecoveryCodesModal } from './RecoveryCodesModal'
 import { StatusPill } from './StatusPill'
 import { UserMenu } from './UserMenu'
 
-/** Tab names follow the build plan (D51); the icons are the prototype's. */
+/** Tab names follow the build plan (D51); the icons are the prototype's. Evaluated (P18) is the
+ * evaluated booklets list the build plan asks for: the prototype has no screen for it (D128). */
 export const appTabs: readonly TabItem[] = [
   { to: '/qna', label: 'Q&A DB', icon: 'fa-solid fa-database' },
   { to: '/evaluate', label: 'AI Evaluation', shortLabel: 'AI Eval', icon: 'fa-solid fa-microchip' },
+  { to: '/evaluated', label: 'Evaluated', icon: 'fa-solid fa-box-archive' },
   {
     to: '/schema',
     label: 'Schema Designer',
@@ -20,7 +22,7 @@ export const appTabs: readonly TabItem[] = [
   },
 ]
 
-/** The signed-in frame of project_idea.html: top bar with the three tabs, mobile sub-bar, footer. */
+/** The signed-in frame of project_idea.html: top bar with the tabs, mobile sub-bar, footer. */
 export function AppShell() {
   const [dialog, setDialog] = useState<'profile' | 'codes' | null>(null)
   return (
