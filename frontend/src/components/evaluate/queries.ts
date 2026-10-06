@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { api } from '../../api/client'
 import { problemOf } from '../../api/errors'
 import type { components } from '../../api/schema'
+import { slotInfo } from '../../lib/review'
 import { leafLabels, type PageText } from '../../lib/segments'
 import { STATUS, type BookletDetail } from './model'
 
@@ -103,19 +104,72 @@ export function useStudentDiagrams(id: string, enabled: boolean) {
   })
 }
 
-/** The question labels of the booklet's exam, for "reassign". */
-export function useExamLabels(blueprintId: string | undefined) {
+/** The booklet's exam document, read once and shared by the readers below. */
+function useExamDocument<T>(
+  blueprintId: string | undefined,
+  select: (document: Record<string, unknown>) => T,
+) {
   return useQuery({
-    queryKey: ['blueprint-labels', blueprintId],
+    queryKey: ['blueprint-document', blueprintId],
     enabled: !!blueprintId,
     queryFn: async () => {
       const { data } = await api.GET('/api/v1/blueprints/{blueprint_id}', {
         params: { path: { blueprint_id: blueprintId ?? '' } },
       })
       if (!data) throw new Error('exam unavailable')
-      return leafLabels(data.document)
+      return data.document as Record<string, unknown>
     },
+    select,
     staleTime: 5 * 60_000,
+  })
+}
+
+/** The question labels of the booklet's exam, for "reassign". */
+export function useExamLabels(blueprintId: string | undefined) {
+  return useExamDocument(blueprintId, leafLabels)
+}
+
+/** The exam's slots: which question each answer is marked against, and its marks. */
+export function useExamSlots(blueprintId: string | undefined) {
+  return useExamDocument(blueprintId, slotInfo)
+}
+
+export type Question = components['schemas']['QuestionOut']
+
+/** A question of the bank: its text, reference answers and rubric (shared with the bank's screen). */
+export function useQuestion(id: string | null | undefined) {
+  return useQuery({
+    queryKey: ['question', id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data } = await api.GET('/api/v1/questions/{question_id}', {
+        params: { path: { question_id: id ?? '' } },
+      })
+      if (!data) throw new Error('question unavailable')
+      return data
+    },
+    retry: false,
+  })
+}
+
+/** The R6 comparison documents of an answer's drawings. The suggestion id is in the key: a new
+ * suggestion (after an edit) has new documents. */
+export function useComparisons(
+  bookletId: string,
+  answerId: string | undefined,
+  suggestionId: string | undefined,
+) {
+  return useQuery({
+    queryKey: ['diagram-comparisons', bookletId, answerId, suggestionId],
+    enabled: !!answerId && !!suggestionId,
+    queryFn: async () => {
+      const { data } = await api.GET(
+        '/api/v1/booklets/{booklet_id}/answers/{answer_id}/diagram-comparisons',
+        { params: { path: { booklet_id: bookletId, answer_id: answerId ?? '' } } },
+      )
+      if (!data) throw new Error('comparisons unavailable')
+      return data
+    },
   })
 }
 

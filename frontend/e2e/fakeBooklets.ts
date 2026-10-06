@@ -3,7 +3,8 @@ import type { Page, Route } from '@playwright/test'
 /**
  * The booklet pipeline as the browser tests see it, stubbed next to `FakeApi` (which answers
  * sign-in). One booklet is uploaded and then moves through the machine stages by the clock, as
- * the worker would; once scored it can be opened, its lines corrected and its answer re-scored.
+ * the worker would; once scored it can be opened, its lines corrected and its answer re-scored,
+ * and its answers approved, skipped, reopened and amended up to result sheet versions.
  * Follows docs/api/openapi.json. All names and text are invented.
  */
 const STAGE_MS = 1200
@@ -25,7 +26,27 @@ const PNG = Buffer.from(
 )
 
 const STAGES = ['uploaded', 'processing', 'reading', 'text_ready', 'segmented', 'scored'] as const
-type Stage = (typeof STAGES)[number] | 'in_review'
+type Stage =
+  (typeof STAGES)[number] | 'in_review' | 'approved' | 'amendment_in_progress' | 'approved_amended'
+
+interface Decision {
+  version: number
+  status: 'suggested' | 'skipped' | 'approved'
+  approval: null | {
+    ai_mark: number
+    teacher_mark: number
+    overridden: boolean
+    tags: string[]
+    remarks: string
+  }
+  draft: null | { reason: string }
+}
+
+interface Sheet {
+  version: number
+  total: number
+  note: string
+}
 
 interface Line {
   id: string
@@ -43,6 +64,14 @@ export class FakeBooklets {
   private pendingUntil = 0
   private suggestion = { id: 'sg-1', mark: 1 }
   private rescored = false
+  private final: Stage | null = null
+  private sheets: Sheet[] = []
+  private readonly decisions: Record<string, Decision> = {
+    '1': { version: 2, status: 'suggested', approval: null, draft: null },
+    '2': { version: 2, status: 'suggested', approval: null, draft: null },
+  }
+  /** Every body sent to a decision endpoint, as `"<verb> <label>"` with the body. */
+  readonly decided: { call: string; body: Record<string, unknown> }[] = []
   readonly lines: Line[] = [
     {
       id: 'r1',
@@ -69,7 +98,14 @@ export class FakeBooklets {
     await page.route('**/api/v1/**', (route) => this.handle(route))
   }
 
+  /** Start with the booklet already scored, as if it had been uploaded earlier. */
+  startScored() {
+    this.uploaded = true
+    this.since = Date.now() - 60_000
+  }
+
   private stage(): Stage {
+    if (this.final) return this.final
     if (this.locked) return 'in_review'
     const k = Math.min(STAGES.length - 1, Math.floor((Date.now() - this.since) / STAGE_MS))
     return STAGES[k] as Stage
@@ -81,7 +117,7 @@ export class FakeBooklets {
 
   private bookletOut() {
     const status = this.stage()
-    const done = status === 'scored' || status === 'in_review' || status === 'segmented'
+    const done = !['uploaded', 'processing', 'reading', 'text_ready'].includes(status)
     const cleaned =
       status === 'uploaded' ? 0 : done || status === 'reading' || status === 'text_ready' ? 2 : 1
     return {
@@ -99,12 +135,18 @@ export class FakeBooklets {
       needs_text_pages: [],
       failure_reason: null,
       duplicate_of: [],
-      result: null,
+      result: this.final?.startsWith('approved')
+        ? {
+            total: this.total(),
+            max_marks: 6,
+            sheet_version: this.sheets[this.sheets.length - 1]?.version ?? 1,
+          }
+        : null,
     }
   }
 
   private pageOut(number: number) {
-    const read = ['text_ready', 'segmented', 'scored', 'in_review'].includes(this.stage())
+    const read = !['uploaded', 'processing', 'reading'].includes(this.stage())
     return {
       number,
       cleaned: this.stage() !== 'uploaded',
@@ -149,12 +191,25 @@ export class FakeBooklets {
     }
   }
 
-  private answer(label: string, id: string, mark: number, pending: boolean) {
+  private mark(label: string): number {
+    const d = this.decisions[label] as Decision
+    if (d.approval && !d.draft) return d.approval.teacher_mark
+    if (label === '1') return this.rescored && !this.pending() ? 2.5 : this.suggestion.mark
+    return 1.5
+  }
+
+  private total(): number {
+    return this.mark('1') + this.mark('2')
+  }
+
+  private answer(label: string, id: string, pending: boolean) {
+    const d = this.decisions[label] as Decision
+    const mark = label === '1' ? (this.rescored && !pending ? 2.5 : this.suggestion.mark) : 1.5
     return {
       id,
       slot_label: label,
-      status: 'suggested',
-      version: this.version,
+      status: d.status,
+      version: d.version,
       rescore_pending: pending,
       attempted: true,
       max_marks: 3,
@@ -166,22 +221,52 @@ export class FakeBooklets {
         reasons: [],
         relevance: 0.8,
         created_at: '2026-10-06T08:05:00Z',
-        criteria: [],
+        criteria: [
+          {
+            criterion_id: 'c-1',
+            criterion_version: 1,
+            weight: 1.5,
+            credit: 1,
+            marks: 1.5,
+            scorer: 'list-v1',
+            flags: [],
+            similarity: null,
+            reason: 'Names the effect.',
+            matched: ['opposes'],
+            missing: [],
+          },
+        ],
       },
-      approval: null,
-      draft: null,
+      approval: d.approval && {
+        id: `rv-${id}`,
+        ai_mark: d.approval.ai_mark,
+        teacher_mark: d.approval.teacher_mark,
+        overridden: d.approval.overridden,
+        tags: d.approval.tags,
+        remarks: d.approval.remarks,
+        reviewer_id: '22222222-2222-4222-8222-222222222222',
+        reviewed_at: '2026-10-06T08:30:00Z',
+      },
+      draft: d.draft && {
+        amendment_id: 'am-1',
+        reason: d.draft.reason,
+        opened_by: '22222222-2222-4222-8222-222222222222',
+        opened_at: '2026-10-06T09:30:00Z',
+      },
     }
   }
 
   private review() {
     const pending = this.pending()
-    const mark = this.rescored && !pending ? 2.5 : this.suggestion.mark
+    const status = this.stage()
+    const approved = status.startsWith('approved') || status === 'amendment_in_progress'
+    const all = Object.values(this.decisions)
     return {
       booklet_id: BOOKLET,
-      status: this.stage() === 'in_review' ? 'in_review' : this.stage(),
+      status,
       version: this.version,
-      approved: false,
-      amendment_in_progress: false,
+      approved,
+      amendment_in_progress: status === 'amendment_in_progress',
       lock: this.locked
         ? {
             holder_id: '22222222-2222-4222-8222-222222222222',
@@ -191,14 +276,86 @@ export class FakeBooklets {
             mine: true,
           }
         : null,
-      can_approve: false,
+      can_approve: !approved && all.every((d) => d.status === 'approved') && !pending,
       waiting: ['1', '2'],
-      answers: [this.answer('1', 'a1', mark, pending), this.answer('2', 'a2', 1.5, false)],
-      totals: { total: 0, max_marks: 6, slots: [] },
-      sheets: [],
+      answers: [this.answer('1', 'a1', pending), this.answer('2', 'a2', false)],
+      totals: {
+        total: this.total(),
+        max_marks: 6,
+        slots: ['1', '2'].map((label) => ({
+          section_label: 'A',
+          slot_label: label,
+          mark: this.mark(label),
+          counted: true,
+          outcome: 'counted',
+        })),
+      },
+      sheets: this.sheets.map((sh) => ({
+        id: `sheet-${sh.version}`,
+        version: sh.version,
+        total: sh.total,
+        max_marks: 6,
+        issued_by: '22222222-2222-4222-8222-222222222222',
+        issued_at: '2026-10-06T09:00:00Z',
+        note: sh.note,
+        lines: [],
+      })),
       rescoring: [],
       notices: [],
     }
+  }
+
+  /** The answer endpoints (approve, skip, reopen, withdraw); the review view comes back. */
+  private decide(
+    json: (status: number, data: unknown) => Promise<void>,
+    label: string,
+    verb: string,
+    body: Record<string, unknown>,
+  ) {
+    const d = this.decisions[label] as Decision
+    if (body.expected_version !== d.version) return json(409, { detail: 'The answer changed.' })
+    this.decided.push({ call: `${verb} ${label}`, body })
+    const amending = this.final === 'amendment_in_progress'
+    const bookletApproved = this.final !== null
+    d.version++
+    if (verb === 'skip') d.status = 'skipped'
+    if (verb === 'approve') {
+      const ai = label === '1' ? this.suggestion.mark : 1.5
+      const given = body.teacher_mark as number | null
+      d.status = 'approved'
+      d.approval = {
+        ai_mark: ai,
+        teacher_mark: given ?? ai,
+        overridden: given !== null && given !== ai,
+        tags: (body.tags as string[]) ?? [],
+        remarks: (body.remarks as string) ?? '',
+      }
+      d.draft = null
+      if (amending && Object.values(this.decisions).every((x) => !x.draft)) {
+        this.final = 'approved_amended'
+        this.sheets.push({
+          version: this.sheets.length + 1,
+          total: this.total(),
+          note: 'Amended answers',
+        })
+      }
+    }
+    if (verb === 'reopen') {
+      d.status = 'suggested'
+      if (bookletApproved) {
+        d.draft = { reason: (body.reason as string) ?? '' }
+        this.final = 'amendment_in_progress'
+      } else {
+        d.approval = null
+      }
+    }
+    if (verb === 'withdraw') {
+      d.status = 'approved'
+      d.draft = null
+      this.final = 'approved'
+    }
+    this.version++
+    return json(200, this.review())
   }
 
   private async handle(route: Route) {
@@ -250,7 +407,17 @@ export class FakeBooklets {
         owning_college_id: COLLEGE,
         owned: true,
         copied_from: null,
-        document: { sections: [{ items: [{ label: '1' }, { label: '2' }] }] },
+        document: {
+          sections: [
+            {
+              label: 'A',
+              items: [
+                { type: 'question', label: '1', marks: 3, question_id: 'q-1' },
+                { type: 'question', label: '2', marks: 3, question_id: 'q-2' },
+              ],
+            },
+          ],
+        },
       })
     }
 
@@ -300,7 +467,7 @@ export class FakeBooklets {
       })
     }
     if (method === 'POST' && rest === '/lock') {
-      if (!['scored', 'in_review'].includes(this.stage()))
+      if (['uploaded', 'processing', 'reading', 'text_ready', 'segmented'].includes(this.stage()))
         return json(409, { detail: 'Not ready.' })
       if (!this.locked) this.version++
       this.locked = true
@@ -310,6 +477,23 @@ export class FakeBooklets {
       return route.fulfill({ status: 204 })
     }
     if (method === 'GET' && rest === '/review') return json(200, this.review())
+    const answerCall = /^\/answers\/a([12])\/(approve|skip|reopen|withdraw)$/.exec(rest)
+    if (method === 'POST' && answerCall) {
+      return this.decide(json, answerCall[1] as string, answerCall[2] as string, body)
+    }
+    if (method === 'POST' && rest === '/approve') {
+      if (body.expected_version !== this.version)
+        return json(409, { detail: 'The booklet changed.' })
+      const open = Object.values(this.decisions).some((d) => d.status !== 'approved')
+      if (open) return json(409, { detail: 'Every answer must be approved first.' })
+      this.final = 'approved'
+      this.sheets.push({ version: 1, total: this.total(), note: '' })
+      this.version++
+      return json(200, this.review())
+    }
+    if (method === 'GET' && /^\/answers\/a[12]\/diagram-comparisons$/.test(rest)) {
+      return json(200, [])
+    }
     if (method === 'GET' && rest === '/segments') {
       const seg = (id: string, position: number, label: string, regions: string[]) => ({
         id,

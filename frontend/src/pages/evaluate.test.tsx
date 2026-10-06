@@ -640,7 +640,10 @@ describe('step 2: AI segmentation', () => {
     expect(within(one).queryByRole('button', { name: 'Merge with next segment' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Re-Segment' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Proceed to Evaluation' }))
-    expect(await screen.findByText('The evaluation view is coming next')).toBeVisible()
+    // step 3 opens read-only too, with the holder named
+    const grading = await screen.findByRole('region', { name: 'Panel C: Teacher Final Grading' })
+    expect(within(grading).getByRole('button', { name: 'Approve answer' })).toBeDisabled()
+    expect(screen.getAllByText(/Dr\. Other has this booklet open/).length).toBeGreaterThan(0)
   })
 
   it('reloads and says so when the booklet changed since the screen was loaded', async () => {

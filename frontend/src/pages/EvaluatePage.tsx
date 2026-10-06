@@ -1,5 +1,6 @@
 import { useSearchParams } from 'react-router'
 import { PageBanner } from '../components/app/PageBanner'
+import { EvaluationStep } from '../components/evaluate/EvaluationStep'
 import { SegmentationStep } from '../components/evaluate/SegmentationStep'
 import { UploadStep } from '../components/evaluate/UploadStep'
 import { EmptyState, Stepper } from '../components/ui'
@@ -55,39 +56,35 @@ export default function EvaluatePage() {
             onProceed={() => toEvaluation(booklet)}
           />
         ) : (
-          <EmptyState
-            icon="fa-solid fa-file-circle-question"
-            title="Choose a booklet first"
-            action={
-              <SmallButton icon="fa-solid fa-arrow-left" onClick={toUploads}>
-                Go to the submissions
-              </SmallButton>
-            }
-          >
-            Press Run AI Eval or Open on one of the uploaded submissions to see how it was split
-            into answers.
-          </EmptyState>
+          <ChooseBooklet onBack={toUploads} what="see how it was split into answers" />
         ))}
-      {step === 2 && (
-        <EmptyState
-          icon="fa-solid fa-list-check"
-          title="The evaluation view is coming next"
-          action={
-            booklet ? (
-              <SmallButton icon="fa-solid fa-arrow-left" onClick={() => toSegments(booklet)}>
-                Back to the segments
-              </SmallButton>
-            ) : (
-              <SmallButton icon="fa-solid fa-arrow-left" onClick={toUploads}>
-                Go to the submissions
-              </SmallButton>
-            )
-          }
-        >
-          Here you will see the suggested marks beside each answer and decide every mark yourself.
-          Nothing is final until you approve it.
-        </EmptyState>
-      )}
+      {step === 2 &&
+        (booklet ? (
+          <EvaluationStep
+            key={booklet}
+            bookletId={booklet}
+            onBack={() => toSegments(booklet)}
+            onSubmissions={toUploads}
+          />
+        ) : (
+          <ChooseBooklet onBack={toUploads} what="decide its marks" />
+        ))}
     </div>
+  )
+}
+
+function ChooseBooklet({ onBack, what }: { onBack: () => void; what: string }) {
+  return (
+    <EmptyState
+      icon="fa-solid fa-file-circle-question"
+      title="Choose a booklet first"
+      action={
+        <SmallButton icon="fa-solid fa-arrow-left" onClick={onBack}>
+          Go to the submissions
+        </SmallButton>
+      }
+    >
+      Press Run AI Eval or Open on one of the uploaded submissions to {what}.
+    </EmptyState>
   )
 }

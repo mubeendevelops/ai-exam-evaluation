@@ -87,5 +87,106 @@ test('upload a booklet, watch it being read, see its segments, correct a line an
   // --- on to the evaluation view ---
   await page.getByRole('button', { name: 'Proceed to Evaluation' }).click()
   await expect(page).toHaveURL(/step=3/)
-  await expect(page.getByText('The evaluation view is coming next')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Panel A: Answer Mapping' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Panel B: AI Diagnostic Reasoning' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Panel C: Teacher Final Grading' })).toBeVisible()
+  await expect(page.getByText('Suggested AI Marks: 2.5 / 3')).toBeVisible()
+})
+
+test('approve every answer, approve the booklet, reopen one, amend it and find result sheet v2', async ({
+  page,
+}) => {
+  const booklets = await signIn(page)
+  booklets.startScored()
+  await page
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('link', { name: 'AI Evaluation' })
+    .click()
+  await page
+    .getByRole('article', { name: 'Submission Test Student One' })
+    .getByRole('button', { name: 'Open' })
+    .click()
+  await page.getByRole('button', { name: 'Proceed to Evaluation' }).click()
+  await expect(page).toHaveURL(/step=3/)
+  await expect(
+    page
+      .getByRole('list', { name: 'Evaluation steps' })
+      .getByRole('button', { name: '3. Evaluation View' }),
+  ).toHaveAttribute('aria-current', 'step')
+  await expect(page.getByText(/Evaluating Student:/)).toContainText(
+    'Test Student One (USN: TST001)',
+  )
+  await expect(page.getByText(/You have this booklet open\./)).toBeVisible()
+
+  // --- question 1: the AI's mark is accepted as it is ---
+  const mapping = page.getByRole('region', { name: 'Panel A: Answer Mapping' })
+  await expect(mapping).toContainText('State Lenz’s law.')
+  await expect(mapping.getByRole('region', { name: "Student's answer" })).toContainText(
+    'Lenz law opposes the change',
+  )
+  const grading = page.getByRole('region', { name: 'Panel C: Teacher Final Grading' })
+  await grading.getByRole('button', { name: 'Approve answer' }).click()
+  await expect(page.getByText('Question 1 approved.')).toBeVisible()
+
+  // --- question 2: the teacher overrides the mark, with a tag and a remark ---
+  await expect(mapping).toContainText('Define resonance in an LCR circuit.')
+  await expect(page.getByText('1 of 2 answers approved')).toBeVisible()
+  await grading.getByRole('switch', { name: 'Override AI Score' }).click()
+  const marks = grading.getByLabel(/Teacher marks/)
+  await marks.fill('2.3')
+  await expect(grading.getByRole('alert')).toContainText('steps of 0.5')
+  await expect(grading.getByRole('button', { name: 'Approve answer' })).toBeDisabled()
+  await marks.fill('2')
+  await grading.getByRole('button', { name: 'Well explained' }).click()
+  await grading.getByLabel('Remarks for the student').fill('Add the formula.')
+  await grading.getByRole('button', { name: 'Approve answer' }).click()
+
+  // --- the last approval leads to the summary; the booklet can be approved ---
+  await expect(page.getByRole('region', { name: 'Booklet summary' })).toBeVisible()
+  const table = page.getByRole('table')
+  await expect(table).toContainText('1 / 3')
+  await expect(table).toContainText('2 / 3')
+  await expect(table).toContainText('overridden')
+  await expect(page.getByText('3 / 6', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Approve booklet' }).click()
+  await expect(page.getByText(/Booklet approved\. Result sheet v1 is stored/)).toBeVisible()
+  const sheets = page.getByRole('region', { name: 'Result sheets' })
+  await expect(sheets).toContainText('Result sheet v1')
+  await expect(sheets).not.toContainText('Result sheet v2')
+  await expect(page.getByRole('button', { name: 'Approve booklet' })).toHaveCount(0)
+
+  // --- reopen question 2: an amendment draft; v1 stays valid ---
+  await page.getByRole('button', { name: 'Reopen to amend question 2' }).click()
+  await page.getByLabel('Reason (optional)').fill('Formula was on the next page.')
+  await page.getByRole('button', { name: 'Open amendment' }).click()
+  await expect(page.getByText('Amendment draft', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('Draft amendment')).toBeVisible()
+  await expect(page.getByText('Reason: Formula was on the next page.')).toBeVisible()
+
+  // --- amend it: approving the last draft issues v2 ---
+  await grading.getByRole('switch', { name: 'Override AI Score' }).click()
+  await grading.getByLabel(/Teacher marks/).fill('3')
+  await grading.getByRole('button', { name: 'Approve amendment' }).click()
+  await expect(page.getByText(/The amendment is complete/)).toBeVisible()
+  await expect(sheets).toContainText('Result sheet v2')
+  await expect(sheets).toContainText('Result sheet v1')
+  await expect(sheets.getByText('Current').locator('..')).toContainText('v2')
+  await expect(
+    page.getByRole('region', { name: 'Booklet summary' }).getByText('4 / 6', { exact: true }),
+  ).toBeVisible()
+
+  expect(booklets.decided.map((d) => d.call)).toEqual([
+    'approve 1',
+    'approve 2',
+    'reopen 2',
+    'approve 2',
+  ])
+  expect(booklets.decided[0]?.body).toMatchObject({ teacher_mark: null, tags: [], remarks: '' })
+  expect(booklets.decided[1]?.body).toMatchObject({
+    teacher_mark: 2,
+    tags: ['Well explained'],
+    remarks: 'Add the formula.',
+  })
+  expect(booklets.decided[2]?.body).toMatchObject({ reason: 'Formula was on the next page.' })
+  expect(booklets.decided[3]?.body).toMatchObject({ teacher_mark: 3 })
 })
