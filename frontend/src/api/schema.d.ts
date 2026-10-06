@@ -1188,6 +1188,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/booklets/{booklet_id}/segments/resegment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Segment the booklet again from its current text (queued)
+         * @description The worker segments the booklet afresh, replacing every segment including the teacher's own edits; answers whose text changed are re-scored. Needs the booklet's lock and its version. Only for a scored booklet in review (not once approved), and refused (409) while any answer is approved. The booklet's version moves on when it is done.
+         */
+        post: operations["resegment_api_v1_booklets__booklet_id__segments_resegment_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1442,6 +1462,8 @@ export interface components {
              * @description Other booklets of this college with the same file (set on upload only).
              */
             duplicate_of: string[];
+            /** @description The latest result sheet's total, once the booklet is approved. */
+            result?: components["schemas"]["BookletResultOut"] | null;
             /** Pages */
             pages: components["schemas"]["PageOut"][];
         };
@@ -1500,6 +1522,8 @@ export interface components {
              * @description Other booklets of this college with the same file (set on upload only).
              */
             duplicate_of: string[];
+            /** @description The latest result sheet's total, once the booklet is approved. */
+            result?: components["schemas"]["BookletResultOut"] | null;
         };
         /** BookletPageOut */
         BookletPageOut: {
@@ -1521,6 +1545,18 @@ export interface components {
              * @description How many you may have waiting at once.
              */
             max_waiting: number;
+        };
+        /** BookletResultOut */
+        BookletResultOut: {
+            /** Total */
+            total: number;
+            /** Max Marks */
+            max_marks: number;
+            /**
+             * Sheet Version
+             * @description The latest result sheet's version.
+             */
+            sheet_version: number;
         };
         /** BookletStudentOut */
         BookletStudentOut: {
@@ -2685,6 +2721,14 @@ export interface components {
              * @default
              */
             reason: string;
+        };
+        /** ResegmentOut */
+        ResegmentOut: {
+            /**
+             * Booklet Version
+             * @description The version the request was made at. The segments are replaced when the worker has run: the booklet's version then moves on.
+             */
+            booklet_version: number;
         };
         /** ResetIn */
         ResetIn: {
@@ -5619,7 +5663,7 @@ export interface operations {
             query?: {
                 /** @description Only booklets I uploaded */
                 mine?: boolean;
-                status?: ("uploaded" | "processing" | "needs_retake" | "pages_ready" | "failed") | null;
+                status?: ("uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "segmented" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress" | "approved_amended") | null;
                 limit?: number;
                 offset?: number;
             };
@@ -7477,6 +7521,86 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SegmentsOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A mark, tag or text the rules refuse. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another teacher has the booklet open, or the caller has not opened it. */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockedOut"];
+                };
+            };
+        };
+    };
+    resegment_api_v1_booklets__booklet_id__segments_resegment_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpectedVersionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResegmentOut"];
                 };
             };
             /** @description Unauthorized */

@@ -44,6 +44,7 @@ from tarn_core.ids import (
     UserId,
 )
 from tarn_core.ports.engines import Scorer
+from tarn_core.ports.jobs import JobQueue
 from tarn_core.ports.repositories import (
     BookletRepository,
     CollegeRepository,
@@ -87,6 +88,8 @@ class Backend(Protocol):
     def sheets(self) -> ResultSheetRepository: ...
     @property
     def blobs(self) -> BlobStore: ...
+    @property
+    def jobs(self) -> JobQueue: ...
     @property
     def runtime(self) -> Runtime: ...
 

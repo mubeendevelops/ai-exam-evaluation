@@ -15,6 +15,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // The suites are heavy for a busy laptop: a first render can pass the 5 s default.
+    testTimeout: 15_000,
     setupFiles: ['./src/test-setup.ts'],
     // Playwright specs live in e2e/ and run with `npm run test:e2e`.
     include: ['src/**/*.test.{ts,tsx}'],

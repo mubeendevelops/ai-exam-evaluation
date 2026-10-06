@@ -13,7 +13,7 @@ from tarn_api.testing import MemoryBackends
 from tarn_core.domain.booklet import Booklet
 from tarn_core.domain.tenancy import Role, Student
 from tarn_core.ids import AnswerId, CollegeId, StudentId
-from tarn_core.ports.jobs import JOB_RESCORE_ANSWERS
+from tarn_core.ports.jobs import JOB_RESCORE_ANSWERS, JOB_RESEGMENT_BOOKLET
 from tarn_core.testing.auth_world import ADMIN_PASSWORD, TEACHER_PASSWORD, AuthWorld
 from tarn_core.testing.builders import CollegeFixture, ci_shaped_blueprint
 from tarn_core.testing.workflow import GOOD, HALF, booklet_scorer, scored_booklet
@@ -231,3 +231,73 @@ def test_deletion_waits_for_the_other_teachers_lock(s: Setup) -> None:
     assert c.post(f"{s.url}/lock", headers=s.teacher).status_code == 200
     assert c.delete(s.url, headers=s.teacher2).status_code == 423
     assert c.delete(s.url, headers=s.teacher).status_code == 204
+
+
+def test_a_text_correction_is_kept_as_ground_truth_with_the_booklet(s: Setup) -> None:
+    c = s.client
+    opened = c.post(f"{s.url}/lock", headers=s.teacher).json()
+    segments = c.get(f"{s.url}/segments", headers=s.teacher).json()
+    region = next(seg["region_ids"][0] for seg in segments["segments"] if seg["slot_label"] == "2")
+    done = c.post(
+        f"{s.url}/regions/{region}",
+        json={"expected_version": opened["version"], "text": "alpha and beta."},
+        headers=s.teacher,
+    )
+    assert done.status_code == 200, done.text
+    folder = f"college/{s.college_id}/booklet/{s.booklet.id}/groundtruth/"
+    keys = [k for k in s.mem.blobs.keys if k.value.startswith(folder)]
+    assert sorted(k.value.rsplit(".", 1)[-1] for k in keys) == ["jsonl", "png"]
+    assert c.delete(s.url, headers=s.teacher).status_code == 204
+    assert not [k for k in s.mem.blobs.keys if k.value.startswith(folder)]
+
+
+def test_resegment_is_queued_under_the_lock_and_the_version(s: Setup) -> None:
+    c = s.client
+    version = s.review()["version"]
+    assert (
+        c.post(
+            f"{s.url}/segments/resegment", json={"expected_version": version}, headers=s.teacher
+        ).status_code
+        == 423
+    )
+    opened = c.post(f"{s.url}/lock", headers=s.teacher).json()
+    stale = c.post(
+        f"{s.url}/segments/resegment", json={"expected_version": version}, headers=s.teacher
+    )
+    assert stale.status_code == 409
+    done = c.post(
+        f"{s.url}/segments/resegment",
+        json={"expected_version": opened["version"]},
+        headers=s.teacher,
+    )
+    assert done.status_code == 202, done.text
+    assert done.json() == {"booklet_version": opened["version"]}
+    (job,) = [j for j in s.mem.jobs.jobs if j.kind == JOB_RESEGMENT_BOOKLET]
+    assert job.payload["expected_version"] == opened["version"]
+    assert (
+        c.post(
+            f"{s.url}/segments/resegment",
+            json={"expected_version": opened["version"]},
+            headers=s.teacher2,
+        ).status_code
+        == 423
+    )
+
+
+def test_an_approved_booklet_lists_its_total(s: Setup) -> None:
+    c = s.client
+    c.post(f"{s.url}/lock", headers=s.teacher)
+    for label in ("1", "2"):
+        a = s.answer(label)
+        c.post(
+            f"{s.url}/answers/{a['id']}/approve",
+            json={"expected_version": a["version"]},
+            headers=s.teacher,
+        )
+    version = s.review()["version"]
+    assert c.get(s.url, headers=s.teacher).json()["result"] is None
+    c.post(f"{s.url}/approve", json={"expected_version": version}, headers=s.teacher)
+    result = c.get(s.url, headers=s.teacher).json()["result"]
+    assert result["sheet_version"] == 1 and 0 <= result["total"] <= result["max_marks"]
+    listed = c.get(f"{BASE}/booklets", headers=s.teacher).json()["items"]
+    assert listed[0]["result"] == result

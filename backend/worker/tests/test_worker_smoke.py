@@ -217,3 +217,65 @@ def test_a_given_up_rescore_frees_its_answers() -> None:
     )
     runner._give_up_rescore(job)
     assert not mem.booklets.get_answer(college.id, answer.id).rescore_pending
+
+
+def test_a_resegment_job_runs_the_resegmenter_with_the_requested_version() -> None:
+    """``booklet.resegment`` (P16) is one transaction: the teacher, the booklet and the version
+    the request was made at reach the re-segmenter; the job then succeeds."""
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    from typing import Any, cast
+    from uuid import uuid4
+
+    from tarn_core.ids import JobId
+    from tarn_core.ports.jobs import JOB_RESEGMENT_BOOKLET, Job
+    from tarn_worker.booklets import BookletJobRunner
+
+    calls: list[tuple[object, ...]] = []
+
+    class Resegmenter:
+        def run(
+            self, college_id: object, actor: object, booklet: object, *, expected_version: int
+        ) -> None:
+            calls.append((college_id, actor, booklet, expected_version))
+
+    outcomes: list[str] = []
+
+    def failed(*args: object, **kwargs: object) -> bool:
+        outcomes.append("failed")
+        return False
+
+    queue = SimpleNamespace(succeed=lambda job_id: outcomes.append("succeeded"), fail=failed)
+    db = SimpleNamespace(
+        session=lambda *a, **k: nullcontext(SimpleNamespace()),
+        scheduler=lambda: nullcontext(queue),
+    )
+    runner = BookletJobRunner(
+        db=cast(Any, db),
+        blobs=cast(Any, None),
+        splitter=cast(Any, None),
+        cleaner=cast(Any, None),
+        clock=cast(Any, None),
+        ids=cast(Any, None),
+        policy=cast(Any, None),
+        max_pages=1,
+        ocr=None,
+    )
+    runner._resegmenter = lambda session: cast(Any, Resegmenter())  # type: ignore[method-assign]
+    college, actor, booklet = uuid4(), uuid4(), uuid4()
+    runner._single(
+        Job(
+            id=JobId(uuid4()),
+            college_id=cast(Any, college),
+            kind=JOB_RESEGMENT_BOOKLET,
+            payload={
+                "booklet_id": str(booklet),
+                "actor_id": str(actor),
+                "expected_version": 7,
+            },
+            attempts=1,
+            max_attempts=3,
+        )
+    )
+    assert calls == [(college, actor, booklet, 7)]
+    assert outcomes == ["succeeded"]

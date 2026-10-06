@@ -52,8 +52,10 @@ from tarn_core.services.subjects import SubjectService
 from tarn_core.services.uploads import UploadLimits, UploadService
 from tarn_core.services.workflow import (
     BookletGuard,
+    CorrectionTruth,
     LockPolicy,
     RescoreRequests,
+    ResegmentRequests,
     ReviewService,
     SegmentEdits,
     StudentGraphEdits,
@@ -252,11 +254,19 @@ class Unit:
         )
 
     def text_editor(self, booklet_id: BookletId) -> TextEditor:
+        """Every text correction is also kept as OCR ground truth in the booklet's folder
+        (P16)."""
         return TextEditor(
             booklets=self.scope.booklets,
             runtime=self.scope.runtime,
             guard=self.guard,
             rescore=self.rescore(booklet_id),
+            truth=CorrectionTruth(booklets=self.scope.booklets, blobs=self.scope.blobs),
+        )
+
+    def resegment(self) -> ResegmentRequests:
+        return ResegmentRequests(
+            booklets=self.scope.booklets, guard=self.guard, jobs=self.scope.jobs
         )
 
     def segment_edits(self, booklet_id: BookletId) -> SegmentEdits:

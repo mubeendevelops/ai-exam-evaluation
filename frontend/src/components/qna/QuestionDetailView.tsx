@@ -10,12 +10,14 @@ import { SmallButton } from '../schema/controls'
 import { AuthImage } from './AuthImage'
 import { DifficultyPill } from './QuestionList'
 import { QuestionModal } from './QuestionModal'
+import { ReferenceGraphModal } from './ReferenceGraphModal'
 import { AnswerModal, GlossaryModal, RubricModal } from './SmallModals'
 import { UploadDiagramModal, UploadKeyModal } from './UploadModals'
 
 type Question = components['schemas']['QuestionOut']
 type Answer = components['schemas']['ReferenceAnswerOut']
 type Criterion = components['schemas']['CriterionOut']
+type RefDiagram = components['schemas']['ReferenceDiagramOut']
 
 type Dialog = 'edit' | 'rubric' | 'answer' | 'glossary' | 'key' | 'diagram' | null
 
@@ -75,6 +77,7 @@ export function QuestionDetailView({
   const queryClient = useQueryClient()
   const [dialog, setDialog] = useState<Dialog>(null)
   const [answer, setAnswer] = useState<Answer | undefined>()
+  const [graphOf, setGraphOf] = useState<RefDiagram | null>(null)
 
   const query = useQuery({
     queryKey: ['question', id],
@@ -437,11 +440,18 @@ export function QuestionDetailView({
                   <span>
                     {d.node_count} nodes · {d.edge_count} edges
                   </span>
-                  {d.node_count === 0 && (
+                  {d.node_count === 0 && d.recognition === 'pending' && (
                     <span className="block text-[11px] text-gray-400">
                       Nodes and edges are read from the picture by the diagram recognizer.
                     </span>
                   )}
+                  <SmallButton
+                    icon="fa-solid fa-diagram-project"
+                    tone="gray"
+                    onClick={() => setGraphOf(d)}
+                  >
+                    {own ? `Edit graph of ${d.name}` : `View graph of ${d.name}`}
+                  </SmallButton>
                 </figcaption>
               </figure>
             ))}
@@ -449,6 +459,15 @@ export function QuestionDetailView({
         )}
       </GlassPanel>
 
+      {graphOf && (
+        <ReferenceGraphModal
+          open
+          onClose={() => setGraphOf(null)}
+          questionId={q.id}
+          diagram={q.diagrams.find((d) => d.id === graphOf.id) ?? graphOf}
+          editable={own}
+        />
+      )}
       <QuestionModal
         open={dialog === 'edit'}
         onClose={close}

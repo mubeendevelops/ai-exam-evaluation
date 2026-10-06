@@ -21,6 +21,12 @@ JOB_READ_BOOKLET = "booklet.read"
 JOB_SEGMENT_BOOKLET = "booklet.segment"
 """Split the read booklet into answers per question (P12)."""
 
+JOB_RESEGMENT_BOOKLET = "booklet.resegment"
+"""Segment a reviewed booklet again on the teacher's request (P16), from its current text.
+Payload: booklet, the teacher, the booklet version the request was made at (a job that finds
+another version stands down: the teacher has edited since). Needs the embedder, so it runs in
+the worker."""
+
 JOB_DIAGRAMS_BOOKLET = "booklet.diagrams"
 """Recognise the diagrams drawn in answers to questions with diagram criteria (P14); queues
 scoring when done."""

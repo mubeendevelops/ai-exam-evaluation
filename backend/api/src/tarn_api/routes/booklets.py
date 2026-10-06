@@ -23,6 +23,8 @@ from tarn_api.schemas import (
     BookletDetailOut,
     BookletOut,
     BookletPageOut,
+    BookletResultOut,
+    BookletStatusName,
     BookletStudentOut,
     ErrorOut,
     PageOut,
@@ -105,6 +107,15 @@ def _booklet_out(
         failure_reason=booklet.failure_reason,
         duplicate_of=list(duplicates),
     )
+    if booklet.approved:
+        sheets = unit.scope.sheets.versions(college_id, booklet.id)
+        if sheets:
+            latest = sheets[-1]
+            out.result = BookletResultOut(
+                total=float(latest.total),
+                max_marks=float(latest.max_marks),
+                sheet_version=latest.version,
+            )
     return out, pages
 
 
@@ -178,7 +189,7 @@ def list_booklets(
     backends: BackendsDep,
     mine: Annotated[bool, Query(description="Only booklets I uploaded")] = False,
     booklet_status: Annotated[
-        Literal["uploaded", "processing", "needs_retake", "pages_ready", "failed"] | None,
+        BookletStatusName | None,
         Query(alias="status"),
     ] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,

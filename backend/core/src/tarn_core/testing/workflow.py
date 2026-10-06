@@ -8,16 +8,19 @@ from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import Booklet, BookletStatus
 from tarn_core.services.diagrams.service import Rescorer
 from tarn_core.services.scoring import BookletScorer, ScoringPolicy, ScoringService
+from tarn_core.services.segmentation.resegment import BookletResegmenter
 from tarn_core.services.segmentation.similarity import TrigramEmbedder
 from tarn_core.services.workflow import (
     BookletGuard,
     LockPolicy,
     RescoreRequests,
+    ResegmentRequests,
     ReviewService,
     SegmentEdits,
     StudentGraphEdits,
     TextEditor,
 )
+from tarn_core.services.workflow.truth import CorrectionTruth
 from tarn_core.testing.builders import Backend, CollegeFixture, make_services
 from tarn_core.testing.scoring import Line, written_answer
 
@@ -50,6 +53,9 @@ class Workflow:
     text: TextEditor
     segments: SegmentEdits
     graphs: StudentGraphEdits
+    resegment: ResegmentRequests
+    resegmenter: BookletResegmenter
+    """What the worker's ``booklet.resegment`` job runs."""
 
 
 def workflow(
@@ -73,7 +79,13 @@ def workflow(
             guard=guard,
             rescore=rescore,
         ),
-        text=TextEditor(booklets=mem.booklets, runtime=rt, guard=guard, rescore=rescore),
+        text=TextEditor(
+            booklets=mem.booklets,
+            runtime=rt,
+            guard=guard,
+            rescore=rescore,
+            truth=CorrectionTruth(booklets=mem.booklets, blobs=mem.blobs),
+        ),
         segments=SegmentEdits(
             booklets=mem.booklets,
             scores=mem.scores,
@@ -83,6 +95,15 @@ def workflow(
             rescore=rescore,
         ),
         graphs=StudentGraphEdits(booklets=mem.booklets, runtime=rt, guard=guard, rescore=rescore),
+        resegment=ResegmentRequests(booklets=mem.booklets, guard=guard, jobs=mem.jobs),
+        resegmenter=BookletResegmenter(
+            booklets=mem.booklets,
+            scores=mem.scores,
+            content=mem.content,
+            embedder=TrigramEmbedder(),
+            runtime=rt,
+            rescore=rescore,
+        ),
     )
 
 

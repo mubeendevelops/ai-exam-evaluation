@@ -32,14 +32,16 @@ from tarn_core.ids import (
     StudentDiagramId,
     UserId,
 )
+from tarn_core.ports.jobs import JOB_RESEGMENT_BOOKLET, JobQueue
 from tarn_core.ports.repositories import BookletRepository, ContentRepository, ScoreRepository
 from tarn_core.services._support import Runtime
 from tarn_core.services.diagrams.editor import GraphEdit
 from tarn_core.services.diagrams.service import StudentDiagrams
 from tarn_core.services.scoring.booklet import AnswerApprovedError
-from tarn_core.services.segmentation.edits import EDITABLE, EditResult, SegmentEditor
+from tarn_core.services.segmentation.edits import EDITABLE, RESEGMENTABLE, EditResult, SegmentEditor
 from tarn_core.services.workflow.guard import BookletGuard
 from tarn_core.services.workflow.rescore import RescoreRequests
+from tarn_core.services.workflow.truth import CorrectionTruth
 
 MAX_LINE_CHARS = 2000
 _TEXT_KINDS = frozenset({RegionKind.TEXT_LINE, RegionKind.TEXT_BLOCK, RegionKind.LABEL})
@@ -72,11 +74,15 @@ class TextEditor:
         runtime: Runtime,
         guard: BookletGuard,
         rescore: RescoreRequests,
+        truth: CorrectionTruth | None = None,
     ) -> None:
+        """``truth`` stores each text correction as OCR ground truth (P16); tests that do not
+        look at it leave it out."""
         self._booklets = booklets
         self._rt = runtime
         self._guard = guard
         self._rescore = rescore
+        self._truth = truth
 
     def correct(
         self,
@@ -120,6 +126,8 @@ class TextEditor:
         )
         self._booklets.save_region(college_id, updated)
         self._booklets.save_region_edit(college_id, edit)
+        if self._truth is not None and text is not None and new_text != region.text:
+            self._truth.record(college_id, booklet_id, updated, new_text or "")
         booklet = _bump(self._booklets, booklet)
         self._rt.record(
             college_id,
@@ -307,6 +315,48 @@ class SegmentEdits:
             rescoring=result.rescore,
             emptied=result.emptied,
         )
+
+
+class ResegmentRequests:
+    """ "Re-Segment": under the lock and the booklet's version, queue the worker's job that
+    segments the booklet again from its current text (the embedder is not loaded in the API).
+    Refused while any answer is approved: the new split could change it."""
+
+    def __init__(
+        self,
+        *,
+        booklets: BookletRepository,
+        guard: BookletGuard,
+        jobs: JobQueue,
+    ) -> None:
+        self._booklets = booklets
+        self._guard = guard
+        self._jobs = jobs
+
+    def request(
+        self, college_id: CollegeId, actor: UserId, booklet_id: BookletId, *, expected_version: int
+    ) -> Booklet:
+        booklet = self._guard.hold(college_id, actor, booklet_id, expected_version=expected_version)
+        if booklet.status not in RESEGMENTABLE:
+            raise InvariantError(f"a booklet that is {booklet.status} cannot be segmented again")
+        if any(
+            a.status is AnswerStatus.APPROVED
+            for a in self._booklets.answers(college_id, booklet_id)
+        ):
+            raise AnswerApprovedError(
+                "segmenting again could change approved answers: reopen them first"
+            )
+        self._jobs.enqueue(
+            college_id,
+            JOB_RESEGMENT_BOOKLET,
+            {
+                "booklet_id": str(booklet_id),
+                "actor_id": str(actor),
+                "expected_version": booklet.version,
+            },
+            key=f"{JOB_RESEGMENT_BOOKLET}:{booklet_id}",
+        )
+        return booklet
 
 
 class StudentGraphEdits:

@@ -61,3 +61,42 @@ def test_round_trip_on_the_dev_minio() -> None:
     assert store.exists(key) is False
     with pytest.raises(NotFoundError):
         store.get(key)
+
+
+@pytest.mark.integration
+def test_a_booklets_ground_truth_lives_in_its_folder_and_goes_with_it() -> None:
+    """A teacher's corrections are kept under the booklet (P16) and deleted with it."""
+    from tarn_core.domain.common import Box, college_blob_key
+    from tarn_core.domain.groundtruth import CaptureType
+    from tarn_core.domain.ocr import ContentClass
+    from tarn_core.ids import BookletId, CollegeId
+    from tarn_core.services.groundtruth import GroundTruthService, NewPage
+    from tarn_core.services.workflow import BookletTruthStore
+
+    settings = Settings()
+    blobs = MinioBlobStore(make_client(settings), settings.blob_bucket)
+    college, booklet = CollegeId(uuid4()), BookletId(uuid4())
+    store = BookletTruthStore(blobs, college, booklet, ["p-one"])
+    folder = college_blob_key(college, "booklet", str(booklet))
+    try:
+        GroundTruthService(store).record_correction(
+            page_id="p-one",
+            box=Box(x0=10, y0=10, x1=200, y1=40),
+            text="synthetic text",
+            content_class=ContentClass.CURSIVE,
+            new_page=NewPage(
+                image=b"\x89PNG synthetic",
+                image_name="p-one.png",
+                capture=CaptureType.PHONE_PHOTO,
+                width=300,
+                height=400,
+                source="review",
+                college_id=college,
+            ),
+        )
+        assert store.page_ids() == ["p-one"]
+        assert store.get("p-one").verified()[0].text == "synthetic text"
+        assert store.image("p-one") == b"\x89PNG synthetic"
+    finally:
+        assert blobs.delete_prefix(folder) == 2
+    assert store.page_ids() == []

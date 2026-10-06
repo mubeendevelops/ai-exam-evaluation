@@ -2,7 +2,12 @@
 approvals, amendments and result sheet versions, the booklet lock, guarded edits and the
 re-scoring they cause."""
 
-from tarn_core.services.workflow.edits import SegmentEdits, StudentGraphEdits, TextEditor
+from tarn_core.services.workflow.edits import (
+    ResegmentRequests,
+    SegmentEdits,
+    StudentGraphEdits,
+    TextEditor,
+)
 from tarn_core.services.workflow.guard import (
     DEFAULT_LOCK_MINUTES,
     Acquired,
@@ -24,6 +29,7 @@ from tarn_core.services.workflow.review import (
     Opened,
     ReviewService,
 )
+from tarn_core.services.workflow.truth import BookletTruthStore, CorrectionTruth, truth_page_id
 
 __all__ = [
     "CONTENT_CHANGED",
@@ -33,10 +39,13 @@ __all__ = [
     "AnswerReview",
     "BookletGuard",
     "BookletReview",
+    "BookletTruthStore",
+    "CorrectionTruth",
     "Decision",
     "LockPolicy",
     "Opened",
     "RescoreRequests",
+    "ResegmentRequests",
     "ReviewService",
     "SegmentEdits",
     "StaleAnswer",
@@ -44,4 +53,5 @@ __all__ = [
     "TextEditor",
     "clear_pending",
     "stale_answers",
+    "truth_page_id",
 ]

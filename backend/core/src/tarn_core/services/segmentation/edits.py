@@ -41,6 +41,10 @@ EDITABLE = frozenset(
     }
 )
 
+RESEGMENTABLE = frozenset({BookletStatus.SCORED, BookletStatus.IN_REVIEW})
+"""Where "Re-Segment" (P16) may run: not while the machine is still working on the booklet, and
+not once it is approved (an amendment changes single answers, not the booklet's whole split)."""
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class EditResult:
@@ -176,6 +180,18 @@ class SegmentEditor:
         ]
         return self._apply(booklet, actor, segments, after, {upper, lower}, "move_boundary")
 
+    def replace_all(
+        self,
+        college_id: CollegeId,
+        actor: UserId,
+        booklet_id: BookletId,
+        proposed: Sequence[Segment],
+    ) -> EditResult:
+        """Re-segment: the machine's new proposal replaces every segment, the teacher's edits
+        included. Answers keep their ids; those whose text changed are returned to re-score."""
+        booklet, before = self._load(college_id, booklet_id)
+        return self._apply(booklet, actor, before, proposed, set(), "resegment")
+
     # --- shared -----------------------------------------------------------------------------
 
     def _load(self, college_id: CollegeId, booklet_id: BookletId) -> tuple[Booklet, list[Segment]]:
@@ -281,8 +297,8 @@ class SegmentEditor:
             actor,
             AuditAction.SEGMENT_EDITED,
             booklet_id=booklet.id,
-            before=_summary(before, touched),
-            after={"operation": operation, **_summary(final, touched)},
+            before=_summary(before, touched or {s.id for s in before}),
+            after={"operation": operation, **_summary(final, touched or {s.id for s in final})},
         )
         return EditResult(
             segments=tuple(final),

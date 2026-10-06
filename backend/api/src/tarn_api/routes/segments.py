@@ -6,15 +6,17 @@ answers whose text changed are re-scored by the worker."""
 from collections.abc import Callable
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 
 from tarn_api.backends import unit_of_work
 from tarn_api.routes.review import WRITE_ERRORS
 from tarn_api.schemas import (
     ErrorOut,
+    ExpectedVersionIn,
     MergeIn,
     MoveBoundaryIn,
     ReassignIn,
+    ResegmentOut,
     SegmentOut,
     SegmentsOut,
     SplitIn,
@@ -175,3 +177,28 @@ def move_boundary(
             region=RegionId(body.region),
         ),
     )
+
+
+@router.post(
+    "/booklets/{booklet_id}/segments/resegment",
+    response_model=ResegmentOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses=WRITE_ERRORS,
+    summary="Segment the booklet again from its current text (queued)",
+    description="The worker segments the booklet afresh, replacing every segment including the "
+    "teacher's own edits; answers whose text changed are re-scored. Needs the booklet's lock "
+    "and its version. Only for a scored booklet in review (not once approved), and refused "
+    "(409) while any answer is approved. The booklet's version moves on when it is done.",
+)
+def resegment(
+    booklet_id: UUID, body: ExpectedVersionIn, who: PrincipalDep, backends: BackendsDep
+) -> ResegmentOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet = unit.resegment().request(
+            who.college_id,
+            who.user_id,
+            BookletId(booklet_id),
+            expected_version=body.expected_version,
+        )
+    return ResegmentOut(booklet_version=booklet.version)

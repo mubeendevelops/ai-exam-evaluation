@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { COLLEGE_ID, healthy, meOf, tokenOf } from '../test/fixtures'
+import { graph } from '../test/evaluateFixtures'
 import { mockApi, type Call } from '../test/mockApi'
 import { detail, OTHER_COLLEGE, SUBJECT_ID, summary, type Detail } from '../test/qnaFixtures'
 import { renderApp } from '../test/render'
@@ -676,5 +677,100 @@ describe('upload dialogs', () => {
     expect(call.query.get('filename')).toBe('flow.png')
     expect(call.query.get('confirm_no_student_data')).toBe('true')
     expect(call.headers.get('content-type')).toBe('image/png')
+  })
+})
+
+describe('reference diagram graph editor', () => {
+  const REF = '/api/v1/questions/q-1/diagrams/d-1'
+  const referenceGraph = (over: Partial<Record<string, unknown>> = {}) => ({
+    diagram_id: 'd-1',
+    version: 2,
+    kind: 'flowchart',
+    recognition: 'recognised',
+    content_url: `${REF}/content`,
+    graph: graph(),
+    ...over,
+  })
+
+  function withGraph(owned = true, extra: Parameters<typeof mockApi>[0] = {}) {
+    Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() })
+    return opened(detail({ owned }), {
+      [`GET ${REF}/graph`]: { json: referenceGraph() },
+      [`GET ${REF}/content`]: { body: new Blob(['x'], { type: 'image/png' }) },
+      ...extra,
+    })
+  }
+
+  it('opens the graph of a reference diagram and saves a correction as the next version', async () => {
+    const mock = withGraph(true, {
+      [`POST ${REF}/graph/edits`]: { json: referenceGraph({ version: 3 }) },
+    })
+    const user = await openFirst()
+    await user.click(screen.getByRole('button', { name: 'Edit graph of coil.png' }))
+    const dialog = await screen.findByRole('dialog', { name: 'coil.png' })
+    expect(await within(dialog).findByRole('button', { name: 'Node Start' })).toBeVisible()
+    expect(within(dialog).getByText('Read by the recognizer')).toBeVisible()
+    expect(within(dialog).getByText('Version 2')).toBeVisible()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Node Add' }))
+    const label = within(dialog).getByRole('textbox', { name: 'Node label' })
+    await user.clear(label)
+    await user.type(label, 'Sum')
+    await user.click(within(dialog).getByRole('button', { name: 'Save label' }))
+    await waitFor(() =>
+      expect(mock.callsTo(`POST ${REF}/graph/edits`)[0]?.body).toEqual({
+        expected_version: 2,
+        edits: [{ op: 'relabel_node', id: 'n2', label: 'Sum' }],
+        kind: null,
+      }),
+    )
+    expect(await within(dialog).findByText('Version 3')).toBeVisible()
+  })
+
+  it('changes what the diagram is', async () => {
+    const mock = withGraph(true, {
+      [`POST ${REF}/graph/edits`]: { json: referenceGraph({ kind: 'tree', version: 3 }) },
+    })
+    const user = await openFirst()
+    await user.click(screen.getByRole('button', { name: 'Edit graph of coil.png' }))
+    const dialog = await screen.findByRole('dialog', { name: 'coil.png' })
+    await user.selectOptions(
+      await within(dialog).findByRole('combobox', { name: 'Diagram kind' }),
+      'tree',
+    )
+    await waitFor(() =>
+      expect(mock.callsTo(`POST ${REF}/graph/edits`)[0]?.body).toEqual({
+        expected_version: 2,
+        edits: [],
+        kind: 'tree',
+      }),
+    )
+  })
+
+  it('queues the picture to be read again', async () => {
+    const mock = withGraph(true, { [`POST ${REF}/recognize`]: { status: 202 } })
+    const user = await openFirst()
+    await user.click(screen.getByRole('button', { name: 'Edit graph of coil.png' }))
+    const dialog = await screen.findByRole('dialog', { name: 'coil.png' })
+    await user.click(await within(dialog).findByRole('button', { name: 'Read the picture again' }))
+    expect(await screen.findByText(/being read again/)).toBeVisible()
+    expect(mock.callsTo(`POST ${REF}/recognize`)).toHaveLength(1)
+  })
+
+  it('is view-only for a question another college owns', async () => {
+    withGraph(false)
+    const user = await openFirst()
+    await user.click(screen.getByRole('button', { name: 'View graph of coil.png' }))
+    const dialog = await screen.findByRole('dialog', { name: 'coil.png' })
+    expect(await within(dialog).findByText(/belongs to another college/)).toBeVisible()
+    expect(within(dialog).queryByRole('button', { name: 'Read the picture again' })).toBeNull()
+    expect(within(dialog).getByRole('button', { name: 'Add at centre' })).toBeDisabled()
+  })
+
+  it('says when the graph cannot be loaded', async () => {
+    withGraph(true, { [`GET ${REF}/graph`]: { status: 404, json: { detail: 'Not found.' } } })
+    const user = await openFirst()
+    await user.click(screen.getByRole('button', { name: 'Edit graph of coil.png' }))
+    expect(await screen.findByText('The graph could not be loaded.')).toBeVisible()
   })
 })

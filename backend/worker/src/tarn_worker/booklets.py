@@ -5,7 +5,8 @@ P14) and ``booklet.score`` (a suggested mark per answer, one step; P13). One boo
 time, one transaction per step, so a crash resumes from the last finished step (design.md
 "Reliability"). Two jobs are not a booklet's stage: ``diagram.reference`` reads an uploaded
 reference diagram, ``answers.rescore`` re-scores answers after a teacher's edit in the API
-(which loads no models); each runs in one transaction.
+(which loads no models), ``booklet.resegment`` segments a reviewed booklet again on the teacher's
+request; each runs in one transaction.
 
 Per tick: jobs whose worker vanished on their last attempt are reaped (their booklets end as
 FAILED); then the next job is claimed, fairly across colleges. While the booklet is processed
@@ -43,6 +44,7 @@ from tarn_core.ports.jobs import (
     JOB_READ_BOOKLET,
     JOB_RECOGNIZE_REFERENCE,
     JOB_RESCORE_ANSWERS,
+    JOB_RESEGMENT_BOOKLET,
     JOB_SCORE_BOOKLET,
     JOB_SEGMENT_BOOKLET,
     Job,
@@ -61,10 +63,11 @@ from tarn_core.services.ocr.reader import (
 from tarn_core.services.pipeline import PagePipeline, QualityPolicy
 from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.scoring import BookletScorer, ScoringService
+from tarn_core.services.segmentation.resegment import BookletResegmenter
 from tarn_core.services.segmentation.segmenter import SegmentationPolicy
 from tarn_core.services.segmentation.service import BookletSegmenter
 from tarn_core.services.segmentation.similarity import TrigramEmbedder
-from tarn_core.services.workflow import clear_pending
+from tarn_core.services.workflow import RescoreRequests, clear_pending
 
 
 @dataclass(frozen=True)
@@ -167,6 +170,19 @@ class BookletJobRunner:
             policy=self.segmentation,
         )
 
+    def _resegmenter(self, session: PostgresSession) -> BookletResegmenter:
+        return BookletResegmenter(
+            booklets=session.booklets,
+            scores=session.scores,
+            content=session.content,
+            embedder=self.embedder,
+            runtime=session.runtime,
+            rescore=RescoreRequests(
+                booklets=session.booklets, runtime=session.runtime, rescorer=self._scorer(session)
+            ),
+            policy=self.segmentation,
+        )
+
     def _scorer(self, session: PostgresSession) -> BookletScorer:
         scoring = ScoringService.standard(
             booklets=session.booklets,
@@ -230,7 +246,14 @@ class BookletJobRunner:
                     job.college_id, ids=self.ids, clock=self.clock, blobs=self.blobs
                 ) as session,
             ):
-                if job.kind == JOB_RECOGNIZE_REFERENCE:
+                if job.kind == JOB_RESEGMENT_BOOKLET:
+                    self._resegmenter(session).run(
+                        job.college_id,
+                        UserId(UUID(str(job.payload["actor_id"]))),
+                        BookletId(UUID(str(job.payload["booklet_id"]))),
+                        expected_version=int(str(job.payload["expected_version"])),
+                    )
+                elif job.kind == JOB_RECOGNIZE_REFERENCE:
                     self._references(session).recognize(
                         job.college_id,
                         UserId(UUID(str(job.payload["actor_id"]))),
@@ -311,7 +334,7 @@ class BookletJobRunner:
                 self._abandon(lost, lost_stepper)
         if job is None:
             return bool(reaped)
-        if job.kind in (JOB_RECOGNIZE_REFERENCE, JOB_RESCORE_ANSWERS):
+        if job.kind in (JOB_RECOGNIZE_REFERENCE, JOB_RESCORE_ANSWERS, JOB_RESEGMENT_BOOKLET):
             self._single(job)
             return True
         stepper = self._stepper(job.kind)

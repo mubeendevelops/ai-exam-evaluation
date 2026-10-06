@@ -62,6 +62,7 @@ def written_answer(
             reading_order=index,
         )
         mem.booklets.save_page(college_id, page)
+        mem.blobs.put(page.image, b"synthetic page", "image/png")
         region_ids: list[RegionId] = []
         for n, raw in enumerate(written.lines):
             line = raw if isinstance(raw, Line) else Line(raw)

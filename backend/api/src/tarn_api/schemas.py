@@ -529,6 +529,12 @@ class PageOut(BaseModel):
     text_url: str | None = Field(description="The page's lines and readings, once read.")
 
 
+class BookletResultOut(BaseModel):
+    total: float
+    max_marks: float
+    sheet_version: int = Field(description="The latest result sheet's version.")
+
+
 class BookletOut(BaseModel):
     id: UUID
     status: BookletStatusName
@@ -560,6 +566,9 @@ class BookletOut(BaseModel):
     )
     duplicate_of: list[UUID] = Field(
         description="Other booklets of this college with the same file (set on upload only)."
+    )
+    result: BookletResultOut | None = Field(
+        None, description="The latest result sheet's total, once the booklet is approved."
     )
 
 
@@ -925,6 +934,13 @@ class SegmentsOut(BaseModel):
     rescoring: list[UUID] = Field(default_factory=list)
     emptied: list[UUID] = Field(
         default_factory=list, description="Answers left without text (not attempted)."
+    )
+
+
+class ResegmentOut(BaseModel):
+    booklet_version: int = Field(
+        description="The version the request was made at. The segments are replaced when the "
+        "worker has run: the booklet's version then moves on."
     )
 
 
