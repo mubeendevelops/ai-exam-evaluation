@@ -21,7 +21,12 @@ from tarn_core.domain.ocr import ContentClass, EngineCalibration, ReadingScore, 
 from tarn_core.errors import EngineFailedError, NotOwnerError
 from tarn_core.ids import RegionId
 from tarn_core.ports.engines import DetectedRegion, TableCell
-from tarn_core.ports.jobs import JOB_READ_BOOKLET, JOB_SCORE_BOOKLET, JOB_SEGMENT_BOOKLET
+from tarn_core.ports.jobs import (
+    JOB_DIAGRAMS_BOOKLET,
+    JOB_READ_BOOKLET,
+    JOB_SCORE_BOOKLET,
+    JOB_SEGMENT_BOOKLET,
+)
 from tarn_core.services.ocr.reader import OrientationPolicy
 from tarn_core.testing import ScriptedLayoutDetector, ScriptedOcrEngine
 from tarn_worker.booklets import OcrKit
@@ -267,7 +272,12 @@ def test_the_worker_reads_a_booklet_after_its_pages_are_ready(ocr_env: Env) -> N
         r.id for r in regions
     }
     assert [p.reading_order for p in env.pages(booklet)] == [0, 1]
-    # P13: segmentation queued scoring in the same transaction; the worker scores the answers.
+    # P14: segmentation queued the diagram stage in the same transaction; with no diagram
+    # question it queues scoring at once. P13: the worker scores the answers.
+    with env.test_db.owner() as conn:
+        kinds = [r[0] for r in conn.execute("SELECT kind FROM jobs ORDER BY seq").fetchall()]
+    assert kinds[-1] == JOB_DIAGRAMS_BOOKLET
+    assert env.runner.run_one() is True  # booklet.diagrams
     with env.test_db.owner() as conn:
         kinds = [r[0] for r in conn.execute("SELECT kind FROM jobs ORDER BY seq").fetchall()]
     assert kinds[-1] == JOB_SCORE_BOOKLET

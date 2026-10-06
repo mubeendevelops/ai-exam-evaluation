@@ -9,7 +9,7 @@ import pytest
 from tarn_core.domain.booklet import RegionKind
 from tarn_core.domain.common import Box, college_blob_key
 from tarn_core.domain.content import Question
-from tarn_core.domain.diagram import DiagramGraph, DiagramNode, NodeShape
+from tarn_core.domain.diagram import DiagramDetection
 from tarn_core.errors import InvariantError, NotFoundError
 from tarn_core.ids import BookletId, CollegeId
 from tarn_core.ports import (
@@ -50,7 +50,7 @@ BOX = Box(x0=0, y0=0, x1=10, y1=10)
 
 def test_in_memory_adapters_conform_to_ports() -> None:
     mem = InMemory()
-    graph = DiagramGraph(nodes=(DiagramNode(id="n1", shape=NodeShape.PROCESS),))
+    detection = DiagramDetection(width=10, height=10)
     adapters: tuple[object, ...] = ()
     content: ContentRepository = mem.content
     colleges: CollegeRepository = mem.colleges
@@ -71,7 +71,7 @@ def test_in_memory_adapters_conform_to_ports() -> None:
     ocr: OcrEngine = ScriptedOcrEngine("tesseract", ["hello"])
     embedder: Embedder = HashEmbedder()
     scorer: Scorer = FixedCreditScorer()
-    recognizer: DiagramRecognizer = ScriptedDiagramRecognizer(graph)
+    recognizer: DiagramRecognizer = ScriptedDiagramRecognizer(detection)
     adapters = (
         content, colleges, users, students, booklets, scores, sheets, blobs, pages,
         clock, ids, jobs, audit, layout, ocr, embedder, scorer, recognizer,

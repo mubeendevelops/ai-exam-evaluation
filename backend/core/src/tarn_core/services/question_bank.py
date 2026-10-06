@@ -29,6 +29,7 @@ from tarn_core.domain.content import (
     Subject,
     check_code,
 )
+from tarn_core.domain.diagram import DiagramKind
 from tarn_core.errors import AlreadyExistsError, InvariantError, NotFoundError
 from tarn_core.ids import (
     CollegeId,
@@ -535,6 +536,13 @@ class QuestionBankService:
         cleaned = _clean_list(terms, what="term", limit=MAX_TERMS, longest=MAX_TERM_LENGTH)
         return self._sync_glossary(college_id, actor_id, question_id, terms=cleaned)
 
+    def refresh_reference_labels(
+        self, college_id: CollegeId, actor_id: UserId, question_id: QuestionId
+    ) -> Glossary | None:
+        """Bring the glossary's reference labels up to date after a reference diagram's graph
+        changed (recognised or edited)."""
+        return self._sync_glossary(college_id, actor_id, question_id)
+
     def set_off_target_terms(
         self,
         college_id: CollegeId,
@@ -564,7 +572,8 @@ class QuestionBankService:
                 node.label
                 for d in self._content.for_question(ReferenceDiagram, question_id)
                 for node in d.graph.nodes
-            ],
+                if len(" ".join(node.label.split())) <= MAX_TERM_LENGTH
+            ][:MAX_TERMS],
             what="label",
             limit=MAX_TERMS,
             longest=MAX_TERM_LENGTH,
@@ -669,9 +678,11 @@ class QuestionBankService:
         data: bytes,
         declared_type: str | None,
         no_student_data: bool,
+        kind: DiagramKind = DiagramKind.FLOWCHART,
     ) -> ReferenceDiagram:
         """A reference diagram as PNG (U5 Q14). Its nodes and edges are read from the picture
-        by the recognizer in P14, and the teacher edits them; until then the graph is empty."""
+        by the recognizer (the ``diagram.reference`` job, P14) and the teacher edits them;
+        until then the graph is empty (``pending``)."""
         self._users.get(college_id, actor_id)
         ensure_can_edit(college_id, self._content.get(Question, question_id))
         self._checked_upload(
@@ -690,6 +701,7 @@ class QuestionBankService:
             png=global_blob_key(
                 "diagrams", str(question_id), str(diagram_id), safe_file_name(file_name)
             ),
+            kind=kind,
         )
         self._store(data, "image/png", diagram)
         self._rt.record(

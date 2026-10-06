@@ -7,11 +7,12 @@ from typing import Protocol
 
 from tarn_core.domain.booklet import LineReading, RegionKind
 from tarn_core.domain.common import Box, ContentRef, EngineRef
-from tarn_core.domain.content import CriterionType, RubricCriterion
-from tarn_core.domain.diagram import DiagramGraph
+from tarn_core.domain.content import CriterionType, ReferenceDiagram, RubricCriterion
+from tarn_core.domain.diagram import AnswerDiagram, DiagramDetection
 from tarn_core.domain.ocr import ContentClass, EngineCalibration
 from tarn_core.domain.scoring import CriterionScore, ScoringCalibration
 from tarn_core.errors import InvariantError
+from tarn_core.ids import ReferenceDiagramId
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -129,7 +130,13 @@ class ScoringInput:
 
     criterion: RubricCriterion
     answer_text: str
-    diagrams: tuple[DiagramGraph, ...] = ()
+    diagrams: tuple[AnswerDiagram, ...] = ()
+    """The diagrams recognised in the answer (each with its graph version)."""
+    reference_diagrams: Mapping[ReferenceDiagramId, ReferenceDiagram] = field(default_factory=dict)
+    """The reference diagrams the question's diagram criteria point at, in the versions the
+    score records."""
+    question_code: str = ""
+    slot_label: str | None = None
     reference_text: str = ""
     glossary: tuple[str, ...] = ()
     extra_content: Mapping[str, ContentRef] = field(default_factory=dict)
@@ -154,7 +161,11 @@ class Scorer(Protocol):
 
 
 class DiagramRecognizer(Protocol):
+    """Finds shapes and arrows (with head and tail) in an image or in one box of it; the core
+    reads the labels with the OCR framework and builds the graph. Coordinates are the whole
+    image's. Raises ``EngineFailedError`` when it cannot read the image."""
+
     @property
     def ref(self) -> EngineRef: ...
 
-    def recognize(self, image: bytes) -> DiagramGraph: ...
+    def recognize(self, image: bytes, box: Box | None = None) -> DiagramDetection: ...

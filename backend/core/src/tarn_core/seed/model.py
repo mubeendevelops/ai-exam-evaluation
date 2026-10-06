@@ -12,6 +12,7 @@ from tarn_core.domain.content import (
     DiagramComponent,
     Difficulty,
 )
+from tarn_core.domain.diagram import DiagramKind
 
 SYNTHETIC_SOURCE = "SYNTHETIC - dev only, needs teacher validation"
 """Label of every key written for development (D18). It is what ``ReferenceAnswer.synthetic``
@@ -58,6 +59,7 @@ class DiagramSeed:
     """Name used by criteria."""
     file: str
     """Name of the PNG in the adapters' seed data directory."""
+    kind: DiagramKind = DiagramKind.FLOWCHART
 
 
 @dataclass(frozen=True, slots=True)

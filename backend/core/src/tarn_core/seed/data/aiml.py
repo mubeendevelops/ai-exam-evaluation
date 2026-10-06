@@ -7,6 +7,7 @@ sigmoids, regression) were recomputed. Diagrams are cut from the keys by
 ``scripts/extract_seed_diagrams.sh``."""
 
 from tarn_core.domain.content import Difficulty
+from tarn_core.domain.diagram import DiagramKind
 from tarn_core.seed.model import (
     DiagramSeed,
     QuestionSeed,
@@ -136,7 +137,7 @@ K_AI1: tuple[QuestionSeed, ...] = (
             ),
         ],
         terms=["weights", "bias", "activation function", "weighted sum"],
-        diagrams=[DiagramSeed("unit", "k-ai1-q2a-unit.png")],
+        diagrams=[DiagramSeed("unit", "k-ai1-q2a-unit.png", DiagramKind.NETWORK)],
     ),
     question(
         "K-AI1-Q2B",
@@ -167,7 +168,7 @@ K_AI1: tuple[QuestionSeed, ...] = (
             num("Final output Y", 1, 0.7106, 0.001),
         ],
         difficulty=EASY,
-        diagrams=[DiagramSeed("network", "k-ai1-q2b-network.png")],
+        diagrams=[DiagramSeed("network", "k-ai1-q2b-network.png", DiagramKind.NETWORK)],
     ),
     question(
         "K-AI1-Q3",
@@ -302,7 +303,7 @@ K_AI1: tuple[QuestionSeed, ...] = (
         ],
         difficulty=MEDIUM,
         terms=["AGNES", "single linkage", "dendrogram", "agglomerative"],
-        diagrams=[DiagramSeed("dendrogram", "k-ai1-q5-dendrogram.png")],
+        diagrams=[DiagramSeed("dendrogram", "k-ai1-q5-dendrogram.png", DiagramKind.PLOT)],
     ),
     question(
         "K-AI1-Q6A",
@@ -426,7 +427,7 @@ K_AI1: tuple[QuestionSeed, ...] = (
             *dia_parts("Vector-form diagram", "vector-form", 1, 1, 1),
         ],
         terms=["weight matrix", "bias vector", "layer", "vectorised"],
-        diagrams=[DiagramSeed("vector-form", "k-ai1-q7a-vector-form.png")],
+        diagrams=[DiagramSeed("vector-form", "k-ai1-q7a-vector-form.png", DiagramKind.NETWORK)],
     ),
     question(
         "K-AI1-Q7B",
@@ -495,7 +496,7 @@ K_AI1: tuple[QuestionSeed, ...] = (
         ],
         difficulty=MEDIUM,
         terms=["recurrent", "hidden state", "tanh", "softmax", "time step"],
-        diagrams=[DiagramSeed("rnn", "k-ai1-q8a-rnn.png")],
+        diagrams=[DiagramSeed("rnn", "k-ai1-q8a-rnn.png", DiagramKind.NETWORK)],
     ),
     question(
         "K-AI1-Q8B",
@@ -1239,8 +1240,8 @@ K_AI3: tuple[QuestionSeed, ...] = (
         difficulty=HARD,
         terms=["model-based agent", "utility function", "condition-action rule", "internal state"],
         diagrams=[
-            DiagramSeed("model-based", "k-ai3-q4-model-based-agent.png"),
-            DiagramSeed("utility-based", "k-ai3-q4-utility-based-agent.png"),
+            DiagramSeed("model-based", "k-ai3-q4-model-based-agent.png", DiagramKind.BLOCK),
+            DiagramSeed("utility-based", "k-ai3-q4-utility-based-agent.png", DiagramKind.BLOCK),
         ],
     ),
     question(

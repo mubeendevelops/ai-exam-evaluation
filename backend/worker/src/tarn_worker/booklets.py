@@ -1,8 +1,11 @@
 """Runs queued booklet jobs: ``booklet.prepare`` (split, clean, gate; P9), ``booklet.read``
 (best-of-N OCR, one page per step; P10), ``booklet.segment`` (answers per question, one
-step; P12) and ``booklet.score`` (a suggested mark per answer, one step; P13). One booklet
-at a time, one transaction per step, so a crash resumes from the last finished step
-(design.md "Reliability").
+step; P12), ``booklet.diagrams`` (the drawings in answers to diagram questions, one per step;
+P14) and ``booklet.score`` (a suggested mark per answer, one step; P13). One booklet at a
+time, one transaction per step, so a crash resumes from the last finished step (design.md
+"Reliability"). Two jobs are not a booklet's stage: ``diagram.reference`` reads an uploaded
+reference diagram, ``answers.rescore`` re-scores answers after a teacher's edit in the API
+(which loads no models); each runs in one transaction.
 
 Per tick: jobs whose worker vanished on their last attempt are reaped (their booklets end as
 FAILED); then the next job is claimed, fairly across colleges. While the booklet is processed
@@ -22,13 +25,24 @@ from uuid import UUID
 import structlog
 
 from tarn_adapters.postgres.database import PostgresDatabase, PostgresSession
+from tarn_core.domain.diagram import DiagramKind
 from tarn_core.domain.ocr import SelectorSettings
 from tarn_core.errors import NotFoundError
-from tarn_core.ids import BookletId, CollegeId
-from tarn_core.ports.engines import Embedder, LayoutDetector, OcrEngine, PageTransform, WordList
+from tarn_core.ids import AnswerId, BookletId, CollegeId, ReferenceDiagramId, UserId
+from tarn_core.ports.engines import (
+    DiagramRecognizer,
+    Embedder,
+    LayoutDetector,
+    OcrEngine,
+    PageTransform,
+    WordList,
+)
 from tarn_core.ports.jobs import (
+    JOB_DIAGRAMS_BOOKLET,
     JOB_PREPARE_BOOKLET,
     JOB_READ_BOOKLET,
+    JOB_RECOGNIZE_REFERENCE,
+    JOB_RESCORE_ANSWERS,
     JOB_SCORE_BOOKLET,
     JOB_SEGMENT_BOOKLET,
     Job,
@@ -36,8 +50,16 @@ from tarn_core.ports.jobs import (
 from tarn_core.ports.pages import PageCleaner, PageSplitter
 from tarn_core.ports.runtime import Clock, IdGenerator
 from tarn_core.ports.storage import BlobStore
-from tarn_core.services.ocr.reader import BookletReader, OrientationPolicy, abandon_reading
+from tarn_core.services.diagrams.scorer import DiagramScorer
+from tarn_core.services.diagrams.service import BookletDiagrams, ReferenceDiagrams
+from tarn_core.services.ocr.reader import (
+    BookletReader,
+    OrientationPolicy,
+    PageOcr,
+    abandon_reading,
+)
 from tarn_core.services.pipeline import PagePipeline, QualityPolicy
+from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.scoring import BookletScorer, ScoringService
 from tarn_core.services.segmentation.segmenter import SegmentationPolicy
 from tarn_core.services.segmentation.service import BookletSegmenter
@@ -100,6 +122,9 @@ class BookletJobRunner:
     scoring_embedder: Embedder = field(default_factory=TrigramEmbedder)
     """Local only (``build_scoring_embedder``): scoring sends no text off the machine."""
     word_list: WordList | None = None
+    recognizers: Mapping[DiagramKind, DiagramRecognizer] = field(default_factory=dict)
+    """Diagram recognizers per kind (empty: drawings are stored without a graph and their
+    criteria go to the teacher)."""
 
     def _pipeline(self, session: PostgresSession) -> PagePipeline:
         return PagePipeline(
@@ -150,8 +175,102 @@ class BookletJobRunner:
             embedder=self.scoring_embedder,
             calibrations=session.scoring_calibrations,
             word_list=self.word_list,
+            extra=[DiagramScorer()],
         )
         return BookletScorer(booklets=session.booklets, scoring=scoring, runtime=session.runtime)
+
+    def _diagrams(self, session: PostgresSession) -> BookletDiagrams:
+        return BookletDiagrams(
+            booklets=session.booklets,
+            content=session.content,
+            blobs=self.blobs,
+            runtime=session.runtime,
+            jobs=session.jobs,
+            recognizers=self.recognizers,
+        )
+
+    def _references(self, session: PostgresSession) -> ReferenceDiagrams:
+        labels = None
+        if self.ocr is not None:
+            labels = PageOcr(
+                layout=self.ocr.layout,
+                engines=self.ocr.engines,
+                transform=self.ocr.transform,
+                settings=self.ocr.settings,
+                calibrations={
+                    (c.engine, c.content_class): c for c in session.calibrations.latest()
+                },
+                orientation=self.ocr.orientation,
+            )
+        bank = QuestionBankService(
+            content=session.content,
+            users=session.users,
+            colleges=session.colleges,
+            blobs=self.blobs,
+            runtime=session.runtime,
+        )
+        return ReferenceDiagrams(
+            content=session.content,
+            blobs=self.blobs,
+            runtime=session.runtime,
+            recognizers=self.recognizers,
+            labels=labels,
+            glossary=bank,
+        )
+
+    def _single(self, job: Job) -> None:
+        """A job that is not a booklet stage: one transaction, retried with backoff."""
+        log = structlog.get_logger("tarn_worker")
+        started = time.perf_counter()
+        try:
+            with (
+                self._keep_alive(job),
+                self.db.session(
+                    job.college_id, ids=self.ids, clock=self.clock, blobs=self.blobs
+                ) as session,
+            ):
+                if job.kind == JOB_RECOGNIZE_REFERENCE:
+                    self._references(session).recognize(
+                        job.college_id,
+                        UserId(UUID(str(job.payload["actor_id"]))),
+                        ReferenceDiagramId(UUID(str(job.payload["reference_diagram_id"]))),
+                    )
+                else:
+                    answers = job.payload["answer_ids"]
+                    actor = job.payload.get("actor_id")
+                    self._scorer(session).rescore(
+                        job.college_id,
+                        None if actor is None else UserId(UUID(str(actor))),
+                        [AnswerId(UUID(str(a))) for a in answers]
+                        if isinstance(answers, list)
+                        else [],
+                    )
+        except NotFoundError:
+            with self.db.scheduler() as queue:
+                queue.succeed(job.id)
+            log.info("job.skipped", job=str(job.id), kind=job.kind, reason="gone")
+            return
+        except Exception as error:
+            with self.db.scheduler() as queue:
+                will_retry = queue.fail(job.id, type(error).__name__, retry=True)
+            log.error(
+                "job.failed",
+                job=str(job.id),
+                kind=job.kind,
+                college=str(job.college_id),
+                error=type(error).__name__,
+                will_retry=will_retry,
+            )
+            return
+        with self.db.scheduler() as queue:
+            queue.succeed(job.id)
+        log.info(
+            "job.done",
+            job=str(job.id),
+            kind=job.kind,
+            college=str(job.college_id),
+            seconds=round(time.perf_counter() - started, 2),
+        )
 
     def _stepper(self, kind: str) -> Callable[[PostgresSession], _Stepper] | None:
         if kind == JOB_PREPARE_BOOKLET:
@@ -160,6 +279,8 @@ class BookletJobRunner:
             return self._reader if self.ocr is not None else _NoOcr
         if kind == JOB_SEGMENT_BOOKLET:
             return self._segmenter
+        if kind == JOB_DIAGRAMS_BOOKLET:
+            return self._diagrams
         if kind == JOB_SCORE_BOOKLET:
             return self._scorer
         return None
@@ -175,6 +296,9 @@ class BookletJobRunner:
                 self._abandon(lost, lost_stepper)
         if job is None:
             return bool(reaped)
+        if job.kind in (JOB_RECOGNIZE_REFERENCE, JOB_RESCORE_ANSWERS):
+            self._single(job)
+            return True
         stepper = self._stepper(job.kind)
         if stepper is None:
             with self.db.scheduler() as queue:

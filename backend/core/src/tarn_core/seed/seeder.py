@@ -321,6 +321,7 @@ def _seed_question(
             data=assets(diagram.file),
             declared_type="image/png",
             no_student_data=True,
+            kind=diagram.kind,
         )
         diagrams[diagram.key] = stored.id
         report.made("reference diagrams")

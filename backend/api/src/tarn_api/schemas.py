@@ -10,6 +10,9 @@ from tarn_core.domain.tenancy import User
 
 Email = Field(min_length=3, max_length=320, examples=["evaluator@institution.edu"])
 Password = Field(min_length=1, max_length=1024)
+DiagramKindName = Literal[
+    "flowchart", "block", "network", "tree", "circuit", "plot", "labelled_drawing"
+]
 
 
 class _In(BaseModel):
@@ -444,6 +447,12 @@ class ReferenceDiagramOut(BaseModel):
     edge_count: int
     labels: list[str]
     content_url: str
+    kind: DiagramKindName
+    recognition: Literal["pending", "recognised", "failed", "edited"] = Field(
+        description="pending: the worker has not read the PNG yet; failed: draw it by hand."
+    )
+    version: int
+    graph_url: str
 
 
 class QuestionOut(QuestionSummaryOut):
@@ -605,3 +614,117 @@ class BookletPageOut(BaseModel):
     offset: int
     waiting: int = Field(description="Your booklets that are queued or being processed.")
     max_waiting: int = Field(description="How many you may have waiting at once.")
+
+
+# --- diagrams (P14) ---------------------------------------------------------------------------
+
+ShapeName = Literal["terminal", "process", "decision", "io", "circle", "block", "other"]
+EditOpName = Literal[
+    "add_node",
+    "remove_node",
+    "relabel_node",
+    "reshape_node",
+    "add_edge",
+    "remove_edge",
+    "relabel_edge",
+    "reverse_edge",
+    "set_edge_ends",
+]
+
+
+class GraphNodeOut(BaseModel):
+    id: str
+    shape: ShapeName
+    label: str
+    box: list[int] | None = Field(description="[x0, y0, x1, y1] in the image's pixels.")
+    confidence: float = Field(description="The recognizer's confidence in the shape, 0..1.")
+    label_confidence: float | None = Field(description="OCR line score of the label, 0..1.")
+
+
+class GraphEdgeOut(BaseModel):
+    id: str
+    source: str | None = Field(description="The node at the tail; null: touches no shape.")
+    target: str | None = Field(description="The node at the head; null: touches no shape.")
+    label: str
+    directed: bool = Field(description="false: a line without an arrow head.")
+    confidence: float
+    box: list[int] | None
+    tail: list[int] | None = Field(description="[x, y]")
+    head: list[int] | None = Field(description="[x, y]")
+
+
+class FreeLabelOut(BaseModel):
+    text: str
+    box: list[int] | None
+    confidence: float | None
+
+
+class EngineOut(BaseModel):
+    name: str
+    version: str
+
+
+class DiagramGraphOut(BaseModel):
+    """``docs/api/diagram-graph.schema.json`` v1.0."""
+
+    schema_version: Literal["1.0"]
+    nodes: list[GraphNodeOut]
+    edges: list[GraphEdgeOut]
+    free_labels: list[FreeLabelOut]
+    recognizer: EngineOut | None = Field(description="null: drawn by the teacher.")
+    label_engines: list[str]
+    edited_by_teacher: bool
+
+
+class ReferenceGraphOut(BaseModel):
+    diagram_id: UUID
+    version: int = Field(description="Send it back as expected_version when editing.")
+    kind: DiagramKindName
+    recognition: Literal["pending", "recognised", "failed", "edited"]
+    graph: DiagramGraphOut
+    content_url: str
+
+
+class GraphEditIn(_In):
+    op: EditOpName
+    id: str | None = Field(
+        None, max_length=64, description="The node or edge; for an add, the new id or null."
+    )
+    shape: ShapeName | None = None
+    label: str | None = Field(None, max_length=200)
+    source: str | None = Field(None, max_length=64)
+    target: str | None = Field(None, max_length=64)
+    directed: bool | None = None
+    box: list[Annotated[int, Field(ge=0)]] | None = Field(None, min_length=4, max_length=4)
+
+
+class ReferenceGraphEditIn(_In):
+    expected_version: int = Field(ge=1)
+    edits: list[GraphEditIn] = Field(default_factory=list, max_length=500)
+    kind: DiagramKindName | None = Field(None, description="Change what the diagram is.")
+
+
+class StudentDiagramOut(BaseModel):
+    id: UUID
+    segment_id: UUID
+    region_id: UUID | None
+    version: int = Field(description="Send it back as expected_version when editing.")
+    kind: DiagramKindName
+    box: list[int] = Field(description="Where it is on its page, in page pixels.")
+    graph: DiagramGraphOut
+
+
+class StudentGraphEditIn(_In):
+    expected_version: int = Field(ge=1)
+    edits: list[GraphEditIn] = Field(min_length=1, max_length=500)
+
+
+class DiagramComparisonOut(BaseModel):
+    criterion_id: UUID
+    criterion_version: int
+    credit: float
+    similarity: float | None
+    flags: list[str]
+    document: dict[str, Any] = Field(
+        description="The R6 result, as docs/api/diagram-comparison.schema.json v1.0 describes."
+    )

@@ -1,0 +1,347 @@
+{
+  "schema_version": "1.0",
+  "question_id": "SYN-Q2a",
+  "slot_label": "2.a",
+  "diagram_kind": "flowchart",
+  "reference_diagram_id": "2f0c4a52-5a8e-4c43-9d55-0b6f3c1e9a10",
+  "reference_graph_version": 3,
+  "student_diagram_id": "8b1e7d3c-1f2a-4b6e-a7c9-3d5e2f4a6b80",
+  "student_graph_version": 1,
+  "similarity": 0.5441,
+  "edit_distance": 7.2941,
+  "sub_scores": {
+    "nodes": 0.6765,
+    "edges": 0.375,
+    "labels": 0.6667
+  },
+  "nodes": [
+    {
+      "id": "s1",
+      "shape": "terminal",
+      "label": "strat",
+      "matched_ref": "r1",
+      "label_match": "close",
+      "glossary_term": "start",
+      "glossary_match": "close",
+      "shape_match": true,
+      "confidence": 0.8,
+      "label_confidence": 0.7,
+      "box": [
+        10,
+        10,
+        60,
+        40
+      ]
+    },
+    {
+      "id": "s2",
+      "shape": "decision",
+      "label": "is n>0",
+      "matched_ref": "r2",
+      "label_match": "close",
+      "glossary_term": "is n > 0?",
+      "glossary_match": "close",
+      "shape_match": true,
+      "confidence": 0.8,
+      "label_confidence": 0.7,
+      "box": [
+        10,
+        10,
+        60,
+        40
+      ]
+    },
+    {
+      "id": "s3",
+      "shape": "process",
+      "label": "print n",
+      "matched_ref": "r3",
+      "label_match": "exact",
+      "glossary_term": "print n",
+      "glossary_match": "exact",
+      "shape_match": false,
+      "confidence": 0.8,
+      "label_confidence": 0.7,
+      "box": [
+        10,
+        10,
+        60,
+        40
+      ]
+    },
+    {
+      "id": "s9",
+      "shape": "process",
+      "label": "print x",
+      "matched_ref": null,
+      "label_match": null,
+      "glossary_term": "print n",
+      "glossary_match": "close",
+      "shape_match": null,
+      "confidence": 0.8,
+      "label_confidence": 0.7,
+      "box": [
+        10,
+        10,
+        60,
+        40
+      ]
+    }
+  ],
+  "reference_nodes": [
+    {
+      "id": "r1",
+      "shape": "terminal",
+      "label": "start",
+      "matched_student": "s1",
+      "label_match": "close",
+      "shape_match": true
+    },
+    {
+      "id": "r2",
+      "shape": "decision",
+      "label": "is n > 0?",
+      "matched_student": "s2",
+      "label_match": "close",
+      "shape_match": true
+    },
+    {
+      "id": "r3",
+      "shape": "io",
+      "label": "print n",
+      "matched_student": "s3",
+      "label_match": "exact",
+      "shape_match": false
+    },
+    {
+      "id": "r4",
+      "shape": "terminal",
+      "label": "stop",
+      "matched_student": null,
+      "label_match": null,
+      "shape_match": null
+    }
+  ],
+  "edges": [
+    {
+      "ref": [
+        "r1",
+        "r2"
+      ],
+      "student": [
+        "s1",
+        "s2"
+      ],
+      "status": "present",
+      "ref_edge": "a",
+      "student_edge": "e1",
+      "label": "",
+      "label_match": null,
+      "directed": true,
+      "confidence": 0.6,
+      "box": [
+        1,
+        1,
+        5,
+        9
+      ]
+    },
+    {
+      "ref": [
+        "r2",
+        "r3"
+      ],
+      "student": [
+        "s3",
+        "s2"
+      ],
+      "status": "reversed",
+      "ref_edge": "b",
+      "student_edge": "e2",
+      "label": "yes",
+      "label_match": "exact",
+      "directed": true,
+      "confidence": 1.0,
+      "box": null
+    },
+    {
+      "ref": [
+        "r3",
+        "r4"
+      ],
+      "student": null,
+      "status": "missing",
+      "ref_edge": "c",
+      "student_edge": null,
+      "label": "",
+      "label_match": null,
+      "directed": true,
+      "confidence": null,
+      "box": null
+    },
+    {
+      "ref": [
+        "r2",
+        "r4"
+      ],
+      "student": null,
+      "status": "missing",
+      "ref_edge": "d",
+      "student_edge": null,
+      "label": "no",
+      "label_match": null,
+      "directed": true,
+      "confidence": null,
+      "box": null
+    },
+    {
+      "ref": null,
+      "student": [
+        "s3",
+        null
+      ],
+      "status": "extra",
+      "ref_edge": null,
+      "student_edge": "e3",
+      "label": "",
+      "label_match": null,
+      "directed": true,
+      "confidence": 1.0,
+      "box": null
+    },
+    {
+      "ref": null,
+      "student": [
+        null,
+        null
+      ],
+      "status": "extra",
+      "ref_edge": null,
+      "student_edge": "e4",
+      "label": "",
+      "label_match": null,
+      "directed": false,
+      "confidence": 1.0,
+      "box": null
+    }
+  ],
+  "labels": [
+    {
+      "element": "node",
+      "id": "s1",
+      "label": "strat",
+      "glossary_term": "start",
+      "match": "close",
+      "confidence": 0.7
+    },
+    {
+      "element": "node",
+      "id": "s2",
+      "label": "is n>0",
+      "glossary_term": "is n > 0?",
+      "match": "close",
+      "confidence": 0.7
+    },
+    {
+      "element": "node",
+      "id": "s3",
+      "label": "print n",
+      "glossary_term": "print n",
+      "match": "exact",
+      "confidence": 0.7
+    },
+    {
+      "element": "node",
+      "id": "s9",
+      "label": "print x",
+      "glossary_term": "print n",
+      "match": "close",
+      "confidence": 0.7
+    },
+    {
+      "element": "edge",
+      "id": "e2",
+      "label": "yes",
+      "glossary_term": "yes",
+      "match": "exact",
+      "confidence": null
+    },
+    {
+      "element": "free",
+      "id": null,
+      "label": "my note",
+      "glossary_term": null,
+      "match": "none",
+      "confidence": 0.5
+    }
+  ],
+  "missing": {
+    "nodes": [
+      "r4"
+    ],
+    "edges": [
+      [
+        "r3",
+        "r4"
+      ],
+      [
+        "r2",
+        "r4"
+      ]
+    ],
+    "labels": [
+      "stop",
+      "no"
+    ]
+  },
+  "anomalies": [
+    {
+      "type": "extra_node",
+      "student": "s9",
+      "label": "print x"
+    },
+    {
+      "type": "dangling_arrow",
+      "student": "e3",
+      "end": "head"
+    },
+    {
+      "type": "dangling_arrow",
+      "student": "e4",
+      "end": "both"
+    },
+    {
+      "type": "reversed_edge",
+      "student": [
+        "s3",
+        "s2"
+      ],
+      "edge": "e2",
+      "ref": [
+        "r2",
+        "r3"
+      ]
+    },
+    {
+      "type": "extra_label",
+      "student": null,
+      "label": "my note"
+    },
+    {
+      "type": "disconnected",
+      "student": [
+        "s9"
+      ]
+    }
+  ],
+  "engines": {
+    "recognizer": "shape-detector-v1",
+    "label_ocr": [
+      "trocr",
+      "paddle"
+    ],
+    "comparator": "graph-compare-v1"
+  },
+  "min_confidence": 0.6,
+  "edited_by_teacher": false
+}

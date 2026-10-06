@@ -34,7 +34,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 USER_AGENT = "tarn-dataset-fetch/1.0 (internal OCR testing; one URL at a time)"
@@ -66,9 +66,10 @@ SOURCES: dict[str, Source] = {
             "https://cmp.felk.cvut.cz/~breslmar/flowcharts_offline/",
             "Hand-drawn flowcharts as PNG, with XML annotation and InkML strokes (folders DA, DB).",
             "Benchmark for flowchart recognition (P14).",
-            "Described as freely available for research; the page's licence text was not "
-            "checked by Tarn (the server was unreachable when this script was written). Read "
-            "the page, cite the authors (Bresler et al.), and use it for testing only.",
+            "The page says the database is free to download; cite the authors (Bresler, "
+            "Prusa, Hlavac). Archive: https://cmp.felk.cvut.cz/~breslmar/flowcharts_offline/"
+            "FC_database_offline_1.0.zip (~945 MB). Used to train the diagram detector by the "
+            "user's decision (D100); do not redistribute it.",
             "url",
         ),
         Source(
@@ -232,7 +233,7 @@ def record(folder: Path, source: Source, entry: dict[str, object]) -> None:
     entry = {
         "source": source.name,
         "landing": source.landing,
-        "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),  # noqa: UP017  (runs on the system Python 3.10 too)
         "terms_note": source.terms,
         "terms_accepted_by_operator": True,
         **entry,

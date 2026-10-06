@@ -33,10 +33,12 @@ from tarn_core.domain.content import (
     NumericParams,
     SemanticParams,
 )
-from tarn_core.domain.diagram import DiagramEdge, DiagramGraph, DiagramNode, NodeShape
+from tarn_core.domain.diagram import DiagramGraph
 from tarn_core.domain.review import ResultLine
 from tarn_core.domain.scoring import CriterionReason
 from tarn_core.ids import PageId, QuestionId, ReferenceDiagramId
+from tarn_core.services.diagrams.graph_json import graph_from_json as core_graph_from_json
+from tarn_core.services.diagrams.graph_json import graph_to_json as core_graph_to_json
 
 type Json = JsonValue
 
@@ -214,63 +216,12 @@ def params_from_json(kind: CriterionType, value: object) -> CriterionParams:
 
 
 def graph_to_json(graph: DiagramGraph) -> Json:
-    return {
-        "nodes": [
-            {
-                "id": n.id,
-                "shape": n.shape.value,
-                "label": n.label,
-                "box": None if n.box is None else list[Json](box_to_list(n.box)),
-                "confidence": n.confidence,
-            }
-            for n in graph.nodes
-        ],
-        "edges": [
-            {
-                "id": e.id,
-                "source": e.source,
-                "target": e.target,
-                "label": e.label,
-                "directed": e.directed,
-                "confidence": e.confidence,
-            }
-            for e in graph.edges
-        ],
-        "recognizer": None if graph.recognizer is None else _engine_to_json(graph.recognizer),
-        "edited_by_teacher": graph.edited_by_teacher,
-    }
+    """The published graph document (``docs/api/diagram-graph.schema.json``)."""
+    return core_graph_to_json(graph)
 
 
 def graph_from_json(value: object) -> DiagramGraph:
-    o = _obj(value)
-    nodes = tuple(
-        DiagramNode(
-            id=_str(n["id"]),
-            shape=NodeShape(_str(n["shape"])),
-            label=_str(n["label"]),
-            box=None if n["box"] is None else box_from_list(_list(n["box"])),
-            confidence=_float(n["confidence"]),
-        )
-        for n in map(_obj, _list(o["nodes"]))
-    )
-    edges = tuple(
-        DiagramEdge(
-            id=_str(e["id"]),
-            source=_str(e["source"]),
-            target=_str(e["target"]),
-            label=_str(e["label"]),
-            directed=_bool(e["directed"]),
-            confidence=_float(e["confidence"]),
-        )
-        for e in map(_obj, _list(o["edges"]))
-    )
-    recognizer = None if o["recognizer"] is None else _engine_from_json(o["recognizer"])
-    return DiagramGraph(
-        nodes=nodes,
-        edges=edges,
-        recognizer=recognizer,
-        edited_by_teacher=_bool(o["edited_by_teacher"]),
-    )
+    return core_graph_from_json(value)
 
 
 # --- blueprint sections -----------------------------------------------------------------------

@@ -15,6 +15,7 @@ from tarn_api.schemas import (
     CriterionBody,
     CriterionOut,
     DiagramCriterion,
+    DiagramKindName,
     DiagramParamsBody,
     ErrorOut,
     GlossaryIn,
@@ -54,6 +55,7 @@ from tarn_core.domain.content import (
     RubricCriterion,
     SemanticParams,
 )
+from tarn_core.domain.diagram import DiagramKind
 from tarn_core.domain.tenancy import Role
 from tarn_core.ids import (
     CollegeId,
@@ -65,6 +67,7 @@ from tarn_core.ids import (
     SubjectId,
 )
 from tarn_core.ports.repositories import QuestionQuery
+from tarn_core.services.diagrams.jobs import queue_reference_recognition
 from tarn_core.services.question_bank import (
     DIAGRAM_MAX_BYTES,
     KEY_FILE_MAX_BYTES,
@@ -282,6 +285,10 @@ def _diagram_out(d: ReferenceDiagram, base: str) -> ReferenceDiagramOut:
         edge_count=len(d.graph.edges),
         labels=[n.label for n in d.graph.nodes if n.label],
         content_url=f"{base}/diagrams/{d.id}/content",
+        kind=d.kind.value,
+        recognition=d.recognition.value,
+        version=d.meta.version,
+        graph_url=f"{base}/diagrams/{d.id}/graph",
     )
 
 
@@ -617,8 +624,10 @@ def key_file_content(
     responses={**_OWNER_ONLY, 413: {"model": ErrorOut}},
     openapi_extra={"requestBody": _PNG_BODY},
     summary="Upload a reference diagram as PNG (owning college only)",
-    description="The request body is the PNG. Its nodes and edges are read from the picture "
-    "later (P14); until then the graph is empty. `confirm_no_student_data` must be true (C9).",
+    description="The request body is the PNG. Its nodes, edges and labels are read from the "
+    "picture by the worker (recognition `pending` until then); check and correct them through "
+    "`/graph/edits`. `kind` says what it is (circuits, plots and labelled drawings are kept "
+    "but not compared yet). `confirm_no_student_data` must be true (C9).",
 )
 async def upload_reference_diagram(
     question_id: UUID,
@@ -627,6 +636,7 @@ async def upload_reference_diagram(
     backends: BackendsDep,
     filename: Annotated[str, Query(min_length=1, max_length=255)],
     confirm_no_student_data: Annotated[bool, Query()] = False,
+    kind: Annotated[DiagramKindName, Query()] = "flowchart",
 ) -> ReferenceDiagramOut:
     data = await _upload_bytes(request, DIAGRAM_MAX_BYTES)
     with unit_of_work(backends, who.college_id) as unit:
@@ -639,7 +649,9 @@ async def upload_reference_diagram(
             data=data,
             declared_type=request.headers.get("content-type"),
             no_student_data=confirm_no_student_data,
+            kind=DiagramKind(kind),
         )
+        queue_reference_recognition(unit.scope.jobs, who.college_id, who.user_id, diagram)
     return _diagram_out(diagram, f"/api/v1/questions/{question_id}")
 
 

@@ -56,7 +56,7 @@ from tarn_core.domain.content import (
     RubricCriterion,
     Subject,
 )
-from tarn_core.domain.diagram import StudentDiagram
+from tarn_core.domain.diagram import DiagramKind, RecognitionState, StudentDiagram
 from tarn_core.domain.ocr import ContentClass, ReadingScore
 from tarn_core.domain.review import ResultSheet, Review
 from tarn_core.domain.scoring import AnswerFlag, AnswerScore, CriterionScore, SentenceVector
@@ -271,6 +271,8 @@ def _diagram_values(d: ReferenceDiagram) -> dict[str, object]:
         "question_id": d.question_id,
         "png_key": d.png.value,
         "graph": codec.graph_to_json(d.graph),
+        "kind": d.kind.value,
+        "recognition": d.recognition.value,
     }
 
 
@@ -281,6 +283,8 @@ def _diagram(r: Row[Any]) -> ReferenceDiagram:
         question_id=QuestionId(r.question_id),
         png=BlobKey(r.png_key),
         graph=codec.graph_from_json(r.graph),
+        kind=DiagramKind(r.kind),
+        recognition=RecognitionState(r.recognition),
     )
 
 
@@ -846,6 +850,8 @@ def _student_diagram(r: Row[Any]) -> StudentDiagram:
         box=codec.box_from_list(r.box),
         graph=codec.graph_from_json(r.graph),
         version=r.version,
+        region_id=None if r.region_id is None else RegionId(r.region_id),
+        kind=DiagramKind(r.kind),
     )
 
 
@@ -1124,6 +1130,8 @@ class PgBookletRepository:
                     "box": codec.box_to_list(diagram.box),
                     "graph": codec.graph_to_json(diagram.graph),
                     "version": diagram.version,
+                    "region_id": diagram.region_id,
+                    "kind": diagram.kind.value,
                 },
             )
 
@@ -1177,6 +1185,7 @@ class PgScoreRepository:
                         "flags": list(c.flags),
                         "similarity": c.similarity,
                         "reason": None if c.reason is None else codec.reason_to_json(c.reason),
+                        "detail": c.detail,
                     }
                     for n, c in enumerate(score.criterion_scores)
                 ],
@@ -1213,6 +1222,7 @@ class PgScoreRepository:
                     flags=tuple(c.flags),
                     similarity=c.similarity,
                     reason=None if c.reason is None else codec.reason_from_json(c.reason),
+                    detail=c.detail,
                 )
             )
         return [

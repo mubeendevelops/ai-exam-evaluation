@@ -24,7 +24,8 @@ from tarn_core.domain.booklet import (
 from tarn_core.domain.common import college_blob_key
 from tarn_core.errors import InvariantError, NotFoundError
 from tarn_core.ids import BookletId, CollegeId, StudentId, UserId
-from tarn_core.ports.jobs import JOB_SCORE_BOOKLET, JOB_SEGMENT_BOOKLET
+from tarn_core.ports.jobs import JOB_DIAGRAMS_BOOKLET, JOB_SCORE_BOOKLET, JOB_SEGMENT_BOOKLET
+from tarn_core.services.diagrams.service import BookletDiagrams
 from tarn_core.services.marking import Outcome, apply_choice_rules
 from tarn_core.services.scoring import BookletScorer, ScoringService
 from tarn_core.services.segmentation.edits import SegmentEditor
@@ -161,8 +162,19 @@ def test_segmenting_stores_segments_answers_and_page_order(world: World) -> None
     assert [p.reading_order for p in pages] == [0, 1]
 
 
-def test_segmenting_queues_scoring_and_the_scorer_takes_over(world: World) -> None:
+def test_segmenting_queues_diagrams_then_scoring_and_the_scorer_takes_over(world: World) -> None:
     booklet = world.segmented()
+    queued = [j for j in world.mem.jobs.jobs if j.kind == JOB_DIAGRAMS_BOOKLET]
+    assert [j.payload for j in queued] == [{"booklet_id": str(booklet.id)}]
+    diagrams = BookletDiagrams(
+        booklets=world.mem.booklets,
+        content=world.mem.content,
+        blobs=world.mem.blobs,
+        runtime=world.mem.runtime,
+        jobs=world.mem.jobs,
+        recognizers={},
+    )
+    assert diagrams.step(world.college, booklet.id)  # no diagram criterion: straight on
     queued = [j for j in world.mem.jobs.jobs if j.kind == JOB_SCORE_BOOKLET]
     assert [j.payload for j in queued] == [{"booklet_id": str(booklet.id)}]
     scoring = ScoringService.standard(

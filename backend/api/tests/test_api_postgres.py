@@ -271,6 +271,7 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
     read = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()
     assert read["status"] == "text_ready" and read["pages_read"] == 2
     assert runner.run_one() is True  # segmentation (P12)
+    assert runner.run_one() is True  # diagrams (P14): no diagram question, scoring is queued
     assert runner.run_one() is True  # scoring (P13)
     assert runner.run_one() is False
     scored = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()

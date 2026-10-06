@@ -37,12 +37,18 @@ bench = typer.Typer(help="Benchmarks (P11, P12).")
 score = typer.Typer(help="Text scoring (P13): model weights, calibration sets, benchmark, fit.")
 score_models = typer.Typer(help="Sentence-embedding model weights for scoring.")
 score.add_typer(score_models, name="models")
+diagram = typer.Typer(help="Diagram recognition (P14): data, detector training, benchmark, use.")
+diagram_data = typer.Typer(help="Detector training and test material (under var/diagrams).")
+diagram_models = typer.Typer(help="The detector's base weights.")
+diagram.add_typer(diagram_data, name="data")
+diagram.add_typer(diagram_models, name="models")
 app.add_typer(db, name="db")
 app.add_typer(pages, name="pages")
 app.add_typer(ocr, name="ocr")
 app.add_typer(truth, name="truth")
 app.add_typer(bench, name="bench")
 app.add_typer(score, name="score")
+app.add_typer(diagram, name="diagram")
 app.add_typer(identity, name="identity")
 app.add_typer(tenants, name="tenants")
 
@@ -1018,5 +1024,325 @@ def score_calibrate(
             )
             session.scoring_calibrations.save(calibration)
             typer.echo(f"saved scoring calibration {ref_name} v{calibration.version}")
+    finally:
+        database.dispose()
+
+
+# --- diagrams (P14) ---------------------------------------------------------------------------
+
+
+def _diagram_root() -> Path:
+    return _repo_root() / "var" / "diagrams"
+
+
+@diagram_data.command("prepare")
+def diagram_data_prepare(
+    fc: Annotated[
+        Path | None,
+        typer.Option(help="Unpacked FC database offline (default var/datasets/fc-offline)."),
+    ] = None,
+    fc3b: Annotated[
+        Path | None, typer.Option(help="Flowchart 3b (default var/datasets/flowchart-3b).")
+    ] = None,
+) -> None:
+    """Convert the downloaded public sets (scripts/datasets/fetch.py) into manifests under
+    var/diagrams/data: FC_A and FC_B (with their graphs) and Flowchart 3b."""
+    from tarn_adapters.diagram.dataset import write_manifest
+    from tarn_adapters.diagram.sources import ImageSize, read_fc, read_voc
+
+    datasets = _repo_root() / "var" / "datasets"
+    out = _diagram_root() / "data"
+    size = ImageSize()
+    for name, folder, reader in (
+        ("fc", fc or datasets / "fc-offline", read_fc),
+        ("fc3b", fc3b or datasets / "flowchart-3b", read_voc),
+    ):
+        if not folder.is_dir():
+            typer.echo(f"{name}: {folder} not found (fetch it with scripts/datasets/fetch.py)")
+            continue
+        samples = list(reader(folder, size))
+        count = write_manifest(out / f"{name}.jsonl", samples)
+        splits = {s: sum(1 for x in samples if x.split == s) for s in ("train", "val", "test")}
+        objects = sum(len(x.objects) for x in samples)
+        typer.echo(f"{name}: {count} images ({splits}), {objects} objects")
+
+
+@diagram_data.command("synth")
+def diagram_data_synth(
+    count: Annotated[int, typer.Option(min=1, help="Drawings to make.")] = 3000,
+    seed: Annotated[int, typer.Option(help="Same seed, same set.")] = 14,
+) -> None:
+    """Draw synthetic flowcharts, block diagrams, trees and networks with exact labels into
+    var/diagrams/synthetic (80 % train, 10 % val, 10 % test)."""
+    from tarn_adapters.diagram.synth import write_synthetic
+
+    manifest = write_synthetic(_diagram_root() / "synthetic", count, seed=seed)
+    typer.echo(f"{count} drawings, manifest {manifest}")
+
+
+@diagram_data.command("pack")
+def diagram_data_pack(
+    max_side: Annotated[int, typer.Option(min=640, help="Longer image side in the bundle.")] = 1280,
+) -> None:
+    """Bundle the prepared images, one manifest and the training code into
+    var/diagrams/colab-bundle.zip for a cloud GPU (scripts/colab/train_diagram_detector.ipynb).
+    Public and synthetic material only."""
+    import tarn_adapters
+    import tarn_core
+    from tarn_adapters.diagram.pack import pack
+
+    manifests = _manifests()
+    if not manifests:
+        typer.echo("no data: run `tarn diagram data prepare` and/or `tarn diagram data synth`")
+        raise typer.Exit(1)
+    roots = [Path(tarn_core.__file__).parent, Path(tarn_adapters.__file__).parent]
+    pack(manifests, _diagram_root() / "colab-bundle.zip", roots, max_side=max_side, log=typer.echo)
+
+
+def _manifests() -> list[Path]:
+    root = _diagram_root()
+    found = [p for p in (root / "data" / "fc.jsonl", root / "data" / "fc3b.jsonl") if p.exists()]
+    synthetic = root / "synthetic" / "manifest.jsonl"
+    return [*found, *([synthetic] if synthetic.exists() else [])]
+
+
+@diagram_models.command("fetch")
+def diagram_models_fetch() -> None:
+    """Download the detector's base weights (PekingU/rtdetr_r18vd_coco_o365, Apache-2.0) into
+    TARN_MODEL_DIR. Model files only: nothing is sent."""
+    from transformers import RTDetrForObjectDetection
+
+    from tarn_adapters.diagram.train import BASE_MODEL
+
+    settings = get_settings()
+    model = RTDetrForObjectDetection.from_pretrained(
+        BASE_MODEL, cache_dir=str(settings.model_dir / "huggingface")
+    )
+    params = sum(p.numel() for p in model.parameters()) / 1e6
+    typer.echo(f"{BASE_MODEL}: {params:.1f} M parameters, cached")
+
+
+@diagram.command("train")
+def diagram_train(
+    epochs: Annotated[int, typer.Option(min=1)] = 12,
+    steps: Annotated[int, typer.Option(min=1, help="Optimiser steps per epoch.")] = 600,
+    size: Annotated[int, typer.Option(min=320, help="Input side in pixels.")] = 1024,
+    batch: Annotated[int, typer.Option(min=1)] = 2,
+    accumulate: Annotated[int, typer.Option(min=1)] = 4,
+    version: Annotated[str, typer.Option(help="Model version (folder shape-detector-v<N>).")] = "1",
+) -> None:
+    """Fine-tune the shape-and-arrow detector on the prepared manifests (resumes a stopped run
+    from its checkpoint) and publish the best epoch to TARN_MODEL_DIR/diagram."""
+    from tarn_adapters.diagram.train import TrainConfig, train
+
+    settings = get_settings()
+    manifests = _manifests()
+    if not manifests:
+        typer.echo("no data: run `tarn diagram data prepare` and/or `tarn diagram data synth`")
+        raise typer.Exit(1)
+    out = settings.model_dir / "diagram" / f"shape-detector-v{version}"
+    cfg = TrainConfig(
+        manifests=manifests,
+        out=out,
+        size=size,
+        batch=batch,
+        accumulate=accumulate,
+        epochs=epochs,
+        steps=steps,
+        version=version,
+        cache_dir=settings.model_dir / "huggingface",
+    )
+    typer.echo(f"published {train(cfg, log=typer.echo)}")
+
+
+@diagram.command("publish")
+def diagram_publish(
+    source: Annotated[
+        Path,
+        typer.Argument(
+            exists=True, file_okay=False, help="A training folder: model-best/ and checkpoint.pt."
+        ),
+    ],
+    batch: Annotated[int, typer.Option(help="Batch the run used.")] = 8,
+    steps: Annotated[int, typer.Option(help="Steps per epoch the run used.")] = 500,
+    epochs: Annotated[int, typer.Option(help="Epochs the run planned.")] = 40,
+    amp: Annotated[bool, typer.Option(help="The run used fp16 autocast.")] = True,
+    version: Annotated[str, typer.Option()] = "1",
+) -> None:
+    """Publish the best epoch of a training run that did not finish (e.g. a Colab session cut
+    off by its GPU limit) to TARN_MODEL_DIR/diagram/shape-detector-v<N>, with the manifest the
+    finished run would have written (history from the checkpoint)."""
+    import shutil
+
+    import torch
+
+    from tarn_adapters.diagram.dataset import read_manifest
+    from tarn_adapters.diagram.train import TrainConfig, finish
+
+    settings = get_settings()
+    state = torch.load(source / "checkpoint.pt", map_location="cpu", weights_only=False)
+    history = state["history"]
+    out = settings.model_dir / "diagram" / f"shape-detector-v{version}"
+    out.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source / "model-best", out / "model-best", dirs_exist_ok=True)
+    counts: dict[str, int] = {}
+    for manifest in _manifests():
+        for sample in read_manifest(manifest):
+            if sample.split == "train":
+                counts[sample.source] = counts.get(sample.source, 0) + 1
+    cfg = TrainConfig(
+        manifests=[],
+        out=out,
+        batch=batch,
+        accumulate=1,
+        epochs=epochs,
+        steps=steps,
+        version=version,
+        amp=amp,
+    )
+    finish(cfg, history, counts, "cuda (Colab)")
+    best = min(history, key=lambda h: h["val_loss"])
+    typer.echo(
+        f"published {out}: {len(history)} of {epochs} epochs run; best epoch {best['epoch']} "
+        f"(val_loss {best['val_loss']})"
+    )
+
+
+@diagram.command("bench")
+def diagram_bench(
+    limit: Annotated[int, typer.Option(min=1, help="Test images per source at most.")] = 400,
+    out: Annotated[Path | None, typer.Option(help="Report file.")] = None,
+) -> None:
+    """Measure the trained detector on the test splits and write
+    docs/benchmarks/diagram-detector-<date>.md (precision, recall and AP per class; arrow
+    ends; edges end to end; timing; GPU memory)."""
+    import json
+    from datetime import date
+
+    from tarn_adapters.diagram.bench import evaluate, render_report
+    from tarn_adapters.diagram.dataset import read_manifest
+    from tarn_adapters.diagram.detector import MANIFEST, ShapeDetector
+    from tarn_adapters.diagram.wiring import model_path
+
+    settings = get_settings()
+    folder = model_path(settings)
+    if not (folder / MANIFEST).exists():
+        typer.echo(f"no trained detector at {folder}")
+        raise typer.Exit(1)
+    device = detect_device(settings.device)
+    detector = ShapeDetector(folder, device=device, threshold=settings.diagram_threshold)
+    items = []
+    for manifest in _manifests():
+        per_source: dict[str, int] = {}
+        for sample in read_manifest(manifest):
+            if sample.split != "test" or per_source.get(sample.source, 0) >= limit:
+                continue
+            per_source[sample.source] = per_source.get(sample.source, 0) + 1
+            items.append((manifest, sample))
+    results = evaluate(detector, items, threshold=settings.diagram_threshold)
+    text = render_report(
+        results,
+        model=folder.name,
+        manifest=json.loads((folder / MANIFEST).read_text()),
+        threshold=settings.diagram_threshold,
+        device=f"{device.kind} ({device.name})",
+        peak_gpu_gb=detector.peak_gpu_bytes / 1e9 if detector.peak_gpu_bytes else None,
+    )
+    target = out or _repo_root() / "docs" / "benchmarks" / f"diagram-detector-{date.today()}.md"
+    target.write_text(text, encoding="utf-8")
+    typer.echo(f"report written to {target}")
+
+
+@diagram.command("recognize")
+def diagram_recognize(
+    path: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    labels: Annotated[bool, typer.Option(help="Read the labels with the OCR engines.")] = True,
+) -> None:
+    """Recognise one diagram image (a reference PNG) and print its graph JSON. Not for student
+    pages outside the pipeline."""
+    import json
+
+    from tarn_adapters.diagram.wiring import build_recognizers
+    from tarn_adapters.ocr.batch import page_ocr
+    from tarn_core.domain.diagram import DiagramKind, DiagramText
+    from tarn_core.services.diagrams.build import GraphBuilder
+    from tarn_core.services.diagrams.graph_json import graph_to_json
+    from tarn_core.services.diagrams.service import page_texts
+    from tarn_core.services.ocr.selector import Lexicon
+
+    settings = get_settings()
+    setup = build_recognizers(settings)
+    recognizer = setup.recognizers.get(DiagramKind.FLOWCHART)
+    if recognizer is None:
+        typer.echo(f"no recognizer: {setup.skipped}")
+        raise typer.Exit(1)
+    data = path.read_bytes()
+    detection = recognizer.recognize(data)
+    texts: list[DiagramText] = []
+    engines: tuple[str, ...] = ()
+    if labels:
+        text = page_ocr(_ocr_setup(settings)).read(data, Lexicon(word_list=None))
+        texts, engines = page_texts(text), text.engines
+    graph = GraphBuilder().build(detection, texts, recognizer=recognizer.ref, label_engines=engines)
+    typer.echo(json.dumps(graph_to_json(graph), indent=2))
+
+
+@diagram.command("references")
+def diagram_references(
+    every: Annotated[
+        bool, typer.Option("--all", help="Also re-read diagrams already recognised or edited.")
+    ] = False,
+) -> None:
+    """Recognise the reference diagrams that are still pending (or failed): what the worker's
+    `diagram.reference` job does, for diagrams uploaded before P14 (the seed's PNGs). Each one
+    is read in a session of its owning college and stored as the next version."""
+    from tarn_adapters.blob.minio_store import MinioBlobStore
+    from tarn_adapters.diagram.wiring import build_recognizers
+    from tarn_adapters.ocr.batch import page_ocr
+    from tarn_adapters.postgres.database import PostgresDatabase
+    from tarn_adapters.runtime import UuidGenerator
+    from tarn_core.domain.content import ReferenceDiagram
+    from tarn_core.domain.diagram import RecognitionState
+    from tarn_core.services.diagrams.service import ReferenceDiagrams
+    from tarn_core.services.question_bank import QuestionBankService
+
+    settings = get_settings()
+    setup = build_recognizers(settings)
+    if not setup.recognizers:
+        typer.echo(f"no recognizer: {setup.skipped}")
+        raise typer.Exit(1)
+    labels = page_ocr(_ocr_setup(settings))
+    blobs = MinioBlobStore(make_client(settings), settings.blob_bucket)
+    database = PostgresDatabase(settings.app_database_url, pool_size=1)
+    ids, clock = UuidGenerator(), SystemClock()
+    try:
+        with database.session(None, ids=ids, clock=clock, blobs=blobs) as s:
+            todo = [
+                d
+                for d in s.content.latest(ReferenceDiagram)
+                if every or d.recognition in (RecognitionState.PENDING, RecognitionState.FAILED)
+            ]
+        for d in todo:
+            owner = d.meta.owning_college_id
+            with database.session(owner, ids=ids, clock=clock, blobs=blobs) as s:
+                bank = QuestionBankService(
+                    content=s.content,
+                    users=s.users,
+                    colleges=s.colleges,
+                    blobs=blobs,
+                    runtime=s.runtime,
+                )
+                new = ReferenceDiagrams(
+                    content=s.content,
+                    blobs=blobs,
+                    runtime=s.runtime,
+                    recognizers=setup.recognizers,
+                    labels=labels,
+                    glossary=bank,
+                ).recognize(owner, d.meta.created_by, d.id)
+            typer.echo(
+                f"{d.id} ({d.kind.value}): {new.recognition.value}, {len(new.graph.nodes)} nodes, "
+                f"{len(new.graph.edges)} edges, v{new.meta.version}"
+            )
     finally:
         database.dispose()

@@ -3104,7 +3104,7 @@
           "question bank"
         ],
         "summary": "Upload a reference diagram as PNG (owning college only)",
-        "description": "The request body is the PNG. Its nodes and edges are read from the picture later (P14); until then the graph is empty. `confirm_no_student_data` must be true (C9).",
+        "description": "The request body is the PNG. Its nodes, edges and labels are read from the picture by the worker (recognition `pending` until then); check and correct them through `/graph/edits`. `kind` says what it is (circuits, plots and labelled drawings are kept but not compared yet). `confirm_no_student_data` must be true (C9).",
         "operationId": "upload_reference_diagram_api_v1_questions__question_id__diagrams_post",
         "security": [
           {
@@ -3141,6 +3141,25 @@
               "type": "boolean",
               "default": false,
               "title": "Confirm No Student Data"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "flowchart",
+                "block",
+                "network",
+                "tree",
+                "circuit",
+                "plot",
+                "labelled_drawing"
+              ],
+              "type": "string",
+              "default": "flowchart",
+              "title": "Kind"
             }
           }
         ],
@@ -3940,6 +3959,559 @@
           }
         }
       }
+    },
+    "/api/v1/questions/{question_id}/diagrams/{diagram_id}/graph": {
+      "get": {
+        "tags": [
+          "diagrams"
+        ],
+        "summary": "The reference diagram's graph (latest version)",
+        "operationId": "reference_graph_api_v1_questions__question_id__diagrams__diagram_id__graph_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "diagram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Diagram Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceGraphOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{question_id}/diagrams/{diagram_id}/graph/edits": {
+      "post": {
+        "tags": [
+          "diagrams"
+        ],
+        "summary": "Correct the reference graph or change its kind (owning college only)",
+        "description": "Applies the edits in order and stores the next version. Add, remove, relabel or reshape nodes; add, remove or relabel edges; reverse an arrow; re-attach an arrow's ends. Removing a node removes its edges. Scores already made keep the version they used.",
+        "operationId": "edit_reference_graph_api_v1_questions__question_id__diagrams__diagram_id__graph_edits_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "diagram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Diagram Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceGraphEditIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceGraphOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "An edit names an unknown node or edge, a label is too long, or the graph changed since it was loaded (reload and edit again).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{question_id}/diagrams/{diagram_id}/recognize": {
+      "post": {
+        "tags": [
+          "diagrams"
+        ],
+        "summary": "Read the reference PNG again (owning college only)",
+        "description": "Queues recognition; the worker stores the result as the next version, replacing any edits in that version (earlier versions are kept).",
+        "operationId": "recognize_reference_api_v1_questions__question_id__diagrams__diagram_id__recognize_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "diagram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Diagram Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/diagrams": {
+      "get": {
+        "tags": [
+          "diagrams"
+        ],
+        "summary": "The diagrams recognised in a booklet",
+        "operationId": "booklet_diagrams_api_v1_booklets__booklet_id__diagrams_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StudentDiagramOut"
+                  },
+                  "title": "Response Booklet Diagrams Api V1 Booklets  Booklet Id  Diagrams Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/diagrams/{diagram_id}/edits": {
+      "post": {
+        "tags": [
+          "diagrams"
+        ],
+        "summary": "Correct a recognised drawing; its answer is re-scored",
+        "description": "Applies the edits in order (as for the reference) and bumps the version. The answer is re-scored in the background; an approved answer is refused (amendments, P15).",
+        "operationId": "edit_student_diagram_api_v1_booklets__booklet_id__diagrams__diagram_id__edits_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          },
+          {
+            "name": "diagram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Diagram Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudentGraphEditIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDiagramOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "An edit names an unknown node or edge, a label is too long, or the graph changed since it was loaded (reload and edit again).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/answers/{answer_id}/diagram-comparisons": {
+      "get": {
+        "tags": [
+          "diagrams"
+        ],
+        "summary": "The R6 comparison documents of the answer's latest score",
+        "description": "One per diagram criterion that was compared; criteria left to the teacher (no reference graph, no drawing) have none.",
+        "operationId": "diagram_comparisons_api_v1_booklets__booklet_id__answers__answer_id__diagram_comparisons_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          },
+          {
+            "name": "answer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Answer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DiagramComparisonOut"
+                  },
+                  "title": "Response Diagram Comparisons Api V1 Booklets  Booklet Id  Answers  Answer Id  Diagram Comparisons Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4734,6 +5306,57 @@
         ],
         "title": "DeviceOut"
       },
+      "DiagramComparisonOut": {
+        "properties": {
+          "criterion_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Criterion Id"
+          },
+          "criterion_version": {
+            "type": "integer",
+            "title": "Criterion Version"
+          },
+          "credit": {
+            "type": "number",
+            "title": "Credit"
+          },
+          "similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Similarity"
+          },
+          "flags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flags"
+          },
+          "document": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Document",
+            "description": "The R6 result, as docs/api/diagram-comparison.schema.json v1.0 describes."
+          }
+        },
+        "type": "object",
+        "required": [
+          "criterion_id",
+          "criterion_version",
+          "credit",
+          "similarity",
+          "flags",
+          "document"
+        ],
+        "title": "DiagramComparisonOut"
+      },
       "DiagramCriterion": {
         "properties": {
           "id": {
@@ -4780,6 +5403,70 @@
         ],
         "title": "DiagramCriterion"
       },
+      "DiagramGraphOut": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "1.0",
+            "title": "Schema Version"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/GraphNodeOut"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/GraphEdgeOut"
+            },
+            "type": "array",
+            "title": "Edges"
+          },
+          "free_labels": {
+            "items": {
+              "$ref": "#/components/schemas/FreeLabelOut"
+            },
+            "type": "array",
+            "title": "Free Labels"
+          },
+          "recognizer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EngineOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null: drawn by the teacher."
+          },
+          "label_engines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Label Engines"
+          },
+          "edited_by_teacher": {
+            "type": "boolean",
+            "title": "Edited By Teacher"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schema_version",
+          "nodes",
+          "edges",
+          "free_labels",
+          "recognizer",
+          "label_engines",
+          "edited_by_teacher"
+        ],
+        "title": "DiagramGraphOut",
+        "description": "``docs/api/diagram-graph.schema.json`` v1.0."
+      },
       "DiagramParamsBody": {
         "properties": {
           "reference_diagram_id": {
@@ -4814,6 +5501,24 @@
           "hard"
         ],
         "title": "Difficulty"
+      },
+      "EngineOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "version"
+        ],
+        "title": "EngineOut"
       },
       "ErrorOut": {
         "properties": {
@@ -4853,6 +5558,46 @@
           "email"
         ],
         "title": "ForgotIn"
+      },
+      "FreeLabelOut": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "box": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Box"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "box",
+          "confidence"
+        ],
+        "title": "FreeLabelOut"
       },
       "GlossaryIn": {
         "properties": {
@@ -4905,6 +5650,297 @@
           "terms"
         ],
         "title": "GlossaryOut"
+      },
+      "GraphEdgeOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source",
+            "description": "The node at the tail; null: touches no shape."
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target",
+            "description": "The node at the head; null: touches no shape."
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "directed": {
+            "type": "boolean",
+            "title": "Directed",
+            "description": "false: a line without an arrow head."
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "box": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Box"
+          },
+          "tail": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tail",
+            "description": "[x, y]"
+          },
+          "head": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head",
+            "description": "[x, y]"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "target",
+          "label",
+          "directed",
+          "confidence",
+          "box",
+          "tail",
+          "head"
+        ],
+        "title": "GraphEdgeOut"
+      },
+      "GraphEditIn": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "add_node",
+              "remove_node",
+              "relabel_node",
+              "reshape_node",
+              "add_edge",
+              "remove_edge",
+              "relabel_edge",
+              "reverse_edge",
+              "set_edge_ends"
+            ],
+            "title": "Op"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "The node or edge; for an add, the new id or null."
+          },
+          "shape": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "terminal",
+                  "process",
+                  "decision",
+                  "io",
+                  "circle",
+                  "block",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shape"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "directed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Directed"
+          },
+          "box": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer",
+                  "minimum": 0.0
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Box"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "op"
+        ],
+        "title": "GraphEditIn"
+      },
+      "GraphNodeOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "shape": {
+            "type": "string",
+            "enum": [
+              "terminal",
+              "process",
+              "decision",
+              "io",
+              "circle",
+              "block",
+              "other"
+            ],
+            "title": "Shape"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "box": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Box",
+            "description": "[x0, y0, x1, y1] in the image's pixels."
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence",
+            "description": "The recognizer's confidence in the shape, 0..1."
+          },
+          "label_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Confidence",
+            "description": "OCR line score of the label, 0..1."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "shape",
+          "label",
+          "box",
+          "confidence",
+          "label_confidence"
+        ],
+        "title": "GraphNodeOut"
       },
       "HTTPValidationError": {
         "properties": {
@@ -6297,6 +7333,38 @@
           "content_url": {
             "type": "string",
             "title": "Content Url"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "flowchart",
+              "block",
+              "network",
+              "tree",
+              "circuit",
+              "plot",
+              "labelled_drawing"
+            ],
+            "title": "Kind"
+          },
+          "recognition": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "recognised",
+              "failed",
+              "edited"
+            ],
+            "title": "Recognition",
+            "description": "pending: the worker has not read the PNG yet; failed: draw it by hand."
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "graph_url": {
+            "type": "string",
+            "title": "Graph Url"
           }
         },
         "type": "object",
@@ -6306,9 +7374,111 @@
           "node_count",
           "edge_count",
           "labels",
-          "content_url"
+          "content_url",
+          "kind",
+          "recognition",
+          "version",
+          "graph_url"
         ],
         "title": "ReferenceDiagramOut"
+      },
+      "ReferenceGraphEditIn": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "edits": {
+            "items": {
+              "$ref": "#/components/schemas/GraphEditIn"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Edits"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "flowchart",
+                  "block",
+                  "network",
+                  "tree",
+                  "circuit",
+                  "plot",
+                  "labelled_drawing"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind",
+            "description": "Change what the diagram is."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "ReferenceGraphEditIn"
+      },
+      "ReferenceGraphOut": {
+        "properties": {
+          "diagram_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Diagram Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "Send it back as expected_version when editing."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "flowchart",
+              "block",
+              "network",
+              "tree",
+              "circuit",
+              "plot",
+              "labelled_drawing"
+            ],
+            "title": "Kind"
+          },
+          "recognition": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "recognised",
+              "failed",
+              "edited"
+            ],
+            "title": "Recognition"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/DiagramGraphOut"
+          },
+          "content_url": {
+            "type": "string",
+            "title": "Content Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "diagram_id",
+          "version",
+          "kind",
+          "recognition",
+          "graph",
+          "content_url"
+        ],
+        "title": "ReferenceGraphOut"
       },
       "RegionOut": {
         "properties": {
@@ -6821,6 +7991,97 @@
           "reference_statement"
         ],
         "title": "SemanticParamsBody"
+      },
+      "StudentDiagramOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "segment_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Segment Id"
+          },
+          "region_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "Send it back as expected_version when editing."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "flowchart",
+              "block",
+              "network",
+              "tree",
+              "circuit",
+              "plot",
+              "labelled_drawing"
+            ],
+            "title": "Kind"
+          },
+          "box": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Box",
+            "description": "Where it is on its page, in page pixels."
+          },
+          "graph": {
+            "$ref": "#/components/schemas/DiagramGraphOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "segment_id",
+          "region_id",
+          "version",
+          "kind",
+          "box",
+          "graph"
+        ],
+        "title": "StudentDiagramOut"
+      },
+      "StudentGraphEditIn": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "edits": {
+            "items": {
+              "$ref": "#/components/schemas/GraphEditIn"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Edits"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "edits"
+        ],
+        "title": "StudentGraphEditIn"
       },
       "StudentOut": {
         "properties": {

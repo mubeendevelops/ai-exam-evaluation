@@ -8,10 +8,10 @@ from decimal import Decimal
 from tarn_core.domain.booklet import LineReading
 from tarn_core.domain.common import Box, EngineRef
 from tarn_core.domain.content import CriterionType
-from tarn_core.domain.diagram import DiagramGraph
+from tarn_core.domain.diagram import DiagramDetection
 from tarn_core.domain.ocr import ContentClass, EngineCalibration
 from tarn_core.domain.scoring import CriterionScore, ScoringCalibration
-from tarn_core.errors import InvariantError
+from tarn_core.errors import EngineFailedError, InvariantError
 from tarn_core.ports.engines import DetectedRegion, ScoringInput
 
 
@@ -201,9 +201,17 @@ class FixedCreditScorer:
 
 
 class ScriptedDiagramRecognizer:
-    def __init__(self, graph: DiagramGraph) -> None:
-        self._graph = graph
-        self.ref = EngineRef(name="scripted-diagram", version="1")
+    """Returns the same detection for every image (``fail``: raises ``EngineFailedError``).
+    ``calls`` records the boxes asked for."""
 
-    def recognize(self, image: bytes) -> DiagramGraph:
-        return self._graph
+    def __init__(self, detection: DiagramDetection, *, fail: bool = False) -> None:
+        self._detection = detection
+        self._fail = fail
+        self.ref = EngineRef(name="scripted-diagram", version="1")
+        self.calls: list[Box | None] = []
+
+    def recognize(self, image: bytes, box: Box | None = None) -> DiagramDetection:
+        self.calls.append(box)
+        if self._fail:
+            raise EngineFailedError("scripted failure")
+        return self._detection

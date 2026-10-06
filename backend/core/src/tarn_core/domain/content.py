@@ -16,7 +16,7 @@ from tarn_core.domain.common import (
     check_marks,
     check_text,
 )
-from tarn_core.domain.diagram import DiagramGraph
+from tarn_core.domain.diagram import DiagramGraph, DiagramKind, RecognitionState
 from tarn_core.errors import InvariantError
 from tarn_core.ids import (
     CollegeId,
@@ -308,6 +308,8 @@ class ReferenceDiagram:
     question_id: QuestionId
     png: BlobKey
     graph: DiagramGraph = field(default_factory=lambda: DiagramGraph(nodes=()))
+    kind: DiagramKind = DiagramKind.FLOWCHART
+    recognition: RecognitionState = RecognitionState.PENDING
 
     def __post_init__(self) -> None:
         if self.png.college_id is not None:

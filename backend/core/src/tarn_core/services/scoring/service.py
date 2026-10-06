@@ -7,7 +7,7 @@ the flags (low OCR, borderline credit per criterion, off-target, blank, mark man
 duplicate). A guidance-only key gives a "mark manually" score with no mark."""
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -27,7 +27,7 @@ from tarn_core.domain.content import (
     RubricCriterion,
     SemanticParams,
 )
-from tarn_core.domain.diagram import DiagramGraph
+from tarn_core.domain.diagram import AnswerDiagram
 from tarn_core.domain.scoring import (
     AnswerFlag,
     AnswerScore,
@@ -37,7 +37,16 @@ from tarn_core.domain.scoring import (
     answer_mark,
 )
 from tarn_core.errors import DomainError, InvariantError
-from tarn_core.ids import AnswerId, AnswerScoreId, BookletId, CollegeId, RegionId, SegmentId, UserId
+from tarn_core.ids import (
+    AnswerId,
+    AnswerScoreId,
+    BookletId,
+    CollegeId,
+    ReferenceDiagramId,
+    RegionId,
+    SegmentId,
+    UserId,
+)
 from tarn_core.ports.engines import (
     Embedder,
     Scorer,
@@ -54,8 +63,9 @@ from tarn_core.services.scoring.scorers import ListScorer, NumericScorer, Semant
 from tarn_core.services.scoring.text import tokens
 
 UNSCORED = EngineRef(name="unscored", version="1")
-"""Stands in for a scorer on criteria no configured scorer handles yet (diagrams before P14,
-LLM criteria while the LLM is off): credit 0, flagged ``manual`` for the teacher."""
+"""Stands in for a scorer on criteria no configured scorer handles (diagram criteria when the
+diagram scorer is not wired in, LLM criteria while the LLM is off): credit 0, flagged
+``manual`` for the teacher."""
 
 MANUAL = "manual"
 
@@ -71,6 +81,8 @@ class _Content:
     criteria: tuple[RubricCriterion, ...]
     keys: tuple[ReferenceAnswer, ...]
     glossaries: tuple[Glossary, ...]
+    reference_diagrams: Mapping[ReferenceDiagramId, ReferenceDiagram]
+    slot_label: str
     used: frozenset[ContentRef]
 
 
@@ -129,10 +141,11 @@ class ScoringService:
         answer_id: AnswerId,
         *,
         answer_text: str | None = None,
-        diagrams: tuple[DiagramGraph, ...] = (),
+        diagrams: tuple[AnswerDiagram, ...] | None = None,
     ) -> AnswerScore:
         """Score and store. ``answer_text`` replaces the segments' text (tests, calibration);
-        ``actor_id`` None = the pipeline."""
+        ``diagrams`` replaces the diagrams recognised in the answer's segments; ``actor_id``
+        None = the pipeline."""
         answer = self._booklets.get_answer(college_id, answer_id)
         booklet = self._booklets.get(college_id, answer.booklet_id)
         content = self._load(booklet.blueprint, answer.slot_label)
@@ -140,6 +153,13 @@ class ScoringService:
             texts = [AnswerText.from_text(answer_text)]
         else:
             texts = self._texts(college_id, answer.booklet_id, answer.segment_ids)
+        if diagrams is None:
+            segments = set(answer.segment_ids)
+            diagrams = tuple(
+                AnswerDiagram(graph=d.graph, diagram_id=str(d.id), version=d.version)
+                for d in self._booklets.diagrams(college_id, answer.booklet_id)
+                if d.segment_id in segments
+            )
         score = self.evaluate(
             college_id, answer_id, content=content, texts=texts, diagrams=diagrams
         )
@@ -165,7 +185,7 @@ class ScoringService:
         *,
         content: _Content,
         texts: Sequence[AnswerText],
-        diagrams: tuple[DiagramGraph, ...] = (),
+        diagrams: tuple[AnswerDiagram, ...] = (),
     ) -> AnswerScore:
         """The score without storing it (the score itself; vectors may be cached)."""
         c = content
@@ -186,11 +206,6 @@ class ScoringService:
                 flags=(AnswerFlag.MARK_MANUALLY,),
                 reasons=("the key is guidance only: mark this answer manually",),
             )
-        for criterion in c.criteria:
-            if isinstance(criterion.params, DiagramParams):
-                diagram_id = criterion.params.reference_diagram_id
-                used.add(self._content.get(ReferenceDiagram, diagram_id).ref)
-
         attempts = [
             self._attempt(college_id, answer_id, c, text, diagrams, store=len(texts) == 1)
             for text in texts
@@ -288,6 +303,13 @@ class ScoringService:
         keys = tuple(self._content.for_question(ReferenceAnswer, question_id))
         criteria = tuple(self._content.for_question(RubricCriterion, question_id))
         glossaries = tuple(self._content.for_question(Glossary, question_id))
+        reference_diagrams = {
+            cr.params.reference_diagram_id: self._content.get(
+                ReferenceDiagram, cr.params.reference_diagram_id
+            )
+            for cr in criteria
+            if isinstance(cr.params, DiagramParams)
+        }
         if criteria:
             Rubric(question=question, criteria=criteria)  # weights sum to the question's marks
         used: set[ContentRef] = {
@@ -296,6 +318,7 @@ class ScoringService:
             *(cr.ref for cr in criteria),
             *(k.ref for k in keys),
             *(g.ref for g in glossaries),
+            *(d.ref for d in reference_diagrams.values()),
         }
         return _Content(
             blueprint=blueprint,
@@ -303,6 +326,8 @@ class ScoringService:
             criteria=criteria,
             keys=keys,
             glossaries=glossaries,
+            reference_diagrams=reference_diagrams,
+            slot_label=slot_label,
             used=frozenset(used),
         )
 
@@ -323,7 +348,7 @@ class ScoringService:
         answer_id: AnswerId,
         c: _Content,
         text: AnswerText,
-        diagrams: tuple[DiagramGraph, ...],
+        diagrams: tuple[AnswerDiagram, ...],
         *,
         store: bool,
     ) -> _Attempt:
@@ -344,6 +369,9 @@ class ScoringService:
                     criterion=criterion,
                     answer_text=text.text,
                     diagrams=diagrams,
+                    reference_diagrams=c.reference_diagrams,
+                    question_code=c.question.code,
+                    slot_label=c.slot_label,
                     reference_text=reference_text,
                     glossary=glossary_terms,
                     sentences=text.sentences,

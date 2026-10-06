@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tarn:schema:diagram-comparison:1.0",
+  "title": "Tarn diagram comparison (R6)",
+  "description": "The result of comparing a student's diagram graph with the reference graph (design.md 'Diagram comparison (R6)'), stored with the diagram criterion's score. The seven R6 outputs: (a) similarity = 1 - normalised graph edit distance, with node, edge and label sub-scores; (b) labels: every label the student wrote with its glossary match; (c) missing: reference nodes, edges and labels with no student match; (d) anomalies: student elements with no reference match and wrong structure (reversed arrows, disconnected parts, dangling arrows); (e) nodes and reference_nodes: per node, its label and shape validation; (f) edges: per reference edge present, missing or reversed, then the extra student edges; (g) engines, confidences, boxes and whether the teacher edited the graph. Node ids are the graphs' own (diagram-graph.schema.json). The keys of the design's example keep their meaning. Every threshold behind it is a placeholder until teacher-marked diagrams exist. Version 1.0 (field schema_version).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "question_id", "slot_label", "diagram_kind", "reference_diagram_id",
+    "reference_graph_version", "student_diagram_id", "student_graph_version", "similarity",
+    "edit_distance", "sub_scores", "nodes", "reference_nodes", "edges", "labels", "missing",
+    "anomalies", "engines", "min_confidence", "edited_by_teacher"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "question_id": { "type": "string", "minLength": 1, "description": "The question's code (e.g. K-AI1-Q2a)." },
+    "slot_label": { "type": ["string", "null"], "description": "The paper's question number the answer was given for (e.g. 2.a)." },
+    "diagram_kind": { "enum": ["flowchart", "block", "network", "tree", "circuit", "plot", "labelled_drawing"] },
+    "reference_diagram_id": { "type": "string", "format": "uuid" },
+    "reference_graph_version": { "type": "integer", "minimum": 1 },
+    "student_diagram_id": { "type": ["string", "null"], "format": "uuid" },
+    "student_graph_version": { "type": ["integer", "null"], "minimum": 1 },
+    "similarity": { "$ref": "#/$defs/unit", "description": "(a) 1 - graph edit distance / (|V_ref| + |E_ref| + |V_student| + |E_student|)." },
+    "edit_distance": { "type": "number", "minimum": 0, "description": "Cost of the edit path the node matching implies: label and shape mismatch of matched nodes, 1 per unmatched node and per missing, extra or reversed edge." },
+    "sub_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges", "labels"],
+      "properties": {
+        "nodes": { "$ref": "#/$defs/unit", "description": "Dice over node match quality (label and shape)." },
+        "edges": { "$ref": "#/$defs/unit", "description": "Dice over present edges; a reversed edge counts one half." },
+        "labels": { "$ref": "#/$defs/unit", "description": "Mean similarity of each reference label to the label in its matched place." }
+      }
+    },
+    "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" }, "description": "(e) One per student node." },
+    "reference_nodes": { "type": "array", "items": { "$ref": "#/$defs/reference_node" }, "description": "(e) One per reference node." },
+    "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" }, "description": "(f) Reference edges in order, then extra student edges." },
+    "labels": { "type": "array", "items": { "$ref": "#/$defs/label_result" }, "description": "(b) Every label the student wrote." },
+    "missing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges", "labels"],
+      "description": "(c) Reference elements the student did not draw.",
+      "properties": {
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/id" } },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/pair" } },
+        "labels": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "anomalies": { "type": "array", "items": { "$ref": "#/$defs/anomaly" }, "description": "(d)" },
+    "engines": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recognizer", "label_ocr", "comparator"],
+      "properties": {
+        "recognizer": { "type": ["string", "null"], "description": "e.g. shape-detector-v1; null when the teacher drew the graph." },
+        "label_ocr": { "type": "array", "items": { "type": "string" } },
+        "comparator": { "type": "string" }
+      }
+    },
+    "min_confidence": { "$ref": "#/$defs/unit", "description": "The lowest recognition confidence of any student node or edge." },
+    "edited_by_teacher": { "type": "boolean" }
+  },
+  "$defs": {
+    "unit": { "type": "number", "minimum": 0, "maximum": 1 },
+    "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "end": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/id" }] },
+    "pair": { "type": "array", "items": { "$ref": "#/$defs/end" }, "minItems": 2, "maxItems": 2 },
+    "box": { "type": ["array", "null"], "items": { "type": "integer", "minimum": 0 }, "minItems": 4, "maxItems": 4 },
+    "match": { "enum": ["exact", "close", "none"] },
+    "shape": { "enum": ["terminal", "process", "decision", "io", "circle", "block", "other"] },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "shape", "label", "matched_ref", "label_match", "glossary_term", "glossary_match", "shape_match", "confidence", "label_confidence", "box"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "shape": { "$ref": "#/$defs/shape" },
+        "label": { "type": "string" },
+        "matched_ref": { "$ref": "#/$defs/end", "description": "The reference node it was matched to; null: an extra node." },
+        "label_match": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/match" }], "description": "Against the matched reference node's label; null when unmatched." },
+        "glossary_term": { "type": ["string", "null"], "description": "The glossary term the label snapped to." },
+        "glossary_match": { "$ref": "#/$defs/match" },
+        "shape_match": { "type": ["boolean", "null"] },
+        "confidence": { "$ref": "#/$defs/unit" },
+        "label_confidence": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/unit" }] },
+        "box": { "$ref": "#/$defs/box" }
+      }
+    },
+    "reference_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "shape", "label", "matched_student", "label_match", "shape_match"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "shape": { "$ref": "#/$defs/shape" },
+        "label": { "type": "string" },
+        "matched_student": { "$ref": "#/$defs/end" },
+        "label_match": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/match" }] },
+        "shape_match": { "type": ["boolean", "null"] }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "student", "status", "ref_edge", "student_edge", "label", "label_match", "directed", "confidence", "box"],
+      "properties": {
+        "ref": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/pair" }], "description": "Reference [tail, head]; null for an extra student edge." },
+        "student": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/pair" }], "description": "Student [tail, head] as drawn; null when missing." },
+        "status": { "enum": ["present", "missing", "reversed", "extra"] },
+        "ref_edge": { "$ref": "#/$defs/end" },
+        "student_edge": { "$ref": "#/$defs/end" },
+        "label": { "type": "string" },
+        "label_match": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/match" }] },
+        "directed": { "type": "boolean" },
+        "confidence": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/unit" }] },
+        "box": { "$ref": "#/$defs/box" }
+      }
+    },
+    "label_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["element", "id", "label", "glossary_term", "match", "confidence"],
+      "properties": {
+        "element": { "enum": ["node", "edge", "free"] },
+        "id": { "$ref": "#/$defs/end" },
+        "label": { "type": "string" },
+        "glossary_term": { "type": ["string", "null"] },
+        "match": { "$ref": "#/$defs/match" },
+        "confidence": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/unit" }] }
+      }
+    },
+    "anomaly": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "student"],
+      "properties": {
+        "type": { "enum": ["extra_node", "extra_edge", "extra_label", "reversed_edge", "disconnected", "dangling_arrow"] },
+        "student": {
+          "description": "extra_node: the node id; dangling_arrow: the edge id; extra_edge and reversed_edge: the student [tail, head]; disconnected: the part's node ids; extra_label: null.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/id" }, { "type": "array", "items": { "$ref": "#/$defs/id" } }]
+        },
+        "edge": { "$ref": "#/$defs/id" },
+        "label": { "type": "string" },
+        "ref": { "type": "array", "items": { "$ref": "#/$defs/id" } },
+        "end": { "enum": ["tail", "head", "end", "both"] }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "enum": ["extra_node", "dangling_arrow"] } } }, "then": { "properties": { "student": { "$ref": "#/$defs/id" } } } },
+        { "if": { "properties": { "type": { "const": "extra_label" } } }, "then": { "properties": { "student": { "type": "null" } }, "required": ["label"] } },
+        { "if": { "properties": { "type": { "enum": ["extra_edge", "reversed_edge", "disconnected"] } } }, "then": { "properties": { "student": { "type": "array" } } } },
+        { "if": { "properties": { "type": { "const": "reversed_edge" } } }, "then": { "required": ["ref"] } },
+        { "if": { "properties": { "type": { "const": "dangling_arrow" } } }, "then": { "required": ["end"] } }
+      ]
+    }
+  }
+}

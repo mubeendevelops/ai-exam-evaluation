@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tarn:schema:diagram-graph:1.0",
+  "title": "Tarn diagram graph",
+  "description": "A diagram as nodes (shapes with their labels), edges (arrows from tail to head, or plain lines when directed is false) and free labels (text that belongs to no shape or arrow). Reference PNGs and student drawings both become one of these (R6); the teacher may edit either (U6 Q20). Boxes are [x0, y0, x1, y1] and points [x, y] in the pixels of the image the graph was read from (the reference PNG, or the student's cleaned page). An edge end that touches no shape is null: a dangling arrow. Version 1.0 (field schema_version).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "nodes", "edges", "free_labels", "recognizer", "label_engines", "edited_by_teacher"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "nodes": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/node" } },
+    "edges": { "type": "array", "maxItems": 400, "items": { "$ref": "#/$defs/edge" } },
+    "free_labels": { "type": "array", "items": { "$ref": "#/$defs/free_label" } },
+    "recognizer": {
+      "description": "The recognizer that read the image (null: drawn by the teacher).",
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/engine" }]
+    },
+    "label_engines": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The OCR engines that read the labels (best-of-N)."
+    },
+    "edited_by_teacher": { "type": "boolean" }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "label": { "type": "string", "maxLength": 200 },
+    "unit": { "type": "number", "minimum": 0, "maximum": 1 },
+    "box": {
+      "type": ["array", "null"],
+      "items": { "type": "integer", "minimum": 0 },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "point": {
+      "type": ["array", "null"],
+      "items": { "type": "integer", "minimum": 0 },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "shape": {
+      "enum": ["terminal", "process", "decision", "io", "circle", "block", "other"],
+      "description": "terminal: start/stop oval; process: rectangle; decision: diamond; io: parallelogram (input/output); circle: connector or network/tree node; block: a block-diagram box (compared as a process); other: anything else."
+    },
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": { "name": { "type": "string", "minLength": 1 }, "version": { "type": "string", "minLength": 1 } }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "shape", "label", "box", "confidence", "label_confidence"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "shape": { "$ref": "#/$defs/shape" },
+        "label": { "$ref": "#/$defs/label" },
+        "box": { "$ref": "#/$defs/box" },
+        "confidence": { "$ref": "#/$defs/unit", "description": "The recognizer's confidence in the shape (1 when drawn or reshaped by the teacher)." },
+        "label_confidence": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/unit" }], "description": "The OCR line score of the label; null when there is none or the teacher typed it." }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "target", "label", "directed", "confidence", "box", "tail", "head"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "source": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/id" }], "description": "The node at the tail; null when the tail touches no shape." },
+        "target": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/id" }], "description": "The node at the head; null when the head touches no shape." },
+        "label": { "$ref": "#/$defs/label" },
+        "directed": { "type": "boolean", "description": "false for a line without an arrow head (trees, networks)." },
+        "confidence": { "$ref": "#/$defs/unit" },
+        "box": { "$ref": "#/$defs/box" },
+        "tail": { "$ref": "#/$defs/point" },
+        "head": { "$ref": "#/$defs/point" }
+      }
+    },
+    "free_label": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "box", "confidence"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "box": { "$ref": "#/$defs/box" },
+        "confidence": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/unit" }] }
+      }
+    }
+  }
+}

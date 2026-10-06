@@ -15,6 +15,7 @@ from tarn_core.domain.common import (
     ContentKind,
     ContentRef,
     EngineRef,
+    JsonValue,
     check_marks,
     check_unit_interval,
 )
@@ -67,8 +68,12 @@ class CriterionScore:
     evidence: str = ""
     flags: tuple[str, ...] = ()
     similarity: float | None = None
-    """The best similarity found (semantic criteria only)."""
+    """The best similarity found (semantic criteria; the graph similarity for diagrams)."""
     reason: CriterionReason | None = None
+    detail: JsonValue = None
+    """The R6 comparison document of a diagram criterion
+    (``docs/api/diagram-comparison.schema.json``); None for other criteria. It holds the
+    student's diagram labels, so it stays in college data and never reaches the audit log."""
 
     def __post_init__(self) -> None:
         if self.criterion.kind is not ContentKind.RUBRIC_CRITERION:

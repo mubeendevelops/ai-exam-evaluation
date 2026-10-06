@@ -19,6 +19,8 @@ class AuditAction(StrEnum):
     BOOKLET_TEXT_READ = "booklet.text_read"  # by the OCR reader: no acting user
     BOOKLET_SEGMENTED = "booklet.segmented"  # by segmentation: no acting user
     SEGMENT_EDITED = "segment.edited"  # a teacher's merge, split, reassign or boundary move
+    DIAGRAM_RECOGNISED = "diagram.recognised"  # a student drawing read by the pipeline
+    DIAGRAM_EDITED = "diagram.edited"  # a teacher's correction of a student drawing's graph
     PAGE_USED_ANYWAY = "page.used_anyway"
     CONTENT_CREATED = "content.created"
     CONTENT_EDITED = "content.edited"
@@ -65,6 +67,7 @@ ANONYMOUS_ACTIONS = frozenset(
         AuditAction.BOOKLET_TEXT_READ,
         AuditAction.BOOKLET_SEGMENTED,
         AuditAction.BOOKLET_SCORED,
+        AuditAction.DIAGRAM_RECOGNISED,
         AuditAction.ANSWER_SCORED,  # scored by the pipeline; a teacher's re-score names them
     }
 )

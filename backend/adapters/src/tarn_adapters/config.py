@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     # cache only (fetch it with `tarn score models fetch`), or "trigram". Chosen by benchmark
     # (D99); student text never leaves the machine.
     scoring_embedding_model: str = "thenlper/gte-small"
+    # Diagram recognition (P14): the trained shape-and-arrow detector, a folder under
+    # model_dir/diagram (`tarn diagram train`); missing = diagram criteria go to the teacher.
+    diagram_model: str = "shape-detector-v1"
+    diagram_threshold: float = Field(0.35, gt=0, lt=1)
     # Downloaded model weights (Hugging Face, PaddleX); git-ignored.
     model_dir: Path = Path("../var/models")
     english_words: Path | None = None

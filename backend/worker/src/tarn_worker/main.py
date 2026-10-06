@@ -141,6 +141,18 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
     if scoring.fallback_reason is not None:
         log.warning("scoring.embedder_fallback", reason=scoring.fallback_reason)
     log.info("scoring.embedder", embedder=scoring.embedder.ref.name)
+    from tarn_adapters.diagram.wiring import build_recognizers
+
+    diagrams = build_recognizers(settings)
+    if diagrams.skipped is not None:
+        log.warning("diagram.recognizer_unavailable", reason=diagrams.skipped)
+    else:
+        refs = {r.ref for r in diagrams.recognizers.values()}
+        log.info(
+            "diagram.recognizers",
+            kinds=sorted(k.value for k in diagrams.recognizers),
+            recognizers=sorted(f"{r.name} {r.version}" for r in refs),
+        )
 
     runner = BookletJobRunner(
         db=PostgresDatabase(
@@ -171,6 +183,7 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
         embedder=embedding.embedder,
         scoring_embedder=scoring.embedder,
         word_list=None if kit is None else kit.word_list,
+        recognizers=diagrams.recognizers,
     )
     return runner.run_one
 

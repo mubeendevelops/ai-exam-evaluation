@@ -163,6 +163,8 @@ reference_diagrams = _versioned(
     _uuid("question_id"),
     _text("png_key"),
     Column("graph", JSONB(), nullable=False),
+    Column("kind", Text(), nullable=False, server_default="flowchart"),
+    Column("recognition", Text(), nullable=False, server_default="pending"),
 )
 
 exam_blueprints = _versioned(
@@ -343,6 +345,8 @@ diagram_graphs = Table(
     Column("graph", JSONB(), nullable=False),
     _int("version"),
     _seq(),
+    _uuid("region_id", nullable=True),
+    Column("kind", Text(), nullable=False, server_default="flowchart"),
 )
 
 answer_scores = Table(
@@ -381,6 +385,7 @@ criterion_scores = Table(
     Column("flags", ARRAY(Text()), nullable=False),
     Column("similarity", Double(), nullable=True),
     Column("reason", JSONB(), nullable=True),
+    Column("detail", JSONB(none_as_null=True), nullable=True),
 )
 
 reviews = Table(

@@ -22,7 +22,7 @@ from tarn_adapters.identity.database import IdentityDatabase
 from tarn_adapters.postgres.database import PostgresDatabase
 from tarn_adapters.postgres.jobs import JobSettings
 from tarn_adapters.runtime import SystemClock, UuidGenerator
-from tarn_core.ids import CollegeId
+from tarn_core.ids import BookletId, CollegeId
 from tarn_core.ports.identity import IdentityStore
 from tarn_core.ports.jobs import JobQueue
 from tarn_core.ports.repositories import (
@@ -41,6 +41,8 @@ from tarn_core.services.auth import AccountService, AuthKit, AuthService
 from tarn_core.services.blueprints import BlueprintService
 from tarn_core.services.booklets import BookletService
 from tarn_core.services.content import ContentService
+from tarn_core.services.diagrams.jobs import QueuedRescore
+from tarn_core.services.diagrams.service import ReferenceDiagrams, StudentDiagrams
 from tarn_core.services.pipeline import PageDecisions
 from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.registration import RegistrationService
@@ -182,6 +184,26 @@ class Unit:
             jobs=self.scope.jobs,
             runtime=self.scope.runtime,
             limits=self.limits,
+        )
+
+    @property
+    def reference_diagrams(self) -> ReferenceDiagrams:
+        """Edits only: the API loads no recognizer (recognition is the worker's job)."""
+        return ReferenceDiagrams(
+            content=self.scope.content,
+            blobs=self.scope.blobs,
+            runtime=self.scope.runtime,
+            recognizers={},
+            labels=None,
+            glossary=self.bank,
+        )
+
+    def student_diagrams(self, booklet_id: BookletId) -> StudentDiagrams:
+        """A corrected drawing's answer is re-scored by the worker (``answers.rescore``)."""
+        return StudentDiagrams(
+            booklets=self.scope.booklets,
+            runtime=self.scope.runtime,
+            rescore=QueuedRescore(self.scope.jobs, booklet_id),
         )
 
     @property

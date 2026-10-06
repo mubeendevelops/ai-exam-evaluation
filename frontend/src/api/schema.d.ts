@@ -695,7 +695,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a reference diagram as PNG (owning college only)
-         * @description The request body is the PNG. Its nodes and edges are read from the picture later (P14); until then the graph is empty. `confirm_no_student_data` must be true (C9).
+         * @description The request body is the PNG. Its nodes, edges and labels are read from the picture by the worker (recognition `pending` until then); check and correct them through `/graph/edits`. `kind` says what it is (circuits, plots and labelled drawings are kept but not compared yet). `confirm_no_student_data` must be true (C9).
          */
         post: operations["upload_reference_diagram_api_v1_questions__question_id__diagrams_post"];
         delete?: never;
@@ -811,6 +811,120 @@ export interface paths {
          * @description Overrides the retake request for that page. When no flagged page is left the booklet moves to `pages_ready`. Recorded in the audit log.
          */
         post: operations["use_page_anyway_api_v1_booklets__booklet_id__pages__number__use_anyway_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/diagrams/{diagram_id}/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The reference diagram's graph (latest version) */
+        get: operations["reference_graph_api_v1_questions__question_id__diagrams__diagram_id__graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/diagrams/{diagram_id}/graph/edits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct the reference graph or change its kind (owning college only)
+         * @description Applies the edits in order and stores the next version. Add, remove, relabel or reshape nodes; add, remove or relabel edges; reverse an arrow; re-attach an arrow's ends. Removing a node removes its edges. Scores already made keep the version they used.
+         */
+        post: operations["edit_reference_graph_api_v1_questions__question_id__diagrams__diagram_id__graph_edits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/diagrams/{diagram_id}/recognize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read the reference PNG again (owning college only)
+         * @description Queues recognition; the worker stores the result as the next version, replacing any edits in that version (earlier versions are kept).
+         */
+        post: operations["recognize_reference_api_v1_questions__question_id__diagrams__diagram_id__recognize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/diagrams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The diagrams recognised in a booklet */
+        get: operations["booklet_diagrams_api_v1_booklets__booklet_id__diagrams_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/diagrams/{diagram_id}/edits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct a recognised drawing; its answer is re-scored
+         * @description Applies the edits in order (as for the reference) and bumps the version. The answer is re-scored in the background; an approved answer is refused (amendments, P15).
+         */
+        post: operations["edit_student_diagram_api_v1_booklets__booklet_id__diagrams__diagram_id__edits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/answers/{answer_id}/diagram-comparisons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The R6 comparison documents of the answer's latest score
+         * @description One per diagram criterion that was compared; criteria left to the teacher (no reference graph, no drawing) have none.
+         */
+        get: operations["diagram_comparisons_api_v1_booklets__booklet_id__answers__answer_id__diagram_comparisons_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1161,6 +1275,29 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** DiagramComparisonOut */
+        DiagramComparisonOut: {
+            /**
+             * Criterion Id
+             * Format: uuid
+             */
+            criterion_id: string;
+            /** Criterion Version */
+            criterion_version: number;
+            /** Credit */
+            credit: number;
+            /** Similarity */
+            similarity: number | null;
+            /** Flags */
+            flags: string[];
+            /**
+             * Document
+             * @description The R6 result, as docs/api/diagram-comparison.schema.json v1.0 describes.
+             */
+            document: {
+                [key: string]: unknown;
+            };
+        };
         /** DiagramCriterion */
         DiagramCriterion: {
             /**
@@ -1182,6 +1319,29 @@ export interface components {
             type: "diagram";
             params: components["schemas"]["DiagramParamsBody"];
         };
+        /**
+         * DiagramGraphOut
+         * @description ``docs/api/diagram-graph.schema.json`` v1.0.
+         */
+        DiagramGraphOut: {
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: "1.0";
+            /** Nodes */
+            nodes: components["schemas"]["GraphNodeOut"][];
+            /** Edges */
+            edges: components["schemas"]["GraphEdgeOut"][];
+            /** Free Labels */
+            free_labels: components["schemas"]["FreeLabelOut"][];
+            /** @description null: drawn by the teacher. */
+            recognizer: components["schemas"]["EngineOut"] | null;
+            /** Label Engines */
+            label_engines: string[];
+            /** Edited By Teacher */
+            edited_by_teacher: boolean;
+        };
         /** DiagramParamsBody */
         DiagramParamsBody: {
             /**
@@ -1201,6 +1361,13 @@ export interface components {
          * @enum {string}
          */
         Difficulty: "easy" | "medium" | "hard";
+        /** EngineOut */
+        EngineOut: {
+            /** Name */
+            name: string;
+            /** Version */
+            version: string;
+        };
         /** ErrorOut */
         ErrorOut: {
             /** Detail */
@@ -1215,6 +1382,15 @@ export interface components {
              * @example evaluator@institution.edu
              */
             email: string;
+        };
+        /** FreeLabelOut */
+        FreeLabelOut: {
+            /** Text */
+            text: string;
+            /** Box */
+            box: number[] | null;
+            /** Confidence */
+            confidence: number | null;
         };
         /** GlossaryIn */
         GlossaryIn: {
@@ -1235,6 +1411,94 @@ export interface components {
              * @description Both lists together, case-insensitively de-duplicated.
              */
             terms: string[];
+        };
+        /** GraphEdgeOut */
+        GraphEdgeOut: {
+            /** Id */
+            id: string;
+            /**
+             * Source
+             * @description The node at the tail; null: touches no shape.
+             */
+            source: string | null;
+            /**
+             * Target
+             * @description The node at the head; null: touches no shape.
+             */
+            target: string | null;
+            /** Label */
+            label: string;
+            /**
+             * Directed
+             * @description false: a line without an arrow head.
+             */
+            directed: boolean;
+            /** Confidence */
+            confidence: number;
+            /** Box */
+            box: number[] | null;
+            /**
+             * Tail
+             * @description [x, y]
+             */
+            tail: number[] | null;
+            /**
+             * Head
+             * @description [x, y]
+             */
+            head: number[] | null;
+        };
+        /** GraphEditIn */
+        GraphEditIn: {
+            /**
+             * Op
+             * @enum {string}
+             */
+            op: "add_node" | "remove_node" | "relabel_node" | "reshape_node" | "add_edge" | "remove_edge" | "relabel_edge" | "reverse_edge" | "set_edge_ends";
+            /**
+             * Id
+             * @description The node or edge; for an add, the new id or null.
+             */
+            id?: string | null;
+            /** Shape */
+            shape?: ("terminal" | "process" | "decision" | "io" | "circle" | "block" | "other") | null;
+            /** Label */
+            label?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Target */
+            target?: string | null;
+            /** Directed */
+            directed?: boolean | null;
+            /** Box */
+            box?: number[] | null;
+        };
+        /** GraphNodeOut */
+        GraphNodeOut: {
+            /** Id */
+            id: string;
+            /**
+             * Shape
+             * @enum {string}
+             */
+            shape: "terminal" | "process" | "decision" | "io" | "circle" | "block" | "other";
+            /** Label */
+            label: string;
+            /**
+             * Box
+             * @description [x0, y0, x1, y1] in the image's pixels.
+             */
+            box: number[] | null;
+            /**
+             * Confidence
+             * @description The recognizer's confidence in the shape, 0..1.
+             */
+            confidence: number;
+            /**
+             * Label Confidence
+             * @description OCR line score of the label, 0..1.
+             */
+            label_confidence: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1788,6 +2052,59 @@ export interface components {
             labels: string[];
             /** Content Url */
             content_url: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "flowchart" | "block" | "network" | "tree" | "circuit" | "plot" | "labelled_drawing";
+            /**
+             * Recognition
+             * @description pending: the worker has not read the PNG yet; failed: draw it by hand.
+             * @enum {string}
+             */
+            recognition: "pending" | "recognised" | "failed" | "edited";
+            /** Version */
+            version: number;
+            /** Graph Url */
+            graph_url: string;
+        };
+        /** ReferenceGraphEditIn */
+        ReferenceGraphEditIn: {
+            /** Expected Version */
+            expected_version: number;
+            /** Edits */
+            edits?: components["schemas"]["GraphEditIn"][];
+            /**
+             * Kind
+             * @description Change what the diagram is.
+             */
+            kind?: ("flowchart" | "block" | "network" | "tree" | "circuit" | "plot" | "labelled_drawing") | null;
+        };
+        /** ReferenceGraphOut */
+        ReferenceGraphOut: {
+            /**
+             * Diagram Id
+             * Format: uuid
+             */
+            diagram_id: string;
+            /**
+             * Version
+             * @description Send it back as expected_version when editing.
+             */
+            version: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "flowchart" | "block" | "network" | "tree" | "circuit" | "plot" | "labelled_drawing";
+            /**
+             * Recognition
+             * @enum {string}
+             */
+            recognition: "pending" | "recognised" | "failed" | "edited";
+            graph: components["schemas"]["DiagramGraphOut"];
+            /** Content Url */
+            content_url: string;
         };
         /** RegionOut */
         RegionOut: {
@@ -1991,6 +2308,44 @@ export interface components {
         SemanticParamsBody: {
             /** Reference Statement */
             reference_statement: string;
+        };
+        /** StudentDiagramOut */
+        StudentDiagramOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Segment Id
+             * Format: uuid
+             */
+            segment_id: string;
+            /** Region Id */
+            region_id: string | null;
+            /**
+             * Version
+             * @description Send it back as expected_version when editing.
+             */
+            version: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "flowchart" | "block" | "network" | "tree" | "circuit" | "plot" | "labelled_drawing";
+            /**
+             * Box
+             * @description Where it is on its page, in page pixels.
+             */
+            box: number[];
+            graph: components["schemas"]["DiagramGraphOut"];
+        };
+        /** StudentGraphEditIn */
+        StudentGraphEditIn: {
+            /** Expected Version */
+            expected_version: number;
+            /** Edits */
+            edits: components["schemas"]["GraphEditIn"][];
         };
         /** StudentOut */
         StudentOut: {
@@ -4391,6 +4746,7 @@ export interface operations {
             query: {
                 filename: string;
                 confirm_no_student_data?: boolean;
+                kind?: "flowchart" | "block" | "network" | "tree" | "circuit" | "plot" | "labelled_drawing";
             };
             header?: never;
             path: {
@@ -4948,6 +5304,374 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    reference_graph_api_v1_questions__question_id__diagrams__diagram_id__graph_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+                diagram_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceGraphOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_reference_graph_api_v1_questions__question_id__diagrams__diagram_id__graph_edits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+                diagram_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferenceGraphEditIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceGraphOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description An edit names an unknown node or edge, a label is too long, or the graph changed since it was loaded (reload and edit again). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    recognize_reference_api_v1_questions__question_id__diagrams__diagram_id__recognize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+                diagram_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    booklet_diagrams_api_v1_booklets__booklet_id__diagrams_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudentDiagramOut"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_student_diagram_api_v1_booklets__booklet_id__diagrams__diagram_id__edits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+                diagram_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudentGraphEditIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudentDiagramOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description An edit names an unknown node or edge, a label is too long, or the graph changed since it was loaded (reload and edit again). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    diagram_comparisons_api_v1_booklets__booklet_id__answers__answer_id__diagram_comparisons_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+                answer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramComparisonOut"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

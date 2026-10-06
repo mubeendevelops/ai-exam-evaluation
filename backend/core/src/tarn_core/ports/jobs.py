@@ -21,8 +21,20 @@ JOB_READ_BOOKLET = "booklet.read"
 JOB_SEGMENT_BOOKLET = "booklet.segment"
 """Split the read booklet into answers per question (P12)."""
 
+JOB_DIAGRAMS_BOOKLET = "booklet.diagrams"
+"""Recognise the diagrams drawn in answers to questions with diagram criteria (P14); queues
+scoring when done."""
+
 JOB_SCORE_BOOKLET = "booklet.score"
 """Suggest a mark for every answer of the segmented booklet (P13)."""
+
+JOB_RESCORE_ANSWERS = "answers.rescore"
+"""Re-score some answers of a booklet after a teacher's edit made in the API, which loads no
+models (P14: a corrected student diagram). Payload: booklet, answers, the teacher."""
+
+JOB_RECOGNIZE_REFERENCE = "diagram.reference"
+"""Read an uploaded reference diagram PNG into its graph (P14). Payload: the diagram's id and
+the uploading teacher; queued in the uploader's college."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
