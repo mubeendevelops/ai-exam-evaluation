@@ -30,6 +30,8 @@ StudentDiagramId = NewType("StudentDiagramId", UUID)
 AnswerScoreId = NewType("AnswerScoreId", UUID)
 ReviewId = NewType("ReviewId", UUID)
 ResultSheetId = NewType("ResultSheetId", UUID)
+AmendmentId = NewType("AmendmentId", UUID)
+RegionEditId = NewType("RegionEditId", UUID)
 AuditEventId = NewType("AuditEventId", UUID)
 JobId = NewType("JobId", UUID)
 

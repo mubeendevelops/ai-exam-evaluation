@@ -8,7 +8,7 @@ duplicate). A guidance-only key gives a "mark manually" score with no mark."""
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from tarn_core.domain.audit import AuditAction
@@ -57,6 +57,7 @@ from tarn_core.ports.engines import (
 from tarn_core.ports.repositories import BookletRepository, ContentRepository, ScoreRepository
 from tarn_core.services._support import Runtime
 from tarn_core.services.scoring.assemble import AnswerText, candidate_texts
+from tarn_core.services.scoring.changes import change_notice, content_changes
 from tarn_core.services.scoring.guard import GuardResult, OffTargetGuard
 from tarn_core.services.scoring.policy import ScoringPolicy
 from tarn_core.services.scoring.scorers import ListScorer, NumericScorer, SemanticScorer
@@ -75,7 +76,9 @@ class NoScorerError(DomainError):
 
 
 @dataclass(frozen=True, slots=True)
-class _Content:
+class ScoringContent:
+    """The content one answer is scored against, and every version of it (``used``)."""
+
     blueprint: ExamBlueprint
     question: Question
     criteria: tuple[RubricCriterion, ...]
@@ -163,7 +166,16 @@ class ScoringService:
         score = self.evaluate(
             college_id, answer_id, content=content, texts=texts, diagrams=diagrams
         )
+        previous = self._scores.scores(college_id, answer_id)
+        if previous:
+            changes = content_changes(previous[-1].content_versions, score.content_versions)
+            if changes:
+                score = replace(score, reasons=(*score.reasons, change_notice(changes)))
         self._scores.save_score(college_id, score)
+        # A new suggestion: a screen showing the old one is now stale (D110).
+        self._booklets.save_answer(
+            college_id, replace(answer, version=answer.version + 1, rescore_pending=False)
+        )
         self._rt.record(
             college_id,
             actor_id,
@@ -183,7 +195,7 @@ class ScoringService:
         college_id: CollegeId,
         answer_id: AnswerId,
         *,
-        content: _Content,
+        content: ScoringContent,
         texts: Sequence[AnswerText],
         diagrams: tuple[AnswerDiagram, ...] = (),
     ) -> AnswerScore:
@@ -291,45 +303,13 @@ class ScoringService:
             policy=policy,
         )
 
-    def content_for(self, blueprint_ref: ContentRef, slot_label: str) -> _Content:
+    def content_for(self, blueprint_ref: ContentRef, slot_label: str) -> ScoringContent:
         return self._load(blueprint_ref, slot_label)
 
     # --- internals ------------------------------------------------------------------------
 
-    def _load(self, blueprint_ref: ContentRef, slot_label: str) -> _Content:
-        blueprint = self._content.get(ExamBlueprint, blueprint_ref.id, blueprint_ref.version)
-        _, question_id, _ = blueprint.leaf(slot_label)
-        question = self._content.get(Question, question_id)
-        keys = tuple(self._content.for_question(ReferenceAnswer, question_id))
-        criteria = tuple(self._content.for_question(RubricCriterion, question_id))
-        glossaries = tuple(self._content.for_question(Glossary, question_id))
-        reference_diagrams = {
-            cr.params.reference_diagram_id: self._content.get(
-                ReferenceDiagram, cr.params.reference_diagram_id
-            )
-            for cr in criteria
-            if isinstance(cr.params, DiagramParams)
-        }
-        if criteria:
-            Rubric(question=question, criteria=criteria)  # weights sum to the question's marks
-        used: set[ContentRef] = {
-            blueprint.ref,
-            question.ref,
-            *(cr.ref for cr in criteria),
-            *(k.ref for k in keys),
-            *(g.ref for g in glossaries),
-            *(d.ref for d in reference_diagrams.values()),
-        }
-        return _Content(
-            blueprint=blueprint,
-            question=question,
-            criteria=criteria,
-            keys=keys,
-            glossaries=glossaries,
-            reference_diagrams=reference_diagrams,
-            slot_label=slot_label,
-            used=frozenset(used),
-        )
+    def _load(self, blueprint_ref: ContentRef, slot_label: str) -> ScoringContent:
+        return scoring_content(self._content, blueprint_ref, slot_label)
 
     def _texts(
         self, college_id: CollegeId, booklet_id: BookletId, segment_ids: Sequence[SegmentId]
@@ -346,7 +326,7 @@ class ScoringService:
         self,
         college_id: CollegeId,
         answer_id: AnswerId,
-        c: _Content,
+        c: ScoringContent,
         text: AnswerText,
         diagrams: tuple[AnswerDiagram, ...],
         *,
@@ -465,6 +445,46 @@ class ScoringService:
                         words.update(_criterion_words(cr))
             self._vocabulary[blueprint.ref] = frozenset(words)
         return self._vocabulary[blueprint.ref]
+
+
+def scoring_content(
+    content: ContentRepository, blueprint_ref: ContentRef, slot_label: str
+) -> ScoringContent:
+    """What an answer to ``slot_label`` of this blueprint is scored against now: the latest
+    live key, rubric, glossaries and reference diagrams of the question."""
+    blueprint = content.get(ExamBlueprint, blueprint_ref.id, blueprint_ref.version)
+    _, question_id, _ = blueprint.leaf(slot_label)
+    question = content.get(Question, question_id)
+    keys = tuple(content.for_question(ReferenceAnswer, question_id))
+    criteria = tuple(content.for_question(RubricCriterion, question_id))
+    glossaries = tuple(content.for_question(Glossary, question_id))
+    reference_diagrams = {
+        cr.params.reference_diagram_id: content.get(
+            ReferenceDiagram, cr.params.reference_diagram_id
+        )
+        for cr in criteria
+        if isinstance(cr.params, DiagramParams)
+    }
+    if criteria:
+        Rubric(question=question, criteria=criteria)  # weights sum to the question's marks
+    used: set[ContentRef] = {
+        blueprint.ref,
+        question.ref,
+        *(cr.ref for cr in criteria),
+        *(k.ref for k in keys),
+        *(g.ref for g in glossaries),
+        *(d.ref for d in reference_diagrams.values()),
+    }
+    return ScoringContent(
+        blueprint=blueprint,
+        question=question,
+        criteria=criteria,
+        keys=keys,
+        glossaries=glossaries,
+        reference_diagrams=reference_diagrams,
+        slot_label=slot_label,
+        used=frozenset(used),
+    )
 
 
 def _criterion_words(criterion: RubricCriterion) -> set[str]:

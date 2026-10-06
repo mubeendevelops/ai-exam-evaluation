@@ -25,7 +25,7 @@ from typing import Protocol
 from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import AnswerStatus, BookletStatus, Page, Region, RegionKind
-from tarn_core.domain.common import ContentRef, JsonValue
+from tarn_core.domain.common import Box, ContentRef, JsonValue
 from tarn_core.domain.content import (
     DiagramParams,
     Glossary,
@@ -41,7 +41,7 @@ from tarn_core.domain.diagram import (
     RecognitionState,
     StudentDiagram,
 )
-from tarn_core.errors import EngineFailedError, InvariantError, NotFoundError
+from tarn_core.errors import EngineFailedError, InvariantError, NotFoundError, StaleWriteError
 from tarn_core.ids import (
     AnswerId,
     BookletId,
@@ -75,7 +75,7 @@ class LabelReader(Protocol):
     @property
     def engine_names(self) -> tuple[str, ...]: ...
 
-    def read(self, image: bytes, lexicon: Lexicon) -> PageText: ...
+    def read(self, image: bytes, lexicon: Lexicon, *, cuts: Sequence[Box] = ()) -> PageText: ...
 
 
 class GlossarySync(Protocol):
@@ -86,7 +86,7 @@ class GlossarySync(Protocol):
     ) -> object: ...
 
 
-class StaleGraphError(InvariantError):
+class StaleGraphError(StaleWriteError):
     """The graph changed since the teacher loaded it: reload and edit again."""
 
 
@@ -141,7 +141,9 @@ class ReferenceDiagrams:
             except EngineFailedError:
                 detection = None
             if detection is not None:
-                texts, engines = self._read_labels(image, diagram.question_id)
+                texts, engines = self._read_labels(
+                    image, diagram.question_id, [s.box for s in detection.shapes]
+                )
                 graph = self._builder.build(
                     detection, texts, recognizer=recognizer.ref, label_engines=engines
                 )
@@ -188,14 +190,14 @@ class ReferenceDiagrams:
         return new
 
     def _read_labels(
-        self, image: bytes, question_id: QuestionId
+        self, image: bytes, question_id: QuestionId, shapes: Sequence[Box]
     ) -> tuple[list[DiagramText], tuple[str, ...]]:
         if self._labels is None:
             return [], ()
         terms = frozenset(
             t for g in self._content.for_question(Glossary, question_id) for t in g.teacher_terms
         )
-        text = self._labels.read(image, Lexicon(terms))
+        text = self._labels.read(image, Lexicon(terms), cuts=shapes)
         return page_texts(text), text.engines
 
     def _audit(
@@ -263,12 +265,7 @@ class BookletDiagrams:
             return
         self._booklets.save(
             college_id,
-            replace(
-                booklet,
-                status=BookletStatus.FAILED,
-                failure_reason=FAILED_DIAGRAMS,
-                version=booklet.version + 1,
-            ),
+            booklet.moved_to(BookletStatus.FAILED, failure_reason=FAILED_DIAGRAMS),
         )
         self._rt.record(
             college_id,

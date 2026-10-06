@@ -10,7 +10,14 @@ from tarn_core.services.scoring.booklet import (
 )
 from tarn_core.services.scoring.policy import ScoringPolicy
 from tarn_core.services.scoring.scorers import ListScorer, NumericScorer, SemanticScorer
-from tarn_core.services.scoring.service import MANUAL, UNSCORED, NoScorerError, ScoringService
+from tarn_core.services.scoring.service import (
+    MANUAL,
+    UNSCORED,
+    NoScorerError,
+    ScoringContent,
+    ScoringService,
+    scoring_content,
+)
 
 __all__ = [
     "FAILED_SCORING",
@@ -21,8 +28,10 @@ __all__ = [
     "ListScorer",
     "NoScorerError",
     "NumericScorer",
+    "ScoringContent",
     "ScoringPolicy",
     "ScoringService",
     "SemanticScorer",
     "queue_scoring",
+    "scoring_content",
 ]

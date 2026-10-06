@@ -10,6 +10,7 @@ sends only after both sessions have committed."""
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, replace
+from datetime import timedelta
 from typing import Protocol
 
 from tarn_adapters.auth.mail import DeferredMailer
@@ -42,13 +43,22 @@ from tarn_core.services.blueprints import BlueprintService
 from tarn_core.services.booklets import BookletService
 from tarn_core.services.content import ContentService
 from tarn_core.services.diagrams.jobs import QueuedRescore
-from tarn_core.services.diagrams.service import ReferenceDiagrams, StudentDiagrams
+from tarn_core.services.diagrams.service import ReferenceDiagrams
 from tarn_core.services.pipeline import PageDecisions
 from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.registration import RegistrationService
 from tarn_core.services.roster import RosterService
 from tarn_core.services.subjects import SubjectService
 from tarn_core.services.uploads import UploadLimits, UploadService
+from tarn_core.services.workflow import (
+    BookletGuard,
+    LockPolicy,
+    RescoreRequests,
+    ReviewService,
+    SegmentEdits,
+    StudentGraphEdits,
+    TextEditor,
+)
 
 
 class CollegeScope(Protocol):
@@ -93,6 +103,7 @@ class Backends(Protocol):
     secure_cookies: bool
     access_token_minutes: int
     upload_limits: UploadLimits
+    lock_minutes: float
 
     def identity(self) -> AbstractContextManager[IdentityStore]: ...
 
@@ -105,6 +116,7 @@ class Unit:
     scope: CollegeScope
     kit: AuthKit
     limits: UploadLimits
+    lock_minutes: float = 15.0
 
     @property
     def auth(self) -> AuthService:
@@ -198,12 +210,63 @@ class Unit:
             glossary=self.bank,
         )
 
-    def student_diagrams(self, booklet_id: BookletId) -> StudentDiagrams:
+    def student_diagrams(self, booklet_id: BookletId) -> StudentGraphEdits:
         """A corrected drawing's answer is re-scored by the worker (``answers.rescore``)."""
-        return StudentDiagrams(
+        return StudentGraphEdits(
             booklets=self.scope.booklets,
             runtime=self.scope.runtime,
-            rescore=QueuedRescore(self.scope.jobs, booklet_id),
+            guard=self.guard,
+            rescore=self.rescore(booklet_id),
+        )
+
+    # --- the review (P15) ---------------------------------------------------------------
+
+    @property
+    def guard(self) -> BookletGuard:
+        return BookletGuard(
+            booklets=self.scope.booklets,
+            users=self.scope.users,
+            runtime=self.scope.runtime,
+            policy=LockPolicy(timeout=timedelta(minutes=self.lock_minutes)),
+        )
+
+    def rescore(self, booklet_id: BookletId) -> RescoreRequests:
+        """New suggestions come from the worker (``answers.rescore``): the API loads no
+        models."""
+        return RescoreRequests(
+            booklets=self.scope.booklets,
+            runtime=self.scope.runtime,
+            rescorer=QueuedRescore(self.scope.jobs, booklet_id),
+        )
+
+    def review(self, booklet_id: BookletId) -> ReviewService:
+        return ReviewService(
+            booklets=self.scope.booklets,
+            scores=self.scope.scores,
+            content=self.scope.content,
+            sheets=self.scope.sheets,
+            users=self.scope.users,
+            runtime=self.scope.runtime,
+            guard=self.guard,
+            rescore=self.rescore(booklet_id),
+        )
+
+    def text_editor(self, booklet_id: BookletId) -> TextEditor:
+        return TextEditor(
+            booklets=self.scope.booklets,
+            runtime=self.scope.runtime,
+            guard=self.guard,
+            rescore=self.rescore(booklet_id),
+        )
+
+    def segment_edits(self, booklet_id: BookletId) -> SegmentEdits:
+        return SegmentEdits(
+            booklets=self.scope.booklets,
+            scores=self.scope.scores,
+            content=self.scope.content,
+            runtime=self.scope.runtime,
+            guard=self.guard,
+            rescore=self.rescore(booklet_id),
         )
 
     @property
@@ -224,6 +287,7 @@ def unit_of_work(backends: Backends, college_id: CollegeId) -> Iterator[Unit]:
             scope=scope,
             kit=replace(backends.kit, mailer=mailer),
             limits=backends.upload_limits,
+            lock_minutes=backends.lock_minutes,
         )
     mailer.flush()
 
@@ -244,6 +308,7 @@ class PostgresBackends:
             max_total_bytes=settings.upload_max_bytes,
             max_files=settings.upload_max_pages,
         )
+        self.lock_minutes = settings.booklet_lock_minutes
         self._app = PostgresDatabase(
             settings.app_database_url,
             job_settings=JobSettings(

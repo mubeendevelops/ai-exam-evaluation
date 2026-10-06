@@ -38,8 +38,11 @@ router = APIRouter(
 _EDIT_ERRORS: dict[int | str, dict[str, object]] = {
     422: {
         "model": ErrorOut,
-        "description": "An edit names an unknown node or edge, a label is too long, or the graph "
-        "changed since it was loaded (reload and edit again).",
+        "description": "An edit names an unknown node or edge, or a label is too long.",
+    },
+    409: {
+        "model": ErrorOut,
+        "description": "The graph changed since it was loaded (reload and edit again).",
     },
 }
 
@@ -178,10 +181,11 @@ def booklet_diagrams(
 @router.post(
     "/booklets/{booklet_id}/diagrams/{diagram_id}/edits",
     response_model=StudentDiagramOut,
-    responses={**_EDIT_ERRORS, 409: {"model": ErrorOut}},
+    responses={**_EDIT_ERRORS, 423: {"model": ErrorOut}},
     summary="Correct a recognised drawing; its answer is re-scored",
-    description="Applies the edits in order (as for the reference) and bumps the version. The "
-    "answer is re-scored in the background; an approved answer is refused (amendments, P15).",
+    description="Applies the edits in order (as for the reference) and bumps the version. Needs "
+    "the booklet's lock (423). The answer is re-scored in the background; an approved answer "
+    "must be reopened first (409).",
 )
 def edit_student_diagram(
     booklet_id: UUID,

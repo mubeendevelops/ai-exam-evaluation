@@ -4135,7 +4135,17 @@
             "description": "Not Found"
           },
           "422": {
-            "description": "An edit names an unknown node or edge, a label is too long, or the graph changed since it was loaded (reload and edit again).",
+            "description": "An edit names an unknown node or edge, or a label is too long.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The graph changed since it was loaded (reload and edit again).",
             "content": {
               "application/json": {
                 "schema": {
@@ -4317,7 +4327,7 @@
           "diagrams"
         ],
         "summary": "Correct a recognised drawing; its answer is re-scored",
-        "description": "Applies the edits in order (as for the reference) and bumps the version. The answer is re-scored in the background; an approved answer is refused (amendments, P15).",
+        "description": "Applies the edits in order (as for the reference) and bumps the version. Needs the booklet's lock (423). The answer is re-scored in the background; an approved answer must be reopened first (409).",
         "operationId": "edit_student_diagram_api_v1_booklets__booklet_id__diagrams__diagram_id__edits_post",
         "security": [
           {
@@ -4398,7 +4408,7 @@
             "description": "Not Found"
           },
           "422": {
-            "description": "An edit names an unknown node or edge, a label is too long, or the graph changed since it was loaded (reload and edit again).",
+            "description": "An edit names an unknown node or edge, or a label is too long.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4408,6 +4418,16 @@
             }
           },
           "409": {
+            "description": "The graph changed since it was loaded (reload and edit again).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "423": {
             "content": {
               "application/json": {
                 "schema": {
@@ -4415,7 +4435,7 @@
                 }
               }
             },
-            "description": "Conflict"
+            "description": "Locked"
           }
         }
       }
@@ -4512,6 +4532,1537 @@
           }
         }
       }
+    },
+    "/api/v1/booklets/{booklet_id}/lock": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Open a booklet for review (take or refresh its lock)",
+        "description": "The first open of a scored booklet starts its review (`in_review`). Call it again to keep the lock while reading (every write also refreshes it). Unapproved answers whose key, rubric, glossary or reference diagram changed since they were scored are sent for re-scoring (`rescoring`, `notices`).",
+        "operationId": "open_booklet_api_v1_booklets__booklet_id__lock_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "423": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedOut"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Close a booklet (release the caller's lock)",
+        "description": "Nothing happens when the caller holds no lock on it.",
+        "operationId": "close_booklet_api_v1_booklets__booklet_id__lock_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/review": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "The review of a booklet: answers, suggestions, approvals, totals, sheets, lock",
+        "operationId": "get_review_api_v1_booklets__booklet_id__review_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/result-sheets": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Every result sheet version of a booklet, oldest first",
+        "operationId": "result_sheets_api_v1_booklets__booklet_id__result_sheets_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ResultSheetOut"
+                  },
+                  "title": "Response Result Sheets Api V1 Booklets  Booklet Id  Result Sheets Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/answers/{answer_id}/approve": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Approve an answer: accept the AI's mark or override it",
+        "description": "Both marks are kept. While the booklet is amended, approving the last draft issues the next result sheet version.",
+        "operationId": "approve_answer_api_v1_booklets__booklet_id__answers__answer_id__approve_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          },
+          {
+            "name": "answer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Answer Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveAnswerIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A mark, tag or text the rules refuse.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "Another teacher has the booklet open, or the caller has not opened it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/answers/{answer_id}/skip": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Skip an answer for now (approve it later)",
+        "operationId": "skip_answer_api_v1_booklets__booklet_id__answers__answer_id__skip_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          },
+          {
+            "name": "answer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Answer Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpectedVersionIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A mark, tag or text the rules refuse.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "Another teacher has the booklet open, or the caller has not opened it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/answers/{answer_id}/reopen": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Reopen an approved answer",
+        "description": "Before the booklet is approved this takes the approval back. Afterwards it opens an amendment: the answer becomes a draft, the booklet stays approved with the `amendment_in_progress` badge, and the issued sheets stay valid. The reason is optional.",
+        "operationId": "reopen_answer_api_v1_booklets__booklet_id__answers__answer_id__reopen_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          },
+          {
+            "name": "answer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Answer Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReopenIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A mark, tag or text the rules refuse.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "Another teacher has the booklet open, or the caller has not opened it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/answers/{answer_id}/withdraw": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Withdraw an amendment draft: the earlier approval stands again",
+        "operationId": "withdraw_draft_api_v1_booklets__booklet_id__answers__answer_id__withdraw_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          },
+          {
+            "name": "answer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Answer Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpectedVersionIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A mark, tag or text the rules refuse.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "Another teacher has the booklet open, or the caller has not opened it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/approve": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Approve the booklet: result sheet v1",
+        "description": "Every attempted answer must be approved first (`can_approve`).",
+        "operationId": "approve_booklet_api_v1_booklets__booklet_id__approve_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpectedVersionIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A mark, tag or text the rules refuse.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "Another teacher has the booklet open, or the caller has not opened it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/regions/{region_id}": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Correct an OCR line or mark it struck out",
+        "description": "The answers holding the line are re-scored by the worker (`rescoring`); an approved answer must be reopened first. The text before and after is kept with the booklet (not in the audit log).",
+        "operationId": "edit_region_api_v1_booklets__booklet_id__regions__region_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          },
+          {
+            "name": "region_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Region Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegionEditIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegionEditOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A mark, tag or text the rules refuse.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "Another teacher has the booklet open, or the caller has not opened it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/segments": {
+      "get": {
+        "tags": [
+          "segments"
+        ],
+        "summary": "A booklet's segments in written order (unassigned ones have no question)",
+        "operationId": "list_segments_api_v1_booklets__booklet_id__segments_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SegmentsOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/segments/merge": {
+      "post": {
+        "tags": [
+          "segments"
+        ],
+        "summary": "Merge two segments (the second joins the first)",
+        "operationId": "merge_api_v1_booklets__booklet_id__segments_merge_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SegmentsOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A mark, tag or text the rules refuse.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "Another teacher has the booklet open, or the caller has not opened it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/segments/split": {
+      "post": {
+        "tags": [
+          "segments"
+        ],
+        "summary": "Split a segment: the regions from `at_region` on become a new segment",
+        "operationId": "split_api_v1_booklets__booklet_id__segments_split_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SplitIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SegmentsOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A mark, tag or text the rules refuse.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "Another teacher has the booklet open, or the caller has not opened it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/segments/reassign": {
+      "post": {
+        "tags": [
+          "segments"
+        ],
+        "summary": "Give a segment another question, or move it to the unassigned tray",
+        "operationId": "reassign_api_v1_booklets__booklet_id__segments_reassign_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReassignIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SegmentsOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A mark, tag or text the rules refuse.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "Another teacher has the booklet open, or the caller has not opened it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/segments/move-boundary": {
+      "post": {
+        "tags": [
+          "segments"
+        ],
+        "summary": "Move the boundary between two neighbouring segments",
+        "operationId": "move_boundary_api_v1_booklets__booklet_id__segments_move_boundary_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveBoundaryIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SegmentsOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A mark, tag or text the rules refuse.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "Another teacher has the booklet open, or the caller has not opened it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedOut"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4555,6 +6106,111 @@
           "force_reset"
         ],
         "title": "AccountOut"
+      },
+      "ApprovalOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "ai_mark": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Mark"
+          },
+          "teacher_mark": {
+            "type": "number",
+            "title": "Teacher Mark"
+          },
+          "overridden": {
+            "type": "boolean",
+            "title": "Overridden"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "remarks": {
+            "type": "string",
+            "title": "Remarks"
+          },
+          "reviewer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reviewer Id"
+          },
+          "reviewed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Reviewed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ai_mark",
+          "teacher_mark",
+          "overridden",
+          "tags",
+          "remarks",
+          "reviewer_id",
+          "reviewed_at"
+        ],
+        "title": "ApprovalOut"
+      },
+      "ApproveAnswerIn": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "teacher_mark": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Teacher Mark",
+            "description": "Omit to accept the AI's mark; required when there is none. A multiple of the paper's mark step, at most the question's marks."
+          },
+          "tags": {
+            "items": {
+              "type": "string",
+              "maxLength": 40,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Tags"
+          },
+          "remarks": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Remarks",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "ApproveAnswerIn"
       },
       "AvailabilityOut": {
         "properties": {
@@ -4881,7 +6537,8 @@
               "scored",
               "in_review",
               "approved",
-              "amendment_in_progress"
+              "amendment_in_progress",
+              "approved_amended"
             ],
             "title": "Status"
           },
@@ -4944,7 +6601,9 @@
                   "too_many_pages",
                   "processing_failed",
                   "reading_failed",
-                  "segmentation_failed"
+                  "segmentation_failed",
+                  "diagrams_failed",
+                  "scoring_failed"
                 ]
               },
               {
@@ -5011,7 +6670,8 @@
               "scored",
               "in_review",
               "approved",
-              "amendment_in_progress"
+              "amendment_in_progress",
+              "approved_amended"
             ],
             "title": "Status"
           },
@@ -5074,7 +6734,9 @@
                   "too_many_pages",
                   "processing_failed",
                   "reading_failed",
-                  "segmentation_failed"
+                  "segmentation_failed",
+                  "diagrams_failed",
+                  "scoring_failed"
                 ]
               },
               {
@@ -5266,6 +6928,96 @@
         ],
         "title": "CriterionOut",
         "description": "A criterion as stored: the same shape the editor sends, with its id and version."
+      },
+      "CriterionResultOut": {
+        "properties": {
+          "criterion_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Criterion Id"
+          },
+          "criterion_version": {
+            "type": "integer",
+            "title": "Criterion Version"
+          },
+          "weight": {
+            "type": "number",
+            "title": "Weight"
+          },
+          "credit": {
+            "type": "number",
+            "title": "Credit",
+            "description": "0..1; marks = weight × credit."
+          },
+          "marks": {
+            "type": "number",
+            "title": "Marks"
+          },
+          "scorer": {
+            "type": "string",
+            "title": "Scorer"
+          },
+          "flags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flags",
+            "description": "`check`: borderline; `manual`: the teacher marks it."
+          },
+          "similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Similarity"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Why this credit (Panel B)."
+          },
+          "matched": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Matched"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "criterion_id",
+          "criterion_version",
+          "weight",
+          "credit",
+          "marks",
+          "scorer",
+          "flags",
+          "similarity",
+          "reason",
+          "matched",
+          "missing"
+        ],
+        "title": "CriterionResultOut"
       },
       "CurrentPasswordIn": {
         "properties": {
@@ -5502,6 +7254,37 @@
         ],
         "title": "Difficulty"
       },
+      "DraftOut": {
+        "properties": {
+          "amendment_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Amendment Id"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "opened_by": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Opened By"
+          },
+          "opened_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Opened At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "amendment_id",
+          "reason",
+          "opened_by",
+          "opened_at"
+        ],
+        "title": "DraftOut"
+      },
       "EngineOut": {
         "properties": {
           "name": {
@@ -5532,6 +7315,21 @@
           "detail"
         ],
         "title": "ErrorOut"
+      },
+      "ExpectedVersionIn": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "ExpectedVersionIn"
       },
       "ForgotIn": {
         "properties": {
@@ -6192,6 +7990,84 @@
         ],
         "title": "ListParamsBody"
       },
+      "LockOut": {
+        "properties": {
+          "holder_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Holder Id"
+          },
+          "holder_name": {
+            "type": "string",
+            "title": "Holder Name"
+          },
+          "acquired_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Acquired At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At",
+            "description": "Lapses then unless the holder writes or refreshes (POST .../lock) first."
+          },
+          "mine": {
+            "type": "boolean",
+            "title": "Mine",
+            "description": "The caller holds it."
+          }
+        },
+        "type": "object",
+        "required": [
+          "holder_id",
+          "holder_name",
+          "acquired_at",
+          "expires_at",
+          "mine"
+        ],
+        "title": "LockOut"
+      },
+      "LockedOut": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "holder_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holder Id",
+            "description": "Who has the booklet open (GET .../review names them)."
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail",
+          "holder_id",
+          "expires_at"
+        ],
+        "title": "LockedOut"
+      },
       "LoginIn": {
         "properties": {
           "institution_id": {
@@ -6261,6 +8137,67 @@
           "recovery_codes_left"
         ],
         "title": "MeOut"
+      },
+      "MergeIn": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "first": {
+            "type": "string",
+            "format": "uuid",
+            "title": "First"
+          },
+          "second": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Second"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "first",
+          "second"
+        ],
+        "title": "MergeIn"
+      },
+      "MoveBoundaryIn": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "upper": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Upper"
+          },
+          "lower": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Lower"
+          },
+          "region": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Region",
+            "description": "The first region of `lower` after the move."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "upper",
+          "lower",
+          "region"
+        ],
+        "title": "MoveBoundaryIn"
       },
       "NumericCriterion": {
         "properties": {
@@ -7188,6 +9125,40 @@
         ],
         "title": "ReadingOut"
       },
+      "ReassignIn": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "segment_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Segment Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "None: the unassigned tray."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "segment_id"
+        ],
+        "title": "ReassignIn"
+      },
       "RecoverIn": {
         "properties": {
           "institution_id": {
@@ -7480,6 +9451,74 @@
         ],
         "title": "ReferenceGraphOut"
       },
+      "RegionEditIn": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "description": "The booklet's version."
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text",
+            "description": "Omit to keep the text."
+          },
+          "struck_out": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Struck Out",
+            "description": "Omit to keep the mark."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "RegionEditIn"
+      },
+      "RegionEditOut": {
+        "properties": {
+          "booklet_version": {
+            "type": "integer",
+            "title": "Booklet Version"
+          },
+          "region": {
+            "$ref": "#/components/schemas/RegionOut"
+          },
+          "rescoring": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Rescoring",
+            "description": "Answers sent for re-scoring."
+          }
+        },
+        "type": "object",
+        "required": [
+          "booklet_version",
+          "region",
+          "rescoring"
+        ],
+        "title": "RegionEditOut"
+      },
       "RegionOut": {
         "properties": {
           "id": {
@@ -7562,6 +9601,11 @@
             "title": "Flagged",
             "description": "Below the line threshold: highlighted for the teacher."
           },
+          "struck_out": {
+            "type": "boolean",
+            "title": "Struck Out",
+            "description": "Left out of scoring (set by the teacher)."
+          },
           "read_by": {
             "items": {
               "type": "string"
@@ -7622,6 +9666,7 @@
           "content_class",
           "line_score",
           "flagged",
+          "struck_out",
           "read_by",
           "parent_id",
           "row",
@@ -7712,6 +9757,28 @@
         ],
         "title": "RegistrationOut"
       },
+      "ReopenIn": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Reason",
+            "description": "Optional (design decision 7).",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "ReopenIn"
+      },
       "ResetIn": {
         "properties": {
           "token": {
@@ -7755,6 +9822,264 @@
         ],
         "title": "ResetRequiredOut",
         "description": "The password is right, but an administrator requires a new one first."
+      },
+      "ResultSheetOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "total": {
+            "type": "number",
+            "title": "Total"
+          },
+          "max_marks": {
+            "type": "number",
+            "title": "Max Marks"
+          },
+          "issued_by": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Issued By"
+          },
+          "issued_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Issued At"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "description": "What this version amended (empty on version 1)."
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/SlotResultOut"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "total",
+          "max_marks",
+          "issued_by",
+          "issued_at",
+          "note",
+          "lines"
+        ],
+        "title": "ResultSheetOut"
+      },
+      "ReviewAnswerOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "slot_label": {
+            "type": "string",
+            "title": "Slot Label"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "suggested",
+              "skipped",
+              "approved"
+            ],
+            "title": "Status"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "Send it back as expected_version with a decision."
+          },
+          "rescore_pending": {
+            "type": "boolean",
+            "title": "Rescore Pending",
+            "description": "A new suggestion is on its way; the answer cannot be approved until then."
+          },
+          "attempted": {
+            "type": "boolean",
+            "title": "Attempted",
+            "description": "False when segment edits left it without text."
+          },
+          "max_marks": {
+            "type": "number",
+            "title": "Max Marks"
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestionOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The latest AI suggestion."
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The latest approval (the amended one while the answer is a draft)."
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set while the answer is an amendment draft."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "slot_label",
+          "status",
+          "version",
+          "rescore_pending",
+          "attempted",
+          "max_marks",
+          "suggestion",
+          "approval",
+          "draft"
+        ],
+        "title": "ReviewAnswerOut"
+      },
+      "ReviewOut": {
+        "properties": {
+          "booklet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Booklet Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "uploaded",
+              "processing",
+              "needs_retake",
+              "pages_ready",
+              "reading",
+              "text_ready",
+              "segmented",
+              "failed",
+              "scored",
+              "in_review",
+              "approved",
+              "amendment_in_progress",
+              "approved_amended"
+            ],
+            "title": "Status"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "Send it back as expected_version when approving the booklet or editing its text or segments."
+          },
+          "approved": {
+            "type": "boolean",
+            "title": "Approved",
+            "description": "A result sheet stands (also during an amendment)."
+          },
+          "amendment_in_progress": {
+            "type": "boolean",
+            "title": "Amendment In Progress",
+            "description": "The badge of an approved booklet."
+          },
+          "lock": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LockOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "can_approve": {
+            "type": "boolean",
+            "title": "Can Approve"
+          },
+          "waiting": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Waiting",
+            "description": "Questions whose answers still need a decision."
+          },
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewAnswerOut"
+            },
+            "type": "array",
+            "title": "Answers"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/TotalsOut",
+            "description": "Teacher marks where approved, AI marks elsewhere, best N and OR applied."
+          },
+          "sheets": {
+            "items": {
+              "$ref": "#/components/schemas/ResultSheetOut"
+            },
+            "type": "array",
+            "title": "Sheets",
+            "description": "Every version issued, oldest first."
+          },
+          "rescoring": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Rescoring",
+            "description": "On open: answers sent for re-scoring because their content changed."
+          },
+          "notices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notices"
+          }
+        },
+        "type": "object",
+        "required": [
+          "booklet_id",
+          "status",
+          "version",
+          "approved",
+          "amendment_in_progress",
+          "lock",
+          "can_approve",
+          "waiting",
+          "answers",
+          "totals",
+          "sheets"
+        ],
+        "title": "ReviewOut"
       },
       "RosterReportOut": {
         "properties": {
@@ -7930,6 +10255,136 @@
         ],
         "title": "SectionSummaryOut"
       },
+      "SegmentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "slot_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slot Label",
+            "description": "None: the unassigned tray."
+          },
+          "proposed_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Label"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "rule",
+              "similarity",
+              "teacher"
+            ],
+            "title": "Source"
+          },
+          "flags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flags"
+          },
+          "match_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Score"
+          },
+          "region_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Region Ids"
+          },
+          "page_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Page Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "slot_label",
+          "proposed_label",
+          "position",
+          "source",
+          "flags",
+          "match_score",
+          "region_ids",
+          "page_ids"
+        ],
+        "title": "SegmentOut"
+      },
+      "SegmentsOut": {
+        "properties": {
+          "booklet_version": {
+            "type": "integer",
+            "title": "Booklet Version"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/SegmentOut"
+            },
+            "type": "array",
+            "title": "Segments"
+          },
+          "rescoring": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Rescoring"
+          },
+          "emptied": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Emptied",
+            "description": "Answers left without text (not attempted)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "booklet_version",
+          "segments"
+        ],
+        "title": "SegmentsOut"
+      },
       "SemanticCriterion": {
         "properties": {
           "id": {
@@ -7991,6 +10446,87 @@
           "reference_statement"
         ],
         "title": "SemanticParamsBody"
+      },
+      "SlotResultOut": {
+        "properties": {
+          "section_label": {
+            "type": "string",
+            "title": "Section Label"
+          },
+          "slot_label": {
+            "type": "string",
+            "title": "Slot Label"
+          },
+          "mark": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mark"
+          },
+          "counted": {
+            "type": "boolean",
+            "title": "Counted"
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "description": "counted, not attempted, not counted: best N, or not counted: other OR alternative scored higher."
+          }
+        },
+        "type": "object",
+        "required": [
+          "section_label",
+          "slot_label",
+          "mark",
+          "counted",
+          "outcome"
+        ],
+        "title": "SlotResultOut"
+      },
+      "SplitIn": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "segment_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Segment Id"
+          },
+          "at_region": {
+            "type": "string",
+            "format": "uuid",
+            "title": "At Region"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "None: the unassigned tray."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "segment_id",
+          "at_region"
+        ],
+        "title": "SplitIn"
       },
       "StudentDiagramOut": {
         "properties": {
@@ -8177,6 +10713,81 @@
         ],
         "title": "SubjectOut"
       },
+      "SuggestionOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "mark": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mark",
+            "description": "None: the key is guidance only (mark manually)."
+          },
+          "mark_step": {
+            "type": "number",
+            "title": "Mark Step"
+          },
+          "flags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flags"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons",
+            "description": "Answer-level notes, including the notice of a re-score after the key, rubric, glossary or reference diagram changed."
+          },
+          "relevance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relevance"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionResultOut"
+            },
+            "type": "array",
+            "title": "Criteria"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "mark",
+          "mark_step",
+          "flags",
+          "reasons",
+          "relevance",
+          "created_at",
+          "criteria"
+        ],
+        "title": "SuggestionOut"
+      },
       "TenantStatusOut": {
         "properties": {
           "institution_id": {
@@ -8229,6 +10840,32 @@
           "user"
         ],
         "title": "TokenOut"
+      },
+      "TotalsOut": {
+        "properties": {
+          "total": {
+            "type": "number",
+            "title": "Total"
+          },
+          "max_marks": {
+            "type": "number",
+            "title": "Max Marks"
+          },
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/SlotResultOut"
+            },
+            "type": "array",
+            "title": "Slots"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "max_marks",
+          "slots"
+        ],
+        "title": "TotalsOut"
       },
       "UserOut": {
         "properties": {

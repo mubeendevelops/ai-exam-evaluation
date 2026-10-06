@@ -8,7 +8,6 @@ best N, OR and negative marking are applied over the scores at booklet level by
 ``rescore`` re-scores the answers a teacher's segment edit touched (D92)."""
 
 from collections.abc import Sequence
-from dataclasses import replace
 
 from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.booklet import AnswerStatus, BookletStatus
@@ -58,7 +57,7 @@ class BookletScorer:
         ]
         self._booklets.save(
             college_id,
-            replace(booklet, status=BookletStatus.SCORED, version=booklet.version + 1),
+            booklet.moved_to(BookletStatus.SCORED),
         )
         self._rt.record(
             college_id,
@@ -76,12 +75,7 @@ class BookletScorer:
             return
         self._booklets.save(
             college_id,
-            replace(
-                booklet,
-                status=BookletStatus.FAILED,
-                failure_reason=FAILED_SCORING,
-                version=booklet.version + 1,
-            ),
+            booklet.moved_to(BookletStatus.FAILED, failure_reason=FAILED_SCORING),
         )
         self._rt.record(
             college_id,

@@ -332,6 +332,7 @@ answers = Table(
     _text("status"),
     _int("version"),
     _seq(),
+    Column("rescore_pending", Boolean(), nullable=False, server_default="false"),
 )
 
 diagram_graphs = Table(
@@ -417,6 +418,52 @@ result_sheets = Table(
     _uuid("issued_by"),
     Column("issued_at", DateTime(timezone=True), nullable=False),
     _text("pdf_key", nullable=True),
+    Column("note", Text(), nullable=False, server_default=""),
+)
+
+# The review (0010).
+booklet_locks = Table(
+    "booklet_locks",
+    metadata,
+    _uuid("college_id"),
+    _uuid("booklet_id", primary_key=True),
+    _uuid("holder"),
+    Column("acquired_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+)
+
+amendments = Table(
+    "amendments",
+    metadata,
+    _uuid("id", primary_key=True),
+    _uuid("college_id"),
+    _uuid("booklet_id"),
+    _uuid("answer_id"),
+    _uuid("base_review_id"),
+    _uuid("opened_by"),
+    Column("opened_at", DateTime(timezone=True), nullable=False),
+    Column("reason", Text(), nullable=False, server_default=""),
+    _uuid("closed_by", nullable=True),
+    Column("closed_at", DateTime(timezone=True), nullable=True),
+    _text("outcome", nullable=True),
+    _int("sheet_version", nullable=True),
+    _seq(),
+)
+
+region_edits = Table(
+    "region_edits",
+    metadata,
+    _uuid("id", primary_key=True),
+    _uuid("college_id"),
+    _uuid("booklet_id"),
+    _uuid("region_id"),
+    _uuid("actor_id"),
+    Column("at", DateTime(timezone=True), nullable=False),
+    _text("before_text", nullable=True),
+    _text("after_text", nullable=True),
+    Column("before_struck_out", Boolean(), nullable=False),
+    Column("after_struck_out", Boolean(), nullable=False),
+    _seq(),
 )
 
 sentence_embeddings = Table(
@@ -509,6 +556,9 @@ COLLEGE_TABLES: tuple[Table, ...] = (
     audit_events,
     deletion_records,
     jobs,
+    booklet_locks,
+    amendments,
+    region_edits,
 )
 GLOBAL_TABLES: tuple[Table, ...] = (
     subjects,

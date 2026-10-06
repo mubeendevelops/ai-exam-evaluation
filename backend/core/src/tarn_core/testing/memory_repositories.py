@@ -9,7 +9,7 @@ from tarn_core.domain.booklet import WAITING_STATUSES, Answer, Booklet, Page, Re
 from tarn_core.domain.common import EngineRef
 from tarn_core.domain.content import KeyFile, Question, ReferenceAnswer
 from tarn_core.domain.diagram import StudentDiagram
-from tarn_core.domain.review import ResultSheet, Review
+from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
 from tarn_core.domain.tenancy import College, Student, User
 from tarn_core.errors import InvariantError, NotFoundError, TenantViolationError
@@ -237,6 +237,9 @@ class MemoryBookletRepository:
         self._segments: _Table[UUID, Segment] = _Table(log, "segment")
         self._answers: _Table[AnswerId, Answer] = _Table(log, "answer")
         self._diagrams: _Table[UUID, StudentDiagram] = _Table(log, "diagram")
+        self._locks: _Table[BookletId, BookletLock] = _Table(log, "booklet lock")
+        self._amendments: _Table[UUID, Amendment] = _Table(log, "amendment")
+        self._region_edits: _Table[UUID, RegionEdit] = _Table(log, "region edit")
 
     def get(self, college_id: CollegeId, booklet_id: BookletId) -> Booklet:
         return self._booklets.get(college_id, booklet_id)
@@ -266,6 +269,9 @@ class MemoryBookletRepository:
         self._segments.drop_where(college_id, lambda s: s.booklet_id == booklet_id)
         self._answers.drop_where(college_id, lambda a: a.booklet_id == booklet_id)
         self._diagrams.drop_where(college_id, lambda d: d.booklet_id == booklet_id)
+        self._locks.drop_where(college_id, lambda lk: lk.booklet_id == booklet_id)
+        self._amendments.drop_where(college_id, lambda a: a.booklet_id == booklet_id)
+        self._region_edits.drop_where(college_id, lambda e: e.booklet_id == booklet_id)
 
     def pages(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Page]:
         found = [p for p in self._pages.values(college_id) if p.booklet_id == booklet_id]
@@ -324,6 +330,34 @@ class MemoryBookletRepository:
 
     def save_diagram(self, college_id: CollegeId, diagram: StudentDiagram) -> None:
         self._diagrams.put(college_id, diagram.id, diagram)
+
+    def lock(self, college_id: CollegeId, booklet_id: BookletId) -> BookletLock | None:
+        self._booklets.get(college_id, booklet_id)
+        return self._locks.rows(college_id).get(booklet_id)
+
+    def save_lock(self, college_id: CollegeId, lock: BookletLock) -> None:
+        self._booklets.get(college_id, lock.booklet_id)
+        self._locks.put(college_id, lock.booklet_id, lock)
+
+    def delete_lock(self, college_id: CollegeId, booklet_id: BookletId) -> None:
+        self._locks.drop_where(college_id, lambda lk: lk.booklet_id == booklet_id)
+
+    def amendments(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Amendment]:
+        found = [a for a in self._amendments.values(college_id) if a.booklet_id == booklet_id]
+        return sorted(found, key=lambda a: a.opened_at)
+
+    def save_amendment(self, college_id: CollegeId, amendment: Amendment) -> None:
+        self._booklets.get(college_id, amendment.booklet_id)
+        self._amendments.put(college_id, amendment.id, amendment)
+
+    def save_region_edit(self, college_id: CollegeId, edit: RegionEdit) -> None:
+        self._booklets.get(college_id, edit.booklet_id)
+        if edit.id in self._region_edits.rows(college_id):
+            raise InvariantError("region edits are insert-only")
+        self._region_edits.put(college_id, edit.id, edit)
+
+    def region_edits(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[RegionEdit]:
+        return [e for e in self._region_edits.values(college_id) if e.booklet_id == booklet_id]
 
 
 class MemoryScoreRepository:

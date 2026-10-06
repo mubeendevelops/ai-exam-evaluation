@@ -157,6 +157,11 @@ class Settings(BaseSettings):
     job_backoff_seconds: float = Field(5.0, ge=0)
     worker_poll_seconds: float = Field(2.0, gt=0)
 
+    # --- The review (P15) ----------------------------------------------------------------------
+    # A booklet stays locked to the teacher who opened it until closed, or this many minutes
+    # after their last write or refresh (design.md "Concurrency").
+    booklet_lock_minutes: float = Field(15.0, gt=0)
+
     @model_validator(mode="after")
     def _production_is_not_development(self) -> Self:
         if self.env != "production":

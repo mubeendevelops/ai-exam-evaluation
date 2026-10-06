@@ -4,6 +4,7 @@ and two identically seeded colleges. Tests only; synthetic data only (nothing fr
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field, replace
+from datetime import timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -32,12 +33,21 @@ from tarn_core.domain.diagram import (
     NodeShape,
     StudentDiagram,
 )
-from tarn_core.domain.review import ResultLine, ResultSheet, Review
+from tarn_core.domain.review import (
+    Amendment,
+    BookletLock,
+    RegionEdit,
+    ResultLine,
+    ResultSheet,
+    Review,
+)
 from tarn_core.domain.scoring import SentenceVector
 from tarn_core.ids import (
+    AmendmentId,
     BlueprintId,
     BookletId,
     CollegeId,
+    RegionEditId,
     RegionId,
     ResultSheetId,
     ReviewId,
@@ -151,6 +161,7 @@ def _seed(open_: Opener, college: CollegeFixture, blueprint_id: BlueprintId) -> 
         answers = tuple(add_answer(s, booklet, label) for label in ("1", "2", "8"))
         for answer in answers:
             svc.scoring.score_answer(cid, teacher, answer.id, answer_text="x")
+        answers = tuple(s.booklets.get_answer(cid, a.id) for a in answers)  # scored: version 2
 
         # Fill the remaining college tables.
         page = s.booklets.pages(cid, booklet.id)[0]
@@ -207,10 +218,11 @@ def _seed(open_: Opener, college: CollegeFixture, blueprint_id: BlueprintId) -> 
             ),
         )
         score = s.scores.scores(cid, answers[0].id)[-1]
+        review_id = ReviewId(s.ids.new())
         s.scores.save_review(
             cid,
             Review(
-                id=ReviewId(s.ids.new()),
+                id=review_id,
                 college_id=cid,
                 answer_id=answers[0].id,
                 answer_score_id=score.id,
@@ -223,6 +235,45 @@ def _seed(open_: Opener, college: CollegeFixture, blueprint_id: BlueprintId) -> 
             ),
         )
         s.booklets.save_answer(cid, replace(answers[0], status=AnswerStatus.APPROVED))
+        # The review tables (P15): a lock, an amendment, a text correction.
+        s.booklets.save_lock(
+            cid,
+            BookletLock(
+                college_id=cid,
+                booklet_id=booklet.id,
+                holder=teacher,
+                acquired_at=s.clock.now(),
+                expires_at=s.clock.now() + timedelta(minutes=15),
+            ),
+        )
+        s.booklets.save_amendment(
+            cid,
+            Amendment(
+                id=AmendmentId(s.ids.new()),
+                college_id=cid,
+                booklet_id=booklet.id,
+                answer_id=answers[0].id,
+                base_review=review_id,
+                opened_by=teacher,
+                opened_at=s.clock.now(),
+                reason="synthetic reason",
+            ),
+        )
+        s.booklets.save_region_edit(
+            cid,
+            RegionEdit(
+                id=RegionEditId(s.ids.new()),
+                college_id=cid,
+                booklet_id=booklet.id,
+                region_id=s.booklets.regions(cid, page.id)[0].id,
+                actor=teacher,
+                at=s.clock.now(),
+                before_text="alpha",
+                after_text="alpha beta",
+                before_struck_out=False,
+                after_struck_out=False,
+            ),
+        )
         s.sheets.save(
             cid,
             ResultSheet(

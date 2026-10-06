@@ -1,6 +1,7 @@
 """A student's booklet and everything extracted from it. All college data."""
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 
@@ -14,7 +15,7 @@ from tarn_core.domain.common import (
     check_unit_interval,
 )
 from tarn_core.domain.ocr import ContentClass, ReadingScore
-from tarn_core.errors import InvariantError
+from tarn_core.errors import IllegalTransitionError, InvariantError
 from tarn_core.ids import (
     AnswerId,
     BookletId,
@@ -28,13 +29,19 @@ from tarn_core.ids import (
 
 
 class BookletStatus(StrEnum):
-    """States from design.md "Workflow engine"; transitions after page cleaning arrive in P15.
+    """States from design.md "Workflow engine"; every move follows ``BOOKLET_TRANSITIONS``.
 
     P9 moves a booklet UPLOADED → PROCESSING → PAGES_READY or NEEDS_RETAKE (a teacher's "use
     anyway" on every flagged page moves NEEDS_RETAKE → PAGES_READY), or → FAILED when the file
     cannot be read. PAGES_READY is where OCR (P10) takes over: PAGES_READY → READING →
     TEXT_READY (where segmentation, P12, takes over) → SEGMENTED (where scoring, P13, takes
-    over) → SCORED (where the teacher's review, P15, takes over)."""
+    over) → SCORED (where the teacher's review, P15, takes over).
+
+    The review (P15): SCORED → IN_REVIEW when a teacher first opens it → APPROVED once every
+    answer is approved (result sheet v1). Reopening an approved answer then gives
+    AMENDMENT_IN_PROGRESS (still approved: the latest sheet stays valid, the amendment is a
+    badge) → APPROVED_AMENDED when the changed answers are approved (sheet v n+1), or back
+    to where it was when every draft is withdrawn."""
 
     UPLOADED = "uploaded"
     PROCESSING = "processing"
@@ -48,6 +55,34 @@ class BookletStatus(StrEnum):
     IN_REVIEW = "in_review"
     APPROVED = "approved"
     AMENDMENT_IN_PROGRESS = "amendment_in_progress"
+    APPROVED_AMENDED = "approved_amended"
+
+
+_S = BookletStatus
+BOOKLET_TRANSITIONS: Mapping[BookletStatus, frozenset[BookletStatus]] = {
+    _S.UPLOADED: frozenset({_S.PROCESSING, _S.FAILED}),
+    _S.PROCESSING: frozenset({_S.PAGES_READY, _S.NEEDS_RETAKE, _S.FAILED}),
+    _S.NEEDS_RETAKE: frozenset({_S.PAGES_READY}),
+    _S.PAGES_READY: frozenset({_S.READING, _S.FAILED}),
+    _S.READING: frozenset({_S.TEXT_READY, _S.FAILED}),
+    _S.TEXT_READY: frozenset({_S.SEGMENTED, _S.FAILED}),
+    _S.SEGMENTED: frozenset({_S.SCORED, _S.FAILED}),
+    _S.SCORED: frozenset({_S.IN_REVIEW}),
+    _S.IN_REVIEW: frozenset({_S.APPROVED}),
+    _S.APPROVED: frozenset({_S.AMENDMENT_IN_PROGRESS}),
+    _S.AMENDMENT_IN_PROGRESS: frozenset({_S.APPROVED_AMENDED, _S.APPROVED}),
+    _S.APPROVED_AMENDED: frozenset({_S.AMENDMENT_IN_PROGRESS}),
+    _S.FAILED: frozenset(),
+}
+"""Every move a booklet may make (D106). AMENDMENT_IN_PROGRESS → APPROVED only when every
+draft of a booklet with one result sheet is withdrawn; with more sheets it returns to
+APPROVED_AMENDED."""
+
+APPROVED_STATUSES = frozenset({_S.APPROVED, _S.AMENDMENT_IN_PROGRESS, _S.APPROVED_AMENDED})
+"""A result sheet has been issued and the latest one is valid."""
+
+REVIEW_STATUSES = frozenset({_S.IN_REVIEW, _S.AMENDMENT_IN_PROGRESS})
+"""Where the teacher approves, skips and reopens answers."""
 
 
 def check_aware(name: str, value: datetime) -> None:
@@ -112,6 +147,18 @@ class Booklet:
         check_aware("uploaded_at", self.uploaded_at)
         if self.version < 1:
             raise InvariantError("booklet version starts at 1")
+
+    @property
+    def approved(self) -> bool:
+        """A result sheet stands (an amendment in progress does not withdraw it)."""
+        return self.status in APPROVED_STATUSES
+
+    def moved_to(self, status: BookletStatus, *, failure_reason: str | None = None) -> "Booklet":
+        """The booklet in its next state, one version on. Raises ``IllegalTransitionError``
+        for a move the state machine does not allow."""
+        if status not in BOOKLET_TRANSITIONS[self.status]:
+            raise IllegalTransitionError(f"a booklet cannot move from {self.status} to {status}")
+        return replace(self, status=status, failure_reason=failure_reason, version=self.version + 1)
 
 
 class RetakeReason(StrEnum):
@@ -376,9 +423,19 @@ class Segment:
 
 
 class AnswerStatus(StrEnum):
+    """Suggested (the AI's mark waits for the teacher), skipped (come back later) or approved
+    (the teacher's decision; reopening it gives a suggested draft again)."""
+
     SUGGESTED = "suggested"
     SKIPPED = "skipped"
     APPROVED = "approved"
+
+
+ANSWER_TRANSITIONS: Mapping[AnswerStatus, frozenset[AnswerStatus]] = {
+    AnswerStatus.SUGGESTED: frozenset({AnswerStatus.SKIPPED, AnswerStatus.APPROVED}),
+    AnswerStatus.SKIPPED: frozenset({AnswerStatus.APPROVED}),
+    AnswerStatus.APPROVED: frozenset({AnswerStatus.SUGGESTED}),
+}
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -392,8 +449,19 @@ class Answer:
     segment_ids: tuple[SegmentId, ...]
     status: AnswerStatus = AnswerStatus.SUGGESTED
     version: int = 1
+    """Optimistic-lock counter: bumped by every decision and every new suggestion."""
+    rescore_pending: bool = False
+    """A new suggestion was asked for (a teacher's edit, a changed key) and has not arrived:
+    the answer cannot be approved until it does."""
 
     def __post_init__(self) -> None:
         check_text("answer slot label", self.slot_label)
         if self.version < 1:
             raise InvariantError("answer version starts at 1")
+        if self.rescore_pending and self.status is AnswerStatus.APPROVED:
+            raise InvariantError("an approved answer is not re-scored")
+
+    def moved_to(self, status: AnswerStatus) -> "Answer":
+        if status not in ANSWER_TRANSITIONS[self.status]:
+            raise IllegalTransitionError(f"an answer cannot move from {self.status} to {status}")
+        return replace(self, status=status, version=self.version + 1)

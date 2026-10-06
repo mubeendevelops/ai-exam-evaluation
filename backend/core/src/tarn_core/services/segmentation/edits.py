@@ -4,16 +4,18 @@ merge, split or reassign any segment; each change re-scores only the answers it 
 Every edit returns the answers whose text changed (to be re-scored, P13) and those left without
 any segment. An answer that lost its segments but was already scored is kept, empty, so its
 score history stays (an empty answer counts as not attempted); one never scored is deleted.
-Edits that would change an approved answer are refused: that needs an amendment (P15).
+Edits that would change an approved answer are refused: reopen it first (an amendment once
+the booklet is approved, P15). The lock and version checks are ``workflow.SegmentEdits``'s.
 Edited segments become the teacher's (``source = teacher``); their machine flags are dropped
 because the teacher has looked, except ``duplicate``, which is worked out again."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.blueprint import ExamBlueprint, leaves
 from tarn_core.domain.booklet import (
+    Answer,
     AnswerStatus,
     Booklet,
     BookletStatus,
@@ -30,7 +32,14 @@ from tarn_core.services.segmentation.lines import PageLines, page_lines
 from tarn_core.services.segmentation.segmenter import spans_for
 from tarn_core.services.segmentation.service import answers_for, booklet_inputs
 
-EDITABLE = frozenset({BookletStatus.SEGMENTED, BookletStatus.SCORED, BookletStatus.IN_REVIEW})
+EDITABLE = frozenset(
+    {
+        BookletStatus.SEGMENTED,
+        BookletStatus.SCORED,
+        BookletStatus.IN_REVIEW,
+        BookletStatus.AMENDMENT_IN_PROGRESS,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -51,11 +60,15 @@ class SegmentEditor:
         scores: ScoreRepository,
         content: ContentRepository,
         runtime: Runtime,
+        check: Callable[[Booklet, Sequence[Answer]], None] | None = None,
     ) -> None:
+        """``check`` sees the booklet and the answers an edit would change before anything is
+        written, and raises to refuse the edit (the review's amendment rule, P15)."""
         self._booklets = booklets
         self._scores = scores
         self._content = content
         self._rt = runtime
+        self._check = check
 
     # --- the four edits ---------------------------------------------------------------------
 
@@ -239,6 +252,8 @@ class SegmentEditor:
                 raise InvariantError(
                     f"answer {answer.slot_label} is approved: reopen it as an amendment first"
                 )
+        if self._check is not None:
+            self._check(booklet, [*rescore, *emptied])
 
         kept = {s.id for s in final}
         for s in before:

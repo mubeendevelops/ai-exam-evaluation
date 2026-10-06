@@ -1,6 +1,7 @@
 """Diagram recognition stage, reference recognition, teacher edits and the diagram scorer (P14),
 with a scripted recognizer (no model)."""
 
+from collections.abc import Sequence
 from dataclasses import replace
 from decimal import Decimal
 
@@ -64,7 +65,7 @@ class FakeLabels:
     def engine_names(self) -> tuple[str, ...]:
         return ("scripted",)
 
-    def read(self, image: bytes, lexicon: Lexicon) -> PageText:
+    def read(self, image: bytes, lexicon: Lexicon, *, cuts: Sequence[Box] = ()) -> PageText:
         from tarn_core.domain.booklet import LineReading, RegionKind
 
         self.lexicons.append(lexicon)
@@ -527,3 +528,127 @@ def test_editor_operations() -> None:
     ):
         with pytest.raises(InvariantError):
             apply_edits(graph, bad)
+
+
+def test_a_line_joined_across_two_shapes_is_split_between_them() -> None:
+    left = DetectedShape(
+        shape=NodeShape.TERMINAL, box=Box(x0=0, y0=100, x1=400, y1=160), confidence=0.9
+    )
+    right = DetectedShape(
+        shape=NodeShape.PROCESS, box=Box(x0=600, y0=90, x1=1000, y1=170), confidence=0.9
+    )
+    arrow = DetectedArrow(
+        box=Box(x0=400, y0=120, x1=600, y1=140), tail=Point(x=402, y=130),
+        head=Point(x=598, y=130), has_head=True, confidence=0.9,
+    )  # fmt: skip
+    # one OCR line from x 20 to 980: "How it evolves" in the left box, "What world is now" right
+    line = DiagramText(
+        text="How it evolves What world is now", box=Box(x0=20, y0=110, x1=980, y1=150)
+    )
+    graph = GraphBuilder().build(
+        DiagramDetection(width=1000, height=300, shapes=(left, right), arrows=(arrow,)),
+        [line],
+        recognizer=REC,
+    )
+    by_shape = {n.shape: n.label for n in graph.nodes}
+    assert by_shape[NodeShape.TERMINAL] == "How it evolves"
+    assert by_shape[NodeShape.PROCESS] == "What world is now"
+    assert graph.edges[0].label == ""
+
+
+def test_a_line_inside_one_shape_stays_whole() -> None:
+    from tarn_core.services.diagrams.build import split_across_shapes
+
+    text = DiagramText(text="read n and m", box=Box(x0=10, y0=10, x1=200, y1=40))
+    assert split_across_shapes(text, [Box(x0=0, y0=0, x1=300, y1=60)]) == [text]
+    assert split_across_shapes(text, []) == [text]
+
+
+def test_names_at_open_arrow_ends_are_free_labels_and_head_marks_are_dropped() -> None:
+    box = DetectedShape(
+        shape=NodeShape.PROCESS, box=Box(x0=400, y0=300, x1=700, y1=400), confidence=0.9
+    )
+    arrow = DetectedArrow(
+        box=Box(x0=540, y0=120, x1=560, y1=298), tail=Point(x=550, y=125),
+        head=Point(x=550, y=298), has_head=True, confidence=0.9,
+    )  # fmt: skip
+    texts = [
+        DiagramText(text="Sensors", box=Box(x0=500, y0=80, x1=620, y1=115)),
+        DiagramText(text="V", box=Box(x0=540, y0=280, x1=560, y1=298)),
+    ]
+    graph = GraphBuilder().build(
+        DiagramDetection(width=1000, height=500, shapes=(box,), arrows=(arrow,)),
+        texts,
+        recognizer=REC,
+    )
+    (edge,) = graph.edges
+    assert (edge.source, edge.target, edge.label) == (None, "n1", "")
+    assert [f.text for f in graph.free_labels] == ["Sensors"]
+
+
+def test_computer_drawn_labels_go_to_their_arrows_and_shapes() -> None:
+    """The layout of a typical block diagram: three boxes in a row, a label stacked over
+    several lines above each arrow, one under the second arrow, a watermark below a box and
+    a speck read as text."""
+    shapes = tuple(
+        DetectedShape(
+            shape=NodeShape.PROCESS, box=Box(x0=x, y0=80, x1=x + 170, y1=185), confidence=0.9
+        )
+        for x in (40, 330, 650)
+    )
+    arrows = (
+        DetectedArrow(
+            box=Box(x0=210, y0=128, x1=332, y1=142), tail=Point(x=212, y=135),
+            head=Point(x=330, y=135), has_head=True, confidence=0.9,
+        ),
+        DetectedArrow(
+            box=Box(x0=500, y0=128, x1=652, y1=142), tail=Point(x=502, y=135),
+            head=Point(x=650, y=135), has_head=True, confidence=0.9,
+        ),
+    )  # fmt: skip
+
+    def t(text: str, x0: int, y0: int, x1: int, y1: int) -> DiagramText:
+        return DiagramText(text=text, box=Box(x0=x0, y0=y0, x1=x1, y1=y1))
+
+    texts = [
+        t("( Sensors", 50, 110, 200, 135),
+        t("Continuously", 223, 33, 313, 59),
+        t("measures", 230, 59, 307, 78),
+        t("the", 253, 79, 284, 101),
+        t("Controller .", 345, 110, 490, 135),
+        t("If temperature gets", 503, 32, 642, 57),
+        t("above certain", 521, 52, 624, 74),
+        t("temperature then", 510, 74, 637, 93),
+        t("turn on the fan", 515, 93, 630, 112),
+        t("Else no", 533, 143, 593, 166),
+        t("action", 537, 165, 588, 188),
+        t("Actuator", 680, 110, 790, 135),
+        t("GeeksforGeeks", 714, 211, 852, 236),
+        t("0.", 100, 10, 110, 19),
+    ]
+    graph = GraphBuilder().build(
+        DiagramDetection(width=870, height=270, shapes=shapes, arrows=arrows),
+        texts,
+        recognizer=REC,
+    )
+    assert [n.label for n in graph.nodes] == ["Sensors", "Controller", "Actuator"]
+    e1, e2 = graph.edges
+    assert e1.label == "Continuously measures the"
+    assert e2.label == (
+        "If temperature gets above certain temperature then turn on the fan Else no action"
+    )
+    assert [f.text for f in graph.free_labels] == ["GeeksforGeeks"]
+
+
+def test_lines_are_cut_at_shape_edges_before_reading() -> None:
+    from tarn_core.services.ocr.reader import cut_line
+
+    line = Box(x0=50, y0=92, x1=777, y1=140)
+    shapes = [Box(x0=43, y0=82, x1=215, y1=185), Box(x0=332, y0=82, x1=505, y1=184)]
+    assert cut_line(line, shapes) == [
+        Box(x0=50, y0=92, x1=215, y1=140),
+        Box(x0=215, y0=92, x1=332, y1=140),
+        Box(x0=332, y0=92, x1=505, y1=140),
+        Box(x0=505, y0=92, x1=777, y1=140),
+    ]
+    assert cut_line(line, [Box(x0=0, y0=300, x1=900, y1=400)]) == [line]  # not beside it

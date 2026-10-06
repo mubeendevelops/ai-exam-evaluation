@@ -58,7 +58,14 @@ from tarn_core.domain.content import (
 )
 from tarn_core.domain.diagram import DiagramKind, RecognitionState, StudentDiagram
 from tarn_core.domain.ocr import ContentClass, ReadingScore
-from tarn_core.domain.review import ResultSheet, Review
+from tarn_core.domain.review import (
+    Amendment,
+    AmendmentOutcome,
+    BookletLock,
+    RegionEdit,
+    ResultSheet,
+    Review,
+)
 from tarn_core.domain.scoring import AnswerFlag, AnswerScore, CriterionScore, SentenceVector
 from tarn_core.domain.tenancy import College, Role, Student, User
 from tarn_core.errors import (
@@ -69,6 +76,7 @@ from tarn_core.errors import (
     TenantViolationError,
 )
 from tarn_core.ids import (
+    AmendmentId,
     AnswerId,
     AnswerScoreId,
     BlueprintId,
@@ -81,6 +89,7 @@ from tarn_core.ids import (
     QuestionId,
     ReferenceAnswerId,
     ReferenceDiagramId,
+    RegionEditId,
     RegionId,
     ResultSheetId,
     ReviewId,
@@ -838,6 +847,7 @@ def _answer(r: Row[Any]) -> Answer:
         segment_ids=tuple(SegmentId(s) for s in r.segment_ids),
         status=AnswerStatus(r.status),
         version=r.version,
+        rescore_pending=r.rescore_pending,
     )
 
 
@@ -1101,6 +1111,7 @@ class PgBookletRepository:
                     "segment_ids": list(answer.segment_ids),
                     "status": answer.status.value,
                     "version": answer.version,
+                    "rescore_pending": answer.rescore_pending,
                 },
             )
 
@@ -1135,8 +1146,138 @@ class PgBookletRepository:
                 },
             )
 
+    # --- scores, reviews, result sheets -----------------------------------------------------------
 
-# --- scores, reviews, result sheets -----------------------------------------------------------
+    # --- the review (P15) ---------------------------------------------------------------
+
+    def lock(self, college_id: CollegeId, booklet_id: BookletId) -> BookletLock | None:
+        """Locks the booklet's row (``FOR UPDATE``) until the transaction ends: the writes to
+        one booklet run one at a time."""
+        b = m.booklets
+        row = self._conn.execute(
+            select(b.c.id)
+            .where(b.c.college_id == college_id, b.c.id == booklet_id)
+            .with_for_update()
+        ).first()
+        _one(row, f"booklet {booklet_id}")
+        t = m.booklet_locks
+        lock = self._conn.execute(
+            select(t).where(t.c.college_id == college_id, t.c.booklet_id == booklet_id)
+        ).first()
+        if lock is None:
+            return None
+        return BookletLock(
+            college_id=CollegeId(lock.college_id),
+            booklet_id=BookletId(lock.booklet_id),
+            holder=UserId(lock.holder),
+            acquired_at=lock.acquired_at,
+            expires_at=lock.expires_at,
+        )
+
+    def save_lock(self, college_id: CollegeId, lock: BookletLock) -> None:
+        _check_tenant(college_id, lock.college_id, "booklet lock")
+        t = m.booklet_locks
+        with writing(self._conn, f"lock of booklet {lock.booklet_id}"):
+            stmt = insert(t).values(
+                college_id=lock.college_id,
+                booklet_id=lock.booklet_id,
+                holder=lock.holder,
+                acquired_at=lock.acquired_at,
+                expires_at=lock.expires_at,
+            )
+            self._conn.execute(
+                stmt.on_conflict_do_update(
+                    index_elements=["booklet_id"],
+                    set_={
+                        "holder": stmt.excluded.holder,
+                        "acquired_at": stmt.excluded.acquired_at,
+                        "expires_at": stmt.excluded.expires_at,
+                    },
+                )
+            )
+
+    def delete_lock(self, college_id: CollegeId, booklet_id: BookletId) -> None:
+        t = m.booklet_locks
+        with writing(self._conn, f"lock of booklet {booklet_id}"):
+            self._conn.execute(
+                delete(t).where(t.c.college_id == college_id, t.c.booklet_id == booklet_id)
+            )
+
+    def amendments(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Amendment]:
+        return [
+            Amendment(
+                id=AmendmentId(r.id),
+                college_id=CollegeId(r.college_id),
+                booklet_id=BookletId(r.booklet_id),
+                answer_id=AnswerId(r.answer_id),
+                base_review=ReviewId(r.base_review_id),
+                opened_by=UserId(r.opened_by),
+                opened_at=r.opened_at,
+                reason=r.reason,
+                closed_by=None if r.closed_by is None else UserId(r.closed_by),
+                closed_at=r.closed_at,
+                outcome=None if r.outcome is None else AmendmentOutcome(r.outcome),
+                sheet_version=r.sheet_version,
+            )
+            for r in self._rows(m.amendments, college_id, booklet_id=booklet_id)
+        ]
+
+    def save_amendment(self, college_id: CollegeId, amendment: Amendment) -> None:
+        _check_tenant(college_id, amendment.college_id, "amendment")
+        with writing(self._conn, f"amendment {amendment.id}"):
+            _upsert(
+                self._conn,
+                m.amendments,
+                {
+                    "id": amendment.id,
+                    "college_id": amendment.college_id,
+                    "booklet_id": amendment.booklet_id,
+                    "answer_id": amendment.answer_id,
+                    "base_review_id": amendment.base_review,
+                    "opened_by": amendment.opened_by,
+                    "opened_at": amendment.opened_at,
+                    "reason": amendment.reason,
+                    "closed_by": amendment.closed_by,
+                    "closed_at": amendment.closed_at,
+                    "outcome": None if amendment.outcome is None else amendment.outcome.value,
+                    "sheet_version": amendment.sheet_version,
+                },
+            )
+
+    def save_region_edit(self, college_id: CollegeId, edit: RegionEdit) -> None:
+        _check_tenant(college_id, edit.college_id, "region edit")
+        with writing(self._conn, f"region edit {edit.id}"):
+            self._conn.execute(
+                insert(m.region_edits).values(
+                    id=edit.id,
+                    college_id=edit.college_id,
+                    booklet_id=edit.booklet_id,
+                    region_id=edit.region_id,
+                    actor_id=edit.actor,
+                    at=edit.at,
+                    before_text=edit.before_text,
+                    after_text=edit.after_text,
+                    before_struck_out=edit.before_struck_out,
+                    after_struck_out=edit.after_struck_out,
+                )
+            )
+
+    def region_edits(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[RegionEdit]:
+        return [
+            RegionEdit(
+                id=RegionEditId(r.id),
+                college_id=CollegeId(r.college_id),
+                booklet_id=BookletId(r.booklet_id),
+                region_id=RegionId(r.region_id),
+                actor=UserId(r.actor_id),
+                at=r.at,
+                before_text=r.before_text,
+                after_text=r.after_text,
+                before_struck_out=r.before_struck_out,
+                after_struck_out=r.after_struck_out,
+            )
+            for r in self._rows(m.region_edits, college_id, booklet_id=booklet_id)
+        ]
 
 
 class PgScoreRepository:
@@ -1391,6 +1532,7 @@ class PgResultSheetRepository:
                     issued_by=sheet.issued_by,
                     issued_at=sheet.issued_at,
                     pdf_key=None if sheet.pdf is None else sheet.pdf.value,
+                    note=sheet.note,
                 )
             )
 
@@ -1413,6 +1555,7 @@ class PgResultSheetRepository:
                 issued_by=UserId(r.issued_by),
                 issued_at=r.issued_at,
                 pdf=None if r.pdf_key is None else BlobKey(r.pdf_key),
+                note=r.note,
             )
             for r in rows
         ]

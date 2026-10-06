@@ -10,6 +10,7 @@ content class and the selector. It needs no repository, so the CLI uses it on pl
 page in its own transaction and a crash resumes at the first unread page:
 PAGES_READY → READING (first step) → … → TEXT_READY (last step, which queues segmentation)."""
 
+import itertools
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from uuid import UUID
@@ -192,17 +193,20 @@ class PageOcr:
 
     # -- reading ---------------------------------------------------------------------------
 
-    def read(self, image: bytes, lexicon: Lexicon) -> PageText:
+    def read(self, image: bytes, lexicon: Lexicon, *, cuts: Sequence[Box] = ()) -> PageText:
         """Every region in the detector's reading order (a table followed by its cells), then
-        any line only an engine's own layout found."""
+        any line only an engine's own layout found. ``cuts``: boxes (a diagram's shapes) whose
+        left and right edges split any line running across them, so text written side by side
+        in separate shapes is read piece by piece instead of as one line."""
         plan: list[ReadLine | int] = []  # a region that is not read, or the index of a line box
         boxes: list[Box] = []
         slots: list[tuple[RegionKind, int | None, int | None, int | None]] = []
         for region in self._layout.detect(image):
             if region.kind in _LINE_KINDS:
-                plan.append(len(boxes))
-                boxes.append(region.box)
-                slots.append((region.kind, None, None, None))
+                for piece in cut_line(region.box, cuts):
+                    plan.append(len(boxes))
+                    boxes.append(piece)
+                    slots.append((region.kind, None, None, None))
             elif region.kind is RegionKind.TABLE:
                 table_step = len(plan)
                 plan.append(ReadLine(kind=RegionKind.TABLE, box=region.box))
@@ -275,6 +279,29 @@ class PageOcr:
             row=row,
             col=col,
         )
+
+
+def cut_line(line: Box, cuts: Sequence[Box], *, min_width: int = 8) -> list[Box]:
+    """``line`` split at the left and right edges of the ``cuts`` boxes that overlap it for at
+    least half its height; pieces narrower than ``min_width`` pixels are dropped."""
+    height = line.y1 - line.y0
+    xs = sorted(
+        {
+            x
+            for c in cuts
+            if min(line.y1, c.y1) - max(line.y0, c.y0) >= 0.5 * height
+            for x in (c.x0, c.x1)
+            if line.x0 + min_width < x < line.x1 - min_width
+        }
+    )
+    if not xs:
+        return [line]
+    edges = [line.x0, *xs, line.x1]
+    return [
+        Box(x0=a, y0=line.y0, x1=b, y1=line.y1)
+        for a, b in itertools.pairwise(edges)
+        if b - a >= min_width
+    ]
 
 
 def _named(reading: LineReading, ref: EngineRef) -> LineReading:
@@ -356,7 +383,7 @@ class BookletReader:
         if booklet.status not in (BookletStatus.PAGES_READY, BookletStatus.READING):
             return True
         if booklet.status is BookletStatus.PAGES_READY:
-            booklet = self._save(booklet, status=BookletStatus.READING)
+            booklet = self._save(booklet.moved_to(BookletStatus.READING))
         pages = self._booklets.pages(college_id, booklet_id)
         pending = next((p for p in pages if not p.text_read), None)
         if pending is not None:
@@ -438,7 +465,7 @@ class BookletReader:
                 if region.kind in _LINE_KINDS:
                     lines += 1
                     flagged += region.flagged
-        booklet = self._save(booklet, status=BookletStatus.TEXT_READY)
+        booklet = self._save(booklet.moved_to(BookletStatus.TEXT_READY))
         if self._jobs is not None:
             queue_segmenting(self._jobs, booklet.college_id, booklet.id)
         self._rt.record(
@@ -464,9 +491,8 @@ class BookletReader:
             },
         )
 
-    def _save(self, booklet: Booklet, **changes: object) -> Booklet:
-        updated = replace(booklet, version=booklet.version + 1, **changes)  # type: ignore[arg-type]
-        self._booklets.save(booklet.college_id, updated)
+    def _save(self, updated: Booklet) -> Booklet:
+        self._booklets.save(updated.college_id, updated)
         return updated
 
 
@@ -479,12 +505,7 @@ def abandon_reading(
         return
     booklets.save(
         college_id,
-        replace(
-            booklet,
-            status=BookletStatus.FAILED,
-            failure_reason=FAILED_READING,
-            version=booklet.version + 1,
-        ),
+        booklet.moved_to(BookletStatus.FAILED, failure_reason=FAILED_READING),
     )
     runtime.record(
         college_id,

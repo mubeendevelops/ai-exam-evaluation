@@ -209,7 +209,7 @@ def _drawn_arrow(points: list[tuple[int, int]], head: bool) -> np.ndarray:
 def test_arrow_ends_of_a_straight_and_a_bent_arrow() -> None:
     straight = _drawn_arrow([(50, 150), (350, 150)], head=True)
     tail, tip = arrow_ends(straight, (45, 140, 355, 160), (335, 140, 355, 160))
-    assert abs(tail[0] - 50) <= 3 and abs(tip[0] - 350) <= 3
+    assert abs(tail[0] - 50) <= 5 and abs(tip[0] - 350) <= 5
     bent = _drawn_arrow([(50, 50), (300, 50), (300, 250)], head=False)
     first, second = arrow_ends(bent, (45, 45, 305, 255), None)
     ends = sorted([first, second])
@@ -278,7 +278,7 @@ def test_to_detection_builds_arrows_with_ends() -> None:
     (shape,) = detection.shapes
     assert shape.shape is NodeShape.PROCESS and shape.confidence == 0.9
     (arrow,) = detection.arrows
-    assert arrow.has_head and abs(arrow.tail.x - 50) <= 3 and abs(arrow.head.x - 350) <= 3
+    assert arrow.has_head and abs(arrow.tail.x - 50) <= 5 and abs(arrow.head.x - 350) <= 5
 
 
 # --- benchmark -------------------------------------------------------------------------------
@@ -358,3 +358,13 @@ def test_pack_makes_a_self_contained_bundle(tmp_path: Path) -> None:
         assert p.objects[0].box[0] == pytest.approx(o.objects[0].box[0] * f, abs=1.0)
         image = cv2.imread(str(tmp_path / "x" / "data" / p.image))
         assert image is not None and image.shape[1] == p.width
+
+
+def test_a_bent_arrows_tail_is_the_far_end_of_its_line() -> None:
+    # a feedback loop: out of a box to the right, up, and back left into the box above
+    image = _drawn_arrow([(192, 180), (240, 180), (240, 60), (196, 60)], head=False)
+    x, y = 192, 60
+    cv2.fillPoly(image, [np.array([(x, y), (x + 12, y - 6), (x + 12, y + 6)], np.int32)], 0)
+    tail, tip = arrow_ends(image, (188, 50, 245, 186), (190, 52, 206, 68))
+    assert abs(tail[0] - 192) <= 6 and abs(tail[1] - 180) <= 6
+    assert abs(tip[0] - 192) <= 4

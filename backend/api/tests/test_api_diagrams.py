@@ -161,7 +161,7 @@ def test_reference_graph_read_edit_and_conflict(s: Setup) -> None:
     assert body["graph"]["edited_by_teacher"] is True
     assert len(body["graph"]["edges"]) == 3
     stale = s.client.post(f"{s.graph_url}/edits", json=edit, headers=s.teacher)
-    assert stale.status_code == 422
+    assert stale.status_code == 409
     bad = {"expected_version": body["version"], "edits": [{"op": "remove_node", "id": "zz"}]}
     assert s.client.post(f"{s.graph_url}/edits", json=bad, headers=s.teacher).status_code == 422
     unknown = {"expected_version": body["version"], "edits": [{"op": "explode"}]}
@@ -196,6 +196,10 @@ def test_booklet_drawings_edit_and_comparisons(s: Setup) -> None:
     assert Draft202012Validator(COMPARISON_SCHEMA).is_valid(comparison["document"])
 
     edit = {"expected_version": 1, "edits": [{"op": "reverse_edge", "id": "e2"}]}
+    closed = s.client.post(f"{url}/{drawing['id']}/edits", json=edit, headers=s.teacher)
+    assert closed.status_code == 423  # open the booklet first (P15)
+    lock = s.client.post(f"{BASE}/booklets/{s.dw.booklet.id}/lock", headers=s.teacher)
+    assert lock.status_code == 200, lock.text
     done = s.client.post(f"{url}/{drawing['id']}/edits", json=edit, headers=s.teacher)
     assert done.status_code == 200, done.text
     assert done.json()["version"] == 2

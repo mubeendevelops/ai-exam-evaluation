@@ -21,7 +21,9 @@ from tarn_api.routes import (
     diagrams,
     questions,
     registration,
+    review,
     roster,
+    segments,
 )
 
 
@@ -91,6 +93,8 @@ def create_app(settings: Settings | None = None, backends: Backends | None = Non
         questions,
         booklets,
         diagrams,
+        review,
+        segments,
     ):
         app.include_router(module.router)
     return app

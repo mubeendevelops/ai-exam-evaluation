@@ -27,7 +27,7 @@ from tarn_core.domain.content import (
     Subject,
 )
 from tarn_core.domain.diagram import StudentDiagram
-from tarn_core.domain.review import ResultSheet, Review
+from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
 from tarn_core.domain.tenancy import College, Student, User
 from tarn_core.ids import (
@@ -214,6 +214,38 @@ class BookletRepository(Protocol):
     ) -> Sequence[StudentDiagram]: ...
 
     def save_diagram(self, college_id: CollegeId, diagram: StudentDiagram) -> None: ...
+
+    # --- the review (P15) ---------------------------------------------------------------
+
+    def lock(self, college_id: CollegeId, booklet_id: BookletId) -> BookletLock | None:
+        """The booklet's lock, live or expired, or None. A database also locks the booklet's
+        row until the transaction ends, so the writes to one booklet run one at a time.
+        Raises ``NotFoundError`` for an unknown booklet."""
+        ...
+
+    def save_lock(self, college_id: CollegeId, lock: BookletLock) -> None:
+        """Insert or replace the booklet's one lock."""
+        ...
+
+    def delete_lock(self, college_id: CollegeId, booklet_id: BookletId) -> None:
+        """No error when there is none."""
+        ...
+
+    def amendments(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[Amendment]:
+        """Oldest first."""
+        ...
+
+    def save_amendment(self, college_id: CollegeId, amendment: Amendment) -> None:
+        """Insert, or record how an open amendment was closed."""
+        ...
+
+    def save_region_edit(self, college_id: CollegeId, edit: RegionEdit) -> None:
+        """Insert only: the history of a booklet's text corrections."""
+        ...
+
+    def region_edits(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[RegionEdit]:
+        """Oldest first."""
+        ...
 
 
 class ScoreRepository(Protocol):

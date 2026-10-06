@@ -137,7 +137,7 @@ class PagePipeline:
         if not booklet.sources:
             raise UnreadableFileError("the booklet has no stored files")
         if booklet.status is BookletStatus.UPLOADED:
-            booklet = self._save(booklet, status=BookletStatus.PROCESSING)
+            booklet = self._save(booklet.moved_to(BookletStatus.PROCESSING))
         pages: list[Page] = []
         for source in booklet.sources:
             data = self._read(source.key)
@@ -213,7 +213,7 @@ class PagePipeline:
     def _gate(self, booklet: Booklet, pages: Sequence[Page]) -> None:
         flagged = [p for p in pages if p.needs_retake]
         status = BookletStatus.NEEDS_RETAKE if flagged else BookletStatus.PAGES_READY
-        booklet = self._save(booklet, status=status)
+        booklet = self._save(booklet.moved_to(status))
         if status is BookletStatus.PAGES_READY:
             queue_reading(self._jobs, booklet.college_id, booklet.id)
         self._rt.record(
@@ -230,7 +230,7 @@ class PagePipeline:
         )
 
     def _fail(self, booklet: Booklet, reason: str) -> None:
-        booklet = self._save(booklet, status=BookletStatus.FAILED, failure_reason=reason)
+        booklet = self._save(booklet.moved_to(BookletStatus.FAILED, failure_reason=reason))
         self._rt.record(
             booklet.college_id,
             None,
@@ -239,9 +239,8 @@ class PagePipeline:
             after={"reason": reason},
         )
 
-    def _save(self, booklet: Booklet, **changes: object) -> Booklet:
-        updated = replace(booklet, version=booklet.version + 1, **changes)  # type: ignore[arg-type]
-        self._booklets.save(booklet.college_id, updated)
+    def _save(self, updated: Booklet) -> Booklet:
+        self._booklets.save(updated.college_id, updated)
         return updated
 
 
@@ -274,7 +273,11 @@ class PageDecisions:
         self._booklets.save_page(college_id, replace(page, use_anyway=True))
         remaining = [p for p in pages if p.index != page_index and p.needs_retake]
         status = BookletStatus.NEEDS_RETAKE if remaining else BookletStatus.PAGES_READY
-        updated = replace(booklet, status=status, version=booklet.version + 1)
+        updated = (
+            replace(booklet, version=booklet.version + 1)
+            if status is booklet.status
+            else booklet.moved_to(status)
+        )
         self._booklets.save(college_id, updated)
         if status is BookletStatus.PAGES_READY:
             queue_reading(self._jobs, college_id, booklet_id)

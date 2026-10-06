@@ -22,7 +22,7 @@ Training: 28 epochs; last epoch {'epoch': 28, 'train_loss': 3.4102, 'val_loss': 
 
 Arrow ends (of 912 matched arrows, within 5 % of the diagonal): tail 99.0 %, head 99.1 % (heads placed by direction, not annotated).
 
-Seconds per image (median): 0.098.
+Seconds per image (median): 0.099.
 
 ## fc_scan (140 images)
 
@@ -37,9 +37,9 @@ Seconds per image (median): 0.098.
 | arrow_head | 953 | 58.7 % | 58.3 % | 51.2 % |
 | all shapes | 955 | 98.0 % | 98.0 % | |
 
-Arrow ends (of 953 matched arrows, within 5 % of the diagonal): tail 98.6 %, head 99.0 %.
+Arrow ends (of 953 matched arrows, within 5 % of the diagonal): tail 98.8 %, head 99.0 %.
 
-Edges (140 graphs, 953 true edges, 941 found): precision 96.7 %, recall 95.5 %; ignoring direction: precision 100.0 %, recall 98.7 %.
+Edges (140 graphs, 953 true edges, 948 found): precision 96.6 %, recall 96.1 %; ignoring direction: precision 100.0 %, recall 99.5 %.
 
 Seconds per image (median): 0.097.
 
@@ -56,9 +56,9 @@ Seconds per image (median): 0.097.
 | arrow_head | 953 | 59.6 % | 57.6 % | 50.6 % |
 | all shapes | 955 | 98.0 % | 98.0 % | |
 
-Arrow ends (of 952 matched arrows, within 5 % of the diagonal): tail 97.9 %, head 99.2 %.
+Arrow ends (of 952 matched arrows, within 5 % of the diagonal): tail 97.3 %, head 99.2 %.
 
-Edges (140 graphs, 953 true edges, 933 found): precision 96.1 %, recall 94.1 %; ignoring direction: precision 100.0 %, recall 97.9 %.
+Edges (140 graphs, 953 true edges, 944 found): precision 96.1 %, recall 95.2 %; ignoring direction: precision 100.0 %, recall 99.1 %.
 
 Seconds per image (median): 0.095.
 
@@ -72,19 +72,22 @@ Seconds per image (median): 0.095.
 | arrow_head | 1259 | 94.5 % | 96.4 % | 97.8 % |
 | all shapes | 1935 | 100.0 % | 100.0 % | |
 
-Arrow ends (of 1895 matched arrows, within 5 % of the diagonal): tail 88.9 %, head 87.2 %.
+Arrow ends (of 1895 matched arrows, within 5 % of the diagonal): tail 88.6 %, head 87.2 %.
 
-Edges (300 graphs, 1916 true edges, 2118 found): precision 64.2 %, recall 71.0 %; ignoring direction: precision 85.1 %, recall 94.1 %.
+Edges (300 graphs, 1916 true edges, 2118 found): precision 64.2 %, recall 70.9 %; ignoring direction: precision 85.0 %, recall 94.0 %.
 
-Seconds per image (median): 0.094.
+Seconds per image (median): 0.093.
 
 ## Reading the numbers
 
 - **Shapes** are found almost perfectly on all three test sources (98–100 % precision and recall). The weakest class is `io` on the FC drawings (recall 92.5 %): a few hand-drawn parallelograms are taken for process boxes (the 93.8 % process precision is the same mistake seen from the other side).
 - **Arrow heads** score low on FC (about 58 %) only because their annotated boxes are tiny and an IoU of 0.5 is strict for them: the *points* the graph needs are right (head within 5 % of the diagonal for 99 % of the arrows, tail for 98–99 %). Flowchart 3b's heads are placed by direction, not annotated, so its arrow-end figures are not a test.
-- **Edges end to end** (detector → `GraphBuilder` → graph, the true graph from the FC relations): 96 % precision and 94–96 % recall with direction, 98–99 % recall ignoring direction, on writers never seen in training (the FC split is by writer).
+- **Edges end to end** (detector → `GraphBuilder` → graph, the true graph from the FC relations): 96–97 % precision and 95–96 % recall with direction, 99–99.5 % recall ignoring direction, on writers never seen in training (the FC split is by writer).
 - **Synthetic** trees and networks are mostly lines without heads, where direction is arbitrary: read the "ignoring direction" figures (85 % precision, 94 % recall). Extra arrows (88 % precision) come from crossings and long diagonals; these drawings are harder than the FC sets on purpose.
 - Training stopped after 28 of 40 planned epochs (the Colab GPU limit, D105); the best validation loss was epoch 24, which is the published model.
+
+- **Computer-made diagrams** (two block diagrams from the web, not a test set; `var/diagrams/test-image1.jpg`, `test-image2.jpg`): every box and arrow found, including a bent feedback arrow; box texts and the multi-line arrow labels read and placed correctly after three fixes made on them (OCR lines cut at shape edges before reading, stacked lines grouped and given to the arrow they run along, the tail of a bent arrow found by following its line). One misreading ("Actuator" → "Accruator").
+- **A hand-drawn photo** (`var/diagrams/test-drawing.jpg`, a ruled page): all 6 shapes and 7 arrows; one arrow head missed; box texts read with handwriting errors ("what world is nw").
 
 ## Notes
 

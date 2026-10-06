@@ -19,6 +19,7 @@ class MemoryBackends:
     secure_cookies: bool = False
     access_token_minutes: int = 15
     upload_limits: UploadLimits = field(default_factory=UploadLimits)
+    lock_minutes: float = 15.0
 
     def __post_init__(self) -> None:
         self.kit: AuthKit = self.mem.auth_kit

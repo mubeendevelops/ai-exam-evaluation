@@ -167,3 +167,53 @@ def test_a_worker_without_ocr_fails_reading_jobs_and_finally_their_booklets() ->
     stepper.abandon(college.id, booklet.id)
     failed = mem.booklets.get(college.id, booklet.id)
     assert failed.status is BookletStatus.FAILED and failed.failure_reason == "reading_failed"
+
+
+def test_a_given_up_rescore_frees_its_answers() -> None:
+    """When ``answers.rescore`` runs out of attempts the answers stop waiting (P15)."""
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    from tarn_core.ids import JobId
+    from tarn_core.ports.jobs import JOB_RESCORE_ANSWERS, Job
+    from tarn_core.testing import InMemory
+    from tarn_core.testing.builders import add_college, ci_shaped_blueprint
+    from tarn_core.testing.workflow import GOOD, scored_booklet, workflow
+    from tarn_worker.booklets import BookletJobRunner
+
+    class Never:
+        def rescore(self, college_id: object, actor_id: object, answer_ids: object) -> None:
+            return None
+
+    mem = InMemory()
+    college = add_college(mem, "A")
+    booklet = scored_booklet(mem, college, ci_shaped_blueprint(mem, college), {"1": GOOD})
+    (answer,) = mem.booklets.answers(college.id, booklet.id)
+    workflow(mem, rescorer=Never()).rescore.request(college.id, college.teacher.id, [answer.id])
+    assert mem.booklets.get_answer(college.id, answer.id).rescore_pending
+
+    db = SimpleNamespace(
+        session=lambda *a, **k: nullcontext(SimpleNamespace(booklets=mem.booklets))
+    )
+    runner = BookletJobRunner(
+        db=cast(Any, db),
+        blobs=cast(Any, None),
+        splitter=cast(Any, None),
+        cleaner=cast(Any, None),
+        clock=cast(Any, None),
+        ids=cast(Any, None),
+        policy=cast(Any, None),
+        max_pages=1,
+        ocr=None,
+    )
+    job = Job(
+        id=JobId(mem.ids.new()),
+        college_id=college.id,
+        kind=JOB_RESCORE_ANSWERS,
+        payload={"booklet_id": str(booklet.id), "answer_ids": [str(answer.id)]},
+        attempts=3,
+        max_attempts=3,
+    )
+    runner._give_up_rescore(job)
+    assert not mem.booklets.get_answer(college.id, answer.id).rescore_pending

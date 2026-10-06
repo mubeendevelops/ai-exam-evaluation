@@ -28,7 +28,17 @@ class AuditAction(StrEnum):
     CONTENT_RETIRED = "content.retired"
     ANSWER_SCORED = "answer.scored"
     BOOKLET_SCORED = "booklet.scored"  # by scoring: no acting user
+    # The teacher's review (P15)
+    BOOKLET_OPENED = "booklet.opened"  # lock taken (SCORED → IN_REVIEW on the first open)
+    BOOKLET_CLOSED = "booklet.closed"  # lock released
+    REGION_EDITED = "region.edited"  # an OCR line corrected or struck out (no text here)
+    ANSWER_RESCORE_REQUESTED = "answer.rescore_requested"
+    ANSWER_SKIPPED = "answer.skipped"
     ANSWER_APPROVED = "answer.approved"
+    ANSWER_REOPENED = "answer.reopened"
+    AMENDMENT_OPENED = "amendment.opened"
+    AMENDMENT_WITHDRAWN = "amendment.withdrawn"
+    BOOKLET_APPROVED = "booklet.approved"
     RESULT_SHEET_ISSUED = "result_sheet.issued"
     # Authentication (P4)
     LOGIN = "auth.login"

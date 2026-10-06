@@ -7,7 +7,7 @@ from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import Booklet, SourceFile
 from tarn_core.domain.common import BlobKey, college_blob_key
-from tarn_core.errors import InvariantError
+from tarn_core.errors import BookletLockedError, InvariantError
 from tarn_core.ids import BlueprintId, BookletId, CollegeId, StudentId, UserId
 from tarn_core.ports.repositories import (
     BookletRepository,
@@ -109,9 +109,16 @@ class BookletService:
         return self._booklets.list(college_id)
 
     def delete(self, college_id: CollegeId, actor_id: UserId, booklet_id: BookletId) -> None:
-        """Remove images, text and marks; keep a content-free deletion record (D14)."""
+        """Remove images, text and marks; keep a content-free deletion record (D14). Refused
+        while another teacher has the booklet open."""
         self._users.get(college_id, actor_id)
-        self._booklets.get(college_id, booklet_id)
+        lock = self._booklets.lock(college_id, booklet_id)
+        if lock is not None and lock.holder != actor_id and lock.live(self._rt.clock.now()):
+            raise BookletLockedError(
+                "another teacher has this booklet open",
+                holder=lock.holder,
+                expires_at=lock.expires_at,
+            )
         answer_ids = [a.id for a in self._booklets.answers(college_id, booklet_id)]
         for page in self._booklets.pages(college_id, booklet_id):
             self._blobs.delete(page.image)

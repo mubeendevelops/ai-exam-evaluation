@@ -1281,7 +1281,9 @@ def diagram_recognize(
     texts: list[DiagramText] = []
     engines: tuple[str, ...] = ()
     if labels:
-        text = page_ocr(_ocr_setup(settings)).read(data, Lexicon(word_list=None))
+        text = page_ocr(_ocr_setup(settings)).read(
+            data, Lexicon(word_list=None), cuts=[s.box for s in detection.shapes]
+        )
         texts, engines = page_texts(text), text.engines
     graph = GraphBuilder().build(detection, texts, recognizer=recognizer.ref, label_engines=engines)
     typer.echo(json.dumps(graph_to_json(graph), indent=2))

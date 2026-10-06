@@ -902,7 +902,7 @@ export interface paths {
         put?: never;
         /**
          * Correct a recognised drawing; its answer is re-scored
-         * @description Applies the edits in order (as for the reference) and bumps the version. The answer is re-scored in the background; an approved answer is refused (amendments, P15).
+         * @description Applies the edits in order (as for the reference) and bumps the version. Needs the booklet's lock (423). The answer is re-scored in the background; an approved answer must be reopened first (409).
          */
         post: operations["edit_student_diagram_api_v1_booklets__booklet_id__diagrams__diagram_id__edits_post"];
         delete?: never;
@@ -931,6 +931,263 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/booklets/{booklet_id}/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a booklet for review (take or refresh its lock)
+         * @description The first open of a scored booklet starts its review (`in_review`). Call it again to keep the lock while reading (every write also refreshes it). Unapproved answers whose key, rubric, glossary or reference diagram changed since they were scored are sent for re-scoring (`rescoring`, `notices`).
+         */
+        post: operations["open_booklet_api_v1_booklets__booklet_id__lock_post"];
+        /**
+         * Close a booklet (release the caller's lock)
+         * @description Nothing happens when the caller holds no lock on it.
+         */
+        delete: operations["close_booklet_api_v1_booklets__booklet_id__lock_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The review of a booklet: answers, suggestions, approvals, totals, sheets, lock */
+        get: operations["get_review_api_v1_booklets__booklet_id__review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/result-sheets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every result sheet version of a booklet, oldest first */
+        get: operations["result_sheets_api_v1_booklets__booklet_id__result_sheets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/answers/{answer_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve an answer: accept the AI's mark or override it
+         * @description Both marks are kept. While the booklet is amended, approving the last draft issues the next result sheet version.
+         */
+        post: operations["approve_answer_api_v1_booklets__booklet_id__answers__answer_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/answers/{answer_id}/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Skip an answer for now (approve it later) */
+        post: operations["skip_answer_api_v1_booklets__booklet_id__answers__answer_id__skip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/answers/{answer_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen an approved answer
+         * @description Before the booklet is approved this takes the approval back. Afterwards it opens an amendment: the answer becomes a draft, the booklet stays approved with the `amendment_in_progress` badge, and the issued sheets stay valid. The reason is optional.
+         */
+        post: operations["reopen_answer_api_v1_booklets__booklet_id__answers__answer_id__reopen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/answers/{answer_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw an amendment draft: the earlier approval stands again */
+        post: operations["withdraw_draft_api_v1_booklets__booklet_id__answers__answer_id__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve the booklet: result sheet v1
+         * @description Every attempted answer must be approved first (`can_approve`).
+         */
+        post: operations["approve_booklet_api_v1_booklets__booklet_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/regions/{region_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct an OCR line or mark it struck out
+         * @description The answers holding the line are re-scored by the worker (`rescoring`); an approved answer must be reopened first. The text before and after is kept with the booklet (not in the audit log).
+         */
+        post: operations["edit_region_api_v1_booklets__booklet_id__regions__region_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/segments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A booklet's segments in written order (unassigned ones have no question) */
+        get: operations["list_segments_api_v1_booklets__booklet_id__segments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/segments/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merge two segments (the second joins the first) */
+        post: operations["merge_api_v1_booklets__booklet_id__segments_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/segments/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Split a segment: the regions from `at_region` on become a new segment */
+        post: operations["split_api_v1_booklets__booklet_id__segments_split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/segments/reassign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Give a segment another question, or move it to the unassigned tray */
+        post: operations["reassign_api_v1_booklets__booklet_id__segments_reassign_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/booklets/{booklet_id}/segments/move-boundary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move the boundary between two neighbouring segments */
+        post: operations["move_boundary_api_v1_booklets__booklet_id__segments_move_boundary_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -947,6 +1204,51 @@ export interface components {
             locked_until: string | null;
             /** Force Reset */
             force_reset: boolean;
+        };
+        /** ApprovalOut */
+        ApprovalOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ai Mark */
+            ai_mark: number | null;
+            /** Teacher Mark */
+            teacher_mark: number;
+            /** Overridden */
+            overridden: boolean;
+            /** Tags */
+            tags: string[];
+            /** Remarks */
+            remarks: string;
+            /**
+             * Reviewer Id
+             * Format: uuid
+             */
+            reviewer_id: string;
+            /**
+             * Reviewed At
+             * Format: date-time
+             */
+            reviewed_at: string;
+        };
+        /** ApproveAnswerIn */
+        ApproveAnswerIn: {
+            /** Expected Version */
+            expected_version: number;
+            /**
+             * Teacher Mark
+             * @description Omit to accept the AI's mark; required when there is none. A multiple of the paper's mark step, at most the question's marks.
+             */
+            teacher_mark?: number | null;
+            /** Tags */
+            tags?: string[];
+            /**
+             * Remarks
+             * @default
+             */
+            remarks: string;
         };
         /** AvailabilityOut */
         AvailabilityOut: {
@@ -1096,7 +1398,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "segmented" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress";
+            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "segmented" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress" | "approved_amended";
             student: components["schemas"]["BookletStudentOut"];
             blueprint: components["schemas"]["BookletBlueprintOut"];
             /**
@@ -1134,7 +1436,7 @@ export interface components {
              */
             needs_text_pages: number[];
             /** Failure Reason */
-            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed" | "reading_failed" | "segmentation_failed") | null;
+            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed" | "reading_failed" | "segmentation_failed" | "diagrams_failed" | "scoring_failed") | null;
             /**
              * Duplicate Of
              * @description Other booklets of this college with the same file (set on upload only).
@@ -1154,7 +1456,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "segmented" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress";
+            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "segmented" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress" | "approved_amended";
             student: components["schemas"]["BookletStudentOut"];
             blueprint: components["schemas"]["BookletBlueprintOut"];
             /**
@@ -1192,7 +1494,7 @@ export interface components {
              */
             needs_text_pages: number[];
             /** Failure Reason */
-            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed" | "reading_failed" | "segmentation_failed") | null;
+            failure_reason: ("unreadable_file" | "too_many_pages" | "processing_failed" | "reading_failed" | "segmentation_failed" | "diagrams_failed" | "scoring_failed") | null;
             /**
              * Duplicate Of
              * @description Other booklets of this college with the same file (set on upload only).
@@ -1260,6 +1562,43 @@ export interface components {
             version: number;
             /** Criterion */
             criterion: components["schemas"]["ListCriterion"] | components["schemas"]["NumericCriterion"] | components["schemas"]["SemanticCriterion"] | components["schemas"]["DiagramCriterion"];
+        };
+        /** CriterionResultOut */
+        CriterionResultOut: {
+            /**
+             * Criterion Id
+             * Format: uuid
+             */
+            criterion_id: string;
+            /** Criterion Version */
+            criterion_version: number;
+            /** Weight */
+            weight: number;
+            /**
+             * Credit
+             * @description 0..1; marks = weight × credit.
+             */
+            credit: number;
+            /** Marks */
+            marks: number;
+            /** Scorer */
+            scorer: string;
+            /**
+             * Flags
+             * @description `check`: borderline; `manual`: the teacher marks it.
+             */
+            flags: string[];
+            /** Similarity */
+            similarity: number | null;
+            /**
+             * Reason
+             * @description Why this credit (Panel B).
+             */
+            reason: string | null;
+            /** Matched */
+            matched: string[];
+            /** Missing */
+            missing: string[];
         };
         /** CurrentPasswordIn */
         CurrentPasswordIn: {
@@ -1361,6 +1700,26 @@ export interface components {
          * @enum {string}
          */
         Difficulty: "easy" | "medium" | "hard";
+        /** DraftOut */
+        DraftOut: {
+            /**
+             * Amendment Id
+             * Format: uuid
+             */
+            amendment_id: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Opened By
+             * Format: uuid
+             */
+            opened_by: string;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+        };
         /** EngineOut */
         EngineOut: {
             /** Name */
@@ -1372,6 +1731,11 @@ export interface components {
         ErrorOut: {
             /** Detail */
             detail: string;
+        };
+        /** ExpectedVersionIn */
+        ExpectedVersionIn: {
+            /** Expected Version */
+            expected_version: number;
         };
         /** ForgotIn */
         ForgotIn: {
@@ -1599,6 +1963,44 @@ export interface components {
              */
             required_count: number;
         };
+        /** LockOut */
+        LockOut: {
+            /**
+             * Holder Id
+             * Format: uuid
+             */
+            holder_id: string;
+            /** Holder Name */
+            holder_name: string;
+            /**
+             * Acquired At
+             * Format: date-time
+             */
+            acquired_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             * @description Lapses then unless the holder writes or refreshes (POST .../lock) first.
+             */
+            expires_at: string;
+            /**
+             * Mine
+             * @description The caller holds it.
+             */
+            mine: boolean;
+        };
+        /** LockedOut */
+        LockedOut: {
+            /** Detail */
+            detail: string;
+            /**
+             * Holder Id
+             * @description Who has the booklet open (GET .../review names them).
+             */
+            holder_id: string | null;
+            /** Expires At */
+            expires_at: string | null;
+        };
         /** LoginIn */
         LoginIn: {
             /**
@@ -1630,6 +2032,42 @@ export interface components {
             college_name: string;
             /** Recovery Codes Left */
             recovery_codes_left: number;
+        };
+        /** MergeIn */
+        MergeIn: {
+            /** Expected Version */
+            expected_version: number;
+            /**
+             * First
+             * Format: uuid
+             */
+            first: string;
+            /**
+             * Second
+             * Format: uuid
+             */
+            second: string;
+        };
+        /** MoveBoundaryIn */
+        MoveBoundaryIn: {
+            /** Expected Version */
+            expected_version: number;
+            /**
+             * Upper
+             * Format: uuid
+             */
+            upper: string;
+            /**
+             * Lower
+             * Format: uuid
+             */
+            lower: string;
+            /**
+             * Region
+             * Format: uuid
+             * @description The first region of `lower` after the move.
+             */
+            region: string;
         };
         /** NumericCriterion */
         NumericCriterion: {
@@ -1983,6 +2421,21 @@ export interface components {
              */
             competing: boolean | null;
         };
+        /** ReassignIn */
+        ReassignIn: {
+            /** Expected Version */
+            expected_version: number;
+            /**
+             * Segment Id
+             * Format: uuid
+             */
+            segment_id: string;
+            /**
+             * Label
+             * @description None: the unassigned tray.
+             */
+            label?: string | null;
+        };
         /** RecoverIn */
         RecoverIn: {
             /** Institution Id */
@@ -2106,6 +2559,35 @@ export interface components {
             /** Content Url */
             content_url: string;
         };
+        /** RegionEditIn */
+        RegionEditIn: {
+            /**
+             * Expected Version
+             * @description The booklet's version.
+             */
+            expected_version: number;
+            /**
+             * Text
+             * @description Omit to keep the text.
+             */
+            text?: string | null;
+            /**
+             * Struck Out
+             * @description Omit to keep the mark.
+             */
+            struck_out?: boolean | null;
+        };
+        /** RegionEditOut */
+        RegionEditOut: {
+            /** Booklet Version */
+            booklet_version: number;
+            region: components["schemas"]["RegionOut"];
+            /**
+             * Rescoring
+             * @description Answers sent for re-scoring.
+             */
+            rescoring: string[];
+        };
         /** RegionOut */
         RegionOut: {
             /**
@@ -2142,6 +2624,11 @@ export interface components {
              * @description Below the line threshold: highlighted for the teacher.
              */
             flagged: boolean;
+            /**
+             * Struck Out
+             * @description Left out of scoring (set by the teacher).
+             */
+            struck_out: boolean;
             /** Read By */
             read_by: string[];
             /**
@@ -2188,6 +2675,17 @@ export interface components {
             /** Approval Required */
             approval_required: boolean;
         };
+        /** ReopenIn */
+        ReopenIn: {
+            /** Expected Version */
+            expected_version: number;
+            /**
+             * Reason
+             * @description Optional (design decision 7).
+             * @default
+             */
+            reason: string;
+        };
         /** ResetIn */
         ResetIn: {
             /** Token */
@@ -2211,6 +2709,127 @@ export interface components {
              * @description Use with POST /api/v1/auth/password/reset.
              */
             reset_token: string;
+        };
+        /** ResultSheetOut */
+        ResultSheetOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /** Total */
+            total: number;
+            /** Max Marks */
+            max_marks: number;
+            /**
+             * Issued By
+             * Format: uuid
+             */
+            issued_by: string;
+            /**
+             * Issued At
+             * Format: date-time
+             */
+            issued_at: string;
+            /**
+             * Note
+             * @description What this version amended (empty on version 1).
+             */
+            note: string;
+            /** Lines */
+            lines: components["schemas"]["SlotResultOut"][];
+        };
+        /** ReviewAnswerOut */
+        ReviewAnswerOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Slot Label */
+            slot_label: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "suggested" | "skipped" | "approved";
+            /**
+             * Version
+             * @description Send it back as expected_version with a decision.
+             */
+            version: number;
+            /**
+             * Rescore Pending
+             * @description A new suggestion is on its way; the answer cannot be approved until then.
+             */
+            rescore_pending: boolean;
+            /**
+             * Attempted
+             * @description False when segment edits left it without text.
+             */
+            attempted: boolean;
+            /** Max Marks */
+            max_marks: number;
+            /** @description The latest AI suggestion. */
+            suggestion: components["schemas"]["SuggestionOut"] | null;
+            /** @description The latest approval (the amended one while the answer is a draft). */
+            approval: components["schemas"]["ApprovalOut"] | null;
+            /** @description Set while the answer is an amendment draft. */
+            draft: components["schemas"]["DraftOut"] | null;
+        };
+        /** ReviewOut */
+        ReviewOut: {
+            /**
+             * Booklet Id
+             * Format: uuid
+             */
+            booklet_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "segmented" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress" | "approved_amended";
+            /**
+             * Version
+             * @description Send it back as expected_version when approving the booklet or editing its text or segments.
+             */
+            version: number;
+            /**
+             * Approved
+             * @description A result sheet stands (also during an amendment).
+             */
+            approved: boolean;
+            /**
+             * Amendment In Progress
+             * @description The badge of an approved booklet.
+             */
+            amendment_in_progress: boolean;
+            lock: components["schemas"]["LockOut"] | null;
+            /** Can Approve */
+            can_approve: boolean;
+            /**
+             * Waiting
+             * @description Questions whose answers still need a decision.
+             */
+            waiting: string[];
+            /** Answers */
+            answers: components["schemas"]["ReviewAnswerOut"][];
+            /** @description Teacher marks where approved, AI marks elsewhere, best N and OR applied. */
+            totals: components["schemas"]["TotalsOut"];
+            /**
+             * Sheets
+             * @description Every version issued, oldest first.
+             */
+            sheets: components["schemas"]["ResultSheetOut"][];
+            /**
+             * Rescoring
+             * @description On open: answers sent for re-scoring because their content changed.
+             */
+            rescoring?: string[];
+            /** Notices */
+            notices?: string[];
         };
         /** RosterReportOut */
         RosterReportOut: {
@@ -2283,6 +2902,50 @@ export interface components {
              */
             max_marks: number;
         };
+        /** SegmentOut */
+        SegmentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Slot Label
+             * @description None: the unassigned tray.
+             */
+            slot_label: string | null;
+            /** Proposed Label */
+            proposed_label: string | null;
+            /** Position */
+            position: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "rule" | "similarity" | "teacher";
+            /** Flags */
+            flags: string[];
+            /** Match Score */
+            match_score: number | null;
+            /** Region Ids */
+            region_ids: string[];
+            /** Page Ids */
+            page_ids: string[];
+        };
+        /** SegmentsOut */
+        SegmentsOut: {
+            /** Booklet Version */
+            booklet_version: number;
+            /** Segments */
+            segments: components["schemas"]["SegmentOut"][];
+            /** Rescoring */
+            rescoring?: string[];
+            /**
+             * Emptied
+             * @description Answers left without text (not attempted).
+             */
+            emptied?: string[];
+        };
         /** SemanticCriterion */
         SemanticCriterion: {
             /**
@@ -2308,6 +2971,42 @@ export interface components {
         SemanticParamsBody: {
             /** Reference Statement */
             reference_statement: string;
+        };
+        /** SlotResultOut */
+        SlotResultOut: {
+            /** Section Label */
+            section_label: string;
+            /** Slot Label */
+            slot_label: string;
+            /** Mark */
+            mark: number | null;
+            /** Counted */
+            counted: boolean;
+            /**
+             * Outcome
+             * @description counted, not attempted, not counted: best N, or not counted: other OR alternative scored higher.
+             */
+            outcome: string;
+        };
+        /** SplitIn */
+        SplitIn: {
+            /** Expected Version */
+            expected_version: number;
+            /**
+             * Segment Id
+             * Format: uuid
+             */
+            segment_id: string;
+            /**
+             * At Region
+             * Format: uuid
+             */
+            at_region: string;
+            /**
+             * Label
+             * @description None: the unassigned tray.
+             */
+            label?: string | null;
         };
         /** StudentDiagramOut */
         StudentDiagramOut: {
@@ -2396,6 +3095,37 @@ export interface components {
              */
             owned: boolean;
         };
+        /** SuggestionOut */
+        SuggestionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Mark
+             * @description None: the key is guidance only (mark manually).
+             */
+            mark: number | null;
+            /** Mark Step */
+            mark_step: number;
+            /** Flags */
+            flags: string[];
+            /**
+             * Reasons
+             * @description Answer-level notes, including the notice of a re-score after the key, rubric, glossary or reference diagram changed.
+             */
+            reasons: string[];
+            /** Relevance */
+            relevance: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Criteria */
+            criteria: components["schemas"]["CriterionResultOut"][];
+        };
         /** TenantStatusOut */
         TenantStatusOut: {
             /** Institution Id */
@@ -2425,6 +3155,15 @@ export interface components {
              */
             expires_in: number;
             user: components["schemas"]["UserOut"];
+        };
+        /** TotalsOut */
+        TotalsOut: {
+            /** Total */
+            total: number;
+            /** Max Marks */
+            max_marks: number;
+            /** Slots */
+            slots: components["schemas"]["SlotResultOut"][];
         };
         /** UserOut */
         UserOut: {
@@ -5419,7 +6158,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description An edit names an unknown node or edge, a label is too long, or the graph changed since it was loaded (reload and edit again). */
+            /** @description The graph changed since it was loaded (reload and edit again). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description An edit names an unknown node or edge, or a label is too long. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5597,7 +6345,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Conflict */
+            /** @description The graph changed since it was loaded (reload and edit again). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5606,8 +6354,17 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description An edit names an unknown node or edge, a label is too long, or the graph changed since it was loaded (reload and edit again). */
+            /** @description An edit names an unknown node or edge, or a label is too long. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Locked */
+            423: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5672,6 +6429,1108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_booklet_api_v1_booklets__booklet_id__lock_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockedOut"];
+                };
+            };
+        };
+    };
+    close_booklet_api_v1_booklets__booklet_id__lock_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_review_api_v1_booklets__booklet_id__review_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    result_sheets_api_v1_booklets__booklet_id__result_sheets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultSheetOut"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_answer_api_v1_booklets__booklet_id__answers__answer_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+                answer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApproveAnswerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A mark, tag or text the rules refuse. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another teacher has the booklet open, or the caller has not opened it. */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockedOut"];
+                };
+            };
+        };
+    };
+    skip_answer_api_v1_booklets__booklet_id__answers__answer_id__skip_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+                answer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpectedVersionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A mark, tag or text the rules refuse. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another teacher has the booklet open, or the caller has not opened it. */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockedOut"];
+                };
+            };
+        };
+    };
+    reopen_answer_api_v1_booklets__booklet_id__answers__answer_id__reopen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+                answer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReopenIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A mark, tag or text the rules refuse. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another teacher has the booklet open, or the caller has not opened it. */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockedOut"];
+                };
+            };
+        };
+    };
+    withdraw_draft_api_v1_booklets__booklet_id__answers__answer_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+                answer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpectedVersionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A mark, tag or text the rules refuse. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another teacher has the booklet open, or the caller has not opened it. */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockedOut"];
+                };
+            };
+        };
+    };
+    approve_booklet_api_v1_booklets__booklet_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpectedVersionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A mark, tag or text the rules refuse. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another teacher has the booklet open, or the caller has not opened it. */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockedOut"];
+                };
+            };
+        };
+    };
+    edit_region_api_v1_booklets__booklet_id__regions__region_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+                region_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegionEditIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionEditOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A mark, tag or text the rules refuse. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another teacher has the booklet open, or the caller has not opened it. */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockedOut"];
+                };
+            };
+        };
+    };
+    list_segments_api_v1_booklets__booklet_id__segments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentsOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_api_v1_booklets__booklet_id__segments_merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentsOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A mark, tag or text the rules refuse. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another teacher has the booklet open, or the caller has not opened it. */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockedOut"];
+                };
+            };
+        };
+    };
+    split_api_v1_booklets__booklet_id__segments_split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SplitIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentsOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A mark, tag or text the rules refuse. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another teacher has the booklet open, or the caller has not opened it. */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockedOut"];
+                };
+            };
+        };
+    };
+    reassign_api_v1_booklets__booklet_id__segments_reassign_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReassignIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentsOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A mark, tag or text the rules refuse. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another teacher has the booklet open, or the caller has not opened it. */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockedOut"];
+                };
+            };
+        };
+    };
+    move_boundary_api_v1_booklets__booklet_id__segments_move_boundary_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booklet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveBoundaryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentsOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Stale version (reload), a move the workflow does not allow, a new suggestion still on its way, or an approved answer that must be reopened first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A mark, tag or text the rules refuse. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Another teacher has the booklet open, or the caller has not opened it. */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockedOut"];
                 };
             };
         };

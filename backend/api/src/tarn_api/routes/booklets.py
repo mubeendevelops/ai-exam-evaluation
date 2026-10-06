@@ -250,7 +250,7 @@ def page_image(
     )
 
 
-def _region_out(region: Region) -> RegionOut:
+def region_out(region: Region) -> RegionOut:
     scores = region.scores or (None,) * len(region.readings)
     return RegionOut(
         id=region.id,
@@ -261,6 +261,7 @@ def _region_out(region: Region) -> RegionOut:
         content_class=None if region.content_class is None else region.content_class.value,
         line_score=region.line_score,
         flagged=region.flagged,
+        struck_out=region.struck_out,
         read_by=list(region.read_by),
         parent_id=region.parent_id,
         row=region.row,
@@ -308,7 +309,7 @@ def page_text(
             text_read=page.text_read,
             needs_text=page.needs_text,
             ocr_failures=list(page.ocr_failures),
-            regions=[_region_out(r) for r in regions],
+            regions=[region_out(r) for r in regions],
         )
 
 

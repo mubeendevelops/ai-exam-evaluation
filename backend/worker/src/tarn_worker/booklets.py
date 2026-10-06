@@ -64,6 +64,7 @@ from tarn_core.services.scoring import BookletScorer, ScoringService
 from tarn_core.services.segmentation.segmenter import SegmentationPolicy
 from tarn_core.services.segmentation.service import BookletSegmenter
 from tarn_core.services.segmentation.similarity import TrigramEmbedder
+from tarn_core.services.workflow import clear_pending
 
 
 @dataclass(frozen=True)
@@ -253,6 +254,8 @@ class BookletJobRunner:
         except Exception as error:
             with self.db.scheduler() as queue:
                 will_retry = queue.fail(job.id, type(error).__name__, retry=True)
+            if not will_retry and job.kind == JOB_RESCORE_ANSWERS:
+                self._give_up_rescore(job)
             log.error(
                 "job.failed",
                 job=str(job.id),
@@ -271,6 +274,18 @@ class BookletJobRunner:
             college=str(job.college_id),
             seconds=round(time.perf_counter() - started, 2),
         )
+
+    def _give_up_rescore(self, job: Job) -> None:
+        """The answers keep their last suggestion and can be decided again (P15)."""
+        answers = job.payload.get("answer_ids")
+        if not isinstance(answers, list):
+            return
+        with self.db.session(
+            job.college_id, ids=self.ids, clock=self.clock, blobs=self.blobs
+        ) as session:
+            clear_pending(
+                session.booklets, job.college_id, [AnswerId(UUID(str(a))) for a in answers]
+            )
 
     def _stepper(self, kind: str) -> Callable[[PostgresSession], _Stepper] | None:
         if kind == JOB_PREPARE_BOOKLET:

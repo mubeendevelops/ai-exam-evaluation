@@ -73,3 +73,26 @@ class EngineFailedError(DomainError, RuntimeError):
 
 class EngineTimeoutError(EngineFailedError, TimeoutError):
     """An OCR engine took longer than its time limit."""
+
+
+class StaleWriteError(DomainError, ValueError):
+    """The write carries a version older than the stored one: the screen is out of date
+    (design.md "Concurrency"). Reload and try again."""
+
+
+class IllegalTransitionError(DomainError, ValueError):
+    """The booklet or answer cannot move from its current state to the one asked for."""
+
+
+class RescorePendingError(DomainError, ValueError):
+    """A new suggestion for the answer is being computed: wait for it before deciding."""
+
+
+class BookletLockedError(DomainError, PermissionError):
+    """Another teacher has the booklet open (design.md "Concurrency"), or the caller does not
+    hold its lock. ``holder`` and ``expires_at`` describe the current lock, if any."""
+
+    def __init__(self, message: str, *, holder: object = None, expires_at: object = None) -> None:
+        super().__init__(message)
+        self.holder = holder
+        self.expires_at = expires_at

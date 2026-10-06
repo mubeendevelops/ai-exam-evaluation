@@ -141,12 +141,7 @@ class BookletSegmenter:
             return
         self._booklets.save(
             college_id,
-            replace(
-                booklet,
-                status=BookletStatus.FAILED,
-                failure_reason=FAILED_SEGMENTING,
-                version=booklet.version + 1,
-            ),
+            booklet.moved_to(BookletStatus.FAILED, failure_reason=FAILED_SEGMENTING),
         )
         self._rt.record(
             college_id,
@@ -196,7 +191,7 @@ class BookletSegmenter:
             self._booklets.save_answer(college_id, answer)
         self._booklets.save(
             college_id,
-            replace(booklet, status=BookletStatus.SEGMENTED, version=booklet.version + 1),
+            booklet.moved_to(BookletStatus.SEGMENTED),
         )
         queue_diagrams(self._jobs, college_id, booklet.id)
         self._rt.record(

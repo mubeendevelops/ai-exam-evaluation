@@ -478,6 +478,7 @@ BookletStatusName = Literal[
     "in_review",
     "approved",
     "amendment_in_progress",
+    "approved_amended",
 ]
 RetakeReasonName = Literal["blurry", "glare", "low_resolution", "no_page_found"]
 
@@ -552,6 +553,8 @@ class BookletOut(BaseModel):
             "processing_failed",
             "reading_failed",
             "segmentation_failed",
+            "diagrams_failed",
+            "scoring_failed",
         ]
         | None
     )
@@ -592,6 +595,7 @@ class RegionOut(BaseModel):
     content_class: ContentClassName | None
     line_score: float | None = Field(description="Winner's S over the best S possible, 0..1.")
     flagged: bool = Field(description="Below the line threshold: highlighted for the teacher.")
+    struck_out: bool = Field(description="Left out of scoring (set by the teacher).")
     read_by: list[str]
     parent_id: UUID | None = Field(description="The table a cell belongs to.")
     row: int | None
@@ -728,3 +732,223 @@ class DiagramComparisonOut(BaseModel):
     document: dict[str, Any] = Field(
         description="The R6 result, as docs/api/diagram-comparison.schema.json v1.0 describes."
     )
+
+
+# --- the review (P15) ---------------------------------------------------------------------------
+
+AnswerStatusName = Literal["suggested", "skipped", "approved"]
+
+
+class LockOut(BaseModel):
+    holder_id: UUID
+    holder_name: str
+    acquired_at: datetime
+    expires_at: datetime = Field(
+        description="Lapses then unless the holder writes or refreshes (POST .../lock) first."
+    )
+    mine: bool = Field(description="The caller holds it.")
+
+
+class LockedOut(BaseModel):
+    detail: str
+    holder_id: UUID | None = Field(
+        description="Who has the booklet open (GET .../review names them)."
+    )
+    expires_at: datetime | None
+
+
+class CriterionResultOut(BaseModel):
+    criterion_id: UUID
+    criterion_version: int
+    weight: float
+    credit: float = Field(description="0..1; marks = weight × credit.")
+    marks: float
+    scorer: str
+    flags: list[str] = Field(description="`check`: borderline; `manual`: the teacher marks it.")
+    similarity: float | None
+    reason: str | None = Field(description="Why this credit (Panel B).")
+    matched: list[str]
+    missing: list[str]
+
+
+class SuggestionOut(BaseModel):
+    id: UUID
+    mark: float | None = Field(description="None: the key is guidance only (mark manually).")
+    mark_step: float
+    flags: list[str]
+    reasons: list[str] = Field(
+        description="Answer-level notes, including the notice of a re-score after the key, "
+        "rubric, glossary or reference diagram changed."
+    )
+    relevance: float | None
+    created_at: datetime
+    criteria: list[CriterionResultOut]
+
+
+class ApprovalOut(BaseModel):
+    id: UUID
+    ai_mark: float | None
+    teacher_mark: float
+    overridden: bool
+    tags: list[str]
+    remarks: str
+    reviewer_id: UUID
+    reviewed_at: datetime
+
+
+class DraftOut(BaseModel):
+    amendment_id: UUID
+    reason: str
+    opened_by: UUID
+    opened_at: datetime
+
+
+class ReviewAnswerOut(BaseModel):
+    id: UUID
+    slot_label: str
+    status: AnswerStatusName
+    version: int = Field(description="Send it back as expected_version with a decision.")
+    rescore_pending: bool = Field(
+        description="A new suggestion is on its way; the answer cannot be approved until then."
+    )
+    attempted: bool = Field(description="False when segment edits left it without text.")
+    max_marks: float
+    suggestion: SuggestionOut | None = Field(description="The latest AI suggestion.")
+    approval: ApprovalOut | None = Field(
+        description="The latest approval (the amended one while the answer is a draft)."
+    )
+    draft: DraftOut | None = Field(description="Set while the answer is an amendment draft.")
+
+
+class SlotResultOut(BaseModel):
+    section_label: str
+    slot_label: str
+    mark: float | None
+    counted: bool
+    outcome: str = Field(
+        description="counted, not attempted, not counted: best N, or not counted: other OR "
+        "alternative scored higher."
+    )
+
+
+class TotalsOut(BaseModel):
+    total: float
+    max_marks: float
+    slots: list[SlotResultOut]
+
+
+class ResultSheetOut(BaseModel):
+    id: UUID
+    version: int
+    total: float
+    max_marks: float
+    issued_by: UUID
+    issued_at: datetime
+    note: str = Field(description="What this version amended (empty on version 1).")
+    lines: list[SlotResultOut]
+
+
+class ReviewOut(BaseModel):
+    booklet_id: UUID
+    status: BookletStatusName
+    version: int = Field(
+        description="Send it back as expected_version when approving the booklet or editing "
+        "its text or segments."
+    )
+    approved: bool = Field(description="A result sheet stands (also during an amendment).")
+    amendment_in_progress: bool = Field(description="The badge of an approved booklet.")
+    lock: LockOut | None
+    can_approve: bool
+    waiting: list[str] = Field(description="Questions whose answers still need a decision.")
+    answers: list[ReviewAnswerOut]
+    totals: TotalsOut = Field(
+        description="Teacher marks where approved, AI marks elsewhere, best N and OR applied."
+    )
+    sheets: list[ResultSheetOut] = Field(description="Every version issued, oldest first.")
+    rescoring: list[UUID] = Field(
+        default_factory=list,
+        description="On open: answers sent for re-scoring because their content changed.",
+    )
+    notices: list[str] = Field(default_factory=list)
+
+
+class ExpectedVersionIn(_In):
+    expected_version: int = Field(ge=1)
+
+
+class ApproveAnswerIn(_In):
+    expected_version: int = Field(ge=1)
+    teacher_mark: float | None = Field(
+        None,
+        ge=0,
+        description="Omit to accept the AI's mark; required when there is none. A multiple of "
+        "the paper's mark step, at most the question's marks.",
+    )
+    tags: list[Annotated[str, Field(min_length=1, max_length=40)]] = Field(
+        default_factory=list, max_length=10
+    )
+    remarks: str = Field("", max_length=2000)
+
+
+class ReopenIn(_In):
+    expected_version: int = Field(ge=1)
+    reason: str = Field("", max_length=500, description="Optional (design decision 7).")
+
+
+class RegionEditIn(_In):
+    expected_version: int = Field(ge=1, description="The booklet's version.")
+    text: str | None = Field(None, max_length=2000, description="Omit to keep the text.")
+    struck_out: bool | None = Field(None, description="Omit to keep the mark.")
+
+
+class RegionEditOut(BaseModel):
+    booklet_version: int
+    region: RegionOut
+    rescoring: list[UUID] = Field(description="Answers sent for re-scoring.")
+
+
+class SegmentOut(BaseModel):
+    id: UUID
+    slot_label: str | None = Field(description="None: the unassigned tray.")
+    proposed_label: str | None
+    position: int
+    source: Literal["rule", "similarity", "teacher"]
+    flags: list[str]
+    match_score: float | None
+    region_ids: list[UUID]
+    page_ids: list[UUID]
+
+
+class SegmentsOut(BaseModel):
+    booklet_version: int
+    segments: list[SegmentOut]
+    rescoring: list[UUID] = Field(default_factory=list)
+    emptied: list[UUID] = Field(
+        default_factory=list, description="Answers left without text (not attempted)."
+    )
+
+
+class MergeIn(_In):
+    expected_version: int = Field(ge=1)
+    first: UUID
+    second: UUID
+
+
+class SplitIn(_In):
+    expected_version: int = Field(ge=1)
+    segment_id: UUID
+    at_region: UUID
+    label: str | None = Field(None, max_length=32, description="None: the unassigned tray.")
+
+
+class ReassignIn(_In):
+    expected_version: int = Field(ge=1)
+    segment_id: UUID
+    label: str | None = Field(None, max_length=32, description="None: the unassigned tray.")
+
+
+class MoveBoundaryIn(_In):
+    expected_version: int = Field(ge=1)
+    upper: UUID
+    lower: UUID
+    region: UUID = Field(description="The first region of `lower` after the move.")
