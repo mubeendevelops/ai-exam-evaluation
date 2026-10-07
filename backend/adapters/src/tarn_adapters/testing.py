@@ -2,6 +2,7 @@
 (API, worker, ``tarn evaluate``): the pipeline is the real one, the engines are stand-ins."""
 
 from collections.abc import Sequence
+from typing import Any
 from uuid import UUID
 
 from tarn_adapters.stages import OcrKit, Stages
@@ -62,3 +63,15 @@ def scripted_stages(blobs: BlobStore, lines: Sequence[str] = QP_CI_PAGE) -> Stag
         embedder=TrigramEmbedder(),
         scoring_embedder=TrigramEmbedder(),
     )
+
+
+PRODUCTION_CONNECTIONS: dict[str, Any] = {
+    "public_url": "https://tarn.example.test",
+    "database_url": "postgresql://tarn:x@10.0.0.2:5432/tarn?sslmode=require",
+    "app_database_url": "postgresql://tarn_app:x@10.0.0.2:5432/tarn?sslmode=require",
+    "identity_app_database_url": (
+        "postgresql://tarn_auth:x@10.0.0.3:5432/tarn_identity?sslmode=require"
+    ),
+}
+"""What production settings need besides keys and services (P21): an https public address and
+TLS to both databases. Tests only."""

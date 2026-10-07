@@ -13,6 +13,8 @@ from tarn_adapters.config import Settings, get_settings
 from tarn_adapters.logging_setup import configure_logging
 from tarn_api import __version__, errors
 from tarn_api.backends import Backends, PostgresBackends
+from tarn_api.middleware import BodyLimit, SecurityHeaders, body_rules
+from tarn_api.ratelimit import RateLimiter
 from tarn_api.routes import (
     accounts,
     auth,
@@ -26,6 +28,7 @@ from tarn_api.routes import (
     roster,
     segments,
 )
+from tarn_core.services.question_bank import DIAGRAM_MAX_BYTES, KEY_FILE_MAX_BYTES
 
 
 class DeviceOut(BaseModel):
@@ -61,9 +64,15 @@ def probe_worker(url: str, timeout_s: float = 1.0) -> WorkerOut:
     return WorkerOut(status="down", detail="Worker reports a problem")
 
 
-def create_app(settings: Settings | None = None, backends: Backends | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    backends: Backends | None = None,
+    *,
+    rate_limiter: RateLimiter | None = None,
+) -> FastAPI:
     """``backends`` defaults to PostgreSQL (``tarn_app`` + ``tarn_auth``); engines connect on
-    first use, so building the app (or its OpenAPI document) needs no database."""
+    first use, so building the app (or its OpenAPI document) needs no database. The rate
+    limiter counts on the backends' clock unless one is given."""
     settings = settings or get_settings()
     configure_logging(settings.log_level, json=settings.env == "production")
     app = FastAPI(
@@ -71,8 +80,18 @@ def create_app(settings: Settings | None = None, backends: Backends | None = Non
         version=__version__,
         description="AI suggests; the teacher decides. Every college sees only its own data.",
     )
-    app.state.backends = backends or PostgresBackends(settings)
+    app.state.backends = chosen = backends or PostgresBackends(settings)
+    app.state.rate_limiter = rate_limiter or RateLimiter(
+        chosen.clock.now, enabled=settings.rate_limits_enabled
+    )
+    app.state.trusted_proxy_hops = settings.trusted_proxy_hops
     errors.install(app)
+    # The last one added runs first: the body cap sees the request before anything reads it.
+    app.add_middleware(SecurityHeaders, hsts=settings.env == "production")
+    app.add_middleware(
+        BodyLimit,
+        rules=body_rules(settings.upload_max_bytes, KEY_FILE_MAX_BYTES, DIAGRAM_MAX_BYTES),
+    )
 
     @app.get("/api/v1/health", response_model=HealthOut, tags=["system"])
     def health() -> HealthOut:

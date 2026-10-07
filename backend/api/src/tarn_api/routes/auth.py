@@ -2,11 +2,24 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Cookie, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
 from tarn_adapters.auth.passwords import bundled_bloom_bytes
 from tarn_api.backends import Backends, unit_of_work
+from tarn_api.ratelimit import (
+    FORGOT_ACCOUNT,
+    FORGOT_IP,
+    LOGIN_ACCOUNT,
+    LOGIN_IP,
+    RECOVER_ACCOUNT,
+    RECOVER_IP,
+    TOKEN_IP,
+    account_key,
+    check,
+    ip_of,
+    per_ip,
+)
 from tarn_api.schemas import (
     ChangePasswordIn,
     CurrentPasswordIn,
@@ -45,6 +58,9 @@ SIGN_IN_FAILED = (
     "attempts the account is locked for a few minutes; you can also reset your password."
 )
 _401: dict[int | str, dict[str, Any]] = {401: {"model": ErrorOut}}
+_429: dict[int | str, dict[str, Any]] = {
+    429: {"model": ErrorOut, "description": "Too many attempts from this address or account."}
+}
 _422: dict[int | str, dict[str, Any]] = {
     422: {"model": PolicyErrorOut, "description": "The new password breaks the policy."}
 }
@@ -58,10 +74,17 @@ def find_tenant(backends: Backends, institution_id: str) -> TenantRecord | None:
 @router.post(
     "/login",
     response_model=TokenOut | ResetRequiredOut,
-    responses=_401,
+    responses={**_401, **_429},
     summary="Sign in with Institution ID, email and password",
 )
-def login(body: LoginIn, response: Response, backends: BackendsDep) -> TokenOut | ResetRequiredOut:
+def login(
+    body: LoginIn, request: Request, response: Response, backends: BackendsDep
+) -> TokenOut | ResetRequiredOut:
+    check(
+        request,
+        (LOGIN_IP, ip_of(request)),
+        (LOGIN_ACCOUNT, account_key(body.institution_id, body.email)),
+    )
     tenant = find_tenant(backends, body.institution_id)
     if tenant is None:
         # As much work as a real attempt, so unknown institutions are not revealed by timing.
@@ -140,9 +163,15 @@ def me(who: PrincipalDep, backends: BackendsDep) -> MeOut:
 @router.post(
     "/password/forgot",
     status_code=status.HTTP_202_ACCEPTED,
+    responses=_429,
     summary="Email a single-use reset link (30 minutes); never says whether the email exists",
 )
-def forgot_password(body: ForgotIn, backends: BackendsDep) -> None:
+def forgot_password(body: ForgotIn, request: Request, backends: BackendsDep) -> None:
+    check(
+        request,
+        (FORGOT_IP, ip_of(request)),
+        (FORGOT_ACCOUNT, account_key(body.institution_id, body.email)),
+    )
     tenant = find_tenant(backends, body.institution_id)
     if tenant is None:
         return
@@ -153,8 +182,9 @@ def forgot_password(body: ForgotIn, backends: BackendsDep) -> None:
 @router.post(
     "/password/reset",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses={400: {"model": ErrorOut}, **_422},
+    responses={400: {"model": ErrorOut}, **_422, **_429},
     summary="Set a new password with a reset link token (single use)",
+    dependencies=[Depends(per_ip(TOKEN_IP))],
 )
 def reset_password(body: ResetIn, backends: BackendsDep) -> None:
     college_id = token_college(body.token)
@@ -165,10 +195,15 @@ def reset_password(body: ResetIn, backends: BackendsDep) -> None:
 @router.post(
     "/password/recover",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses={**_401, **_422},
+    responses={**_401, **_422, **_429},
     summary="Set a new password with a one-time recovery code",
 )
-def recover_password(body: RecoverIn, backends: BackendsDep) -> None:
+def recover_password(body: RecoverIn, request: Request, backends: BackendsDep) -> None:
+    check(
+        request,
+        (RECOVER_IP, ip_of(request)),
+        (RECOVER_ACCOUNT, account_key(body.institution_id, body.email)),
+    )
     tenant = find_tenant(backends, body.institution_id)
     if tenant is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Recovery failed.")
@@ -212,8 +247,9 @@ def issue_recovery_codes(
 @router.post(
     "/invitations/accept",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses={400: {"model": ErrorOut}, **_422},
+    responses={400: {"model": ErrorOut}, **_422, **_429},
     summary="A new teacher sets a first password from the invitation link",
+    dependencies=[Depends(per_ip(TOKEN_IP))],
 )
 def accept_invitation(body: InviteAcceptIn, backends: BackendsDep) -> None:
     college_id = token_college(body.token)

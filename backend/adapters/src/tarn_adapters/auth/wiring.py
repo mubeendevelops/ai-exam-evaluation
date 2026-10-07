@@ -13,7 +13,13 @@ from tarn_adapters.auth.crypto import (
 from tarn_adapters.auth.hashing import Argon2Hasher
 from tarn_adapters.auth.mail import ConsoleMailer, SmtpMailer
 from tarn_adapters.auth.passwords import CommonPasswordList
-from tarn_adapters.auth.secrets import PEPPER, SMTP_PASSWORD, SecretSource, secret_source
+from tarn_adapters.auth.secrets import (
+    PEPPER,
+    SMTP_PASSWORD,
+    SecretSource,
+    previous_peppers,
+    secret_source,
+)
 from tarn_adapters.auth.system import SystemRandom
 from tarn_adapters.config import Settings
 from tarn_core.ports.identity import Mailer
@@ -73,7 +79,7 @@ def auth_kit(
     secrets = secrets or secret_source(settings)
     mailer = mailer or build_mailer(settings, secrets)
     return AuthKit(
-        hasher=Argon2Hasher(secrets.get(PEPPER)),
+        hasher=Argon2Hasher(secrets.get(PEPPER), previous=previous_peppers(secrets)),
         keys=key_manager(settings),
         cipher=AesGcmCipher(),
         random=SystemRandom(),

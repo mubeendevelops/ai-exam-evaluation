@@ -325,6 +325,63 @@ def tenants_approve(
     typer.echo(f"{approved.institution_id}: {approved.status.value}")
 
 
+def _change_tenant(institution_id: str, operator: str, *, suspend: bool) -> None:
+    from tarn_adapters.auth.wiring import auth_kit
+    from tarn_adapters.identity.database import IdentityDatabase
+    from tarn_adapters.postgres.database import PostgresDatabase
+    from tarn_adapters.runtime import UuidGenerator
+    from tarn_core.services.registration import RegistrationService
+
+    settings = get_settings()
+    identity_db = IdentityDatabase(settings.identity_app_database_url)
+    app_db = PostgresDatabase(settings.app_database_url)
+    try:
+        with identity_db.session() as store:
+            tenant = store.find_tenant(institution_id)
+        if tenant is None:
+            typer.echo(f"no tenant {institution_id}")
+            raise typer.Exit(code=1)
+        with (
+            identity_db.session() as store,
+            app_db.session(
+                tenant.college_id, ids=UuidGenerator(), clock=SystemClock(), blobs=NoBlobStore()
+            ) as session,
+        ):
+            service = RegistrationService(
+                identity=store,
+                users=session.users,
+                colleges=session.colleges,
+                kit=auth_kit(settings),
+                runtime=session.runtime,
+            )
+            changed = (service.suspend if suspend else service.resume)(
+                tenant.college_id, operator=operator
+            )
+    finally:
+        identity_db.dispose()
+        app_db.dispose()
+    typer.echo(f"{changed.institution_id}: {changed.status.value}")
+
+
+@tenants.command("suspend")
+def tenants_suspend(
+    institution_id: str = typer.Argument(...),
+    operator: str = typer.Option(..., help="Who suspends (recorded in the audit log)."),
+) -> None:
+    """Suspend a college: nobody signs in, and every open session ends at once. Nothing is
+    deleted; `tarn tenants resume` undoes it."""
+    _change_tenant(institution_id, operator, suspend=True)
+
+
+@tenants.command("resume")
+def tenants_resume(
+    institution_id: str = typer.Argument(...),
+    operator: str = typer.Option(..., help="Who resumes (recorded in the audit log)."),
+) -> None:
+    """Lift a suspension."""
+    _change_tenant(institution_id, operator, suspend=False)
+
+
 @tenants.command("llm")
 def tenants_llm(
     institution_id: str = typer.Argument(...),

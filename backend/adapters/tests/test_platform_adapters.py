@@ -26,6 +26,7 @@ from tarn_adapters.sources.gcs_event import (
     parse_storage_event,
 )
 from tarn_adapters.sources.ordering import natural_key
+from tarn_adapters.testing import PRODUCTION_CONNECTIONS
 from tarn_core.domain.common import BlobKey, college_blob_key
 from tarn_core.errors import (
     InvariantError,
@@ -152,7 +153,11 @@ class FakeGcs:
     def list_blobs(
         self, bucket_or_name: str, *, prefix: str | None = None
     ) -> list[SimpleNamespace]:
-        return [SimpleNamespace(name=n) for n in sorted(self.objects) if n.startswith(prefix or "")]
+        return [
+            SimpleNamespace(name=n, size=len(self.objects[n]))
+            for n in sorted(self.objects)
+            if n.startswith(prefix or "")
+        ]
 
 
 class FakeBucket:
@@ -275,6 +280,23 @@ def test_the_event_source_refuses_another_college_or_booklet() -> None:
         empty.pages(COLLEGE, BOOKLET)
 
 
+def test_the_event_source_refuses_another_bucket_and_oversized_folders() -> None:
+    folder = incoming_folder(COLLEGE, BOOKLET)
+    with pytest.raises(InvariantError, match="another bucket"):
+        GcsEventPageSource.from_event(_event(COLLEGE, BOOKLET), FakeGcs(), bucket="tarn-data")
+    many = FakeGcs({f"{folder}/p{i}.jpg": fake_image(str(i)) for i in range(5)})
+    source = GcsEventPageSource.from_event(
+        _event(COLLEGE, BOOKLET), many, bucket="tarn-incoming", max_files=4
+    )
+    with pytest.raises(UploadTooLargeError, match="At most 4 files"):
+        source.pages(COLLEGE, BOOKLET)
+    big = FakeGcs({f"{folder}/p1.jpg": fake_image("1") + b"x" * 5000})
+    capped = GcsEventPageSource.from_event(_event(COLLEGE, BOOKLET), big, max_bytes=4096)
+    with pytest.raises(UploadTooLargeError):
+        capped.pages(COLLEGE, BOOKLET)
+    assert big.buckets == []  # refused from the listing: nothing was downloaded
+
+
 # --- which store the settings choose, and S3 -----------------------------------------------------
 
 
@@ -319,7 +341,14 @@ def test_production_refuses_minio_as_the_object_store() -> None:
     kms = "gcp-kms:projects/p/locations/asia-south1/keyRings/r/cryptoKeys/k"
     smtp = {"mailer": "smtp", "smtp_host": "smtp.example.test", "smtp_from": "t@example.test"}
     with pytest.raises(ValueError, match="BLOB_BACKEND=minio"):
-        Settings(_env_file=None, env="production", kms_key_ref=kms, secrets_backend="gcp", **smtp)  # type: ignore[arg-type]
+        Settings(
+            _env_file=None,
+            env="production",
+            kms_key_ref=kms,
+            secrets_backend="gcp",
+            **smtp,  # type: ignore[arg-type]
+            **PRODUCTION_CONNECTIONS,
+        )
     ok = Settings(
         _env_file=None,
         env="production",
@@ -327,6 +356,7 @@ def test_production_refuses_minio_as_the_object_store() -> None:
         secrets_backend="gcp",
         blob_backend="gcs",
         **smtp,  # type: ignore[arg-type]
+        **PRODUCTION_CONNECTIONS,
     )
     assert ok.gcp_region == "asia-south1"  # the default region
 
@@ -424,6 +454,7 @@ def test_production_refuses_several_keys_from_secret_manager() -> None:
         mailer="smtp",
         smtp_host="smtp.example.test",
         smtp_from="t@example.test",
+        **PRODUCTION_CONNECTIONS,
     )
     with pytest.raises(LlmConfigError, match="several keys"):
         build_llm_scorer(settings, secrets=_Secrets(b"a,b"))

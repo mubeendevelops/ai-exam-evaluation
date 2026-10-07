@@ -201,3 +201,9 @@ variable "smtp_from" {
   description = "From address of verification, invitation and reset emails."
   type        = string
 }
+
+variable "armor_auth_requests_per_minute" {
+  description = "Cloud Armor: requests per minute from one address to /api/v1/auth/* and /api/v1/registrations before 429 (a college's teachers may share one NAT address)"
+  type        = number
+  default     = 120
+}

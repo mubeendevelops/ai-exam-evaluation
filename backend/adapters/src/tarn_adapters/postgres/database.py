@@ -30,6 +30,7 @@ from tarn_core.ids import CollegeId
 from tarn_core.ports.runtime import Clock, IdGenerator
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime
+from tarn_core.services.blob_scope import scoped_blobs
 
 
 def sqlalchemy_url(url: str) -> str:
@@ -102,7 +103,8 @@ class PostgresDatabase:
         clock: Clock,
         blobs: BlobStore,
     ) -> Iterator[PostgresSession]:
-        """Commit on success, roll back on any exception."""
+        """Commit on success, roll back on any exception. ``blobs`` is bound to the college
+        (``CollegeScopedBlobStore``): another college's blob keys are refused like its rows."""
         with self.engine.begin() as conn:
             if college_id is not None:
                 conn.execute(
@@ -110,7 +112,12 @@ class PostgresDatabase:
                     {"college": str(college_id)},
                 )
             yield PostgresSession(
-                conn, college_id, ids=ids, clock=clock, blobs=blobs, job_settings=self.job_settings
+                conn,
+                college_id,
+                ids=ids,
+                clock=clock,
+                blobs=scoped_blobs(blobs, college_id),
+                job_settings=self.job_settings,
             )
 
     @contextmanager

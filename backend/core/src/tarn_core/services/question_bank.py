@@ -51,6 +51,7 @@ from tarn_core.ports.repositories import (
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime, ref_json
 from tarn_core.services.content import ensure_can_edit
+from tarn_core.services.uploads import check_upload_image
 
 KEY_FILE_MAX_BYTES = 10 * 1024 * 1024
 DIAGRAM_MAX_BYTES = 5 * 1024 * 1024
@@ -755,6 +756,7 @@ class QuestionBankService:
         found = sniff_media_type(data)
         if found not in allowed:
             raise InvariantError(f"Only {what} files are accepted; this file is not one.")
+        check_upload_image(data, found or "")
         declared = (declared_type or "").split(";")[0].strip().lower()
         if declared not in ("", "application/octet-stream", found):
             raise InvariantError(

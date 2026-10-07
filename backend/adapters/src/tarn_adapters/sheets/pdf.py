@@ -13,6 +13,7 @@ import pymupdf
 
 from tarn_core.domain.common import Box
 from tarn_core.domain.sheet import SheetAnswer, SheetDiagram, SheetDocument
+from tarn_core.services.images import MAX_IMAGE_PIXELS, image_dimensions
 
 THUMB_WIDTH = 520
 PAGE = pymupdf.paper_rect("a4")
@@ -50,6 +51,9 @@ def _e(text: str) -> str:
 
 def thumbnail(image: bytes, box: Box) -> bytes | None:
     """The part of a page image inside ``box``, as a JPEG at most ``THUMB_WIDTH`` wide."""
+    size = image_dimensions(image)
+    if size is None or size[0] * size[1] > MAX_IMAGE_PIXELS:
+        return None
     page = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
     if page is None:
         return None

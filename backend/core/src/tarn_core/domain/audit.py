@@ -56,6 +56,8 @@ class AuditAction(StrEnum):
     TENANT_REGISTERED = "tenant.registered"
     TENANT_EMAIL_VERIFIED = "tenant.email_verified"
     TENANT_APPROVED = "tenant.approved"
+    TENANT_SUSPENDED = "tenant.suspended"  # a Tarn operator (P21): every session ends
+    TENANT_RESUMED = "tenant.resumed"
     ACCOUNT_CREATED = "account.created"
     ACCOUNT_ACTIVATED = "account.activated"
     ACCOUNT_DISABLED = "account.disabled"
@@ -67,13 +69,15 @@ class AuditAction(StrEnum):
     COLLEGE_LLM_SCORING_SET = "college.llm_scoring_set"  # a Tarn operator switches the flag
 
 
-# Events that may have no acting user: a failed sign-in for an unknown email, the approval of
-# a tenant by a Tarn operator (who is not a user of any college), and what the page pipeline
-# does on its own (cleaning, reading, segmenting, scoring).
+# Events that may have no acting user: a failed sign-in for an unknown email, the approval,
+# suspension or resumption of a tenant by a Tarn operator (who is not a user of any college),
+# and what the page pipeline does on its own (cleaning, reading, segmenting, scoring).
 ANONYMOUS_ACTIONS = frozenset(
     {
         AuditAction.LOGIN_FAILED,
         AuditAction.TENANT_APPROVED,
+        AuditAction.TENANT_SUSPENDED,
+        AuditAction.TENANT_RESUMED,
         AuditAction.COLLEGE_LLM_SCORING_SET,
         AuditAction.BOOKLET_PROCESSED,
         AuditAction.BOOKLET_FAILED,

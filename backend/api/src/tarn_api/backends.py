@@ -346,6 +346,8 @@ class PostgresBackends:
         self.clock: Clock = SystemClock()
         self.ids: IdGenerator = UuidGenerator()
         self.signing_key = secrets.get(SIGNING_KEY)
+        if len(self.signing_key) < 32:
+            raise ValueError("the token signing key must be at least 32 bytes (HS256)")
         self.secure_cookies = settings.env == "production"
         self.access_token_minutes = settings.access_token_minutes
         self.upload_limits = UploadLimits(

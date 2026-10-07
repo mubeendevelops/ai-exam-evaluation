@@ -3,7 +3,9 @@ a booklet without a file system: ``cat booklet.pdf | tarn evaluate - …``.
 
 The stream holds one file (a PDF, a JPEG or a PNG), or a tar archive of such files, which are
 taken in name order. The stream is read once, up to ``max_bytes``; archive members are read in
-memory and never written to disk, so a member's name cannot reach the file system."""
+memory and never written to disk, so a member's name cannot reach the file system. Sparse
+members (which expand beyond the archive's own size) are skipped, and the members' declared
+sizes together must stay under ``max_bytes``."""
 
 import io
 import tarfile
@@ -47,18 +49,26 @@ class StreamPageSource:
 
     def _archive(self, data: bytes) -> list[PageImage]:
         members: list[tuple[str, bytes]] = []
+        total = 0
         try:
             with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
                 for info in archive:
                     name = info.name.rsplit("/", 1)[-1]
                     if (
                         not info.isreg()
+                        or info.issparse()  # a sparse member expands beyond the archive
                         or name.startswith(".")
                         or not name.lower().endswith(tuple(EXTENSIONS))
                     ):
                         continue
                     if len(members) >= MAX_MEMBERS:
                         raise UploadTooLargeError("The archive holds too many files.")
+                    total += info.size
+                    if total > self._max_bytes:
+                        raise UploadTooLargeError(
+                            f"The archive's files are larger than "
+                            f"{self._max_bytes // (1024 * 1024)} MB."
+                        )
                     handle = archive.extractfile(info)
                     if handle is not None:
                         members.append((name, handle.read()))

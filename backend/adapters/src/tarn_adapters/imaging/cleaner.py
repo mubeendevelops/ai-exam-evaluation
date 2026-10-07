@@ -8,9 +8,11 @@ from tarn_core.domain.booklet import PageMetrics
 from tarn_core.domain.common import EngineRef
 from tarn_core.errors import UnreadableFileError
 from tarn_core.ports.pages import CleanedPage
+from tarn_core.services.images import MAX_IMAGE_PIXELS, check_image_size
 
-MAX_PIXELS = 120_000_000
-"""Refuse images above this size before decoding (a decompression bomb guard)."""
+MAX_PIXELS = MAX_IMAGE_PIXELS
+"""Refuse images above this size before decoding (a decompression bomb guard): the size is
+read from the file header first, so the pixels are never allocated."""
 _CLEANER_VERSION = "1"
 
 
@@ -18,6 +20,7 @@ def decode(data: bytes) -> locate.Image:
     """Decode an image file (EXIF orientation applied). Raises ``UnreadableFileError``."""
     if not data:
         raise UnreadableFileError("the image is empty")
+    check_image_size(data, MAX_PIXELS)
     try:
         image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     except cv2.error:

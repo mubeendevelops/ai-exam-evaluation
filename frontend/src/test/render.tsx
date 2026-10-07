@@ -16,7 +16,7 @@ export function resetClientState() {
 export function renderApp(path = '/', state?: unknown) {
   resetClientState()
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter
         initialEntries={[
@@ -35,6 +35,7 @@ export function renderApp(path = '/', state?: unknown) {
       </MemoryRouter>
     </QueryClientProvider>,
   )
+  return Object.assign(rendered, { queryClient })
 }
 
 /** Routes every test needs when the visitor is not signed in. */

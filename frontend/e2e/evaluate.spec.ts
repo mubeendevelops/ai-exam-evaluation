@@ -190,3 +190,84 @@ test('approve every answer, approve the booklet, reopen one, amend it and find r
   expect(booklets.decided[2]?.body).toMatchObject({ reason: 'Formula was on the next page.' })
   expect(booklets.decided[3]?.body).toMatchObject({ teacher_mark: 3 })
 })
+
+test('five booklets fill the queue: the sixth must wait until the machine takes one', async ({
+  page,
+}) => {
+  await signIn(page)
+  // The booklet list and uploads, for five queued booklets (the rest stays on FakeBooklets).
+  const queued: Record<string, unknown>[] = []
+  await page.route(
+    (url) => url.pathname === '/api/v1/booklets',
+    async (route) => {
+      const method = route.request().method()
+      const list = () => ({
+        items: queued,
+        total: queued.length,
+        limit: 100,
+        offset: 0,
+        waiting: queued.length,
+        max_waiting: 5,
+      })
+      if (method === 'POST') {
+        if (queued.length >= 5)
+          return route.fulfill({
+            status: 429,
+            json: { detail: 'You already have 5 booklets waiting.' },
+          })
+        queued.unshift({
+          id: `55555555-5555-4555-8555-00000000000${queued.length}`,
+          status: 'uploaded',
+          student: {
+            id: '44444444-4444-4444-8444-444444444444',
+            name: 'Test Student One',
+            usn: 'TST001',
+          },
+          blueprint: {
+            id: '66666666-6666-4666-8666-666666666666',
+            version: 1,
+            title: 'Mid-term Physics',
+          },
+          uploaded_by: '22222222-2222-4222-8222-222222222222',
+          uploaded_at: `2026-10-06T08:0${queued.length}:00Z`,
+          version: 1,
+          page_count: 0,
+          pages_cleaned: 0,
+          flagged_pages: [],
+          pages_read: 0,
+          needs_text_pages: [],
+          failure_reason: null,
+          duplicate_of: [],
+          result: null,
+        })
+        return route.fulfill({ status: 201, json: queued[0] })
+      }
+      return route.fulfill({ status: 200, json: list() })
+    },
+  )
+  await page
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('link', { name: 'AI Evaluation' })
+    .click()
+  await page.getByRole('combobox', { name: 'Student' }).click()
+  await page.getByRole('option', { name: /Test Student One/ }).click()
+  await page.getByLabel('Exam').selectOption({ label: 'Mid-term Physics' })
+
+  const drop = page.getByRole('button', { name: /Drag and drop scanned student answer sheets/ })
+  for (let n = 1; n <= 5; n++) {
+    await expect(drop).toHaveAttribute('aria-disabled', 'false')
+    await page.getByLabel('Answer sheet files').setInputFiles({
+      name: `booklet-${n}.pdf`,
+      mimeType: 'application/pdf',
+      buffer: Buffer.from(`%PDF-1.7 synthetic ${n}`),
+    })
+    await expect(page.getByRole('region', { name: 'Upload queue' })).toContainText(
+      `Queue (${n} of 5)`,
+    )
+  }
+  await expect(drop).toHaveAttribute('aria-disabled', 'true')
+  await expect(page.getByText(/You already have 5 booklets waiting/)).toBeVisible()
+  await expect(
+    page.getByRole('region', { name: 'Uploaded student answer submissions' }).getByRole('article'),
+  ).toHaveCount(5)
+})

@@ -69,6 +69,10 @@ def _embedded(document: pymupdf.Document, page: pymupdf.Page) -> Image | None:
     coverage = (box[2] - box[0]) * (box[3] - box[1]) / max(page.rect.width * page.rect.height, 1.0)
     if coverage < _MIN_COVERAGE:
         return None
+    # The stored size, before PyMuPDF inflates the stream: a few compressed bytes can declare
+    # billions of pixels (a decompression bomb).
+    if int(info.get("width", 0)) * int(info.get("height", 0)) > MAX_PIXELS:
+        raise UnreadableFileError("a page image is too large")
     extracted = document.extract_image(info["xref"])
     if not extracted or extracted.get("smask"):
         return None  # a transparency mask: only rendering gets it right

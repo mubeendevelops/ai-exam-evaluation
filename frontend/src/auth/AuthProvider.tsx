@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import {
   createContext,
   useCallback,
@@ -46,6 +47,7 @@ async function loadMe(): Promise<Me | null> {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: 'loading' })
+  const queryClient = useQueryClient()
 
   // On load: the refresh cookie, if any, gives an access token.
   useEffect(() => {
@@ -60,36 +62,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // A refused refresh anywhere (expired, revoked, replayed) ends the session in the UI.
-  useEffect(() => session.onLost(() => setState({ status: 'anonymous' })), [])
+  // A refused refresh anywhere (expired, revoked, replayed) ends the session in the UI. The
+  // query cache (booklets, students, marks) goes with it: the next person to sign in on this
+  // browser, perhaps of another college, must not see it, even for a moment.
+  useEffect(
+    () =>
+      session.onLost(() => {
+        queryClient.clear()
+        setState({ status: 'anonymous' })
+      }),
+    [queryClient],
+  )
 
-  const signIn = useCallback(async (input: SignInInput): Promise<SignInResult> => {
-    try {
-      const { data, error } = await api.POST('/api/v1/auth/login', {
-        body: {
-          institution_id: input.institutionId.trim(),
-          email: input.email.trim(),
-          password: input.password,
-          remember: input.remember,
-        },
-      })
-      if (!data) {
-        return {
-          kind: 'error',
-          message: problemOf(error, 'Sign-in failed. Check the Institution ID, email and password.')
-            .message,
+  const signIn = useCallback(
+    async (input: SignInInput): Promise<SignInResult> => {
+      try {
+        const { data, error } = await api.POST('/api/v1/auth/login', {
+          body: {
+            institution_id: input.institutionId.trim(),
+            email: input.email.trim(),
+            password: input.password,
+            remember: input.remember,
+          },
+        })
+        if (!data) {
+          return {
+            kind: 'error',
+            message: problemOf(
+              error,
+              'Sign-in failed. Check the Institution ID, email and password.',
+            ).message,
+          }
         }
+        if ('reset_token' in data) return { kind: 'reset_required', resetToken: data.reset_token }
+        session.set(data.access_token)
+        queryClient.clear()
+        const me = await loadMe()
+        if (!me) return { kind: 'error', message: 'Sign-in failed. Please try again.' }
+        setState({ status: 'authenticated', me })
+        return { kind: 'signed_in' }
+      } catch {
+        return { kind: 'error', message: NETWORK_PROBLEM }
       }
-      if ('reset_token' in data) return { kind: 'reset_required', resetToken: data.reset_token }
-      session.set(data.access_token)
-      const me = await loadMe()
-      if (!me) return { kind: 'error', message: 'Sign-in failed. Please try again.' }
-      setState({ status: 'authenticated', me })
-      return { kind: 'signed_in' }
-    } catch {
-      return { kind: 'error', message: NETWORK_PROBLEM }
-    }
-  }, [])
+    },
+    [queryClient],
+  )
 
   const signOut = useCallback(async () => {
     try {
@@ -98,8 +115,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // The server session may already be gone; the browser forgets it either way.
     }
     session.clear()
+    queryClient.clear()
     setState({ status: 'anonymous' })
-  }, [])
+  }, [queryClient])
 
   const reload = useCallback(async () => {
     const me = await loadMe()

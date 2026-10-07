@@ -3,6 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
+from urllib.parse import parse_qs, urlsplit
 
 from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -147,6 +148,9 @@ class Settings(BaseSettings):
     gcp_region: str = "asia-south1"
     """Where the Google Cloud resources live (Cloud Run, Cloud SQL, Cloud Storage, KMS)."""
     password_pepper: SecretStr = SecretStr(DEV_PEPPER)
+    # Pepper rotation (O13): the earlier pepper(s), comma-separated, still accepted until every
+    # account has signed in again; with the gcp backend, the secret tarn-password-pepper-previous.
+    password_pepper_previous: SecretStr = SecretStr("")
     token_signing_key: SecretStr = SecretStr(DEV_SIGNING_KEY)
 
     # Sessions: short access tokens; the refresh cookie lasts a working day, or 30 days with
@@ -154,6 +158,12 @@ class Settings(BaseSettings):
     access_token_minutes: int = 15
     session_hours: int = 12
     remember_session_days: int = 30
+    # Rate limits on sign-in, recovery, password reset, registration (P21): per client address
+    # and per account, in each API process (tarn_api.ratelimit). Behind a load balancer, the
+    # client address is the X-Forwarded-For entry this many places from the end (Google's
+    # external load balancer appends the client and its own address: 2). 0 = the socket peer.
+    rate_limits_enabled: bool = True
+    trusted_proxy_hops: int = Field(0, ge=0, le=5)
     # The public web address, for links in emails.
     public_url: str = "http://localhost:5173"
     # "console" prints emails to the log (development only: production refuses it, the links
@@ -233,11 +243,16 @@ class Settings(BaseSettings):
         problems = []
         if self.kms_key_ref.startswith("local:"):
             problems.append("TARN_KMS_KEY_REF must name a cloud KMS key")
-        if self.secrets_backend == "settings" and (
-            self.password_pepper.get_secret_value() == DEV_PEPPER
-            or self.token_signing_key.get_secret_value() == DEV_SIGNING_KEY
-        ):
-            problems.append("the development pepper and signing key are not allowed")
+        if self.secrets_backend != "gcp":
+            problems.append(
+                "TARN_SECRETS_BACKEND must be gcp: the pepper and signing key live in the "
+                "secret store, not in environment variables"
+            )
+        if not self.public_url.startswith("https://"):
+            problems.append("TARN_PUBLIC_URL must be https:// (emailed links carry tokens)")
+        for name in ("app_database_url", "identity_app_database_url"):
+            if not _encrypted_db_url(getattr(self, name)):
+                problems.append(f"TARN_{name.upper()} needs sslmode=require (or verify-*)")
         if self.mailer == "console":
             problems.append("TARN_MAILER=console prints secret links: use smtp")
         elif not self.smtp_host or not self.smtp_from:
@@ -252,6 +267,14 @@ class Settings(BaseSettings):
         if problems:
             raise ValueError("unsafe production settings: " + "; ".join(problems))
         return self
+
+
+def _encrypted_db_url(url: str) -> bool:
+    """A PostgreSQL URL that insists on TLS, or a local socket (Cloud SQL connector)."""
+    query = parse_qs(urlsplit(url).query)
+    if any(h.startswith("/") for h in query.get("host", [])):
+        return True
+    return query.get("sslmode", [""])[0] in ("require", "verify-ca", "verify-full")
 
 
 @lru_cache

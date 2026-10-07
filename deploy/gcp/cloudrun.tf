@@ -27,6 +27,9 @@ locals {
     TARN_SMTP_PORT       = tostring(var.smtp_port)
     TARN_SMTP_USER       = var.smtp_user
     TARN_SMTP_FROM       = var.smtp_from
+    # Client address for rate limits: Google's external load balancer appends "<client>,
+    # <load balancer>" to X-Forwarded-For (P21; unverified until a deployment, O102).
+    TARN_TRUSTED_PROXY_HOPS = "2"
   }
 }
 

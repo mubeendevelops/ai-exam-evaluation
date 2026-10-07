@@ -15,6 +15,10 @@ jobs:
       UV_NO_SYNC: "1"
     steps:
       - uses: actions/checkout@v7
+      # Real student booklets (samples/), local data (var/) and secrets (.env) are git-ignored;
+      # this fails the build if any of them was ever added by force (P21).
+      - name: No student data or secrets in the repository
+        run: test -z "$(git ls-files samples var .env)"
       - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.12.14"

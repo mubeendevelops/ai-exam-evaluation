@@ -15,6 +15,7 @@ from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.identity import (
     ActionToken,
     AuthSession,
+    HashParams,
     IdentityRecord,
     IdentityStatus,
     LoginCounters,
@@ -216,6 +217,8 @@ class AuthService(_Base):
             return Refused(reason="unknown")
         uid = identity.user_id
         if self._identity.counters(college_id, uid).locked(now):
+            # Same work as a real check: a locked account must not answer faster (P21).
+            self._kit.hasher.hash(password, tenant.policy.hash_params)
             self._rt.record(college_id, uid, AuditAction.LOGIN_FAILED, after={"reason": "locked"})
             return Refused(reason="locked")
         if not self._kit.hasher.verify(identity.password_hash, password):
@@ -243,7 +246,9 @@ class AuthService(_Base):
             return Refused(reason=reason)
         user = self._users.get(college_id, uid)
         self._identity.set_counters(college_id, uid, LoginCounters())
-        if self._kit.hasher.needs_rehash(identity.password_hash, tenant.policy.hash_params):
+        if self._kit.hasher.needs_rehash(
+            identity.password_hash, tenant.policy.hash_params
+        ) or not self._kit.hasher.pepper_is_current(identity.password_hash, password):
             identity = replace(
                 identity,
                 password_hash=self._kit.hasher.hash(password, tenant.policy.hash_params),
@@ -418,25 +423,26 @@ class AuthService(_Base):
         tenant = self._identity.get_tenant(college_id)
         # Policy first: its answer must not depend on whether the email exists.
         self._check_new_password(tenant, canonical_email(email), new_password)
+        wanted = normalise_recovery_code(code)
+        params = tenant.policy.hash_params
         identity = self._identity.find_identity(college_id, canonical_email(email))
         if identity is None or identity.status is not IdentityStatus.ACTIVE:
+            self._pad(wanted, params, RECOVERY_CODE_COUNT)
             return Refused(reason="unknown")
         uid = identity.user_id
         now = self._now
         if self._identity.counters(college_id, uid).locked(now):
+            self._pad(wanted, params, RECOVERY_CODE_COUNT)
             self._rt.record(
                 college_id, uid, AuditAction.RECOVERY_FAILED, after={"reason": "locked"}
             )
             return Refused(reason="locked")
-        wanted = normalise_recovery_code(code)
-        match = next(
-            (
-                c
-                for c in self._identity.recovery_codes(college_id, uid)
-                if not c.used and self._kit.hasher.verify(c.code_hash, wanted)
-            ),
-            None,
-        )
+        # Every unused code is checked (no early exit), padded to the full set: the time taken
+        # says nothing about whether the email exists, is locked, or which code matched (P21).
+        unused = [c for c in self._identity.recovery_codes(college_id, uid) if not c.used]
+        matches = [c for c in unused if self._kit.hasher.verify(c.code_hash, wanted)]
+        self._pad(wanted, params, RECOVERY_CODE_COUNT - len(unused))
+        match = matches[0] if matches else None
         if match is None or not self._identity.use_recovery_code(
             college_id, uid, match.ordinal, now
         ):
@@ -453,6 +459,11 @@ class AuthService(_Base):
             after={"codes_left": self.recovery_codes_left(college_id, uid)},
         )
         return None
+
+    def _pad(self, secret: str, params: HashParams, times: int) -> None:
+        """Dummy hashing, so refusals cost as much as a real check."""
+        for _ in range(max(0, times)):
+            self._kit.hasher.hash(secret, params)
 
     # --- signed-in changes ------------------------------------------------------------------
 

@@ -7,7 +7,10 @@ One event per booklet (the marker) rather than one per page file keeps a half-up
 from being picked up. The ids come from the object name, and the source refuses to serve any
 other college or booklet than the event's: a call for another college is a tenancy violation,
 not an empty result. Who may write under ``incoming/<college_id>/`` is a bucket permission
-(Terraform), not something this adapter can check."""
+(Terraform), not something this adapter can check (P21: only the API and worker service
+accounts may write to the bucket). The adapter checks what it can: the event must name the
+configured bucket, and a folder may hold at most ``max_files`` page files of ``max_bytes`` in
+all (sizes from the listing, before anything is downloaded)."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -16,7 +19,7 @@ from uuid import UUID
 
 from tarn_adapters.blob.gcs_store import GcsClient
 from tarn_adapters.sources.ordering import EXTENSIONS, media_type_of, natural_key
-from tarn_core.errors import InvariantError, TenantViolationError
+from tarn_core.errors import InvariantError, TenantViolationError, UploadTooLargeError
 from tarn_core.ids import BookletId, CollegeId
 from tarn_core.ports.storage import PageImage
 
@@ -60,13 +63,41 @@ def parse_storage_event(data: Mapping[str, Any]) -> StorageEvent:
 
 
 class GcsEventPageSource:
-    def __init__(self, event: StorageEvent, client: GcsClient) -> None:
+    def __init__(
+        self,
+        event: StorageEvent,
+        client: GcsClient,
+        *,
+        bucket: str | None = None,
+        max_files: int = 40,
+        max_bytes: int = 100 * 1024 * 1024,
+    ) -> None:
+        if bucket is not None and event.bucket != bucket:
+            raise InvariantError("the storage event is for another bucket")
         self._event = event
         self._client = client
+        self._max_files = max_files
+        self._max_bytes = max_bytes
 
     @classmethod
-    def from_event(cls, data: Mapping[str, Any], client: GcsClient) -> "GcsEventPageSource":
-        return cls(parse_storage_event(data), client)
+    def from_event(
+        cls,
+        data: Mapping[str, Any],
+        client: GcsClient,
+        *,
+        bucket: str | None = None,
+        max_files: int = 40,
+        max_bytes: int = 100 * 1024 * 1024,
+    ) -> "GcsEventPageSource":
+        """``bucket``: the bucket booklets are uploaded to; an event naming any other bucket
+        is refused."""
+        return cls(
+            parse_storage_event(data),
+            client,
+            bucket=bucket,
+            max_files=max_files,
+            max_bytes=max_bytes,
+        )
 
     @property
     def event(self) -> StorageEvent:
@@ -76,20 +107,32 @@ class GcsEventPageSource:
         if (college_id, booklet_id) != (self._event.college_id, self._event.booklet_id):
             raise TenantViolationError("the event is for another college or booklet")
         folder = self._event.folder + "/"
-        names = sorted(
-            (
-                blob.name
-                for blob in self._client.list_blobs(self._event.bucket, prefix=folder)
-                if "/" not in blob.name.removeprefix(folder)
-                and blob.name.lower().endswith(tuple(EXTENSIONS))
-            ),
-            key=lambda n: natural_key(n.removeprefix(folder)),
-        )
-        if not names:
+        listed = [
+            blob
+            for blob in self._client.list_blobs(self._event.bucket, prefix=folder)
+            if "/" not in blob.name.removeprefix(folder)
+            and blob.name.lower().endswith(tuple(EXTENSIONS))
+        ]
+        if not listed:
             raise InvariantError("the booklet folder holds no PDF, JPEG or PNG files")
+        if len(listed) > self._max_files:
+            raise UploadTooLargeError(f"At most {self._max_files} files per booklet.")
+        if sum(blob.size or 0 for blob in listed) > self._max_bytes:
+            raise UploadTooLargeError(
+                f"The booklet is larger than {self._max_bytes // (1024 * 1024)} MB."
+            )
+        names = sorted(
+            (blob.name for blob in listed), key=lambda n: natural_key(n.removeprefix(folder))
+        )
         bucket = self._client.bucket(self._event.bucket)
         pages = []
+        total = 0
         for index, name in enumerate(names):
             data = bucket.blob(name).download_as_bytes()
+            total += len(data)  # the listing's sizes may be stale: count what arrived too
+            if total > self._max_bytes:
+                raise UploadTooLargeError(
+                    f"The booklet is larger than {self._max_bytes // (1024 * 1024)} MB."
+                )
             pages.append(PageImage(index=index, data=data, media_type=media_type_of(data)))
         return pages

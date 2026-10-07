@@ -1,7 +1,7 @@
 # Tarn AI Evaluation on Google Cloud (asia-south1). Nothing here is applied by the build: read
 # README.md first. Layout: network.tf, sql.tf (two Cloud SQL instances), storage.tf, kms.tf,
 # secrets.tf, iam.tf, artifact.tf, cloudrun.tf (API, web app, worker job, migration job),
-# worker_vm.tf (optional GPU VM), loadbalancer.tf, scheduler.tf.
+# worker_vm.tf (optional GPU VM), loadbalancer.tf, armor.tf (rate limits), logging.tf, scheduler.tf.
 
 locals {
   apis = [

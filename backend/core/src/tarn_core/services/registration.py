@@ -211,6 +211,44 @@ class RegistrationService(_Base):
                 )
         return approved
 
+    def suspend(self, college_id: CollegeId, *, operator: str) -> TenantRecord:
+        """A Tarn operator stops a college (incident, unpaid, abuse): nobody can sign in or
+        refresh, and every open session ends now, so access tokens stop working at the next
+        request (``current_user`` checks the session). Nothing is deleted."""
+        who = self._operator(operator)
+        tenant = self._identity.get_tenant(college_id)
+        now = self._now
+        if tenant.status is not TenantStatus.SUSPENDED:
+            tenant = replace(tenant, status=TenantStatus.SUSPENDED, updated_at=now)
+            self._identity.save_tenant(tenant)
+        for user in self._users.list(college_id):
+            self._identity.revoke_user_sessions(college_id, user.id, now)
+        self._rt.record(college_id, None, AuditAction.TENANT_SUSPENDED, after={"operator": who})
+        return tenant
+
+    def resume(self, college_id: CollegeId, *, operator: str) -> TenantRecord:
+        """Undo a suspension: the status verification and approval imply comes back."""
+        who = self._operator(operator)
+        tenant = self._identity.get_tenant(college_id)
+        if tenant.status is not TenantStatus.SUSPENDED:
+            return tenant
+        unsuspended = replace(tenant, status=TenantStatus.PENDING_VERIFICATION)
+        resumed = replace(unsuspended, status=unsuspended.next_status(), updated_at=self._now)
+        self._identity.save_tenant(resumed)
+        self._rt.record(
+            college_id,
+            None,
+            AuditAction.TENANT_RESUMED,
+            after={"operator": who, "status": resumed.status.value},
+        )
+        return resumed
+
+    @staticmethod
+    def _operator(operator: str) -> str:
+        if not operator.strip():
+            raise InvariantError("name the operator")
+        return operator.strip()
+
 
 def tenant_by_institution(identity: IdentityStore, institution_id: str) -> TenantRecord:
     tenant = identity.find_tenant(institution_id)

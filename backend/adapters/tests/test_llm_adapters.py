@@ -28,6 +28,7 @@ from tarn_adapters.llm.prompts import PROMPT_VERSION, build_messages
 from tarn_adapters.llm.reply import REASON_MAX, BadReplyError, parse_reply
 from tarn_adapters.llm.scorer import LlmScorer
 from tarn_adapters.llm.wiring import LlmConfigError, build_llm_scorer
+from tarn_adapters.testing import PRODUCTION_CONNECTIONS
 from tarn_core.domain.common import ContentKind
 from tarn_core.domain.content import (
     ContentMeta,
@@ -578,8 +579,8 @@ def test_keys_are_read_from_groq_api_keys_comma_separated(monkeypatch: pytest.Mo
 PRODUCTION: dict[str, Any] = {
     "env": "production",
     "kms_key_ref": "gcp-kms:projects/p/locations/asia-south1/keyRings/r/cryptoKeys/k",
-    "password_pepper": "x" * 40,
-    "token_signing_key": "y" * 40,
+    "secrets_backend": "gcp",
+    **PRODUCTION_CONNECTIONS,
     "blob_backend": "gcs",
     "mailer": "smtp",
     "smtp_host": "smtp.example.test",

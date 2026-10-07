@@ -27,6 +27,7 @@ from tarn_adapters.auth.schemas import (
 )
 from tarn_adapters.auth.secrets import PEPPER, GcpSecrets, SettingsSecrets
 from tarn_adapters.config import Settings
+from tarn_adapters.testing import PRODUCTION_CONNECTIONS
 from tarn_core.domain.identity import HashParams
 from tarn_core.errors import InvariantError
 from tarn_core.ports.identity import EmailMessage
@@ -159,19 +160,26 @@ def test_production_refuses_development_secrets_and_keys() -> None:
         Settings(env="production")
     with pytest.raises(ValueError, match="cloud KMS key"):
         Settings(env="production", secrets_backend="gcp")
+    with pytest.raises(ValueError, match="SECRETS_BACKEND must be gcp"):
+        Settings(env="production")
+    with pytest.raises(ValueError, match="PUBLIC_URL must be https"):
+        Settings(env="production")
+    with pytest.raises(ValueError, match="sslmode=require"):
+        Settings(env="production")
     production = {
         "env": "production",
         "kms_key_ref": "gcp-kms:projects/p/locations/l/keyRings/r/cryptoKeys/k",
         "secrets_backend": "gcp",
+        **PRODUCTION_CONNECTIONS,
     }
     with pytest.raises(ValueError, match="BLOB_BACKEND=minio"):
-        Settings(**production, mailer="smtp", smtp_host="h", smtp_from="a@b.example")  # type: ignore[arg-type]
+        Settings(**production, mailer="smtp", smtp_host="h", smtp_from="a@b.example")
     with pytest.raises(ValueError, match="MAILER=console"):
-        Settings(**production, blob_backend="gcs")  # type: ignore[arg-type]
+        Settings(**production, blob_backend="gcs")
     with pytest.raises(ValueError, match="SMTP_HOST"):
-        Settings(**production, blob_backend="gcs", mailer="smtp")  # type: ignore[arg-type]
+        Settings(**production, blob_backend="gcs", mailer="smtp")
     ok = Settings(
-        **production,  # type: ignore[arg-type]
+        **production,
         blob_backend="gcs",
         mailer="smtp",
         smtp_host="smtp.example.test",

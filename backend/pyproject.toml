@@ -68,6 +68,9 @@ allowed-confusables = ["α", "β", "−", "×", "’"]
 "**/tests/**" = ["S101", "S105", "S106"]
 # The queue contract is test code that lives in the package so adapters can reuse it.
 "core/src/tarn_core/testing/queue_contract.py" = ["S101"]
+# The P21 journey and tenancy sweep: tests that run on both the in-memory and PostgreSQL stacks.
+"api/src/tarn_api/journey.py" = ["S101"]
+"api/src/tarn_api/tenancy_sweep.py" = ["S101"]
 # Migrations build DDL from constants (table names, policy expressions), never from input.
 "**/migrations/**" = ["S608"]
 

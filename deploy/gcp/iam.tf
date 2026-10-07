@@ -36,7 +36,7 @@ locals {
   secret_readers = {
     api = [
       "app-database-url", "identity-app-database-url", "password-pepper",
-      "token-signing-key", "smtp-password",
+      "password-pepper-previous", "token-signing-key", "smtp-password",
     ]
     worker  = ["app-database-url", "groq-api-key"]
     migrate = ["database-url", "app-database-url", "identity-database-url", "identity-app-database-url"]

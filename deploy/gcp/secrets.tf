@@ -1,10 +1,12 @@
 # Secret Manager (replicated only in var.region). Terraform creates every secret the services
 # read. It fills in the ones it can generate (database URLs, the password pepper, the token
-# signing key). The two it cannot are created empty: add a version by hand, see README.md:
-#   tarn-smtp-password     the SMTP login's password
-#   tarn-groq-api-key      one paid-plan key; only read when llm_scorer_enabled
+# signing key). The ones it cannot are created empty: add a version by hand, see README.md:
+#   tarn-smtp-password              the SMTP login's password
+#   tarn-groq-api-key               one paid-plan key; only read when llm_scorer_enabled
+#   tarn-password-pepper-previous   only during a pepper rotation (README.md "Rotating the
+#                                   pepper"); left without a version otherwise
 #
-# DO NOT rotate the pepper once users exist: every password hash depends on it (O13).
+# Rotate the pepper only by that procedure: every password hash depends on it (O13, P21).
 
 resource "random_password" "pepper" {
   length  = 48
@@ -35,7 +37,7 @@ locals {
     },
   )
 
-  manual_secrets = ["smtp-password", "groq-api-key"]
+  manual_secrets = ["smtp-password", "groq-api-key", "password-pepper-previous"]
 
   secret_names = toset(concat(keys(local.generated_secrets), local.manual_secrets))
 }

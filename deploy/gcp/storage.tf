@@ -9,27 +9,11 @@ resource "google_storage_bucket" "data" {
   force_destroy               = false
   labels                      = local.labels
 
+  # No object versioning: a booklet the teacher deletes must not live on as old versions
+  # (design decision 6; P21, D149). Soft delete keeps a deleted object 7 days for operators only
+  # (accidental mass deletion), the same window as Cloud SQL's point-in-time recovery.
   versioning {
-    enabled = true
-  }
-
-  lifecycle_rule {
-    condition {
-      num_newer_versions = 3
-      with_state         = "ARCHIVED"
-    }
-    action {
-      type = "Delete"
-    }
-  }
-
-  lifecycle_rule {
-    condition {
-      days_since_noncurrent_time = 30
-    }
-    action {
-      type = "Delete"
-    }
+    enabled = false
   }
 
   soft_delete_policy {

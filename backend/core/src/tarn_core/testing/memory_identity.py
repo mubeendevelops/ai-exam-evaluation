@@ -223,23 +223,39 @@ class MemoryIdentityStore:
 
 
 class FakeHasher:
-    """``fake$t,m,p$<sha256(secret)>``. Counts calls, so tests can see rehashing."""
+    """``fake$t,m,p$<pepper>:<sha256(pepper:secret)>``. Counts calls, so tests can see
+    rehashing. ``pepper`` names the current pepper and ``previous`` the earlier ones still
+    accepted (rotation, O13)."""
 
-    def __init__(self) -> None:
+    def __init__(self, pepper: str = "1", previous: tuple[str, ...] = ()) -> None:
         self.hashed = 0
+        self.verified = 0
+        self.pepper = pepper
+        self.previous = previous
+
+    @staticmethod
+    def _digest(pepper: str, secret: str) -> str:
+        return hashlib.sha256(f"{pepper}:{secret}".encode()).hexdigest()
 
     def hash(self, secret: str, params: HashParams) -> str:
         self.hashed += 1
-        digest = hashlib.sha256(secret.encode()).hexdigest()
-        return f"fake${params.time_cost},{params.memory_cost},{params.parallelism}${digest}"
+        digest = self._digest(self.pepper, secret)
+        cost = f"{params.time_cost},{params.memory_cost},{params.parallelism}"
+        return f"fake${cost}${self.pepper}:{digest}"
 
     def verify(self, encoded: str, secret: str) -> bool:
-        digest = encoded.rpartition("$")[2]
-        return hmac.compare_digest(digest, hashlib.sha256(secret.encode()).hexdigest())
+        self.verified += 1
+        pepper, _, digest = encoded.rpartition("$")[2].rpartition(":")
+        if pepper not in (self.pepper, *self.previous):
+            return False
+        return hmac.compare_digest(digest, self._digest(pepper, secret))
 
     def needs_rehash(self, encoded: str, params: HashParams) -> bool:
         wanted = f"{params.time_cost},{params.memory_cost},{params.parallelism}"
         return encoded.split("$")[1] != wanted
+
+    def pepper_is_current(self, encoded: str, secret: str) -> bool:
+        return encoded.rpartition("$")[2].rpartition(":")[0] == self.pepper
 
 
 class FakeCipher:

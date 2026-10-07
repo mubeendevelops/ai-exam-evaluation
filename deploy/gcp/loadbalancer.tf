@@ -39,10 +39,14 @@ resource "google_compute_backend_service" "api" {
     group = google_compute_region_network_endpoint_group.api.id
   }
 
+  # Request logs would hold full URLs, and searches put student names and USNs in the query
+  # string (P21): off. Cloud Armor (armor.tf) works without them; its decisions would appear in
+  # these logs only, so blocks are counted by the monitoring metric instead.
   log_config {
-    enable      = true
-    sample_rate = 0.2
+    enable = false
   }
+
+  security_policy = google_compute_security_policy.api.id
 }
 
 resource "google_compute_backend_service" "web" {

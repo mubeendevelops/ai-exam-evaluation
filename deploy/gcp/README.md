@@ -22,6 +22,8 @@ checked with `terraform validate` before any Google Cloud account existed. Read 
 | `sql.tf` | Two Cloud SQL PG16 instances: private IP only, TLS required, daily backups (14 kept) and point-in-time recovery (7 days), regional failover |
 | `storage.tf`, `kms.tf` | Data bucket (versioned, never public), models bucket, KMS key for tenant data keys (rotated every 90 days) |
 | `secrets.tf` | Every secret the services read; database URLs, pepper and signing key are generated |
+| `armor.tf` | Cloud Armor rate limit on sign-in, recovery and registration (P21) |
+| `logging.tf` | Excludes Cloud Run request lines with query strings (student names in searches) |
 | `iam.tf` | One service account per workload, access granted per secret, per bucket, per key |
 | `cloudrun.tf` | API and web services (reachable only through the load balancer), worker job, migration job |
 | `worker_vm.tf` | Optional always-on GPU VM instead of the worker job (`worker_mode = "vm"`) |
@@ -79,7 +81,27 @@ migration job when the release has migrations.
 - **Restore.** Cloud SQL console or `gcloud sql instances clone <instance> <new> --point-in-time <UTC time>`
   (7 days) and `gcloud sql backups restore` (14 daily backups). The application and identity
   databases are separate instances: restore the one that was damaged.
-- **The password pepper must never change** once users exist (every hash depends on it).
+- **Rotating the password pepper** (P21, O13). Every password hash depends on it, so it is
+  rotated in two steps, never replaced outright:
+  1. Copy the current value of `tarn-password-pepper` into a new version of
+     `tarn-password-pepper-previous` (one pepper per line), then add a new random version
+     (48+ characters) to `tarn-password-pepper`. Restart the API (`gcloud run services update
+     tarn-api --region asia-south1 --update-env-vars ROTATED=<date>`) so it reads both.
+  2. Every sign-in re-hashes that password with the new pepper; recovery codes keep working.
+     After a set period (say 90 days), disable the `tarn-password-pepper-previous` version and
+     restart: accounts that never signed in reset their password (forgot password, or an admin's
+     force reset). The hash format does not change.
+- **Suspending a college** (incident, abuse): `tarn tenants suspend ID --operator NAME` ends every
+  session of that college at once and refuses sign-in; `tarn tenants resume` undoes it. Both
+  are in the college's audit log.
+- **Rate limits.** The API limits sign-in, recovery, reset and registration per client address
+  (`TARN_TRUSTED_PROXY_HOPS=2` reads it behind the load balancer) and per account; Cloud Armor
+  (`armor.tf`, `armor_auth_requests_per_minute`) bans an address across instances. The
+  `X-Forwarded-For` layout is Google's documented one but has not been seen on a deployment.
+- **Logs.** The load balancer's request log is off for the API, and Cloud Run request lines with a
+  query string are excluded (`logging.tf`): searches carry student names and USNs.
+- **Deleted booklets.** The data bucket keeps no object versions; soft delete keeps a deleted
+  object 7 days for operators (like Cloud SQL's 7-day point-in-time recovery), then it is gone.
 - **The development seed never runs here** (`tarn seed` refuses `TARN_ENV=production`).
 - `tarn tenants approve ID --operator NAME` (new colleges wait for it) and `tarn tenants llm`
   need the CLI against production: run it from a Cloud Run job with the `tarn-migrate`

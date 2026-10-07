@@ -154,6 +154,12 @@ class PasswordHasher(Protocol):
 
     def needs_rehash(self, encoded: str, params: HashParams) -> bool: ...
 
+    def pepper_is_current(self, encoded: str, secret: str) -> bool:
+        """For a hash ``verify`` accepted: was it made with the current pepper? False while a
+        rotation is under way and the hash still uses an earlier one (O13): sign-in then hashes
+        the password again with the current pepper."""
+        ...
+
 
 class RandomSource(Protocol):
     def token_bytes(self, n: int) -> bytes: ...

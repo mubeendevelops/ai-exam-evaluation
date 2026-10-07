@@ -5,13 +5,19 @@ import numpy as np
 from numpy.typing import NDArray
 
 from tarn_core.domain.common import Box
-from tarn_core.errors import EngineFailedError
+from tarn_core.errors import EngineFailedError, UnreadableFileError
+from tarn_core.services.images import check_image_size
 
 type Image = NDArray[np.uint8]
 
 
 def decode(data: bytes) -> Image:
-    """BGR pixels of a JPEG or PNG; ``EngineFailedError`` when the bytes are not an image."""
+    """BGR pixels of a JPEG or PNG; ``EngineFailedError`` when the bytes are not an image or
+    the header declares too many pixels (checked before decoding)."""
+    try:
+        check_image_size(data)
+    except UnreadableFileError:
+        raise EngineFailedError("the page image cannot be decoded") from None
     image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         raise EngineFailedError("the page image cannot be decoded")

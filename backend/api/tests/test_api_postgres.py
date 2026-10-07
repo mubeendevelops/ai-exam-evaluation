@@ -53,6 +53,7 @@ def setup(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[TestClient
         local_key_dir=keys,
         tenant_signup_requires_approval=False,
         device="cpu",
+        rate_limits_enabled=False,  # several registrations from one address (test_api_security)
     )
     backends = PostgresBackends(settings)
     mailer = CapturingMailer()

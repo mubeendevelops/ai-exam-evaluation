@@ -27,6 +27,7 @@ from tarn_core.ports.repositories import BookletRepository
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime
 from tarn_core.services.booklets import BookletService, Registration
+from tarn_core.services.images import MAX_IMAGE_PIXELS, image_dimensions
 
 _PDF = b"%PDF-"
 _JPEG = b"\xff\xd8\xff"
@@ -51,6 +52,20 @@ def sniff_media_type(data: bytes) -> str:
     if data[:8] == _PNG:
         return "image/png"
     raise UnsupportedFileError("Upload a PDF, or JPEG or PNG images.")
+
+
+def check_upload_image(data: bytes, media_type: str) -> None:
+    """A JPEG or PNG whose header declares more than ``MAX_IMAGE_PIXELS`` is refused, so a
+    small file that decodes to gigabytes (a decompression bomb) never reaches a decoder. A header
+    that cannot be read is left to the page cleaner, which refuses it before decoding too. PDFs
+    are checked image by image when they are split."""
+    if media_type not in ("image/jpeg", "image/png"):
+        return
+    size = image_dimensions(data)
+    if size is not None and size[0] * size[1] > MAX_IMAGE_PIXELS:
+        raise UploadTooLargeError(
+            f"An image has more than {MAX_IMAGE_PIXELS // 1_000_000} million pixels."
+        )
 
 
 def combined_hash(file_hashes: Sequence[str]) -> str:
@@ -156,6 +171,8 @@ class UploadService:
         types = [sniff_media_type(f) for f in files]
         if "application/pdf" in types and len(files) > 1:
             raise InvariantError("Upload one PDF, or several images, not a mix.")
+        for data, media_type in zip(files, types, strict=True):
+            check_upload_image(data, media_type)
         return types
 
     @staticmethod

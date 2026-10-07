@@ -1,9 +1,10 @@
 """Tenant registration, as in MainLogin.html "Tenant Registration": ``/api/v1/registrations``.
 Approval by a Tarn operator happens in the CLI (``tarn tenants approve``), not over HTTP."""
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
 from tarn_api.backends import unit_of_work
+from tarn_api.ratelimit import AVAILABILITY_IP, REGISTER_IP, TOKEN_IP, per_ip
 from tarn_api.schemas import (
     AvailabilityOut,
     ErrorOut,
@@ -24,7 +25,9 @@ router = APIRouter(prefix="/api/v1/registrations", tags=["registration"])
 @router.get(
     "/availability",
     response_model=AvailabilityOut,
+    responses={429: {"model": ErrorOut}},
     summary="Is this Institution ID well formed and free?",
+    dependencies=[Depends(per_ip(AVAILABILITY_IP))],
 )
 def availability(
     backends: BackendsDep, institution_id: str = Query(max_length=64)
@@ -46,8 +49,10 @@ def availability(
     responses={
         409: {"model": ErrorOut, "description": "The Institution ID is taken."},
         422: {"model": PolicyErrorOut},
+        429: {"model": ErrorOut},
     },
     summary="Register a college and its first admin (both pending until verified/approved)",
+    dependencies=[Depends(per_ip(REGISTER_IP))],
 )
 def register(body: RegistrationIn, backends: BackendsDep) -> RegistrationOut:
     college_id = CollegeId(backends.ids.new())
@@ -70,8 +75,9 @@ def register(body: RegistrationIn, backends: BackendsDep) -> RegistrationOut:
 @router.post(
     "/verify-email",
     response_model=TenantStatusOut,
-    responses={400: {"model": ErrorOut}},
+    responses={400: {"model": ErrorOut}, 429: {"model": ErrorOut}},
     summary="Verify the admin's email with the emailed link",
+    dependencies=[Depends(per_ip(TOKEN_IP))],
 )
 def verify_email(body: VerifyEmailIn, backends: BackendsDep) -> TenantStatusOut:
     college_id = token_college(body.token)

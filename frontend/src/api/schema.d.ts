@@ -3505,6 +3505,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Too many attempts from this address or account. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
         };
     };
     refresh_api_v1_auth_refresh_post: {
@@ -3632,6 +3641,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Too many attempts from this address or account. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
         };
     };
     reset_password_api_v1_auth_password_reset_post: {
@@ -3672,6 +3690,15 @@ export interface operations {
                     "application/json": components["schemas"]["PolicyErrorOut"];
                 };
             };
+            /** @description Too many attempts from this address or account. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
         };
     };
     recover_password_api_v1_auth_password_recover_post: {
@@ -3710,6 +3737,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PolicyErrorOut"];
+                };
+            };
+            /** @description Too many attempts from this address or account. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
                 };
             };
         };
@@ -3852,6 +3888,15 @@ export interface operations {
                     "application/json": components["schemas"]["PolicyErrorOut"];
                 };
             };
+            /** @description Too many attempts from this address or account. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
         };
     };
     password_bloom_api_v1_auth_password_bloom_get: {
@@ -3903,6 +3948,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
         };
     };
     register_api_v1_registrations_post: {
@@ -3945,6 +3999,15 @@ export interface operations {
                     "application/json": components["schemas"]["PolicyErrorOut"];
                 };
             };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
         };
     };
     verify_email_api_v1_registrations_verify_email_post: {
@@ -3985,6 +4048,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
                 };
             };
         };

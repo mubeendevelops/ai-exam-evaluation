@@ -26,6 +26,9 @@ class _Listed(Protocol):
     @property
     def name(self) -> str: ...
 
+    @property
+    def size(self) -> int | None: ...
+
 
 class _Bucket(Protocol):
     def blob(self, blob_name: str) -> _Blob: ...

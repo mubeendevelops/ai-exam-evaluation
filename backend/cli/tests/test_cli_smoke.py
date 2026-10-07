@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from tarn_adapters.config import get_settings
+from tarn_adapters.testing import PRODUCTION_CONNECTIONS
 from tarn_cli import __version__
 from tarn_cli.main import app
 
@@ -65,6 +66,8 @@ def test_db_downgrade_refused_in_production(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("TARN_MAILER", "smtp")
     monkeypatch.setenv("TARN_SMTP_HOST", "smtp.example.test")
     monkeypatch.setenv("TARN_SMTP_FROM", "tarn@example.test")
+    for name, value in PRODUCTION_CONNECTIONS.items():
+        monkeypatch.setenv(f"TARN_{name.upper()}", value)
     get_settings.cache_clear()
     result = runner.invoke(app, ["db", "downgrade", "base"])
     assert result.exit_code == 1

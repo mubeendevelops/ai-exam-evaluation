@@ -134,6 +134,22 @@ describe('app shell (project_idea.html)', () => {
     )
   })
 
+  it('signs out: forgets every cached answer of the server (the next user may be another college)', async () => {
+    signedIn('teacher', { 'POST /api/v1/auth/logout': { status: 204 } })
+    const user = userEvent.setup()
+    const { queryClient } = renderApp('/qna')
+    await user.click(await screen.findByRole('button', { name: /Account menu/ }))
+    await waitFor(() => expect(queryClient.getQueryCache().getAll().length).toBeGreaterThan(0))
+    await user.click(screen.getByRole('menuitem', { name: /Sign out/ }))
+    expect(await screen.findByRole('heading', { name: /Customer Sign In/ })).toBeInTheDocument()
+    expect(
+      queryClient
+        .getQueryCache()
+        .getAll()
+        .filter((q) => q.state.data !== undefined && q.queryKey[0] !== 'health'),
+    ).toEqual([])
+  })
+
   it('computes initials from the first and last name', () => {
     expect(initialsOf('Asha Rao')).toBe('AR')
     expect(initialsOf('Dr. Sarah J. Connor')).toBe('DC')
