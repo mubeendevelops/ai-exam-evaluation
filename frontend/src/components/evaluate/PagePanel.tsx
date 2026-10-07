@@ -45,7 +45,7 @@ export function PagePanel({
     : []
 
   return (
-    <GlassPanel className="flex flex-col p-4 lg:col-span-6">
+    <GlassPanel className="flex flex-col self-start p-4 lg:sticky lg:top-20 lg:col-span-6">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
           <i className="fa-solid fa-file-contract text-cyan-400" aria-hidden="true" />
@@ -78,7 +78,7 @@ export function PagePanel({
         )}
       </div>
 
-      <div className="relative flex min-h-[440px] grow items-center justify-center overflow-hidden rounded-xl border border-gray-800 bg-gray-950 p-2">
+      <div className="relative flex min-h-[440px] items-center justify-center overflow-hidden rounded-xl border border-gray-800 bg-gray-950 p-2">
         {!page && (
           <p className="text-xs text-gray-400">
             {status ?? 'The cleaned pages appear here as soon as they are ready.'}

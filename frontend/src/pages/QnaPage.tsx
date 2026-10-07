@@ -4,7 +4,6 @@ import { PageBanner } from '../components/app/PageBanner'
 import { QuestionDetailView } from '../components/qna/QuestionDetailView'
 import { QuestionList } from '../components/qna/QuestionList'
 import { QuestionModal } from '../components/qna/QuestionModal'
-import { SmallButton } from '../components/schema/controls'
 import { useToast } from '../components/ui'
 
 /**
@@ -28,9 +27,13 @@ export default function QnaPage() {
         title="Questions & Answers Repository"
         description="Manage institutional question banks, benchmark answers, rubrics and reference diagrams."
       >
-        <SmallButton icon="fa-solid fa-plus" tone="purple" onClick={() => setCreating(true)}>
-          New Question
-        </SmallButton>
+        <button
+          type="button"
+          onClick={() => setCreating(true)}
+          className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-purple-900/30 transition hover:from-purple-500 hover:to-indigo-500"
+        >
+          <i className="fa-solid fa-plus" aria-hidden="true" /> New Question
+        </button>
       </PageBanner>
 
       {openId ? (
