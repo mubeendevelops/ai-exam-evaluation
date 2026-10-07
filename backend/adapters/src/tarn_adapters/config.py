@@ -87,13 +87,16 @@ class Settings(BaseSettings):
     groq_api_keys: SecretStr = Field(
         SecretStr(""), validation_alias=AliasChoices("GROQ_API_KEYS", "TARN_GROQ_API_KEYS")
     )
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
     groq_api_url: str = "https://api.groq.com/openai/v1/chat/completions"
     llm_timeout_seconds: float = Field(20.0, gt=0)
     llm_max_attempts: int = Field(3, ge=1, le=6)  # requests per criterion (transport + replies)
     llm_requests_per_minute: int = Field(30, ge=1)  # per key (the free tier's order of size)
     llm_max_wait_seconds: float = Field(15.0, ge=0)  # longest wait for a free rate-limit slot
     llm_max_answer_chars: int = Field(6000, ge=200)  # the answer is cut here before it is sent
+    # Reasoning models (gpt-oss) spend output tokens on thinking before the JSON: too small a
+    # budget gives an empty reply (HTTP 400 json_validate_failed). Only tokens used are billed.
+    llm_max_output_tokens: int = Field(1000, ge=100)
 
     @property
     def groq_keys(self) -> tuple[str, ...]:

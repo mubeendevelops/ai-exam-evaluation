@@ -140,7 +140,7 @@ services:
       # `tarn tenants llm`; the answer text of that college then goes to the provider.
       TARN_LLM_SCORER_ENABLED: ${TARN_LLM_SCORER_ENABLED:-false}
       TARN_LLM_ALLOW_IN_DEVELOPMENT: ${TARN_LLM_ALLOW_IN_DEVELOPMENT:-false}
-      TARN_GROQ_MODEL: ${TARN_GROQ_MODEL:-llama-3.3-70b-versatile}
+      TARN_GROQ_MODEL: ${TARN_GROQ_MODEL:-openai/gpt-oss-120b}
       GROQ_API_KEYS: ${GROQ_API_KEYS:-}
     volumes:
       - ./backend:/app/backend

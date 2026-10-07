@@ -25,6 +25,7 @@ from tarn_core.errors import ScorerUnavailableError
 
 log = structlog.get_logger("tarn_adapters.llm")
 
+USER_AGENT = "tarn-ai-evaluation/0.1"
 _RETRY_AFTER_MAX = 60.0
 _BACKOFF_MAX = 8.0
 
@@ -166,7 +167,7 @@ class GroqClient:
         transport: Transport | None = None,
         sleep: Callable[[float], None] = time.sleep,
         backoff: float = 0.5,
-        max_tokens: int = 200,
+        max_tokens: int = 1000,
     ) -> None:
         self._pool = pool
         self._model = model
@@ -206,7 +207,13 @@ class GroqClient:
             try:
                 result = self._transport.post(
                     self._url,
-                    {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                    {
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json",
+                        # Without its own User-Agent the provider's CDN refuses Python's
+                        # default one (HTTP 403, "error code: 1010").
+                        "User-Agent": USER_AGENT,
+                    },
                     body,
                     self._timeout,
                 )
@@ -226,6 +233,10 @@ class GroqClient:
                 self._pool.drop(index)
             elif status == 408 or status >= 500:
                 self._pause(calls)
+            elif status == 400 and b"json_validate_failed" in result.body:
+                # The model's JSON did not validate (a reasoning model that ran out of tokens
+                # returns nothing): worth one more try, like a reply that is not JSON.
+                continue
             else:
                 self._count(LlmUsage(calls=calls))
                 raise ScorerUnavailableError(f"the LLM provider refused the request ({status})")

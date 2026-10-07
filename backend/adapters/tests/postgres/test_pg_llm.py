@@ -92,7 +92,7 @@ def test_a_second_opinion_is_stored_flagged_and_named_in_the_audit_log(
         after = s.conn.execute(
             text(
                 "SELECT after FROM audit_events WHERE action = 'answer.scored' "
-                "AND answer_id = :id ORDER BY at DESC, id LIMIT 1"
+                "AND answer_id = :id AND jsonb_typeof(after -> 'llm_usage') = 'object'"
             ),
             {"id": answer.id},
         ).scalar_one()

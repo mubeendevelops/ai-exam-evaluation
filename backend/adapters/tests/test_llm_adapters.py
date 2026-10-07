@@ -329,7 +329,8 @@ def test_a_good_response_gives_the_text_and_the_token_counts() -> None:
     url, headers, body = cassette.sent[0]
     assert url.startswith("https://") and headers["Authorization"] == "Bearer key-a"
     assert body["temperature"] == 0 and body["response_format"] == {"type": "json_object"}
-    assert body["model"] == "llama-3.3-70b-versatile" and body["max_tokens"] <= 400
+    assert body["model"] == "llama-3.3-70b-versatile" and body["max_tokens"] >= 1000
+    assert headers["User-Agent"].startswith("tarn-ai-evaluation")  # the CDN refuses urllib's
 
 
 def test_a_rate_limit_moves_on_to_the_next_key_and_rests_the_first() -> None:
@@ -346,6 +347,12 @@ def test_a_server_error_is_retried_after_a_backoff() -> None:
     reply = groq.chat(MESSAGES)
     assert len(cassette.sent) == 2 and reply.usage.calls == 2
     assert time.slept == [0.5]
+
+
+def test_a_json_that_did_not_validate_is_tried_again() -> None:
+    groq, cassette, _, _ = client("json_validate_failed_then_ok")
+    assert json.loads(groq.chat(MESSAGES).text)["credit"] == 0.5
+    assert len(cassette.sent) == 2
 
 
 def test_timeouts_are_retried_then_given_up_on() -> None:

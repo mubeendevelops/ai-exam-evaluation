@@ -33,6 +33,7 @@ def build_llm_scorer(settings: Settings) -> tuple[LlmScorer, GroqClient] | None:
         url=settings.groq_api_url,
         timeout=settings.llm_timeout_seconds,
         max_attempts=settings.llm_max_attempts,
+        max_tokens=settings.llm_max_output_tokens,
     )
     scorer = LlmScorer(
         client, model=settings.groq_model, max_answer_chars=settings.llm_max_answer_chars

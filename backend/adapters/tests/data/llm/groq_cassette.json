@@ -1,5 +1,5 @@
 {
-  "_note": "Responses in Groq's documented chat-completions shape, written by hand with synthetic content (P19 had no live call: CI never makes one). Replace with recordings of a real run once a key is available and the answers are synthetic.",
+  "_note": "Responses in Groq's documented chat-completions shape, written by hand with synthetic content (P19 had no live call: CI never makes one). Replace with recordings of a real run once a key is available and the answers are synthetic. Model name and the json_validate_failed / 403 error 1010 cases were checked against the live API on 2026-10-07 (openai/gpt-oss-120b; see D137).",
   "full_credit": [
     {
       "status": 200,
@@ -319,6 +319,44 @@
       "headers": {},
       "body": {
         "unexpected": true
+      }
+    }
+  ],
+  "json_validate_failed_then_ok": [
+    {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "error": {
+          "message": "Failed to validate JSON. Please adjust your prompt.",
+          "type": "invalid_request_error",
+          "code": "json_validate_failed",
+          "failed_generation": ""
+        }
+      }
+    },
+    {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "id": "chatcmpl-synthetic",
+        "object": "chat.completion",
+        "model": "openai/gpt-oss-120b",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"credit\": 0.5, \"reason\": \"Partly met.\"}"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 200,
+          "completion_tokens": 239,
+          "total_tokens": 439
+        }
       }
     }
   ]
