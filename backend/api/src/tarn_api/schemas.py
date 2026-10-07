@@ -766,6 +766,19 @@ class LockedOut(BaseModel):
     expires_at: datetime | None
 
 
+class SecondOpinionOut(BaseModel):
+    """The LLM's judgement of a criterion another scorer scored (P19). It never changes the
+    mark: Panel B shows it beside the credit."""
+
+    scorer: str
+    credit: float = Field(description="0, 0.5 or 1.")
+    marks: float
+    reason: str = Field(description="The model's own words; may name what the answer lacks.")
+    disagrees: bool = Field(
+        description="More than one band from the credit above (the `disagree` flag)."
+    )
+
+
 class CriterionResultOut(BaseModel):
     criterion_id: UUID
     criterion_version: int
@@ -773,11 +786,18 @@ class CriterionResultOut(BaseModel):
     credit: float = Field(description="0..1; marks = weight × credit.")
     marks: float
     scorer: str
-    flags: list[str] = Field(description="`check`: borderline; `manual`: the teacher marks it.")
+    flags: list[str] = Field(
+        description="`check`: borderline; `manual`: the teacher marks it; `disagree`: the LLM's "
+        "second opinion is more than one band away."
+    )
     similarity: float | None
     reason: str | None = Field(description="Why this credit (Panel B).")
     matched: list[str]
     missing: list[str]
+    second_opinion: SecondOpinionOut | None = Field(
+        default=None,
+        description="Set only when the college has the LLM scorer on and it answered.",
+    )
 
 
 class SuggestionOut(BaseModel):

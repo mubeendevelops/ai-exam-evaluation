@@ -63,6 +63,8 @@ class AuditAction(StrEnum):
     ACCOUNT_FORCE_RESET = "account.force_reset"
     ACCOUNT_UNLOCKED = "account.unlocked"
     ROSTER_IMPORTED = "roster.imported"
+    # College settings (P19)
+    COLLEGE_LLM_SCORING_SET = "college.llm_scoring_set"  # a Tarn operator switches the flag
 
 
 # Events that may have no acting user: a failed sign-in for an unknown email, the approval of
@@ -72,6 +74,7 @@ ANONYMOUS_ACTIONS = frozenset(
     {
         AuditAction.LOGIN_FAILED,
         AuditAction.TENANT_APPROVED,
+        AuditAction.COLLEGE_LLM_SCORING_SET,
         AuditAction.BOOKLET_PROCESSED,
         AuditAction.BOOKLET_FAILED,
         AuditAction.BOOKLET_TEXT_READ,

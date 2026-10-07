@@ -1658,7 +1658,7 @@ export interface components {
             scorer: string;
             /**
              * Flags
-             * @description `check`: borderline; `manual`: the teacher marks it.
+             * @description `check`: borderline; `manual`: the teacher marks it; `disagree`: the LLM's second opinion is more than one band away.
              */
             flags: string[];
             /** Similarity */
@@ -1672,6 +1672,8 @@ export interface components {
             matched: string[];
             /** Missing */
             missing: string[];
+            /** @description Set only when the college has the LLM scorer on and it answered. */
+            second_opinion?: components["schemas"]["SecondOpinionOut"] | null;
         };
         /** CurrentPasswordIn */
         CurrentPasswordIn: {
@@ -3020,6 +3022,32 @@ export interface components {
              * @description True if the weights add up to the question's marks.
              */
             complete: boolean;
+        };
+        /**
+         * SecondOpinionOut
+         * @description The LLM's judgement of a criterion another scorer scored (P19). It never changes the
+         *     mark: Panel B shows it beside the credit.
+         */
+        SecondOpinionOut: {
+            /** Scorer */
+            scorer: string;
+            /**
+             * Credit
+             * @description 0, 0.5 or 1.
+             */
+            credit: number;
+            /** Marks */
+            marks: number;
+            /**
+             * Reason
+             * @description The model's own words; may name what the answer lacks.
+             */
+            reason: string;
+            /**
+             * Disagrees
+             * @description More than one band from the credit above (the `disagree` flag).
+             */
+            disagrees: boolean;
         };
         /** SectionSummaryOut */
         SectionSummaryOut: {

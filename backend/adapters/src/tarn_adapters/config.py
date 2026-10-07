@@ -75,6 +75,31 @@ class Settings(BaseSettings):
     # model_dir/diagram (`tarn diagram train`); missing = diagram criteria go to the teacher.
     diagram_model: str = "shape-detector-v1"
     diagram_threshold: float = Field(0.35, gt=0, lt=1)
+    # --- LLM scorer (P19): off by default --------------------------------------------------------
+    # The LLM judges a criterion beside the local scorers and sends the answer text (no student
+    # name or USN) to Groq. Needs this switch, a key, and, for each college, `tarn tenants llm`.
+    # Development additionally needs llm_allow_in_development (like cloud OCR, D78).
+    llm_scorer_enabled: bool = False
+    llm_allow_in_development: bool = False
+    # DEVELOPMENT KEYS: comma-separated free-tier keys, rotated with a rate limit per key.
+    # Production needs ONE key of a paid plan: rotating free accounts to dodge rate limits may
+    # breach the provider's terms, so production refuses more than one key.
+    groq_api_keys: SecretStr = Field(
+        SecretStr(""), validation_alias=AliasChoices("GROQ_API_KEYS", "TARN_GROQ_API_KEYS")
+    )
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_api_url: str = "https://api.groq.com/openai/v1/chat/completions"
+    llm_timeout_seconds: float = Field(20.0, gt=0)
+    llm_max_attempts: int = Field(3, ge=1, le=6)  # requests per criterion (transport + replies)
+    llm_requests_per_minute: int = Field(30, ge=1)  # per key (the free tier's order of size)
+    llm_max_wait_seconds: float = Field(15.0, ge=0)  # longest wait for a free rate-limit slot
+    llm_max_answer_chars: int = Field(6000, ge=200)  # the answer is cut here before it is sent
+
+    @property
+    def groq_keys(self) -> tuple[str, ...]:
+        raw = self.groq_api_keys.get_secret_value()
+        return tuple(k for k in (part.strip() for part in raw.split(",")) if k)
+
     # Downloaded model weights (Hugging Face, PaddleX); git-ignored.
     model_dir: Path = Path("../var/models")
     english_words: Path | None = None
@@ -163,6 +188,19 @@ class Settings(BaseSettings):
     booklet_lock_minutes: float = Field(15.0, gt=0)
 
     @model_validator(mode="after")
+    def _llm_in_development_is_explicit(self) -> Self:
+        if (
+            self.llm_scorer_enabled
+            and self.env != "production"
+            and not self.llm_allow_in_development
+        ):
+            raise ValueError(
+                "TARN_LLM_SCORER_ENABLED sends answer text to the LLM provider: outside "
+                "production it also needs TARN_LLM_ALLOW_IN_DEVELOPMENT=true"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _production_is_not_development(self) -> Self:
         if self.env != "production":
             return self
@@ -174,6 +212,11 @@ class Settings(BaseSettings):
             or self.token_signing_key.get_secret_value() == DEV_SIGNING_KEY
         ):
             problems.append("the development pepper and signing key are not allowed")
+        if self.llm_scorer_enabled and len(self.groq_keys) > 1:
+            problems.append(
+                "GROQ_API_KEYS holds several keys: rotating free accounts is for development "
+                "only (provider terms); production uses one paid-plan key"
+            )
         if problems:
             raise ValueError("unsafe production settings: " + "; ".join(problems))
         return self

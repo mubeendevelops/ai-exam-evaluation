@@ -35,7 +35,7 @@ from tarn_core.domain.content import (
 )
 from tarn_core.domain.diagram import DiagramGraph
 from tarn_core.domain.review import ResultLine
-from tarn_core.domain.scoring import CriterionReason
+from tarn_core.domain.scoring import CriterionReason, LlmUsage, SecondOpinion
 from tarn_core.ids import PageId, QuestionId, ReferenceDiagramId
 from tarn_core.services.diagrams.graph_json import graph_from_json as core_graph_from_json
 from tarn_core.services.diagrams.graph_json import graph_to_json as core_graph_to_json
@@ -158,6 +158,41 @@ def reason_from_json(value: object) -> CriterionReason:
         sentences=tuple(_int(x) for x in _list(d.get("sentences", []))),
         found=None if d.get("found") is None else _str(d["found"]),
         expected=None if d.get("expected") is None else _str(d["expected"]),
+    )
+
+
+def second_opinion_to_json(opinion: SecondOpinion) -> Json:
+    return {
+        "scorer": {"name": opinion.scorer.name, "version": opinion.scorer.version},
+        "credit": str(opinion.credit),
+        "reason": opinion.reason,
+    }
+
+
+def second_opinion_from_json(value: object) -> SecondOpinion:
+    d = _obj(value)
+    scorer = _obj(d["scorer"])
+    return SecondOpinion(
+        scorer=EngineRef(name=_str(scorer["name"]), version=_str(scorer["version"])),
+        credit=Decimal(_str(d["credit"])),
+        reason=_str(d["reason"]),
+    )
+
+
+def usage_to_json(usage: LlmUsage) -> Json:
+    return {
+        "calls": usage.calls,
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+    }
+
+
+def usage_from_json(value: object) -> LlmUsage:
+    d = _obj(value)
+    return LlmUsage(
+        calls=_int(d["calls"]),
+        input_tokens=_int(d["input_tokens"]),
+        output_tokens=_int(d["output_tokens"]),
     )
 
 

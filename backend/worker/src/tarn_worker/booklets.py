@@ -36,6 +36,7 @@ from tarn_core.ports.engines import (
     LayoutDetector,
     OcrEngine,
     PageTransform,
+    SecondOpinionScorer,
     WordList,
 )
 from tarn_core.ports.jobs import (
@@ -124,7 +125,10 @@ class BookletJobRunner:
     embedder: Embedder = field(default_factory=TrigramEmbedder)
     segmentation: SegmentationPolicy = field(default_factory=SegmentationPolicy)
     scoring_embedder: Embedder = field(default_factory=TrigramEmbedder)
-    """Local only (``build_scoring_embedder``): scoring sends no text off the machine."""
+    """Local only (``build_scoring_embedder``): the embedder sends no text off the machine."""
+    llm: SecondOpinionScorer | None = None
+    """The LLM scorer (P19), None unless switched on in the settings. It is asked only for the
+    colleges whose ``llm_scoring`` flag is on; for them answer text goes to the provider."""
     word_list: WordList | None = None
     recognizers: Mapping[DiagramKind, DiagramRecognizer] = field(default_factory=dict)
     """Diagram recognizers per kind (empty: drawings are stored without a graph and their
@@ -193,6 +197,8 @@ class BookletJobRunner:
             calibrations=session.scoring_calibrations,
             word_list=self.word_list,
             extra=[DiagramScorer()],
+            llm=self.llm,
+            colleges=session.colleges,
         )
         return BookletScorer(booklets=session.booklets, scoring=scoring, runtime=session.runtime)
 

@@ -135,6 +135,13 @@ services:
       # Paddle under paddlex/), shared with `uv run tarn ocr …` on the host, so the weights
       # exist once and not on the Docker disk. Filled by `tarn ocr models fetch`.
       TARN_MODEL_DIR: /models
+      # The LLM scorer (P19), off by default. Only the worker calls the provider, so only the
+      # worker gets the keys. Development needs both flags and a college switched on with
+      # `tarn tenants llm`; the answer text of that college then goes to the provider.
+      TARN_LLM_SCORER_ENABLED: ${TARN_LLM_SCORER_ENABLED:-false}
+      TARN_LLM_ALLOW_IN_DEVELOPMENT: ${TARN_LLM_ALLOW_IN_DEVELOPMENT:-false}
+      TARN_GROQ_MODEL: ${TARN_GROQ_MODEL:-llama-3.3-70b-versatile}
+      GROQ_API_KEYS: ${GROQ_API_KEYS:-}
     volumes:
       - ./backend:/app/backend
       - ./var/keys:/app/var/keys

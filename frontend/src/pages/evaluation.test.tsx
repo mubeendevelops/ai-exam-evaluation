@@ -325,6 +325,64 @@ describe('step 3: evaluation view', () => {
     expect(screen.queryByText('Complete Evaluation for Q1')).toBeNull()
   })
 
+  it('shows the LLM second opinion beside the credit, and the disagreement in words', async () => {
+    const withLlm = scored('a1', '1', 2, {
+      suggestion: {
+        id: 'sg-llm',
+        mark: 2,
+        mark_step: 0.5,
+        flags: ['scorer_disagreement'],
+        reasons: ['the LLM and the other scorer differ by more than one band on 1 criterion(s)'],
+        relevance: 0.8,
+        created_at: '2026-10-06T08:05:00Z',
+        criteria: [
+          criterion('c-1', 1.5, 1, {
+            reason: 'Names the effect.',
+            flags: ['disagree'],
+            second_opinion: {
+              scorer: 'llm-groq p1+test-model',
+              credit: 0,
+              marks: 0,
+              reason: 'The answer never mentions the effect.',
+              disagrees: true,
+            },
+          }),
+          criterion('c-2', 0.5, 0.5, {
+            scorer: 'semantic-v1',
+            second_opinion: {
+              scorer: 'llm-groq p1+test-model',
+              credit: 0.5,
+              marks: 0.75,
+              reason: 'Partly explained.',
+              disagrees: false,
+            },
+          }),
+        ],
+      },
+    })
+    await open(start({ answers: [withLlm, scored('a2', '2', 1)] }))
+    expect(await screen.findByText('State Lenz’s law.')).toBeVisible() // the rubric labels loaded
+    const b = screen.getByRole('region', { name: 'Panel B: AI Diagnostic Reasoning' })
+    expect(within(b).getByRole('list', { name: 'Flags' })).toHaveTextContent(
+      'The two AI scorers disagree.',
+    )
+    const first = within(b).getByRole('group', { name: 'Names the effect: LLM second opinion' })
+    expect(first).toHaveTextContent('The answer never mentions the effect.')
+    expect(first).toHaveTextContent('Credit 0%')
+    expect(first).toHaveTextContent('differ by more than one band (100% against 0%)')
+    // the rubric scorer's own credit and reason stay in place beside it
+    expect(within(b).getByText('Names the effect.')).toBeVisible()
+    const second = within(b).getByRole('group', { name: 'Explains why: LLM second opinion' })
+    expect(second).toHaveTextContent('Partly explained.')
+    expect(second).not.toHaveTextContent('differ by more than one band')
+  })
+
+  it('shows no second opinion when the college has the LLM scorer off', async () => {
+    await open(start())
+    const b = screen.getByRole('region', { name: 'Panel B: AI Diagnostic Reasoning' })
+    expect(within(b).queryByText('LLM second opinion')).toBeNull()
+  })
+
   it('shows the flags of an answer in words', async () => {
     const flagged = scored('a1', '1', 0, {
       suggestion: {

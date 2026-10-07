@@ -21,6 +21,50 @@ export const FLAG_TEXT: Record<string, { label: string; detail: string }> = {
     label: 'Answered twice',
     detail: 'Both copies were scored; the higher suggestion is shown.',
   },
+  scorer_disagreement: {
+    label: 'The two AI scorers disagree',
+    detail:
+      'The LLM and the rubric scorer differ by more than one band on at least one criterion. Both are shown below: look at those yourself.',
+  },
+}
+
+type Criterion = NonNullable<ReviewAnswer['suggestion']>['criteria'][number]
+
+/** The LLM's second opinion beside the rubric scorer's credit (P19): shown only when the college
+ * has the LLM scorer on and it answered. The mark above never uses it. */
+function SecondOpinion({ c, name }: { c: Criterion; name: string }) {
+  const o = c.second_opinion
+  if (!o) return null
+  const disagrees = o.disagrees
+  return (
+    <div
+      role="group"
+      aria-label={`${name}: LLM second opinion`}
+      className={`space-y-1 rounded-lg border p-2 text-[11px] ${
+        disagrees ? 'border-amber-500/50 bg-amber-950/30' : 'border-gray-700 bg-gray-950/40'
+      }`}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-semibold text-violet-300">LLM second opinion</span>
+        <span className="font-mono text-violet-300">
+          {formatMark(o.marks)} / {formatMark(c.weight)}
+        </span>
+      </div>
+      <Bar credit={o.credit} label={`${name}: LLM ${Math.round(o.credit * 100)}% credit`} />
+      <p className="text-gray-400">
+        Credit {Math.round(o.credit * 100)}% · {o.scorer}
+      </p>
+      <p className="text-gray-200">{o.reason}</p>
+      {disagrees && (
+        <p className="text-amber-300">
+          <i className="fa-solid fa-code-compare mr-1" aria-hidden="true" />
+          The two scorers differ by more than one band ({Math.round(c.credit * 100)}% against{' '}
+          {Math.round(o.credit * 100)}%): look at this one yourself. The suggested mark uses the
+          rubric scorer&apos;s credit.
+        </p>
+      )}
+    </div>
+  )
 }
 
 function Bar({ credit, label }: { credit: number; label: string }) {
@@ -141,6 +185,7 @@ export function DiagnosticPanel({
                 {c.flags.includes('manual') && (
                   <p className="text-[11px] text-amber-300">Marked by you: no AI credit.</p>
                 )}
+                <SecondOpinion c={c} name={name} />
               </li>
             )
           })}

@@ -14,6 +14,9 @@ class College:
     id: CollegeId
     name: str
     code: str
+    llm_scoring: bool = False
+    """Feature flag (P19): answer text may go to the LLM scorer for a second opinion. Off by
+    default; a Tarn operator turns it on (``tarn tenants llm``) because the text leaves Tarn."""
 
     def __post_init__(self) -> None:
         check_text("college name", self.name)

@@ -600,7 +600,7 @@ class PgCollegeRepository:
     def get(self, college_id: CollegeId) -> College:
         row = self._conn.execute(select(m.colleges).where(m.colleges.c.id == college_id)).first()
         r = _one(row, f"college {college_id}")
-        return College(id=CollegeId(r.id), name=r.name, code=r.code)
+        return College(id=CollegeId(r.id), name=r.name, code=r.code, llm_scoring=r.llm_scoring)
 
     def names(self, college_ids: Sequence[CollegeId]) -> Mapping[CollegeId, str]:
         if not college_ids:
@@ -615,7 +615,12 @@ class PgCollegeRepository:
             _upsert(
                 self._conn,
                 m.colleges,
-                {"id": college.id, "name": college.name, "code": college.code},
+                {
+                    "id": college.id,
+                    "name": college.name,
+                    "code": college.code,
+                    "llm_scoring": college.llm_scoring,
+                },
             )
             _upsert(
                 self._conn,
@@ -1305,6 +1310,9 @@ class PgScoreRepository:
                     embedder_name=None if score.embedder is None else score.embedder.name,
                     embedder_version=None if score.embedder is None else score.embedder.version,
                     reasons=list(score.reasons),
+                    llm_usage=None
+                    if score.llm_usage is None
+                    else codec.usage_to_json(score.llm_usage),
                 )
             )
             if not score.criterion_scores:
@@ -1327,6 +1335,9 @@ class PgScoreRepository:
                         "similarity": c.similarity,
                         "reason": None if c.reason is None else codec.reason_to_json(c.reason),
                         "detail": c.detail,
+                        "second_opinion": None
+                        if c.second_opinion is None
+                        else codec.second_opinion_to_json(c.second_opinion),
                     }
                     for n, c in enumerate(score.criterion_scores)
                 ],
@@ -1364,6 +1375,9 @@ class PgScoreRepository:
                     similarity=c.similarity,
                     reason=None if c.reason is None else codec.reason_from_json(c.reason),
                     detail=c.detail,
+                    second_opinion=None
+                    if c.second_opinion is None
+                    else codec.second_opinion_from_json(c.second_opinion),
                 )
             )
         return [
@@ -1385,6 +1399,7 @@ class PgScoreRepository:
                 if r.embedder_name is None
                 else EngineRef(name=r.embedder_name, version=r.embedder_version),
                 reasons=tuple(r.reasons),
+                llm_usage=None if r.llm_usage is None else codec.usage_from_json(r.llm_usage),
             )
             for r in rows
         ]

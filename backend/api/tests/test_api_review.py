@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from tarn_api.testing import MemoryBackends
 from tarn_core.domain.booklet import Booklet
 from tarn_core.domain.tenancy import Role, Student
-from tarn_core.ids import AnswerId, CollegeId, StudentId
+from tarn_core.ids import AnswerId, AnswerScoreId, CollegeId, StudentId
 from tarn_core.ports.jobs import JOB_RESCORE_ANSWERS, JOB_RESEGMENT_BOOKLET
 from tarn_core.testing.auth_world import ADMIN_PASSWORD, TEACHER_PASSWORD, AuthWorld
 from tarn_core.testing.builders import CollegeFixture, ci_shaped_blueprint
@@ -439,3 +439,52 @@ def test_deleting_from_the_list_removes_every_sheet_and_leaves_a_bare_record(s: 
     assert c.get(f"{s.url}/result-sheets/1/pdf", headers=s.teacher).status_code == 404
     event = s.mem.audit.events[-1]
     assert event.action.value == "booklet.deleted" and event.before is None and event.after is None
+
+
+def test_the_second_opinion_and_disagreement_reach_panel_b(s: Setup) -> None:
+    """A college with the LLM scorer on: both credits are in the suggestion (P19)."""
+    from dataclasses import replace
+    from decimal import Decimal
+
+    from tarn_core.domain.common import EngineRef
+    from tarn_core.domain.scoring import DISAGREE, AnswerFlag, SecondOpinion
+
+    plain = s.answer("1")["suggestion"]["criteria"]
+    assert all(c["second_opinion"] is None for c in plain)
+
+    answer = next(
+        a for a in s.mem.booklets.answers(s.college_id, s.booklet.id) if a.slot_label == "1"
+    )
+    score = s.mem.scores.scores(s.college_id, answer.id)[-1]
+    opinion = SecondOpinion(
+        scorer=EngineRef(name="llm-groq", version="p1+test"),
+        credit=Decimal(0),
+        reason="The answer does not address the point.",
+    )
+    first = replace(
+        score.criterion_scores[0],
+        second_opinion=opinion,
+        flags=(*score.criterion_scores[0].flags, DISAGREE),
+    )
+    s.mem.scores.save_score(
+        s.college_id,
+        replace(
+            score,
+            id=AnswerScoreId(s.mem.ids.new()),
+            criterion_scores=(first, *score.criterion_scores[1:]),
+            flags=(*score.flags, AnswerFlag.SCORER_DISAGREEMENT),
+        ),
+    )
+
+    suggestion = s.answer("1")["suggestion"]
+    assert "scorer_disagreement" in suggestion["flags"]
+    shown = suggestion["criteria"][0]
+    assert shown["second_opinion"] == {
+        "scorer": "llm-groq p1+test",
+        "credit": 0.0,
+        "marks": 0.0,
+        "reason": "The answer does not address the point.",
+        "disagrees": True,
+    }
+    assert "disagree" in shown["flags"] and shown["credit"] == 1.0  # the credit is untouched
+    assert suggestion["criteria"][1]["second_opinion"] is None

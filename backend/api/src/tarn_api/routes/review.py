@@ -29,6 +29,7 @@ from tarn_api.schemas import (
     ResultSheetOut,
     ReviewAnswerOut,
     ReviewOut,
+    SecondOpinionOut,
     SheetVersionOut,
     SlotResultOut,
     SuggestionOut,
@@ -37,7 +38,7 @@ from tarn_api.schemas import (
 from tarn_api.security import BackendsDep, PrincipalDep, current_user
 from tarn_core.domain.booklet import BookletStatus
 from tarn_core.domain.review import BookletLock, ResultSheet
-from tarn_core.domain.scoring import AnswerScore
+from tarn_core.domain.scoring import DISAGREE, AnswerScore
 from tarn_core.domain.tenancy import Role
 from tarn_core.ids import AnswerId, BookletId, CollegeId, RegionId, UserId
 from tarn_core.services.workflow import BookletReview
@@ -101,6 +102,15 @@ def _suggestion(score: AnswerScore) -> SuggestionOut:
                 reason=None if c.reason is None else c.reason.summary,
                 matched=[] if c.reason is None else list(c.reason.matched),
                 missing=[] if c.reason is None else list(c.reason.missing),
+                second_opinion=None
+                if c.second_opinion is None
+                else SecondOpinionOut(
+                    scorer=f"{c.second_opinion.scorer.name} {c.second_opinion.scorer.version}",
+                    credit=float(c.second_opinion.credit),
+                    marks=float(c.weight * c.second_opinion.credit),
+                    reason=c.second_opinion.reason,
+                    disagrees=DISAGREE in c.flags,
+                ),
             )
             for c in score.criterion_scores
         ],

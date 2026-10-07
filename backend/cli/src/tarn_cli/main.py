@@ -69,6 +69,11 @@ def doctor(
     typer.echo(f"environment : {settings.env}")
     typer.echo(f"device      : {device.kind} ({device.name}) - {device.detail}")
     typer.echo(f"cloud OCR   : {'enabled' if settings.cloud_ocr_enabled else 'disabled'}")
+    llm = "off"
+    if settings.llm_scorer_enabled:
+        n = len(settings.groq_keys)
+        llm = f"on ({n} key{'s' if n != 1 else ''}; only colleges switched on are sent)"
+    typer.echo(f"LLM scorer  : {llm}")
     if not services:
         return
     failed = False
@@ -311,6 +316,50 @@ def tenants_approve(
         identity_db.dispose()
         app_db.dispose()
     typer.echo(f"{approved.institution_id}: {approved.status.value}")
+
+
+@tenants.command("llm")
+def tenants_llm(
+    institution_id: str = typer.Argument(...),
+    on: Annotated[
+        bool,
+        typer.Option(
+            "--on/--off",
+            help="--on lets the LLM scorer read this college's answers; --off (the default) "
+            "keeps them local.",
+        ),
+    ] = False,
+    operator: str = typer.Option(..., help="Who changes it (recorded in the audit log)."),
+) -> None:
+    """Switch the LLM scorer (P19) on or off for one college. On: the text of its answers (no
+    names or USNs) goes to the LLM provider for a second opinion on each criterion. The worker
+    also needs TARN_LLM_SCORER_ENABLED and a key; see CLAUDE.md for the warnings."""
+    from tarn_adapters.identity.database import IdentityDatabase
+    from tarn_adapters.postgres.database import PostgresDatabase
+    from tarn_adapters.runtime import UuidGenerator
+    from tarn_core.services.college_settings import CollegeSettings
+
+    settings = get_settings()
+    identity_db = IdentityDatabase(settings.identity_app_database_url)
+    app_db = PostgresDatabase(settings.app_database_url)
+    try:
+        with identity_db.session() as store:
+            tenant = store.find_tenant(institution_id)
+        if tenant is None:
+            typer.echo(f"no tenant {institution_id}")
+            raise typer.Exit(code=1)
+        with app_db.session(
+            tenant.college_id, ids=UuidGenerator(), clock=SystemClock(), blobs=NoBlobStore()
+        ) as session:
+            college = CollegeSettings(
+                colleges=session.colleges, runtime=session.runtime
+            ).set_llm_scoring(tenant.college_id, on, operator=operator)
+    finally:
+        identity_db.dispose()
+        app_db.dispose()
+    typer.echo(f"{institution_id}: LLM scoring {'on' if college.llm_scoring else 'off'}")
+    if college.llm_scoring and not settings.llm_scorer_enabled:
+        typer.echo("note: the worker's TARN_LLM_SCORER_ENABLED is still false: nothing is sent")
 
 
 @pages.command("check")

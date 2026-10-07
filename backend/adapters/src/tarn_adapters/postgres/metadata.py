@@ -88,6 +88,7 @@ colleges = Table(
     _uuid("id", primary_key=True),
     _text("name"),
     _text("code"),
+    Column("llm_scoring", Boolean(), nullable=False, server_default="false"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
@@ -368,6 +369,7 @@ answer_scores = Table(
     _text("embedder_name", nullable=True),
     _text("embedder_version", nullable=True),
     Column("reasons", ARRAY(Text()), nullable=False, server_default="{}"),
+    Column("llm_usage", JSONB(none_as_null=True), nullable=True),
 )
 
 criterion_scores = Table(
@@ -387,6 +389,7 @@ criterion_scores = Table(
     Column("similarity", Double(), nullable=True),
     Column("reason", JSONB(), nullable=True),
     Column("detail", JSONB(none_as_null=True), nullable=True),
+    Column("second_opinion", JSONB(none_as_null=True), nullable=True),
 )
 
 reviews = Table(

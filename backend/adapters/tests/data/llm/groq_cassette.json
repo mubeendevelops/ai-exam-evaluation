@@ -1,0 +1,325 @@
+{
+  "_note": "Responses in Groq's documented chat-completions shape, written by hand with synthetic content (P19 had no live call: CI never makes one). Replace with recordings of a real run once a key is available and the answers are synthetic.",
+  "full_credit": [
+    {
+      "status": 200,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "id": "chatcmpl-synthetic",
+        "object": "chat.completion",
+        "created": 1790000000,
+        "model": "llama-3.3-70b-versatile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"credit\": 1, \"reason\": \"The answer names both items the criterion asks for.\"}"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 212,
+          "completion_tokens": 31,
+          "total_tokens": 243
+        }
+      }
+    }
+  ],
+  "half_credit": [
+    {
+      "status": 200,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "id": "chatcmpl-synthetic",
+        "object": "chat.completion",
+        "created": 1790000000,
+        "model": "llama-3.3-70b-versatile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"credit\": 0.5, \"reason\": \"The answer gives one of the two points.\"}"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 212,
+          "completion_tokens": 31,
+          "total_tokens": 243
+        }
+      }
+    }
+  ],
+  "no_credit": [
+    {
+      "status": 200,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "id": "chatcmpl-synthetic",
+        "object": "chat.completion",
+        "created": 1790000000,
+        "model": "llama-3.3-70b-versatile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"credit\": 0, \"reason\": \"The answer does not address the criterion.\"}"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 212,
+          "completion_tokens": 31,
+          "total_tokens": 243
+        }
+      }
+    }
+  ],
+  "rate_limited_then_ok": [
+    {
+      "status": 429,
+      "headers": {
+        "retry-after": "12"
+      },
+      "body": {
+        "error": {
+          "message": "Rate limit reached",
+          "type": "tokens",
+          "code": "rate_limit_exceeded"
+        }
+      }
+    },
+    {
+      "status": 200,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "id": "chatcmpl-synthetic",
+        "object": "chat.completion",
+        "created": 1790000000,
+        "model": "llama-3.3-70b-versatile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"credit\": 1, \"reason\": \"The answer makes the point.\"}"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 230,
+          "completion_tokens": 22,
+          "total_tokens": 252
+        }
+      }
+    }
+  ],
+  "server_error_then_ok": [
+    {
+      "status": 503,
+      "headers": {},
+      "body": {
+        "error": {
+          "message": "Service unavailable"
+        }
+      }
+    },
+    {
+      "status": 200,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "id": "chatcmpl-synthetic",
+        "object": "chat.completion",
+        "created": 1790000000,
+        "model": "llama-3.3-70b-versatile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"credit\": 0.5, \"reason\": \"Partly met.\"}"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 200,
+          "completion_tokens": 15,
+          "total_tokens": 215
+        }
+      }
+    }
+  ],
+  "bad_request": [
+    {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "error": {
+          "message": "invalid request",
+          "type": "invalid_request_error"
+        }
+      }
+    }
+  ],
+  "invalid_key": [
+    {
+      "status": 401,
+      "headers": {},
+      "body": {
+        "error": {
+          "message": "Invalid API Key",
+          "type": "invalid_request_error",
+          "code": "invalid_api_key"
+        }
+      }
+    }
+  ],
+  "fenced_json_then_ok": [
+    {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "id": "chatcmpl-synthetic",
+        "object": "chat.completion",
+        "created": 1790000000,
+        "model": "llama-3.3-70b-versatile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "```json\n{\"credit\": 1, \"reason\": \"Met.\"}\n```"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 210,
+          "completion_tokens": 20,
+          "total_tokens": 230
+        }
+      }
+    },
+    {
+      "status": 200,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "id": "chatcmpl-synthetic",
+        "object": "chat.completion",
+        "created": 1790000000,
+        "model": "llama-3.3-70b-versatile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"credit\": 1, \"reason\": \"Met.\"}"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 210,
+          "completion_tokens": 12,
+          "total_tokens": 222
+        }
+      }
+    }
+  ],
+  "prose_forever": [
+    {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "id": "chatcmpl-synthetic",
+        "object": "chat.completion",
+        "created": 1790000000,
+        "model": "llama-3.3-70b-versatile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "I would give this answer full marks."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 205,
+          "completion_tokens": 9,
+          "total_tokens": 214
+        }
+      }
+    },
+    {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "id": "chatcmpl-synthetic",
+        "object": "chat.completion",
+        "created": 1790000000,
+        "model": "llama-3.3-70b-versatile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Full marks, because it is good."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 205,
+          "completion_tokens": 9,
+          "total_tokens": 214
+        }
+      }
+    }
+  ],
+  "no_usage_block": [
+    {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "choices": [
+          {
+            "message": {
+              "content": "{\"credit\": 0, \"reason\": \"Not met.\"}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "unknown_shape": [
+    {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "unexpected": true
+      }
+    }
+  ]
+}

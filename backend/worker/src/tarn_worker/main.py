@@ -154,6 +154,12 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
             recognizers=sorted(f"{r.name} {r.version}" for r in refs),
         )
 
+    from tarn_adapters.llm.wiring import build_llm_scorer
+
+    llm = build_llm_scorer(
+        settings
+    )  # None unless TARN_LLM_SCORER_ENABLED; fails start-up if unusable
+
     runner = BookletJobRunner(
         db=PostgresDatabase(
             settings.app_database_url,
@@ -184,6 +190,7 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
         scoring_embedder=scoring.embedder,
         word_list=None if kit is None else kit.word_list,
         recognizers=diagrams.recognizers,
+        llm=None if llm is None else llm[0],
     )
     return runner.run_one
 

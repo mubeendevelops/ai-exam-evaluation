@@ -75,6 +75,12 @@ class EngineTimeoutError(EngineFailedError, TimeoutError):
     """An OCR engine took longer than its time limit."""
 
 
+class ScorerUnavailableError(DomainError, RuntimeError):
+    """An outside scorer (the LLM) gave no usable answer after its retries: timeout, rate limit,
+    refusal or a reply that is not the strict JSON. The scoring service carries on without
+    it (the non-LLM credit stands) and says so in the answer's notes. Never carries text."""
+
+
 class StaleWriteError(DomainError, ValueError):
     """The write carries a version older than the stored one: the screen is out of date
     (design.md "Concurrency"). Reload and try again."""

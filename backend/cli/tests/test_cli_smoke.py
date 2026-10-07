@@ -25,7 +25,29 @@ def test_doctor_reports_device(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0
     assert "device      : cpu" in result.stdout
     assert "cloud OCR   : disabled" in result.stdout
+    assert "LLM scorer  : off" in result.stdout
     get_settings.cache_clear()
+
+
+def test_the_llm_scorer_shows_in_doctor_only_when_switched_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TARN_DEVICE", "cpu")
+    monkeypatch.setenv("TARN_LLM_SCORER_ENABLED", "true")
+    monkeypatch.setenv("TARN_LLM_ALLOW_IN_DEVELOPMENT", "true")
+    monkeypatch.setenv("GROQ_API_KEYS", "a,b")
+    get_settings.cache_clear()
+    result = runner.invoke(app, ["doctor"])
+    assert "LLM scorer  : on (2 keys; only colleges switched on are sent)" in result.stdout
+    assert "a,b" not in result.stdout
+    get_settings.cache_clear()
+
+
+def test_tenants_llm_needs_an_operator_and_defaults_to_off() -> None:
+    result = runner.invoke(app, ["tenants", "llm", "ACME"])
+    assert result.exit_code != 0  # --operator is required: no anonymous switching
+    help_text = runner.invoke(app, ["tenants", "llm", "--help"]).stdout
+    assert "--on" in help_text and "--off" in help_text and "--operator" in help_text
 
 
 def test_db_commands_are_listed() -> None:

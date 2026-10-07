@@ -16,6 +16,7 @@ from tarn_core.services.scoring.service import (
     NoScorerError,
     ScoringContent,
     ScoringService,
+    scorer_trail,
     scoring_content,
 )
 
@@ -33,5 +34,6 @@ __all__ = [
     "ScoringService",
     "SemanticScorer",
     "queue_scoring",
+    "scorer_trail",
     "scoring_content",
 ]

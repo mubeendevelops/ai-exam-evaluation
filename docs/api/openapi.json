@@ -7348,7 +7348,7 @@
             },
             "type": "array",
             "title": "Flags",
-            "description": "`check`: borderline; `manual`: the teacher marks it."
+            "description": "`check`: borderline; `manual`: the teacher marks it; `disagree`: the LLM's second opinion is more than one band away."
           },
           "similarity": {
             "anyOf": [
@@ -7386,6 +7386,17 @@
             },
             "type": "array",
             "title": "Missing"
+          },
+          "second_opinion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SecondOpinionOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set only when the college has the LLM scorer on and it answered."
           }
         },
         "type": "object",
@@ -10733,6 +10744,43 @@
           "complete"
         ],
         "title": "RubricOut"
+      },
+      "SecondOpinionOut": {
+        "properties": {
+          "scorer": {
+            "type": "string",
+            "title": "Scorer"
+          },
+          "credit": {
+            "type": "number",
+            "title": "Credit",
+            "description": "0, 0.5 or 1."
+          },
+          "marks": {
+            "type": "number",
+            "title": "Marks"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "The model's own words; may name what the answer lacks."
+          },
+          "disagrees": {
+            "type": "boolean",
+            "title": "Disagrees",
+            "description": "More than one band from the credit above (the `disagree` flag)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "scorer",
+          "credit",
+          "marks",
+          "reason",
+          "disagrees"
+        ],
+        "title": "SecondOpinionOut",
+        "description": "The LLM's judgement of a criterion another scorer scored (P19). It never changes the\nmark: Panel B shows it beside the credit."
       },
       "SectionSummaryOut": {
         "properties": {

@@ -10,7 +10,7 @@ from tarn_core.domain.common import Box, ContentRef, EngineRef
 from tarn_core.domain.content import CriterionType, ReferenceDiagram, RubricCriterion
 from tarn_core.domain.diagram import AnswerDiagram, DiagramDetection
 from tarn_core.domain.ocr import ContentClass, EngineCalibration
-from tarn_core.domain.scoring import CriterionScore, ScoringCalibration
+from tarn_core.domain.scoring import CriterionScore, LlmUsage, ScoringCalibration, SecondOpinion
 from tarn_core.errors import InvariantError
 from tarn_core.ids import ReferenceDiagramId
 
@@ -136,6 +136,7 @@ class ScoringInput:
     """The reference diagrams the question's diagram criteria point at, in the versions the
     score records."""
     question_code: str = ""
+    question_text: str = ""
     slot_label: str | None = None
     reference_text: str = ""
     glossary: tuple[str, ...] = ()
@@ -158,6 +159,14 @@ class Scorer(Protocol):
     def supports(self, criterion_type: CriterionType) -> bool: ...
 
     def score(self, item: ScoringInput) -> CriterionScore: ...
+
+
+class SecondOpinionScorer(Scorer, Protocol):
+    """The LLM scorer (P19): a ``Scorer`` for ``llm`` criteria that can also judge a criterion
+    another scorer scored. ``opinion`` raises ``ScorerUnavailableError`` after its retries; it
+    never raises for a bad answer from the model (that is a retry, then unavailable)."""
+
+    def opinion(self, item: ScoringInput) -> tuple[SecondOpinion, LlmUsage]: ...
 
 
 class DiagramRecognizer(Protocol):

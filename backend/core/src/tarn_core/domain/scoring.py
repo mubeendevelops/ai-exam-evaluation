@@ -17,6 +17,7 @@ from tarn_core.domain.common import (
     EngineRef,
     JsonValue,
     check_marks,
+    check_text,
     check_unit_interval,
 )
 from tarn_core.errors import InvariantError
@@ -24,6 +25,18 @@ from tarn_core.ids import AnswerId, AnswerScoreId, CollegeId, ScoringCalibration
 
 CHECK = "check"
 """Criterion flag: the similarity sits near a band edge (borderline credit)."""
+
+DISAGREE = "disagree"
+"""Criterion flag: the LLM's credit differs from the non-LLM credit by more than one band."""
+
+BAND = Decimal("0.5")
+"""One credit band: credits are 0, 1/2 or 1 (design.md "Text scoring"). Two credits further
+apart than this sit in bands more than one apart (design.md "Flags the teacher sees")."""
+
+
+def scorers_disagree(a: Decimal, b: Decimal) -> bool:
+    """LLM and non-LLM credit differ by more than one band."""
+    return abs(a - b) > BAND
 
 
 class AnswerFlag(StrEnum):
@@ -37,6 +50,9 @@ class AnswerFlag(StrEnum):
     """The key is guidance only: no AI score (C8)."""
     DUPLICATE = "duplicate"
     """The question was answered twice: each copy was scored, the higher one is suggested."""
+    SCORER_DISAGREEMENT = "scorer_disagreement"
+    """The LLM and the non-LLM scorer differ by more than one band on a criterion; Panel B
+    shows both (P19)."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -58,6 +74,47 @@ class CriterionReason:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class SecondOpinion:
+    """The LLM's judgement of a criterion that a non-LLM scorer scored (P19). A suggestion like
+    any other: it never changes the mark, the teacher sees both. ``reason`` is the model's own
+    words (kept short, college data like every score)."""
+
+    scorer: EngineRef
+    credit: Decimal
+    reason: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.credit, Decimal):
+            raise InvariantError("credit must be a Decimal")
+        check_unit_interval("credit", self.credit)
+        check_text("second opinion reason", self.reason)
+
+
+@dataclass(frozen=True, slots=True)
+class LlmUsage:
+    """What the LLM provider was asked and charged for, in counts (token accounting). Never
+    holds text. ``calls`` counts every request, retries included."""
+
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    def __post_init__(self) -> None:
+        if min(self.calls, self.input_tokens, self.output_tokens) < 0:
+            raise InvariantError("usage counts must not be negative")
+
+    def __add__(self, other: "LlmUsage") -> "LlmUsage":
+        return LlmUsage(
+            self.calls + other.calls,
+            self.input_tokens + other.input_tokens,
+            self.output_tokens + other.output_tokens,
+        )
+
+    def __bool__(self) -> bool:
+        return self.calls > 0
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class CriterionScore:
     """Credit in [0, 1] for one criterion version, from one scorer version."""
 
@@ -70,6 +127,8 @@ class CriterionScore:
     similarity: float | None = None
     """The best similarity found (semantic criteria; the graph similarity for diagrams)."""
     reason: CriterionReason | None = None
+    second_opinion: SecondOpinion | None = None
+    """The LLM's credit beside the scorer's, when the college has the LLM scorer on (P19)."""
     detail: JsonValue = None
     """The R6 comparison document of a diagram criterion
     (``docs/api/diagram-comparison.schema.json``); None for other criteria. It holds the
@@ -84,6 +143,10 @@ class CriterionScore:
         check_unit_interval("credit", self.credit)
         if self.similarity is not None and not math.isfinite(self.similarity):
             raise InvariantError("similarity must be a finite number")
+        if self.second_opinion is not None and (
+            scorers_disagree(self.credit, self.second_opinion.credit) != (DISAGREE in self.flags)
+        ):
+            raise InvariantError("the 'disagree' flag marks exactly the criteria that disagree")
 
     @property
     def marks(self) -> Decimal:
@@ -124,6 +187,8 @@ class AnswerScore:
     embedder: EngineRef | None = None
     """The sentence-embedding model the semantic criteria and the guard used."""
     reasons: tuple[str, ...] = ()
+    llm_usage: LlmUsage | None = None
+    """What the LLM scorer cost for this score (None: it was not used)."""
 
     def __post_init__(self) -> None:
         if self.question.kind is not ContentKind.QUESTION:
@@ -153,7 +218,12 @@ class AnswerScore:
 
     @property
     def scorer_versions(self) -> frozenset[EngineRef]:
-        return frozenset(c.scorer for c in self.criterion_scores)
+        """Every scorer that produced a credit or a second opinion (rule 11)."""
+        return frozenset(
+            ref
+            for c in self.criterion_scores
+            for ref in (c.scorer, *(() if c.second_opinion is None else (c.second_opinion.scorer,)))
+        )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
