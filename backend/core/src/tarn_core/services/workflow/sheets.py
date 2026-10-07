@@ -78,7 +78,10 @@ class SheetBuilder:
         self._users = users
         self._blobs = blobs
 
-    def document(self, sheet: ResultSheet) -> SheetDocument:
+    def document(self, sheet: ResultSheet, *, draft: bool = False) -> SheetDocument:
+        """What the sheet shows. A ``draft`` is the AI's suggestions as they stand (no review
+        exists yet): marks, criteria and the question come from each answer's latest score, and
+        the sheet is marked as unapproved."""
         college_id = sheet.college_id
         booklet = self._booklets.get(college_id, sheet.booklet_id)
         blueprint = self._content.get(
@@ -101,12 +104,14 @@ class SheetBuilder:
             slot, question_id, max_marks = blueprint.leaf(answer.slot_label)
             line = line_of.get(slot_of.get(answer.slot_label, slot.label))
             scores = self._scores.scores(college_id, answer.id)
-            reviews = self._scores.reviews(college_id, answer.id)
+            reviews = [] if draft else self._scores.reviews(college_id, answer.id)
             review = reviews[-1] if reviews else None
             score = next(
                 (s for s in scores if review is not None and s.id == review.answer_score_id), None
             )
             suggestion = scores[-1] if scores else None
+            if draft:
+                score = suggestion
             own = sorted(
                 (segments[i] for i in answer.segment_ids if i in segments), key=lambda s: s.position
             )
@@ -116,7 +121,11 @@ class SheetBuilder:
                     section_label=line.section_label if line else "",
                     question=self._question_text(score or suggestion, question_id),
                     max_marks=max_marks,
-                    ai_mark=None if review is None else review.ai_mark,
+                    ai_mark=(
+                        (None if suggestion is None else suggestion.mark)
+                        if draft
+                        else (None if review is None else review.ai_mark)
+                    ),
                     teacher_mark=None if review is None else review.teacher_mark,
                     counted=line.counted if line else False,
                     outcome=line.reason if line else "",
@@ -141,6 +150,7 @@ class SheetBuilder:
             lines=sheet.lines,
             answers=tuple(answers),
             amendment_note=sheet.note,
+            draft=draft,
         )
 
     # --- pieces --------------------------------------------------------------------------

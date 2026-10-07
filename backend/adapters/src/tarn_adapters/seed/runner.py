@@ -10,8 +10,7 @@ from pathlib import Path
 
 from tarn_adapters.auth.secrets import secret_source
 from tarn_adapters.auth.wiring import auth_kit
-from tarn_adapters.blob.minio_client import make_client
-from tarn_adapters.blob.minio_store import MinioBlobStore
+from tarn_adapters.blob.wiring import build_blob_store
 from tarn_adapters.config import Settings
 from tarn_adapters.identity.database import IdentityDatabase
 from tarn_adapters.postgres.database import PostgresDatabase, PostgresSession
@@ -64,7 +63,7 @@ def run_seed(settings: Settings, *, blobs: BlobStore | None = None) -> SeedSumma
     clock = SystemClock()
     secrets = secret_source(settings)
     kit = auth_kit(settings, secrets=secrets)
-    blobs = blobs or MinioBlobStore(make_client(settings), settings.blob_bucket)
+    blobs = blobs or build_blob_store(settings)
     app = PostgresDatabase(settings.app_database_url)
     identity_db = IdentityDatabase(settings.identity_app_database_url)
     assets = asset_reader()

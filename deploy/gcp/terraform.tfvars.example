@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars (git-ignored) and fill in. No secret goes in here.
+project_id = "your-project-id"
+region     = "asia-south1"
+domain     = "tarn.example.org"
+
+backend_image  = "asia-south1-docker.pkg.dev/your-project-id/tarn/backend-api:2026-10-07"
+worker_image   = "asia-south1-docker.pkg.dev/your-project-id/tarn/backend-worker:2026-10-07"
+frontend_image = "asia-south1-docker.pkg.dev/your-project-id/tarn/frontend:2026-10-07"
+
+smtp_host = "smtp.example.org"
+smtp_user = "tarn@example.org"
+smtp_from = "Tarn <tarn@example.org>"
+
+# worker_mode = "vm"        # an always-on GPU VM instead of the Cloud Run job
+# deletion_protection = false  # only for a throw-away test project

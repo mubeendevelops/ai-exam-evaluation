@@ -17,7 +17,7 @@ from tarn_adapters.auth.crypto import (
     RoutingKeyManager,
 )
 from tarn_adapters.auth.hashing import Argon2Hasher
-from tarn_adapters.auth.mail import ConsoleMailer, DeferredMailer
+from tarn_adapters.auth.mail import ConsoleMailer, DeferredMailer, SmtpMailer
 from tarn_adapters.auth.passwords import BloomFilter, CommonPasswordList, bundled_bloom_bytes
 from tarn_adapters.auth.schemas import (
     IDENTITY_RECORD,
@@ -159,15 +159,30 @@ def test_production_refuses_development_secrets_and_keys() -> None:
         Settings(env="production")
     with pytest.raises(ValueError, match="cloud KMS key"):
         Settings(env="production", secrets_backend="gcp")
+    production = {
+        "env": "production",
+        "kms_key_ref": "gcp-kms:projects/p/locations/l/keyRings/r/cryptoKeys/k",
+        "secrets_backend": "gcp",
+    }
+    with pytest.raises(ValueError, match="BLOB_BACKEND=minio"):
+        Settings(**production, mailer="smtp", smtp_host="h", smtp_from="a@b.example")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="MAILER=console"):
+        Settings(**production, blob_backend="gcs")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="SMTP_HOST"):
+        Settings(**production, blob_backend="gcs", mailer="smtp")  # type: ignore[arg-type]
     ok = Settings(
-        env="production",
-        kms_key_ref="gcp-kms:projects/p/locations/l/keyRings/r/cryptoKeys/k",
-        secrets_backend="gcp",
+        **production,  # type: ignore[arg-type]
+        blob_backend="gcs",
+        mailer="smtp",
+        smtp_host="smtp.example.test",
+        smtp_from="tarn@example.test",
     )
-    from tarn_adapters.auth.wiring import auth_kit
+    from tarn_adapters.auth.wiring import build_mailer
 
+    assert isinstance(build_mailer(ok, SettingsSecrets(Settings())), SmtpMailer)
+    unchecked = Settings.model_construct(env="production", mailer="console")
     with pytest.raises(RuntimeError, match="mail adapter"):
-        auth_kit(ok, secrets=SettingsSecrets(Settings()))
+        build_mailer(unchecked, SettingsSecrets(Settings()))
 
 
 # --- password list and Bloom filter ----------------------------------------------------------
@@ -238,3 +253,67 @@ def test_deferred_mailer_sends_only_on_flush() -> None:
     assert out.getvalue() == ""
     mailer.flush()
     assert "To: a@b.example" in out.getvalue() and "Body" in out.getvalue()
+
+
+# --- the SMTP mailer ---------------------------------------------------------------------------
+
+
+class FakeSmtp:
+    def __init__(self, fail: Exception | None = None) -> None:
+        self.calls: list[str] = []
+        self.sent: list[object] = []
+        self._fail = fail
+
+    def __enter__(self) -> "FakeSmtp":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.calls.append("quit")
+
+    def starttls(self, *, context: object) -> None:
+        self.calls.append("starttls")
+
+    def login(self, user: str, password: str) -> None:
+        self.calls.append(f"login {user} {password}")
+
+    def send_message(self, msg: object) -> None:
+        if self._fail is not None:
+            raise self._fail
+        self.sent.append(msg)
+
+
+def test_the_smtp_mailer_upgrades_to_tls_before_it_logs_in() -> None:
+    smtp = FakeSmtp()
+    mailer = SmtpMailer(
+        host="h",
+        port=587,
+        sender="Tarn <tarn@example.test>",
+        user="u",
+        password="p",
+        connect=lambda: smtp,
+    )
+    mailer.send(EmailMessage(to="a@b.example", subject="Verify", text="https://x/?token=t"))
+    assert smtp.calls == ["starttls", "login u p", "quit"]
+    (message,) = smtp.sent
+    assert message["To"] == "a@b.example" and message["From"] == "Tarn <tarn@example.test>"  # type: ignore[index]
+    assert "token=t" in message.get_content()  # type: ignore[attr-defined]
+
+
+def test_the_smtp_mailer_on_port_465_is_tls_from_the_start() -> None:
+    smtp = FakeSmtp()
+    SmtpMailer(host="h", port=465, sender="t@e.test", connect=lambda: smtp).send(
+        EmailMessage(to="a@b.example", subject="s", text="t")
+    )
+    assert smtp.calls == ["quit"]  # no STARTTLS, and no login without a user
+
+
+def test_a_failed_send_is_logged_by_class_only_and_does_not_fail_the_request() -> None:
+    from structlog.testing import capture_logs
+
+    smtp = FakeSmtp(fail=ConnectionError("550 mailbox a@b.example refused; token=secret"))
+    with capture_logs() as logs:
+        SmtpMailer(host="h", port=587, sender="t@e.test", connect=lambda: smtp).send(
+            EmailMessage(to="a@b.example", subject="s", text="token=secret")
+        )
+    assert [(e["event"], e["error"]) for e in logs] == [("mail.send_failed", "ConnectionError")]
+    assert "secret" not in str(logs) and "a@b.example" not in str(logs)

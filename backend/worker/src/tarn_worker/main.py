@@ -94,72 +94,21 @@ def scheduled_jobs(settings: Settings, clock: Clock) -> list[PeriodicJob]:
 
 def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
     """The queue consumer: each call processes at most one booklet job; True if it did."""
-    from tarn_adapters.blob.minio_client import make_client
-    from tarn_adapters.blob.minio_store import MinioBlobStore
-    from tarn_adapters.embed.wiring import build_embedder, build_scoring_embedder
-    from tarn_adapters.imaging.cleaner import OpenCvPageCleaner
-    from tarn_adapters.imaging.pdf import PyMuPdfSplitter
-    from tarn_adapters.ocr.wiring import build_ocr
+    from tarn_adapters.blob.wiring import build_blob_store
+    from tarn_adapters.llm.wiring import build_llm_scorer
     from tarn_adapters.postgres.database import PostgresDatabase
     from tarn_adapters.postgres.jobs import JobSettings
     from tarn_adapters.runtime import UuidGenerator
-    from tarn_core.errors import EngineFailedError
-    from tarn_core.services.pipeline import QualityPolicy
-    from tarn_worker.booklets import BookletJobRunner, OcrKit
+    from tarn_adapters.stages_wiring import build_stages
+    from tarn_worker.booklets import BookletJobRunner
 
-    log = structlog.get_logger("tarn_worker")
-    kit: OcrKit | None = None
-    try:
-        ocr = build_ocr(settings)
-    except EngineFailedError as error:
-        # Page cleaning still runs; reading jobs fail visibly until OCR is available.
-        log.error("ocr.unavailable", reason=str(error))
-    else:
-        log.info(
-            "ocr.engines",
-            engines=list(ocr.engines),
-            skipped=ocr.skipped,
-            device=ocr.device.kind,
-            layout=f"{ocr.layout.ref.name} {ocr.layout.ref.version}",
-        )
-        if not ocr.engines:
-            log.error("ocr.no_engines", skipped=ocr.skipped)
-        kit = OcrKit(
-            layout=ocr.layout,
-            engines=ocr.engines,
-            transform=ocr.transform,
-            word_list=ocr.word_list,
-            settings=ocr.settings,
-            orientation=ocr.orientation,
-        )
-
-    embedding = build_embedder(settings)
-    if embedding.fallback_reason is not None:
-        log.warning("segmentation.embedder_fallback", reason=embedding.fallback_reason)
-    log.info("segmentation.embedder", embedder=embedding.embedder.ref.name)
-    scoring = build_scoring_embedder(settings)  # refuses a non-local embedder: fails start-up
-    if scoring.fallback_reason is not None:
-        log.warning("scoring.embedder_fallback", reason=scoring.fallback_reason)
-    log.info("scoring.embedder", embedder=scoring.embedder.ref.name)
-    from tarn_adapters.diagram.wiring import build_recognizers
-
-    diagrams = build_recognizers(settings)
-    if diagrams.skipped is not None:
-        log.warning("diagram.recognizer_unavailable", reason=diagrams.skipped)
-    else:
-        refs = {r.ref for r in diagrams.recognizers.values()}
-        log.info(
-            "diagram.recognizers",
-            kinds=sorted(k.value for k in diagrams.recognizers),
-            recognizers=sorted(f"{r.name} {r.version}" for r in refs),
-        )
-
-    from tarn_adapters.llm.wiring import build_llm_scorer
-
+    blobs = build_blob_store(settings)
     llm = build_llm_scorer(
         settings
     )  # None unless TARN_LLM_SCORER_ENABLED; fails start-up if unusable
-
+    stages = build_stages(
+        settings, blobs, llm=None if llm is None else llm[0], logger="tarn_worker"
+    )
     runner = BookletJobRunner(
         db=PostgresDatabase(
             settings.app_database_url,
@@ -170,27 +119,21 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
                 backoff_seconds=settings.job_backoff_seconds,
             ),
         ),
-        blobs=MinioBlobStore(make_client(settings), settings.blob_bucket),
-        splitter=PyMuPdfSplitter(),
-        cleaner=OpenCvPageCleaner(
-            max_edge_px=settings.page_max_edge_px, max_bytes=settings.page_max_bytes
-        ),
+        blobs=blobs,
+        splitter=stages.splitter,
+        cleaner=stages.cleaner,
         clock=clock,
         ids=UuidGenerator(),
-        policy=QualityPolicy(
-            min_sharpness=settings.quality_min_sharpness,
-            max_glare_share=settings.quality_max_glare_share,
-            min_page_edge_px=settings.quality_min_page_edge_px,
-        ),
-        max_pages=settings.upload_max_pages,
+        policy=stages.policy,
+        max_pages=stages.max_pages,
         worker=f"worker-{uuid4().hex[:8]}",
-        ocr=kit,
+        ocr=stages.ocr,
         heartbeat_seconds=settings.job_lease_seconds / 3,
-        embedder=embedding.embedder,
-        scoring_embedder=scoring.embedder,
-        word_list=None if kit is None else kit.word_list,
-        recognizers=diagrams.recognizers,
-        llm=None if llm is None else llm[0],
+        embedder=stages.embedder,
+        scoring_embedder=stages.scoring_embedder,
+        word_list=stages.word_list,
+        recognizers=stages.recognizers,
+        llm=stages.llm,
     )
     return runner.run_one
 

@@ -20,91 +20,40 @@ import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Protocol
 from uuid import UUID
 
 import structlog
 
 from tarn_adapters.postgres.database import PostgresDatabase, PostgresSession
+from tarn_adapters.stages import OcrKit, OcrUnavailableError, Stages, Stepper
 from tarn_core.domain.diagram import DiagramKind
-from tarn_core.domain.ocr import SelectorSettings
 from tarn_core.errors import NotFoundError
-from tarn_core.ids import AnswerId, BookletId, CollegeId, ReferenceDiagramId, UserId
+from tarn_core.ids import AnswerId, BookletId, ReferenceDiagramId, UserId
 from tarn_core.ports.engines import (
     DiagramRecognizer,
     Embedder,
-    LayoutDetector,
-    OcrEngine,
-    PageTransform,
     SecondOpinionScorer,
     WordList,
 )
 from tarn_core.ports.jobs import (
-    JOB_DIAGRAMS_BOOKLET,
-    JOB_PREPARE_BOOKLET,
-    JOB_READ_BOOKLET,
     JOB_RECOGNIZE_REFERENCE,
     JOB_RESCORE_ANSWERS,
     JOB_RESEGMENT_BOOKLET,
-    JOB_SCORE_BOOKLET,
-    JOB_SEGMENT_BOOKLET,
     Job,
 )
 from tarn_core.ports.pages import PageCleaner, PageSplitter
 from tarn_core.ports.runtime import Clock, IdGenerator
 from tarn_core.ports.storage import BlobStore
-from tarn_core.services.diagrams.scorer import DiagramScorer
-from tarn_core.services.diagrams.service import BookletDiagrams, ReferenceDiagrams
-from tarn_core.services.ocr.reader import (
-    BookletReader,
-    OrientationPolicy,
-    PageOcr,
-    abandon_reading,
-)
-from tarn_core.services.pipeline import PagePipeline, QualityPolicy
-from tarn_core.services.question_bank import QuestionBankService
-from tarn_core.services.scoring import BookletScorer, ScoringService
+from tarn_core.services.diagrams.service import ReferenceDiagrams
+from tarn_core.services.ocr.reader import abandon_reading  # noqa: F401  (re-exported for tests)
+from tarn_core.services.pipeline import QualityPolicy
+from tarn_core.services.scoring import BookletScorer
 from tarn_core.services.segmentation.resegment import BookletResegmenter
 from tarn_core.services.segmentation.segmenter import SegmentationPolicy
-from tarn_core.services.segmentation.service import BookletSegmenter
 from tarn_core.services.segmentation.similarity import TrigramEmbedder
-from tarn_core.services.workflow import RescoreRequests, clear_pending
+from tarn_core.services.workflow import clear_pending
 
-
-@dataclass(frozen=True)
-class OcrKit:
-    """What the reading job needs besides the session: built once per worker process."""
-
-    layout: LayoutDetector
-    engines: Mapping[str, OcrEngine]
-    transform: PageTransform
-    word_list: WordList | None
-    settings: SelectorSettings
-    orientation: OrientationPolicy
-
-
-class _Stepper(Protocol):
-    def step(self, college_id: CollegeId, booklet_id: BookletId) -> bool: ...
-
-    def abandon(self, college_id: CollegeId, booklet_id: BookletId) -> None: ...
-
-
-class OcrUnavailableError(RuntimeError):
-    """This worker could not set up OCR (see the ``ocr.unavailable`` log line)."""
-
-
-@dataclass
-class _NoOcr:
-    """A reading job on a worker without OCR: every attempt fails (and is retried with
-    backoff, so a fixed worker can still take it); out of attempts, the booklet fails."""
-
-    session: PostgresSession
-
-    def step(self, college_id: CollegeId, booklet_id: BookletId) -> bool:
-        raise OcrUnavailableError("OCR is not available on this worker")
-
-    def abandon(self, college_id: CollegeId, booklet_id: BookletId) -> None:
-        abandon_reading(self.session.booklets, self.session.runtime, college_id, booklet_id)
+__all__ = ["BookletJobRunner", "OcrKit", "OcrUnavailableError"]
 
 
 @dataclass
@@ -134,112 +83,31 @@ class BookletJobRunner:
     """Diagram recognizers per kind (empty: drawings are stored without a graph and their
     criteria go to the teacher)."""
 
-    def _pipeline(self, session: PostgresSession) -> PagePipeline:
-        return PagePipeline(
-            booklets=session.booklets,
+    def stages(self) -> Stages:
+        """The stage wiring shared with ``tarn evaluate`` (``tarn_adapters.stages``)."""
+        return Stages(
             blobs=self.blobs,
             splitter=self.splitter,
             cleaner=self.cleaner,
-            runtime=session.runtime,
-            jobs=session.jobs,
             policy=self.policy,
             max_pages=self.max_pages,
-        )
-
-    def _reader(self, session: PostgresSession) -> BookletReader:
-        if self.ocr is None:  # pragma: no cover  (_stepper hands out _NoOcr instead)
-            raise OcrUnavailableError("this worker has no OCR engines")
-        return BookletReader(
-            booklets=session.booklets,
-            content=session.content,
-            blobs=self.blobs,
-            layout=self.ocr.layout,
-            engines=self.ocr.engines,
-            transform=self.ocr.transform,
-            calibrations=session.calibrations,
-            word_list=self.ocr.word_list,
-            runtime=session.runtime,
-            settings=self.ocr.settings,
-            orientation=self.ocr.orientation,
-            jobs=session.jobs,
-        )
-
-    def _segmenter(self, session: PostgresSession) -> BookletSegmenter:
-        return BookletSegmenter(
-            booklets=session.booklets,
-            content=session.content,
+            ocr=self.ocr,
             embedder=self.embedder,
-            runtime=session.runtime,
-            jobs=session.jobs,
-            policy=self.segmentation,
-        )
-
-    def _resegmenter(self, session: PostgresSession) -> BookletResegmenter:
-        return BookletResegmenter(
-            booklets=session.booklets,
-            scores=session.scores,
-            content=session.content,
-            embedder=self.embedder,
-            runtime=session.runtime,
-            rescore=RescoreRequests(
-                booklets=session.booklets, runtime=session.runtime, rescorer=self._scorer(session)
-            ),
-            policy=self.segmentation,
+            segmentation=self.segmentation,
+            scoring_embedder=self.scoring_embedder,
+            llm=self.llm,
+            word_list=self.word_list,
+            recognizers=self.recognizers,
         )
 
     def _scorer(self, session: PostgresSession) -> BookletScorer:
-        scoring = ScoringService.standard(
-            booklets=session.booklets,
-            scores=session.scores,
-            content=session.content,
-            runtime=session.runtime,
-            embedder=self.scoring_embedder,
-            calibrations=session.scoring_calibrations,
-            word_list=self.word_list,
-            extra=[DiagramScorer()],
-            llm=self.llm,
-            colleges=session.colleges,
-        )
-        return BookletScorer(booklets=session.booklets, scoring=scoring, runtime=session.runtime)
+        return self.stages().scorer(session)
 
-    def _diagrams(self, session: PostgresSession) -> BookletDiagrams:
-        return BookletDiagrams(
-            booklets=session.booklets,
-            content=session.content,
-            blobs=self.blobs,
-            runtime=session.runtime,
-            jobs=session.jobs,
-            recognizers=self.recognizers,
-        )
+    def _resegmenter(self, session: PostgresSession) -> BookletResegmenter:
+        return self.stages().resegmenter(session)
 
     def _references(self, session: PostgresSession) -> ReferenceDiagrams:
-        labels = None
-        if self.ocr is not None:
-            labels = PageOcr(
-                layout=self.ocr.layout,
-                engines=self.ocr.engines,
-                transform=self.ocr.transform,
-                settings=self.ocr.settings,
-                calibrations={
-                    (c.engine, c.content_class): c for c in session.calibrations.latest()
-                },
-                orientation=self.ocr.orientation,
-            )
-        bank = QuestionBankService(
-            content=session.content,
-            users=session.users,
-            colleges=session.colleges,
-            blobs=self.blobs,
-            runtime=session.runtime,
-        )
-        return ReferenceDiagrams(
-            content=session.content,
-            blobs=self.blobs,
-            runtime=session.runtime,
-            recognizers=self.recognizers,
-            labels=labels,
-            glossary=bank,
-        )
+        return self.stages().references(session)
 
     def _single(self, job: Job) -> None:
         """A job that is not a booklet stage: one transaction, retried with backoff."""
@@ -316,18 +184,8 @@ class BookletJobRunner:
                 session.booklets, job.college_id, [AnswerId(UUID(str(a))) for a in answers]
             )
 
-    def _stepper(self, kind: str) -> Callable[[PostgresSession], _Stepper] | None:
-        if kind == JOB_PREPARE_BOOKLET:
-            return self._pipeline
-        if kind == JOB_READ_BOOKLET:
-            return self._reader if self.ocr is not None else _NoOcr
-        if kind == JOB_SEGMENT_BOOKLET:
-            return self._segmenter
-        if kind == JOB_DIAGRAMS_BOOKLET:
-            return self._diagrams
-        if kind == JOB_SCORE_BOOKLET:
-            return self._scorer
-        return None
+    def _stepper(self, kind: str) -> Callable[[PostgresSession], Stepper] | None:
+        return self.stages().stepper(kind)
 
     def run_one(self) -> bool:
         """Process at most one job; True when there was something to do."""
@@ -375,7 +233,7 @@ class BookletJobRunner:
             stop.set()
             thread.join()
 
-    def _run(self, job: Job, stepper: Callable[[PostgresSession], _Stepper]) -> None:
+    def _run(self, job: Job, stepper: Callable[[PostgresSession], Stepper]) -> None:
         log = structlog.get_logger("tarn_worker")
         booklet_id = BookletId(UUID(str(job.payload["booklet_id"])))
         started = time.perf_counter()
@@ -427,7 +285,7 @@ class BookletJobRunner:
             seconds=round(time.perf_counter() - started, 2),
         )
 
-    def _abandon(self, job: Job, stepper: Callable[[PostgresSession], _Stepper]) -> None:
+    def _abandon(self, job: Job, stepper: Callable[[PostgresSession], Stepper]) -> None:
         booklet_id = BookletId(UUID(str(job.payload["booklet_id"])))
         try:
             with self.db.session(

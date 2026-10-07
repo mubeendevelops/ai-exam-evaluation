@@ -87,16 +87,26 @@ class PyMuPdfSheetRenderer:
     def _html(self, d: SheetDocument, archive: pymupdf.Archive) -> str:
         parts = [
             f"<h1>{_e(d.college_name)}</h1>",
-            f'<p class="muted">Result sheet · version {d.version}</p>',
+            (
+                '<p class="note"><b>DRAFT.</b> AI-suggested marks. No teacher has approved '
+                "them: nothing here is final.</p>"
+                if d.draft
+                else f'<p class="muted">Result sheet · version {d.version}</p>'
+            ),
             "<table>",
             self._row("Exam", d.exam),
             self._row("Course", d.course),
             self._row("Student", d.student_name),
             self._row("USN", d.usn),
-            self._row("Evaluated by", d.issued_by),
+            (
+                self._row("Status", "Draft, awaiting a teacher's approval")
+                if d.draft
+                else self._row("Evaluated by", d.issued_by)
+            ),
             self._row("Generated", d.generated_at.astimezone(UTC).strftime("%d %b %Y, %H:%M UTC")),
             "</table>",
-            f'<p>Total: <span class="total">{mark(d.total)} / {mark(d.max_marks)}</span></p>',
+            f"<p>{'AI-suggested total' if d.draft else 'Total'}: "
+            f'<span class="total">{mark(d.total)} / {mark(d.max_marks)}</span></p>',
         ]
         if d.amendment_note:
             parts.append(
@@ -126,7 +136,7 @@ class PyMuPdfSheetRenderer:
         parts.append("<h2>Answers</h2>")
         count = 0
         for a in d.answers:
-            parts.append(self._answer(a, archive, count))
+            parts.append(self._answer(a, archive, count, draft=d.draft))
             count += len(a.diagrams)
         return "\n".join(parts)
 
@@ -134,12 +144,14 @@ class PyMuPdfSheetRenderer:
     def _row(label: str, value: str) -> str:
         return f'<tr><td class="muted" width="22%">{_e(label)}</td><td>{_e(value)}</td></tr>'
 
-    def _answer(self, a: SheetAnswer, archive: pymupdf.Archive, first_image: int) -> str:
+    def _answer(
+        self, a: SheetAnswer, archive: pymupdf.Archive, first_image: int, *, draft: bool = False
+    ) -> str:
         counts = "" if a.counted else f" · <b>{_e(a.outcome or 'not counted')}</b>"
+        shown = a.ai_mark if draft else a.teacher_mark
         out = [
             '<div class="answer">',
-            f"<h3>Question {_e(a.label)} · {mark(a.teacher_mark)} / {mark(a.max_marks)}"
-            f"{counts}</h3>",
+            f"<h3>Question {_e(a.label)} · {mark(shown)} / {mark(a.max_marks)}{counts}</h3>",
         ]
         if a.question:
             out.append(f'<p class="muted">{_e(a.question)}</p>')
@@ -150,11 +162,22 @@ class PyMuPdfSheetRenderer:
         )
         for k, diagram in enumerate(a.diagrams):
             out.append(self._diagram(diagram, archive, f"d{first_image + k}.jpg"))
-        ai = "no AI mark (marked by the teacher)" if a.ai_mark is None else f"AI {mark(a.ai_mark)}"
-        out.append(
-            f"<p>Marks: {ai} · teacher {mark(a.teacher_mark)}"
-            f"{' (overridden)' if a.overridden else ''}</p>"
-        )
+        if draft:
+            out.append(
+                "<p>Marks: no AI mark (the key is guidance only: for the teacher to mark)</p>"
+                if a.ai_mark is None
+                else f"<p>Marks: AI suggestion {mark(a.ai_mark)} · not yet approved</p>"
+            )
+        else:
+            ai = (
+                "no AI mark (marked by the teacher)"
+                if a.ai_mark is None
+                else f"AI {mark(a.ai_mark)}"
+            )
+            out.append(
+                f"<p>Marks: {ai} · teacher {mark(a.teacher_mark)}"
+                f"{' (overridden)' if a.overridden else ''}</p>"
+            )
         if a.criteria:
             out.append("<table><tr><th>Criterion (AI suggestion)</th><th>Weight</th>")
             out.append("<th>Credit</th><th>Marks</th></tr>")
@@ -184,10 +207,8 @@ class PyMuPdfSheetRenderer:
     def _footers(pdf: bytes, document: SheetDocument) -> bytes:
         doc = pymupdf.open("pdf", pdf)
         total = len(doc)
-        label = (
-            f"{document.student_name} · {document.usn} · {document.exam} · "
-            f"result sheet v{document.version}"
-        )
+        kind = "DRAFT (AI suggestions)" if document.draft else f"result sheet v{document.version}"
+        label = f"{document.student_name} · {document.usn} · {document.exam} · {kind}"
         for number in range(total):
             page = doc.load_page(number)
             page.insert_text(

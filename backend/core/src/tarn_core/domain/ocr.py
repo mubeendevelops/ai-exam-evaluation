@@ -103,9 +103,9 @@ class EngineCalibration:
 
 DEFAULT_ENGINE_SETS: Mapping[ContentClass, tuple[str, ...]] = MappingProxyType(
     {
-        ContentClass.PRINT: ("paddle", "tesseract", "textract", "azure"),
-        ContentClass.CURSIVE: ("trocr", "paddle", "textract", "azure"),
-        ContentClass.NUMERIC: ("trocr", "paddle", "tesseract", "textract", "azure"),
+        ContentClass.PRINT: ("paddle", "tesseract", "textract", "azure", "docai"),
+        ContentClass.CURSIVE: ("trocr", "paddle", "textract", "azure", "docai"),
+        ContentClass.NUMERIC: ("trocr", "paddle", "tesseract", "textract", "azure", "docai"),
     }
 )
 

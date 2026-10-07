@@ -10,6 +10,7 @@ dependencies = [
 
 [project.scripts]
 tarn-worker = "tarn_worker.main:main"
+tarn-worker-job = "tarn_worker.job:main"
 
 [build-system]
 requires = ["uv_build>=0.12.6,<0.13"]

@@ -2,9 +2,10 @@
 configured engine that can run here (each behind a time limit), the page transform and the
 word list. Engines that cannot run are left out with the reason, never silently.
 
-Cloud engines (Textract, Azure Read) run only when ``TARN_CLOUD_OCR_ENABLED`` is set, their
-credentials are present, and, outside production, ``TARN_CLOUD_OCR_ALLOW_IN_DEVELOPMENT`` too:
-in development student data stays on this machine (design decision 4)."""
+Cloud engines (Textract, Azure Read, Document AI) run only when ``TARN_CLOUD_OCR_ENABLED`` is
+set, their credentials are present, and, outside production,
+``TARN_CLOUD_OCR_ALLOW_IN_DEVELOPMENT`` too: in development student data stays on this machine
+(design decision 4)."""
 
 import importlib.util
 import os
@@ -13,7 +14,7 @@ from dataclasses import dataclass, field
 
 from tarn_adapters.compute import DeviceInfo, detect_device
 from tarn_adapters.config import Settings
-from tarn_adapters.ocr import azure_read, paddle, tesseract, textract, trocr
+from tarn_adapters.ocr import azure_read, documentai, paddle, tesseract, textract, trocr
 from tarn_adapters.ocr.timeout import TimedEngine
 from tarn_adapters.ocr.transform import OpenCvPageTransform
 from tarn_adapters.ocr.words import FileWordList
@@ -23,7 +24,7 @@ from tarn_core.ports.engines import LayoutDetector, OcrEngine
 from tarn_core.services.ocr.reader import OrientationPolicy
 
 LOCAL_ENGINES = ("trocr", "paddle", "tesseract")
-CLOUD_ENGINES = ("textract", "azure")
+CLOUD_ENGINES = ("textract", "azure", "docai")
 
 
 def engine_list(value: str) -> tuple[str, ...]:
@@ -124,12 +125,22 @@ def _azure(settings: Settings, device: DeviceInfo) -> OcrEngine:
     )
 
 
+def _docai(settings: Settings, device: DeviceInfo) -> OcrEngine:
+    if not settings.docai_processor:
+        raise EngineFailedError("TARN_DOCAI_PROCESSOR is not set")
+    return documentai.DocumentAiEngine(
+        documentai.sdk_process(settings.docai_processor, settings.ocr_engine_timeout_seconds),
+        version=settings.docai_processor.rsplit("/", 1)[-1],
+    )
+
+
 FACTORIES: Mapping[str, Factory] = {
     "trocr": _trocr,
     "paddle": _paddle,
     "tesseract": _tesseract,
     "textract": _textract,
     "azure": _azure,
+    "docai": _docai,
 }
 
 

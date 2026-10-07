@@ -16,7 +16,8 @@ class PageImage:
 
 
 class PageSource(Protocol):
-    """Page images and metadata for one booklet (HTTP upload, bucket event, local folder)."""
+    """The files of one booklet, in reading order: page images (JPEG, PNG), or one PDF (HTTP
+    upload, bucket event, local folder, byte stream). The core never learns which."""
 
     def pages(self, college_id: CollegeId, booklet_id: BookletId) -> Sequence[PageImage]: ...
 

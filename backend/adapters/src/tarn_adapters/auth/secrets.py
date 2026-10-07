@@ -9,6 +9,9 @@ from tarn_adapters.config import Settings
 
 PEPPER = "password-pepper"
 SIGNING_KEY = "token-signing-key"
+SMTP_PASSWORD = "smtp-password"  # noqa: S105  (a secret's name in Secret Manager)
+GROQ_KEY = "groq-api-key"
+"""The LLM provider's key (P19): one paid-plan key in production (O95)."""
 
 
 class SecretSource(Protocol):

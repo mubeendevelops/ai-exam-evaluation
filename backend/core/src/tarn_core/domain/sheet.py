@@ -76,6 +76,9 @@ class SheetDocument:
     lines: tuple[ResultLine, ...]
     answers: tuple[SheetAnswer, ...]
     amendment_note: str = ""
+    draft: bool = False
+    """A sheet of AI suggestions that no teacher has approved (``tarn evaluate``): the marks
+    shown are the AI's, and the sheet says so. Issued sheets (v1, v2, ...) are never drafts."""
 
     @property
     def not_counted(self) -> tuple[ResultLine, ...]:

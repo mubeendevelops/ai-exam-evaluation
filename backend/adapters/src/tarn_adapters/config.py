@@ -29,7 +29,12 @@ class Settings(BaseSettings):
     # Application role (tarn_app): no superuser, no BYPASSRLS, owns nothing; RLS applies to it.
     app_database_url: str = "postgresql://tarn_app:tarn_app_dev_password@localhost:5432/tarn"
 
-    # S3-compatible object store: MinIO in development, Cloud Storage in production.
+    # Object store: MinIO in development, Cloud Storage ("gcs", bucket blob_bucket, Application
+    # Default Credentials) in production, or Amazon S3 ("s3", the portability adapter: endpoint
+    # s3.<region>.amazonaws.com, blob_secure true, blob_region, and an empty blob_access_key to
+    # use the instance or task role).
+    blob_backend: Literal["minio", "gcs", "s3"] = "minio"
+    blob_region: str = ""
     blob_endpoint: str = "localhost:9000"
     blob_access_key: str = "tarn_dev_minio"
     blob_secret_key: SecretStr = SecretStr("tarn_dev_minio_password")
@@ -42,9 +47,9 @@ class Settings(BaseSettings):
     # --- OCR (P10) -------------------------------------------------------------------------
     # Engines per content class, comma-separated, in tie-break order. Cloud engines named here
     # are used only when enabled below; engines that are not installed are skipped (logged).
-    ocr_engines_print: str = "paddle,tesseract,textract,azure"
-    ocr_engines_cursive: str = "trocr,paddle,textract,azure"
-    ocr_engines_numeric: str = "trocr,paddle,tesseract,textract,azure"
+    ocr_engines_print: str = "paddle,tesseract,textract,azure,docai"
+    ocr_engines_cursive: str = "trocr,paddle,textract,azure,docai"
+    ocr_engines_numeric: str = "trocr,paddle,tesseract,textract,azure,docai"
     # Selector S = w·p̂ + alpha·agreement + beta·lexicon fit; lines whose normalised score is
     # below the threshold are flagged for the teacher. Placeholders until P11.
     ocr_alpha: float = Field(0.5, ge=0)
@@ -108,15 +113,18 @@ class Settings(BaseSettings):
     english_words: Path | None = None
     """A word list (one word per line, .txt or .txt.gz); default: the bundled list."""
 
-    # Cloud OCR engines (Textract, Azure Read) stay off in development: student data must not
-    # leave the machine (design decision 4). Production needs this flag plus credentials;
-    # development additionally needs cloud_ocr_allow_in_development.
+    # Cloud OCR engines (Textract, Azure Read, Document AI) stay off in development: student
+    # data must not leave the machine (design decision 4). Production needs this flag plus
+    # credentials; development additionally needs cloud_ocr_allow_in_development.
     cloud_ocr_enabled: bool = False
     cloud_ocr_allow_in_development: bool = False
     aws_region: str = "ap-south-1"
     """Textract region; credentials come from the standard AWS chain (env, profile, role)."""
     azure_di_endpoint: str = ""
     azure_di_key: SecretStr = SecretStr("")
+    docai_processor: str = ""
+    """Google Document AI OCR processor, ``projects/<p>/locations/<l>/processors/<id>`` (add
+    ``/processorVersions/<v>`` to pin a version). Credentials: Application Default Credentials."""
 
     # --- Identity store (P4): a separate database with its own roles --------------------
     # Owner role of the identity database: migrations only.
@@ -127,7 +135,8 @@ class Settings(BaseSettings):
     )
 
     # Envelope encryption. Key references: "local:<name>" (development file key under
-    # local_key_dir) or "gcp-kms:projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>".
+    # local_key_dir), "gcp-kms:projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>" or
+    # "aws-kms:<key id, ARN or alias>" (the portability adapter).
     kms_key_ref: str = "local:tarn-dev"
     local_key_dir: Path = Path("../var/keys")
 
@@ -135,6 +144,8 @@ class Settings(BaseSettings):
     # Manager secrets tarn-password-pepper and tarn-token-signing-key in gcp_project.
     secrets_backend: Literal["settings", "gcp"] = "settings"
     gcp_project: str = ""
+    gcp_region: str = "asia-south1"
+    """Where the Google Cloud resources live (Cloud Run, Cloud SQL, Cloud Storage, KMS)."""
     password_pepper: SecretStr = SecretStr(DEV_PEPPER)
     token_signing_key: SecretStr = SecretStr(DEV_SIGNING_KEY)
 
@@ -145,8 +156,16 @@ class Settings(BaseSettings):
     remember_session_days: int = 30
     # The public web address, for links in emails.
     public_url: str = "http://localhost:5173"
-    # Development only; production needs a real mail adapter (P20).
-    mailer: Literal["console"] = "console"
+    # "console" prints emails to the log (development only: production refuses it, the links
+    # are secrets); "smtp" sends through any SMTP server (STARTTLS, or TLS on port 465). The
+    # password comes from TARN_SMTP_PASSWORD or, with the gcp secrets backend, the secret
+    # tarn-smtp-password.
+    mailer: Literal["console", "smtp"] = "console"
+    smtp_host: str = ""
+    smtp_port: int = Field(587, ge=1, le=65535)
+    smtp_user: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from: str = ""
     # A Tarn operator approves new tenants (`tarn tenants approve`). Also read without the
     # TARN_ prefix, as the build plan names it.
     tenant_signup_requires_approval: bool = Field(
@@ -184,6 +203,10 @@ class Settings(BaseSettings):
     job_lease_seconds: float = Field(120.0, gt=0)
     job_backoff_seconds: float = Field(5.0, ge=0)
     worker_poll_seconds: float = Field(2.0, gt=0)
+    # The Cloud Run job entry (``python -m tarn_worker.job``): it ends when the queue has been
+    # empty this long (0 = as soon as nothing waits), or after this many seconds in all.
+    worker_job_idle_seconds: float = Field(0.0, ge=0)
+    worker_job_max_seconds: float = Field(3300.0, gt=0)
 
     # --- The review (P15) ----------------------------------------------------------------------
     # A booklet stays locked to the teacher who opened it until closed, or this many minutes
@@ -215,6 +238,12 @@ class Settings(BaseSettings):
             or self.token_signing_key.get_secret_value() == DEV_SIGNING_KEY
         ):
             problems.append("the development pepper and signing key are not allowed")
+        if self.mailer == "console":
+            problems.append("TARN_MAILER=console prints secret links: use smtp")
+        elif not self.smtp_host or not self.smtp_from:
+            problems.append("TARN_SMTP_HOST and TARN_SMTP_FROM are not set")
+        if self.blob_backend == "minio":
+            problems.append("TARN_BLOB_BACKEND=minio is for development: use gcs (or s3)")
         if self.llm_scorer_enabled and len(self.groq_keys) > 1:
             problems.append(
                 "GROQ_API_KEYS holds several keys: rotating free accounts is for development "

@@ -7,8 +7,8 @@ import typer
 
 from tarn_adapters.auth.crypto import AesGcmCipher, RoutingKeyManager
 from tarn_adapters.auth.wiring import key_manager
-from tarn_adapters.blob.minio_client import ensure_bucket, make_client
 from tarn_adapters.blob.unavailable import NoBlobStore
+from tarn_adapters.blob.wiring import bucket_exists, init_bucket
 from tarn_adapters.compute import detect_device
 from tarn_adapters.config import Settings, get_settings
 from tarn_adapters.identity import migrate as identity_migrate
@@ -16,6 +16,7 @@ from tarn_adapters.postgres import migrate
 from tarn_adapters.postgres.health import check_database
 from tarn_adapters.runtime import SystemClock
 from tarn_cli import __version__
+from tarn_cli.evaluate import evaluate_command, exams_command
 
 if TYPE_CHECKING:
     from tarn_adapters.ocr.wiring import OcrSetup
@@ -51,6 +52,10 @@ app.add_typer(score, name="score")
 app.add_typer(diagram, name="diagram")
 app.add_typer(identity, name="identity")
 app.add_typer(tenants, name="tenants")
+
+
+app.command("evaluate")(evaluate_command)
+app.command("exams")(exams_command)
 
 
 @app.command()
@@ -90,8 +95,11 @@ def doctor(
         typer.echo(f"postgres    : FAILED ({type(exc).__name__})")
         failed = True
     try:
-        exists = make_client(settings).bucket_exists(settings.blob_bucket)
-        typer.echo(f"storage     : bucket '{settings.blob_bucket}' {'ok' if exists else 'MISSING'}")
+        exists = bucket_exists(settings)
+        typer.echo(
+            f"storage     : {settings.blob_backend} bucket '{settings.blob_bucket}' "
+            f"{'ok' if exists else 'MISSING'}"
+        )
         failed = failed or not exists
     except Exception as exc:
         typer.echo(f"storage     : FAILED ({type(exc).__name__})")
@@ -104,8 +112,7 @@ def doctor(
 def storage_init() -> None:
     """Create the object-storage bucket if it does not exist."""
     settings = get_settings()
-    created = ensure_bucket(make_client(settings), settings.blob_bucket)
-    typer.echo(f"bucket '{settings.blob_bucket}' {'created' if created else 'already exists'}")
+    typer.echo(f"bucket '{settings.blob_bucket}' {init_bucket(settings)}")
 
 
 @db.command("upgrade")
@@ -1347,7 +1354,7 @@ def diagram_references(
     """Recognise the reference diagrams that are still pending (or failed): what the worker's
     `diagram.reference` job does, for diagrams uploaded before P14 (the seed's PNGs). Each one
     is read in a session of its owning college and stored as the next version."""
-    from tarn_adapters.blob.minio_store import MinioBlobStore
+    from tarn_adapters.blob.wiring import build_blob_store
     from tarn_adapters.diagram.wiring import build_recognizers
     from tarn_adapters.ocr.batch import page_ocr
     from tarn_adapters.postgres.database import PostgresDatabase
@@ -1363,7 +1370,7 @@ def diagram_references(
         typer.echo(f"no recognizer: {setup.skipped}")
         raise typer.Exit(1)
     labels = page_ocr(_ocr_setup(settings))
-    blobs = MinioBlobStore(make_client(settings), settings.blob_bucket)
+    blobs = build_blob_store(settings)
     database = PostgresDatabase(settings.app_database_url, pool_size=1)
     ids, clock = UuidGenerator(), SystemClock()
     try:

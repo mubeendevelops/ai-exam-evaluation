@@ -17,6 +17,7 @@ from tarn_adapters.compute import DeviceInfo, ModelSlot
 from tarn_adapters.config import Settings
 from tarn_adapters.ocr import trocr, wiring
 from tarn_adapters.ocr.azure_read import AzureReadEngine
+from tarn_adapters.ocr.documentai import DocumentAiEngine, sdk_process
 from tarn_adapters.ocr.images import decode, encode_jpeg
 from tarn_adapters.ocr.layout import (
     cells_from_rulings,
@@ -70,11 +71,60 @@ def test_azure_words_scale_from_the_page_unit() -> None:
     assert AzureReadEngine(lambda image: {"pages": []}).read(page(), []) == []
 
 
+def test_document_ai_tokens_become_pixel_readings() -> None:
+    document = json.loads((DATA / "documentai.json").read_text())
+    engine = DocumentAiEngine(lambda image: document)
+    readings = engine.read(page(1000, 500), [])  # the page is 2000 × 1000 pixels in the response
+    # Text from the anchors (an absent startIndex is 0); the whitespace-only token is dropped.
+    assert [r.text for r in readings] == ["Gradient", "descent", "42.5"]
+    assert readings[0].box == Box(x0=100, y0=50, x1=300, y1=75)  # normalised vertices × page size
+    assert readings[1].box == Box(x0=320, y0=50, x1=500, y1=75)  # normalised vertices only
+    assert readings[2].box == Box(x0=100, y0=150, x1=200, y1=175)  # pixel vertices, rescaled
+    assert readings[0].confidence == pytest.approx(0.991)
+    assert readings[2].confidence == pytest.approx(0.61)
+    assert all(r.engine.name == "docai" for r in readings)
+    assert DocumentAiEngine(lambda image: {"pages": []}).read(page(), []) == []
+
+
+def test_document_ai_accepts_the_snake_case_spelling_of_the_python_client() -> None:
+    document = {
+        "text": "alpha",
+        "pages": [
+            {
+                "dimension": {"width": 100, "height": 50},
+                "tokens": [
+                    {
+                        "layout": {
+                            "text_anchor": {"text_segments": [{"start_index": 0, "end_index": 5}]},
+                            "confidence": 0.9,
+                            "bounding_poly": {
+                                "normalized_vertices": [
+                                    {"x": 0.1, "y": 0.2},
+                                    {"x": 0.5, "y": 0.2},
+                                    {"x": 0.5, "y": 0.4},
+                                    {"x": 0.1, "y": 0.4},
+                                ]
+                            },
+                        }
+                    }
+                ],
+            }
+        ],
+    }
+    (reading,) = DocumentAiEngine(lambda image: document).read(page(1000, 500), [])
+    assert reading.text == "alpha" and reading.box == Box(x0=100, y0=100, x1=500, y1=200)
+
+
+def test_document_ai_needs_a_processor_in_the_documented_form() -> None:
+    with pytest.raises(EngineFailedError, match="TARN_DOCAI_PROCESSOR"):
+        sdk_process("processor-17", 10)
+
+
 def test_cloud_failures_become_engine_failures_without_the_message() -> None:
     def boom(image: bytes) -> Any:
         raise RuntimeError("request id 123, account 4567, secret detail")
 
-    for engine in (TextractEngine(boom), AzureReadEngine(boom)):
+    for engine in (TextractEngine(boom), AzureReadEngine(boom), DocumentAiEngine(boom)):
         with pytest.raises(EngineFailedError) as raised:
             engine.read(page(), [])
         assert "secret" not in str(raised.value) and "RuntimeError" in str(raised.value)
@@ -100,7 +150,7 @@ def _factories(fail: set[str] = frozenset()) -> dict[str, wiring.Factory]:  # ty
 
         return factory
 
-    return {n: make(n) for n in ("trocr", "paddle", "tesseract", "textract", "azure")}
+    return {n: make(n) for n in ("trocr", "paddle", "tesseract", "textract", "azure", "docai")}
 
 
 def _settings(tmp_path: Path, **values: Any) -> Settings:
@@ -118,6 +168,7 @@ def test_cloud_engines_are_off_by_default(tmp_path: Path) -> None:
     assert list(setup.engines) == ["paddle", "tesseract", "trocr"]
     assert "TARN_CLOUD_OCR_ENABLED" in setup.skipped["textract"]
     assert "TARN_CLOUD_OCR_ENABLED" in setup.skipped["azure"]
+    assert "TARN_CLOUD_OCR_ENABLED" in setup.skipped["docai"]
 
 
 def test_development_needs_a_second_switch_for_the_cloud(tmp_path: Path) -> None:
@@ -127,7 +178,7 @@ def test_development_needs_a_second_switch_for_the_cloud(tmp_path: Path) -> None
     allowed = _build(
         _settings(tmp_path, cloud_ocr_enabled=True, cloud_ocr_allow_in_development=True)
     )
-    assert {"textract", "azure"} <= set(allowed.engines)
+    assert {"textract", "azure", "docai"} <= set(allowed.engines)
 
 
 def test_missing_credentials_or_engines_are_reported_not_hidden(tmp_path: Path) -> None:
@@ -136,9 +187,14 @@ def test_missing_credentials_or_engines_are_reported_not_hidden(tmp_path: Path) 
         settings,
         device=CPU,
         layout=ScriptedLayoutDetector([]),
-        factories={**_factories(fail={"tesseract"}), "azure": wiring.FACTORIES["azure"]},
+        factories={
+            **_factories(fail={"tesseract"}),
+            "azure": wiring.FACTORIES["azure"],
+            "docai": wiring.FACTORIES["docai"],
+        },
     )
     assert "TARN_AZURE_DI_ENDPOINT" in setup.skipped["azure"]
+    assert "TARN_DOCAI_PROCESSOR" in setup.skipped["docai"]
     assert setup.skipped["tesseract"] == "tesseract is not available here"
     odd = _build(_settings(tmp_path, ocr_engines_print="paddle,mystery"))
     assert odd.skipped["mystery"] == "unknown engine"

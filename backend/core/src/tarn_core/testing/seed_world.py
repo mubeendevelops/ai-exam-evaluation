@@ -1,5 +1,6 @@
 """Run the development seed on the in-memory adapters (tests only)."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from tarn_core.ids import CollegeId
@@ -27,8 +28,13 @@ class SeededCollege:
     content: SeededContent
 
 
-def seed_in_memory(mem: InMemory, report: SeedReport | None = None) -> list[SeededCollege]:
-    """What ``tarn seed`` does, on ``mem``: safe to call again."""
+def seed_in_memory(
+    mem: InMemory,
+    report: SeedReport | None = None,
+    assets: Callable[[str], bytes] | None = None,
+) -> list[SeededCollege]:
+    """What ``tarn seed`` does, on ``mem``: safe to call again. ``assets`` reads the seed's
+    reference diagrams by file name (default: a stand-in PNG for every name)."""
     report = report if report is not None else SeedReport()
     services = make_services(mem)
     seeded: list[SeededCollege] = []
@@ -57,7 +63,7 @@ def seed_in_memory(mem: InMemory, report: SeedReport | None = None) -> list[Seed
             bank=services.bank,
             subjects=services.subjects,
             blueprints=services.blueprints,
-            assets=lambda _name: PNG,
+            assets=assets or (lambda _name: PNG),
             report=report,
         )
         seeded.append(SeededCollege(college, accounts, content))

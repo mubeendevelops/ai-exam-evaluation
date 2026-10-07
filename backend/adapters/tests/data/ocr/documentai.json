@@ -1,0 +1,50 @@
+{
+  "_comment": "Synthetic Document in the documented shape of a Google Document AI OCR processor response (text, pages[].dimension, pages[].tokens[].layout with textAnchor segments, boundingPoly vertices in pixels and normalizedVertices, confidence 0-1; int64 indexes come as strings and startIndex is absent when 0). Not recorded from the service: no GCP account exists yet and student pages must not be sent (design decision 4). Text is invented.",
+  "mimeType": "image/jpeg",
+  "text": "Gradient descent\n42.5\n",
+  "pages": [
+    {
+      "pageNumber": 1,
+      "dimension": {"width": 2000, "height": 1000, "unit": "pixels"},
+      "tokens": [
+        {
+          "layout": {
+            "textAnchor": {"textSegments": [{"endIndex": "8"}]},
+            "confidence": 0.991,
+            "boundingPoly": {
+              "vertices": [{"x": 200, "y": 100}, {"x": 600, "y": 100}, {"x": 600, "y": 150}, {"x": 200, "y": 150}],
+              "normalizedVertices": [{"x": 0.1, "y": 0.1}, {"x": 0.3, "y": 0.1}, {"x": 0.3, "y": 0.15}, {"x": 0.1, "y": 0.15}]
+            },
+            "orientation": "PAGE_UP"
+          },
+          "detectedLanguages": [{"languageCode": "en", "confidence": 0.99}]
+        },
+        {
+          "layout": {
+            "textAnchor": {"textSegments": [{"startIndex": "9", "endIndex": "16"}]},
+            "confidence": 0.87,
+            "boundingPoly": {
+              "normalizedVertices": [{"x": 0.32, "y": 0.1}, {"x": 0.5, "y": 0.1}, {"x": 0.5, "y": 0.15}, {"x": 0.32, "y": 0.15}]
+            }
+          }
+        },
+        {
+          "layout": {
+            "textAnchor": {"textSegments": [{"startIndex": "17", "endIndex": "21"}]},
+            "confidence": 0.61,
+            "boundingPoly": {
+              "vertices": [{"x": 200, "y": 300}, {"x": 400, "y": 300}, {"x": 400, "y": 350}, {"x": 200, "y": 350}]
+            }
+          }
+        },
+        {
+          "layout": {
+            "textAnchor": {"textSegments": [{"startIndex": "16", "endIndex": "17"}]},
+            "confidence": 0.5,
+            "boundingPoly": {"normalizedVertices": [{"x": 0.6, "y": 0.1}, {"x": 0.62, "y": 0.1}, {"x": 0.62, "y": 0.15}, {"x": 0.6, "y": 0.15}]}
+          }
+        }
+      ]
+    }
+  ]
+}

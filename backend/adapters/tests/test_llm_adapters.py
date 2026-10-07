@@ -580,6 +580,10 @@ PRODUCTION: dict[str, Any] = {
     "kms_key_ref": "gcp-kms:projects/p/locations/asia-south1/keyRings/r/cryptoKeys/k",
     "password_pepper": "x" * 40,
     "token_signing_key": "y" * 40,
+    "blob_backend": "gcs",
+    "mailer": "smtp",
+    "smtp_host": "smtp.example.test",
+    "smtp_from": "tarn@example.test",
 }
 
 

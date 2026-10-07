@@ -89,9 +89,12 @@ class UploadService:
         blueprint_id: BlueprintId,
         files: Sequence[bytes],
         allow_duplicate: bool = False,
+        booklet_id: BookletId | None = None,
     ) -> Registration:
         """Raises ``UnsupportedFileError``, ``UploadTooLargeError``, ``InvariantError`` (a mix
-        of PDF and images, or several PDFs), ``QueueFullError``, ``DuplicateBookletError``."""
+        of PDF and images, or several PDFs), ``QueueFullError``, ``DuplicateBookletError``.
+        A caller that must know the booklet's id before the files exist (a page source that
+        names the booklet) passes ``booklet_id``."""
         types = self._check_files(files)
         waiting = self._repo.count_waiting(college_id, actor_id)
         if waiting >= self._limits.max_waiting:
@@ -104,7 +107,7 @@ class UploadService:
         if duplicates and not allow_duplicate:
             raise DuplicateBookletError(duplicates)
 
-        booklet_id = self._rt.new_id(BookletId)
+        booklet_id = booklet_id or self._rt.new_id(BookletId)
         sources = tuple(
             SourceFile(
                 key=self._source_key(college_id, booklet_id, number, media_type),

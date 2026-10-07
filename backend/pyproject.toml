@@ -101,6 +101,9 @@ module = [
     "torch", "torch.*", "transformers", "transformers.*", "paddle", "paddle.*",
     "paddleocr", "paddleocr.*", "paddlex", "paddlex.*", "pytesseract", "pytesseract.*",
     "boto3", "boto3.*", "botocore", "botocore.*", "azure.ai.*", "azure.core.*",
+    "google.cloud.storage", "google.cloud.storage.*",
+    "google.cloud.documentai", "google.cloud.documentai.*",
+    "google.cloud.documentai_v1", "google.cloud.documentai_v1.*",
 ]
 ignore_missing_imports = true
 follow_imports = "skip"

@@ -136,3 +136,22 @@ uv run tarn ocr read "../samples/Some Booklet.pdf" --out ../var/ocr-check
 **Selector settings:** `TARN_OCR_DETECTION_MODEL`, `TARN_OCR_RECOGNITION_MODEL`, `TARN_TROCR_PRECISION`, `TARN_OCR_ENGINES_PRINT|CURSIVE|NUMERIC`, `TARN_OCR_ALPHA` (0.5), `TARN_OCR_BETA` (0.25), `TARN_OCR_FLAG_THRESHOLD` (0.6), `TARN_OCR_ENGINE_TIMEOUT_SECONDS` (120), `TARN_OCR_ORIENTATION_CHECK`, `TARN_OCR_ORIENTATION_MARGIN` (0.1), `TARN_OCR_LAYOUT_MODEL`, `TARN_TROCR_MODEL`, `TARN_TROCR_BATCH`, `TARN_MODEL_DIR`, `TARN_ENGLISH_WORDS`.
 
 **Notes.** Paddle's detection and layout run with oneDNN off (Paddle 3.3 fails on the CPU with it); recognition runs with it. A page takes about 13 s warm on the development laptop (D79). PaddleX asks for `opencv-contrib-python`; a local empty package of that name (`backend/shims/`) satisfies it so that the one `cv2` is our pinned `opencv-python-headless`. CI installs without the `ocr` group (`uv sync --no-group ocr`).
+
+## Running a booklet without the web app (P20)
+
+`tarn evaluate` runs one booklet end to end on the core's in-memory adapters and the demo seed:
+no database, queue, object store or browser. The folder holds the page images (or one PDF); `-`
+reads a PDF, an image or a tar archive from stdin.
+
+```bash
+cd backend
+uv run tarn exams                                   # demo colleges, USNs, exams
+uv run tarn evaluate ../samples-free-folder --college DEMO_COM --exam QP-CI
+cat booklet.pdf | uv run tarn evaluate - --college DEMO_COM --exam QP-CI --out /tmp/result
+```
+
+It writes `result.json` (suggested mark per answer and criterion, flags, total) and
+`result-sheet-draft.pdf`; both are AI suggestions, stamped as such. Real OCR engines run unless
+`TARN_OCR_ENGINES_*` say otherwise (`tarn ocr models fetch` first); the LLM scorer never runs
+here. Use synthetic pages, never `samples/` copies outside the git-ignored folders.
+Deploying to Google Cloud: `deploy/gcp/README.md`.

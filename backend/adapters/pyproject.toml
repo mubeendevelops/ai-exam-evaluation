@@ -17,6 +17,7 @@ dependencies = [
     "pyjwt==2.15.1",
     "google-cloud-kms==3.18.0",
     "google-cloud-secret-manager==2.31.0",
+    "google-cloud-storage==3.16.0",
     "jsonschema==4.26.0",
     "pymupdf==1.28.2",
     "opencv-python-headless==4.14.0.94",
@@ -39,10 +40,11 @@ ocr = [
     # Sentence embeddings for segmentation (P12) and semantic scoring (P13).
     "sentence-transformers==6.1.0",
 ]
-# Cloud OCR engines, off by default (design decision 4).
+# Cloud OCR engines (Textract, Azure Read, Document AI), off by default (design decision 4).
 cloud-ocr = [
     "boto3==1.43.108",
     "azure-ai-documentintelligence==1.0.2",
+    "google-cloud-documentai==3.16.0",
 ]
 
 [build-system]

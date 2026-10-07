@@ -16,8 +16,7 @@ from typing import Protocol
 from tarn_adapters.auth.mail import DeferredMailer
 from tarn_adapters.auth.secrets import SIGNING_KEY, secret_source
 from tarn_adapters.auth.wiring import auth_kit
-from tarn_adapters.blob.minio_client import make_client
-from tarn_adapters.blob.minio_store import MinioBlobStore
+from tarn_adapters.blob.wiring import build_blob_store
 from tarn_adapters.config import Settings
 from tarn_adapters.identity.database import IdentityDatabase
 from tarn_adapters.postgres.database import PostgresDatabase
@@ -365,8 +364,8 @@ class PostgresBackends:
             ),
         )
         self._identity = IdentityDatabase(settings.identity_app_database_url)
-        # The client connects on first use, so building the app needs no MinIO.
-        self._blobs = MinioBlobStore(make_client(settings), settings.blob_bucket)
+        # The client connects on first use, so building the app needs no object store.
+        self._blobs = build_blob_store(settings)
 
     def identity(self) -> AbstractContextManager[IdentityStore]:
         return self._identity.session()
