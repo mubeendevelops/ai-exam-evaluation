@@ -103,6 +103,7 @@ disallow_untyped_calls = false
 module = [
     "torch", "torch.*", "transformers", "transformers.*", "paddle", "paddle.*",
     "paddleocr", "paddleocr.*", "paddlex", "paddlex.*", "pytesseract", "pytesseract.*",
+    "sentence_transformers", "sentence_transformers.*",
     "boto3", "boto3.*", "botocore", "botocore.*", "azure.ai.*", "azure.core.*",
     "google.cloud.storage", "google.cloud.storage.*",
     "google.cloud.documentai", "google.cloud.documentai.*",
