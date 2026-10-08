@@ -1,5 +1,6 @@
 """Smoke test for tarn_cli."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -47,7 +48,9 @@ def test_the_llm_scorer_shows_in_doctor_only_when_switched_on(
 def test_tenants_llm_needs_an_operator_and_defaults_to_off() -> None:
     result = runner.invoke(app, ["tenants", "llm", "ACME"])
     assert result.exit_code != 0  # --operator is required: no anonymous switching
-    help_text = runner.invoke(app, ["tenants", "llm", "--help"]).stdout
+    # CI forces colour, and Rich styles each dash of an option separately: strip the codes.
+    raw_help = runner.invoke(app, ["tenants", "llm", "--help"]).stdout
+    help_text = re.sub(r"\x1b\[[0-9;]*m", "", raw_help)
     assert "--on" in help_text and "--off" in help_text and "--operator" in help_text
 
 
