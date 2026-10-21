@@ -8,6 +8,9 @@
 /CLAUDE.md
 /docs/notes/
 
+# --- Claude Code local settings and state ---
+/.claude/
+
 # --- Environment and secrets ---
 .env
 .env.*

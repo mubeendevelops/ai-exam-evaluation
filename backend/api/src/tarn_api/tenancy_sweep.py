@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 BASE = "/api/v1"
 A_INSTITUTION, B_INSTITUTION = "DEMO_COM", "DEMO_ENG"
 A_TEACHER = "suresh.naik@demo-com.example.test"
-A_SECOND = "pooja.rao@demo-com.example.test"
+A_SECOND = "anita.desai@demo-com.example.test"
 B_TEACHER = "ravi.menon@demo-eng.example.test"
 B_ADMIN = "admin@demo-eng.example.test"
 PNG_1PX = bytes.fromhex(

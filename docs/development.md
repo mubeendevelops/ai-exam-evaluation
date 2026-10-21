@@ -41,7 +41,7 @@ Credentials live in their own database, `tarn_identity`, reached only by the rol
 | Institution ID | College | Owns | Sign-in (all use the development password) |
 | --- | --- | --- | --- |
 | `DEMO_ENG` | Demo Engineering College (synthetic) | AI & ML keys K-AI1, K-AI2, K-AI3 (28 questions) | `admin@demo-eng.example.test`, `ravi.menon@demo-eng.example.test`, `kavya.shetty@demo-eng.example.test` |
-| `DEMO_COM` | Demo Commerce College (synthetic) | QP-CI and QP-IPR questions and blueprints, Assignment 1 and 2 (35 questions, 4 blueprints) | `admin@demo-com.example.test`, `suresh.naik@demo-com.example.test`, `pooja.rao@demo-com.example.test` |
+| `DEMO_COM` | Demo Commerce College (synthetic) | QP-CI and QP-IPR questions and blueprints, Assignment 1 and 2 (35 questions, 4 blueprints) | `admin@demo-com.example.test`, `suresh.naik@demo-com.example.test`, `anita.desai@demo-com.example.test` |
 
 Development password: `Tarn-Demo-Seed-2026!` (printed by `make seed`). Each college has twelve fictitious students (USN `DEMOE0001` ... and `DEMOC0001` ...). Global content is visible to both colleges; the other college uses "Copy to my college" to edit it.
 
@@ -83,7 +83,7 @@ make up-gpu
 
 ## Uploading booklets and cleaning pages (P9)
 
-Upload a booklet as a teacher (the seeded `pooja.rao@demo-com.example.test` works after `make seed`): `POST /api/v1/booklets` with `student_id`, `blueprint_id` and `files` (one PDF, or the page images in order). The API stores the files and queues a job; the worker splits the file into pages, cleans each page and runs the quality gate. Watch it with `GET /api/v1/booklets` and `GET /api/v1/booklets/{id}` (statuses `uploaded`, `processing`, `needs_retake`, `pages_ready`, `failed`), or open `http://localhost:8000/docs`. The worker must be running (`make up`); after pulling P9 run `make migrate` (revision 0005) and rebuild the images (`docker compose up -d --build api worker`: OpenCV and PyMuPDF are new dependencies).
+Upload a booklet as a teacher (the seeded `anita.desai@demo-com.example.test` works after `make seed`): `POST /api/v1/booklets` with `student_id`, `blueprint_id` and `files` (one PDF, or the page images in order). The API stores the files and queues a job; the worker splits the file into pages, cleans each page and runs the quality gate. Watch it with `GET /api/v1/booklets` and `GET /api/v1/booklets/{id}` (statuses `uploaded`, `processing`, `needs_retake`, `pages_ready`, `failed`), or open `http://localhost:8000/docs`. The worker must be running (`make up`); after pulling P9 run `make migrate` (revision 0005) and rebuild the images (`docker compose up -d --build api worker`: OpenCV and PyMuPDF are new dependencies).
 
 To try the image stages on a folder of real booklets without the stack, a database or a queue:
 

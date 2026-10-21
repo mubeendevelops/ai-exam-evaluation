@@ -48,7 +48,7 @@ COMMERCE = CollegeSeed(
     admin=PersonSeed("Meera Iyer (demo admin)", "admin@demo-com.example.test"),
     teachers=(
         PersonSeed("Suresh Naik (demo teacher)", "suresh.naik@demo-com.example.test"),
-        PersonSeed("Pooja Rao (demo teacher)", "pooja.rao@demo-com.example.test"),
+        PersonSeed("Anita Desai (demo teacher)", "anita.desai@demo-com.example.test"),
     ),
     students=tuple(
         StudentSeed(name, f"DEMOC{n:04d}", "BCOM-ACCA-2" if n <= 6 else "BCOM-CMA-3")

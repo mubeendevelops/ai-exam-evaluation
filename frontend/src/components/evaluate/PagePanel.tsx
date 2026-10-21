@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+
 import { isTextLine, type LineView, type SegmentView } from '../../lib/segments'
 import { useFileUrl } from '../qna/AuthImage'
 import { GlassPanel } from '../ui'
@@ -36,6 +38,25 @@ export function PagePanel({
   const pages = booklet.pages.filter((p) => p.cleaned)
   const page = pages.find((p) => p.number === pageNumber) ?? pages[0]
   const file = useFileUrl(page?.image_url)
+  // The page scrolls inside its own box (a long page is taller than the screen); a new page
+  // starts at its top.
+  const scroller = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (scroller.current) scroller.current.scrollTop = 0
+  }, [page?.number])
+
+  // The line picked in the text is centred in the page box (once the image has its height).
+  const lineBox = useRef<HTMLDivElement>(null)
+  const shownLine = editingLine && page && editingLine.page === page.number ? editingLine : null
+  useEffect(() => {
+    const box = scroller.current
+    const line = lineBox.current
+    if (!box || !line || typeof box.scrollBy !== 'function') return
+    const outer = box.getBoundingClientRect()
+    const inner = line.getBoundingClientRect()
+    const delta = inner.top - outer.top - (outer.height - inner.height) / 2
+    box.scrollBy({ top: delta, behavior: 'smooth' })
+  }, [shownLine?.id, page?.number, file.data])
 
   const here = page ? views.filter((v) => v.boxes.has(page.number)) : []
   const unsure = page
@@ -78,97 +99,106 @@ export function PagePanel({
         )}
       </div>
 
-      <div className="relative flex min-h-[440px] items-center justify-center overflow-hidden rounded-xl border border-gray-800 bg-gray-950 p-2">
-        {!page && (
-          <p className="text-xs text-gray-400">
-            {status ?? 'The cleaned pages appear here as soon as they are ready.'}
-          </p>
-        )}
-        {page && (
-          <div className="relative w-full max-w-md select-none">
-            {file.data ? (
-              <img
-                src={file.data}
-                alt={`Page ${page.number} of ${booklet.student.name}'s booklet`}
-                className="block w-full rounded bg-stone-100 shadow-2xl"
-                width={page.width}
-                height={page.height}
-              />
-            ) : (
-              <div
-                className="flex w-full items-center justify-center rounded bg-stone-100 text-xs text-gray-500"
-                style={{ aspectRatio: `${page.width} / ${page.height}` }}
-              >
-                {file.isError ? 'The page image is unavailable.' : 'Loading the page…'}
-              </div>
-            )}
-            {unsure.map((l) => (
-              <div
-                key={l.id}
-                data-testid="unsure-line"
-                aria-hidden="true"
-                className="pointer-events-none absolute border border-dashed border-amber-500 bg-amber-400/20"
-                style={{
-                  left: pct(l.box[0], page.width),
-                  top: pct(l.box[1], page.height),
-                  width: pct(l.box[2] - l.box[0], page.width),
-                  height: pct(l.box[3] - l.box[1], page.height),
-                }}
-              />
-            ))}
-            {here.map((v) => {
-              const box = v.boxes.get(page.number)
-              if (!box) return null
-              const dup = v.segment.flags.includes('duplicate')
-              const tone =
-                v.label === null
-                  ? 'border-amber-500 bg-amber-500/10'
-                  : dup
-                    ? 'border-pink-500 bg-pink-500/10'
-                    : 'border-emerald-500 bg-emerald-500/10'
-              const tag = v.label === null ? 'bg-amber-600' : dup ? 'bg-pink-600' : 'bg-emerald-600'
-              const on = selected === v.segment.id
-              return (
-                <button
-                  key={v.segment.id}
-                  type="button"
-                  aria-label={
-                    v.label === null
-                      ? `Unassigned text on page ${page.number}`
-                      : `Answer ${v.label} on page ${page.number}`
-                  }
-                  aria-pressed={on}
-                  onClick={() => onSelect(v.segment.id)}
-                  className={`absolute rounded border-2 ${tone} ${on ? 'ring-2 ring-cyan-300' : ''}`}
-                  style={{
-                    left: pct(box[0], page.width),
-                    top: pct(box[1], page.height),
-                    width: pct(box[2] - box[0], page.width),
-                    height: pct(box[3] - box[1], page.height),
-                  }}
+      <div className="relative overflow-hidden rounded-xl border border-gray-800 bg-gray-950">
+        <div
+          ref={scroller}
+          data-testid="page-scroller"
+          className="custom-scrollbar flex min-h-[440px] items-center-safe justify-center overflow-x-hidden overflow-y-auto p-2 lg:max-h-[calc(100vh-13rem)]"
+        >
+          {!page && (
+            <p className="text-xs text-gray-400">
+              {status ?? 'The cleaned pages appear here as soon as they are ready.'}
+            </p>
+          )}
+          {page && (
+            <div className="relative w-full max-w-md select-none">
+              {file.data ? (
+                <img
+                  src={file.data}
+                  alt={`Page ${page.number} of ${booklet.student.name}'s booklet`}
+                  className="block w-full rounded bg-stone-100 shadow-2xl"
+                  width={page.width}
+                  height={page.height}
+                />
+              ) : (
+                <div
+                  className="flex w-full items-center justify-center rounded bg-stone-100 text-xs text-gray-500"
+                  style={{ aspectRatio: `${page.width} / ${page.height}` }}
                 >
-                  <span
-                    className={`absolute -top-2.5 left-2 rounded px-1.5 py-0.5 font-sans text-[10px] font-bold text-white uppercase ${tag}`}
+                  {file.isError ? 'The page image is unavailable.' : 'Loading the page…'}
+                </div>
+              )}
+              {unsure.map((l) => (
+                <div
+                  key={l.id}
+                  data-testid="unsure-line"
+                  aria-hidden="true"
+                  className="pointer-events-none absolute border border-dashed border-amber-500 bg-amber-400/20"
+                  style={{
+                    left: pct(l.box[0], page.width),
+                    top: pct(l.box[1], page.height),
+                    width: pct(l.box[2] - l.box[0], page.width),
+                    height: pct(l.box[3] - l.box[1], page.height),
+                  }}
+                />
+              ))}
+              {here.map((v) => {
+                const box = v.boxes.get(page.number)
+                if (!box) return null
+                const dup = v.segment.flags.includes('duplicate')
+                const tone =
+                  v.label === null
+                    ? 'border-amber-500 bg-amber-500/10'
+                    : dup
+                      ? 'border-pink-500 bg-pink-500/10'
+                      : 'border-emerald-500 bg-emerald-500/10'
+                const tag =
+                  v.label === null ? 'bg-amber-600' : dup ? 'bg-pink-600' : 'bg-emerald-600'
+                const on = selected === v.segment.id
+                return (
+                  <button
+                    key={v.segment.id}
+                    type="button"
+                    aria-label={
+                      v.label === null
+                        ? `Unassigned text on page ${page.number}`
+                        : `Answer ${v.label} on page ${page.number}`
+                    }
+                    aria-pressed={on}
+                    onClick={() => onSelect(v.segment.id)}
+                    className={`absolute rounded border-2 ${tone} ${on ? 'ring-2 ring-cyan-300' : ''}`}
+                    style={{
+                      left: pct(box[0], page.width),
+                      top: pct(box[1], page.height),
+                      width: pct(box[2] - box[0], page.width),
+                      height: pct(box[3] - box[1], page.height),
+                    }}
                   >
-                    {v.label === null ? 'Unassigned' : `Segmented Q${v.label}`}
-                  </span>
-                </button>
-              )
-            })}
-            {editingLine && editingLine.page === page.number && (
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute border-2 border-cyan-300 bg-cyan-300/20"
-                style={{
-                  left: pct(editingLine.box[0], page.width),
-                  top: pct(editingLine.box[1], page.height),
-                  width: pct(editingLine.box[2] - editingLine.box[0], page.width),
-                  height: pct(editingLine.box[3] - editingLine.box[1], page.height),
-                }}
-              />
-            )}
-          </div>
-        )}
+                    <span
+                      className={`absolute -top-2.5 left-2 rounded px-1.5 py-0.5 font-sans text-[10px] font-bold text-white uppercase ${tag}`}
+                    >
+                      {v.label === null ? 'Unassigned' : `Segmented Q${v.label}`}
+                    </span>
+                  </button>
+                )
+              })}
+              {shownLine && (
+                <div
+                  ref={lineBox}
+                  aria-hidden="true"
+                  data-testid="picked-line"
+                  className="pointer-events-none absolute rounded-sm border-2 border-cyan-300 bg-cyan-300/25 shadow-[0_0_0_9999px_rgba(3,7,18,0.45)]"
+                  style={{
+                    left: pct(shownLine.box[0], page.width),
+                    top: pct(shownLine.box[1], page.height),
+                    width: pct(shownLine.box[2] - shownLine.box[0], page.width),
+                    height: pct(shownLine.box[3] - shownLine.box[1], page.height),
+                  }}
+                />
+              )}
+            </div>
+          )}
+        </div>
         {scanning && <div className="scan-line" aria-hidden="true" data-testid="scan-beam" />}
       </div>
 

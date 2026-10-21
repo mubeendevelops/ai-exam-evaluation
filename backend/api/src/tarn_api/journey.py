@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 BASE = "/api/v1"
 INSTITUTION = "DEMO_COM"
 TEACHER = "suresh.naik@demo-com.example.test"
-SECOND_TEACHER = "pooja.rao@demo-com.example.test"
+SECOND_TEACHER = "anita.desai@demo-com.example.test"
 QUEUE = 5
 
 

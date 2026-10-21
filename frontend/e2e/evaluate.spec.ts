@@ -59,7 +59,7 @@ test('upload a booklet, watch it being read, see its segments, correct a line an
   await expect(page.getByTestId('scan-beam')).toBeHidden()
   await expect(page.getByRole('button', { name: 'Answer 1 on page 1' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Answer 2 on page 1' })).toBeVisible()
-  await expect(one).toContainText('OCR confidence 65%')
+  await expect(one).not.toContainText('OCR confidence')
   await expect(one).toContainText('Suggested 1 / 3')
   await expect(page.getByRole('region', { name: 'Unassigned tray' })).toContainText(
     'Every piece of text is assigned',

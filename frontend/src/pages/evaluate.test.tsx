@@ -17,6 +17,7 @@ import {
   review,
 } from '../test/evaluateFixtures'
 import { mockApi } from '../test/mockApi'
+import { detail as qnaDetail } from '../test/qnaFixtures'
 import { renderApp } from '../test/render'
 
 const B = `/api/v1/booklets/${BOOKLET}`
@@ -376,7 +377,11 @@ describe('step 2: AI segmentation', () => {
     expect(screen.queryByRole('button', { name: /Unassigned text on page 1/ })).toBeNull()
 
     const one = screen.getByRole('article', { name: /Question 1 Answer Clip/ })
-    expect(within(one).getByText('OCR confidence 65%')).toBeVisible()
+    // the text reads as one paragraph, with no confidence figures for the teacher
+    expect(within(one).getByLabelText('Text of Question 1 Answer Clip')).toHaveTextContent(
+      'Lenz law opposes the change the emf is induced',
+    )
+    expect(one).not.toHaveTextContent(/OCR confidence|\d+%/)
     expect(within(one).getByText('Suggested 2 / 3')).toBeVisible()
     expect(within(one).getByText('1 line to check')).toBeVisible()
     expect(
@@ -388,6 +393,59 @@ describe('step 2: AI segmentation', () => {
     const tray = screen.getByRole('region', { name: 'Unassigned tray' })
     expect(within(tray).getByText('Unassigned tray (1)')).toBeVisible()
     expect(within(tray).getByText('stray words')).toBeVisible()
+  })
+
+  it("shows the official question and folds the student's copy of it", async () => {
+    const { user } = await openSegments({
+      [`GET /api/v1/blueprints/${BLUEPRINT}`]: {
+        json: {
+          ...exam,
+          document: {
+            sections: [
+              {
+                items: [
+                  { label: '1', question_id: 'q-1' },
+                  { label: '2' },
+                  { label: '3', parts: [{ label: 'a' }] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      'GET /api/v1/questions/q-1': {
+        json: qnaDetail({ id: 'q-1', text: 'Lenz law: what opposes the change of flux?' }),
+      },
+    })
+    const one = screen.getByRole('article', { name: /Question 1 Answer Clip/ })
+    const asked = await within(one).findByRole('region', { name: 'Question 1' })
+    expect(asked).toHaveTextContent('Lenz law: what opposes the change of flux?')
+    const answerText = within(one).getByLabelText('Text of Question 1 Answer Clip')
+    expect(answerText).toHaveTextContent('the emf is induced')
+    expect(answerText).not.toHaveTextContent('Lenz law opposes the change')
+    const fold = within(asked).getByRole('button', { name: /copy of the question \(1 line\)/ })
+    expect(within(one).queryByRole('button', { name: /Line 1/ })).toBeNull()
+    await user.click(fold)
+    // the copied line can still be shown on the page and edited
+    await user.click(within(asked).getByRole('button', { name: /Line 1/ }))
+    expect(screen.getByTestId('picked-line')).toBeInTheDocument()
+    expect(within(one).getByRole('textbox', { name: 'Correct the text of this line' })).toHaveValue(
+      'Lenz law opposes the change',
+    )
+  })
+
+  it('shows a line picked in the text on its own page', async () => {
+    const { user } = await openSegments()
+    expect(screen.queryByTestId('picked-line')).toBeNull()
+    const tray = screen.getByRole('region', { name: 'Unassigned tray' })
+    // the stray text is on page 2: picking it turns the page and outlines the line
+    await user.click(within(tray).getByRole('button', { name: /stray words/ }))
+    expect(screen.getByText('Page 2 of 2')).toBeVisible()
+    expect(screen.getByTestId('picked-line')).toBeInTheDocument()
+    const one = screen.getByRole('article', { name: /Question 1 Answer Clip/ })
+    await user.click(within(one).getByRole('button', { name: /Line 2/ }))
+    expect(screen.getByText('Page 1 of 2')).toBeVisible()
+    expect(screen.getByTestId('picked-line')).toBeInTheDocument()
   })
 
   it('shows the scanner beam while the machine is working, and no edit tools', async () => {
@@ -636,7 +694,10 @@ describe('step 2: AI segmentation', () => {
     expect(await screen.findByText(/Dr\. Other has this booklet open/)).toBeVisible()
     expect(screen.getByText(/You can look, but not change anything/)).toBeVisible()
     const one = screen.getByRole('article', { name: /Question 1 Answer Clip/ })
-    expect(within(one).getByRole('button', { name: /Line 1/ })).toBeDisabled()
+    // a line can still be shown on the page, but not edited
+    await user.click(within(one).getByRole('button', { name: /Line 1/ }))
+    expect(screen.getByTestId('picked-line')).toBeInTheDocument()
+    expect(within(one).queryByRole('textbox')).toBeNull()
     expect(within(one).queryByRole('button', { name: 'Merge with next segment' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Re-Segment' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Proceed to Evaluation' }))
@@ -694,7 +755,8 @@ describe('step 2: AI segmentation', () => {
       await screen.findByText(/This booklet is approved\. Segments cannot be changed here/),
     ).toBeVisible()
     const one = await screen.findByRole('article', { name: /Question 1 Answer Clip/ })
-    expect(within(one).getByRole('button', { name: /Line 1/ })).toBeDisabled()
+    expect(within(one).getByRole('button', { name: /Line 1/ })).toBeVisible()
+    expect(within(one).queryByRole('textbox')).toBeNull()
   })
 
   describe('drawings', () => {

@@ -298,7 +298,7 @@ describe('step 3: evaluation view', () => {
     const text = within(a).getByRole('region', { name: "Student's answer" })
     expect(text).toHaveTextContent('Lenz law opposes the change')
     expect(text).toHaveTextContent('the emf is induced')
-    expect(within(text).getByTitle(/Low OCR confidence/)).toHaveTextContent('the emf is induced')
+    expect(within(text).getByTitle(/Hard to read/)).toHaveTextContent('the emf is induced')
     expect(a).toHaveTextContent('Question match: placed by the question number written')
     const items = within(a).getByRole('region', { name: 'Keywords and items matched' })
     expect(items).toHaveTextContent('1 of 2')
@@ -309,7 +309,7 @@ describe('step 3: evaluation view', () => {
     expect(within(b).getByText('Auto-Suggested')).toBeVisible()
     expect(within(b).getByText('Suggested AI Marks: 2 / 3')).toBeVisible()
     expect(within(b).getByText('80%')).toBeVisible()
-    expect(within(b).getByText('65%')).toBeVisible()
+    expect(b).not.toHaveTextContent(/handwriting read|65%/)
     const criteria = within(b).getByRole('list', { name: 'Rubric criteria' })
     expect(within(criteria).getByText('Names the effect')).toBeVisible()
     expect(within(criteria).getByText('Explains why')).toBeVisible()
@@ -323,6 +323,24 @@ describe('step 3: evaluation view', () => {
     expect(within(c).getByText('Human In The Loop')).toBeVisible()
     expect(within(c).getByRole('button', { name: 'Approve answer' })).toBeEnabled()
     expect(screen.queryByText('Complete Evaluation for Q1')).toBeNull()
+  })
+
+  it("folds the student's copy of the question under the official wording", async () => {
+    await open(start(), {
+      'GET /api/v1/questions/q-1': {
+        json: questionDetail({ text: 'Lenz law: what opposes the change of flux?' }),
+      },
+    })
+    const a = screen.getByRole('region', { name: 'Panel A: Answer Mapping' })
+    const text = within(a).getByRole('region', { name: "Student's answer" })
+    const fold = await within(text).findByRole('button', {
+      name: /student's copy of the question \(1 line\)/,
+    })
+    expect(fold).toHaveAttribute('aria-expanded', 'false')
+    expect(text).not.toHaveTextContent('Lenz law opposes the change')
+    expect(text).toHaveTextContent('the emf is induced')
+    await userEvent.setup().click(fold)
+    expect(text).toHaveTextContent('Lenz law opposes the change')
   })
 
   it('shows the LLM second opinion beside the credit, and the disagreement in words', async () => {

@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { isTextLine, percent, type LineView, type SegmentView } from '../../lib/segments'
+import { questionEcho } from '../../lib/questionEcho'
+import { isTextLine, type LineView, type SegmentView } from '../../lib/segments'
 import { compactInputClass, SmallButton } from '../schema/controls'
 import { Badge, type Tone } from '../ui'
-import type { ReviewAnswer } from './queries'
+import { useQuestion, type ReviewAnswer } from './queries'
 
 export interface SegmentActions {
   /** Saves a line's text and/or struck-out mark; true when saved. */
@@ -22,11 +23,6 @@ const FLAG: Record<string, { label: string; tone: Tone }> = {
   before_first_answer: { label: 'Before the first answer', tone: 'gray' },
   label_disagrees: { label: 'Label and wording disagree', tone: 'amber' },
   number_unread: { label: 'Question number unread', tone: 'amber' },
-}
-
-function confidenceTone(value: number | null): Tone {
-  if (value === null) return 'gray'
-  return value >= 0.75 ? 'emerald' : value >= 0.55 ? 'amber' : 'red'
 }
 
 function LineEditor({
@@ -130,7 +126,11 @@ function LineEditor({
   )
 }
 
-/** "Question 1 Answer Clip": one segment with its OCR lines and the segment tools. */
+/**
+ * "Question 1 Answer Clip": one segment's text as one paragraph (as in the prototype) and the
+ * segment tools. Each line of the paragraph opens its editor; lines the OCR was unsure of are
+ * highlighted without a number (teachers do not need the confidence figures).
+ */
 export function SegmentCard({
   view,
   prev,
@@ -144,6 +144,7 @@ export function SegmentCard({
   editingLine,
   onEditLine,
   actions,
+  questionId,
 }: {
   view: SegmentView
   prev: SegmentView | null
@@ -157,6 +158,8 @@ export function SegmentCard({
   editingLine: string | null
   onEditLine: (lineId: string | null) => void
   actions: SegmentActions
+  /** The bank question this segment's slot is marked against (null: unassigned or unlinked). */
+  questionId: string | null
 }) {
   const heading = view.label === null ? 'Unassigned text' : `Question ${view.label} Answer Clip`
   const flags = [...new Set([...(answer?.suggestion?.flags ?? []), ...view.segment.flags])].filter(
@@ -164,6 +167,57 @@ export function SegmentCard({
   )
   const border = view.label === null ? 'border-amber-500/40' : 'border-emerald-500/40'
   const mark = answer?.suggestion?.mark
+  const question = useQuestion(view.label === null ? null : questionId)
+  const official = question.data?.text ?? null
+  // the student's copy of the question, folded under the official wording (D158)
+  const echo = official ? questionEcho(view.lines, official) : 0
+  const [showCopy, setShowCopy] = useState(false)
+  // a line being edited is never hidden
+  const copyOpen = showCopy || view.lines.slice(0, echo).some((l) => l.id === editingLine)
+
+  const renderLine = (line: LineView, k: number, first: boolean) => {
+    const open = editingLine === line.id
+    const text = isTextLine(line) ? line.text || '(nothing read)' : '[drawing]'
+    const unsure = line.flagged && !line.struck
+    const tone = line.struck
+      ? 'text-gray-500 line-through'
+      : unsure
+        ? 'rounded-sm bg-amber-500/20 text-amber-100 underline decoration-amber-400 decoration-dotted'
+        : ''
+    const ring = open ? 'rounded-sm bg-cyan-500/20 outline outline-cyan-400' : ''
+    const name = unsure ? `Line ${k + 1}, low OCR confidence: ${text}` : `Line ${k + 1}: ${text}`
+    const toggle = () => {
+      onSelect()
+      onEditLine(open ? null : line.id)
+    }
+    return (
+      <span key={line.id}>
+        {!first && ' '}
+        {/* A span, not a button: a button cannot wrap across lines of a paragraph. A click
+            shows the line on the page; it also opens the editor when editable. */}
+        <span
+          role="button"
+          tabIndex={0}
+          aria-expanded={canEdit ? open : undefined}
+          aria-pressed={canEdit ? undefined : open}
+          aria-label={name}
+          title={
+            unsure ? 'Hard to read: check this line against the page' : 'Show this line on the page'
+          }
+          onClick={toggle}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              toggle()
+            }
+          }}
+          className={`cursor-pointer hover:bg-cyan-500/10 focus-visible:outline focus-visible:outline-cyan-400 ${tone} ${ring}`}
+        >
+          {text}
+        </span>
+      </span>
+    )
+  }
 
   return (
     <article
@@ -179,9 +233,6 @@ export function SegmentCard({
           {heading}
         </button>
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge tone={confidenceTone(view.confidence)}>
-            OCR confidence {percent(view.confidence)}
-          </Badge>
           {view.pages.length > 0 && (
             <Badge tone="gray">
               {view.pages.length === 1
@@ -221,64 +272,75 @@ export function SegmentCard({
         </ul>
       )}
 
-      <ol className="space-y-1.5" aria-label={`Lines of ${heading}`}>
-        {view.lines.map((line, k) => {
-          const open = editingLine === line.id
-          const text = isTextLine(line) ? line.text || '(nothing read)' : '[drawing]'
-          const tone = line.struck
-            ? 'border-gray-800 bg-black/30 text-gray-500 line-through'
-            : line.flagged
-              ? 'border-amber-500/60 bg-amber-950/40 text-amber-100'
-              : 'border-gray-800 bg-black/50 text-cyan-200'
-          return (
-            <li key={line.id}>
+      {official && (
+        <section
+          aria-label={`Question ${view.label ?? ''}`}
+          className="mb-2 rounded-lg border border-purple-500/30 bg-purple-950/20 p-3 text-xs text-gray-200"
+        >
+          <h4 className="mb-1 text-[10px] font-bold tracking-wider text-purple-300 uppercase">
+            Question {view.label}
+          </h4>
+          <p>{official}</p>
+          {echo > 0 && (
+            <>
               <button
                 type="button"
-                disabled={!canEdit}
-                aria-expanded={canEdit ? open : undefined}
-                aria-label={
-                  line.flagged && !line.struck
-                    ? `Line ${k + 1}, low OCR confidence: ${text}`
-                    : `Line ${k + 1}: ${text}`
-                }
-                onClick={() => {
-                  onSelect()
-                  onEditLine(open ? null : line.id)
-                }}
-                className={`flex w-full items-start gap-2 rounded-lg border p-2 text-left font-mono text-xs ${tone} ${canEdit ? 'hover:border-cyan-400' : 'cursor-default'}`}
+                aria-expanded={copyOpen}
+                onClick={() => setShowCopy((v) => !v)}
+                className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-white"
               >
-                {line.flagged && !line.struck && (
-                  <i
-                    className="fa-solid fa-triangle-exclamation mt-0.5 text-amber-400"
-                    aria-hidden="true"
-                    title={`The OCR is unsure of this line (${percent(line.score)})`}
-                  />
-                )}
-                <span className="grow break-words">{text}</span>
-                {line.score !== null && (
-                  <span className="shrink-0 text-[10px] text-gray-400">{percent(line.score)}</span>
-                )}
-              </button>
-              {open && canEdit && (
-                <LineEditor
-                  key={`${line.id}:${line.text}`}
-                  line={line}
-                  index={k}
-                  view={view}
-                  prev={prev}
-                  next={next}
-                  actions={actions}
-                  busy={busy}
-                  onClose={() => onEditLine(null)}
+                <i
+                  className={`fa-solid ${copyOpen ? 'fa-chevron-down' : 'fa-chevron-right'} text-[9px]`}
+                  aria-hidden="true"
                 />
+                The student&apos;s copy of the question ({echo} {echo === 1 ? 'line' : 'lines'})
+              </button>
+              {copyOpen && (
+                <p
+                  aria-label={`Student's copy of question ${view.label ?? ''}`}
+                  className="mt-1 rounded-md bg-black/40 p-2 font-mono leading-relaxed break-words text-gray-400"
+                >
+                  {view.lines.slice(0, echo).map((line, k) => renderLine(line, k, k === 0))}
+                </p>
               )}
-            </li>
-          )
-        })}
-        {view.lines.length === 0 && (
-          <li className="text-xs text-gray-400">No text was found in this segment.</li>
+            </>
+          )}
+        </section>
+      )}
+
+      {view.lines.length === 0 ? (
+        <p className="text-xs text-gray-400">No text was found in this segment.</p>
+      ) : (
+        <>
+          {official && (
+            <h4 className="mb-1 text-[10px] font-bold tracking-wider text-gray-400 uppercase">
+              Answer
+            </h4>
+          )}
+          <p
+            aria-label={`Text of ${heading}`}
+            className="rounded-lg border border-gray-800 bg-black/50 p-3 font-mono text-xs leading-relaxed break-words text-cyan-200"
+          >
+            {view.lines.slice(echo).map((line, k) => renderLine(line, k + echo, k === 0))}
+          </p>
+        </>
+      )}
+      {canEdit &&
+        view.lines.map((line, k) =>
+          editingLine === line.id ? (
+            <LineEditor
+              key={`${line.id}:${line.text}`}
+              line={line}
+              index={k}
+              view={view}
+              prev={prev}
+              next={next}
+              actions={actions}
+              busy={busy}
+              onClose={() => onEditLine(null)}
+            />
+          ) : null,
         )}
-      </ol>
 
       {canEdit && (
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-800 pt-3">

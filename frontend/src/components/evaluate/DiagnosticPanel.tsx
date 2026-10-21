@@ -91,11 +91,9 @@ function Bar({ credit, label }: { credit: number; label: string }) {
 export function DiagnosticPanel({
   answer,
   question,
-  ocrConfidence,
 }: {
   answer: ReviewAnswer
   question: Question | undefined
-  ocrConfidence: number | null
 }) {
   const s = answer.suggestion
   const label = (id: string, k: number) =>
@@ -129,14 +127,10 @@ export function DiagnosticPanel({
             on its way after a change. You can approve once it arrives.
           </p>
         )}
-        <dl className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-gray-300">
+        <dl className="mt-2 text-[11px] text-gray-300">
           <div>
             <dt className="text-gray-400">AI confidence: relevance</dt>
             <dd className="font-semibold text-white">{percent(s?.relevance ?? null)}</dd>
-          </div>
-          <div>
-            <dt className="text-gray-400">AI confidence: handwriting read</dt>
-            <dd className="font-semibold text-white">{percent(ocrConfidence)}</dd>
           </div>
         </dl>
       </div>

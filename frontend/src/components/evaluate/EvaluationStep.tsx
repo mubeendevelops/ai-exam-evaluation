@@ -116,10 +116,6 @@ export function EvaluationStep({
     [segments.data, texts],
   )
   const ofAnswer = views.filter((v) => v.label !== null && v.label === label)
-  const confidences = ofAnswer.flatMap((v) => (v.confidence === null ? [] : [v.confidence]))
-  const ocrConfidence = confidences.length
-    ? confidences.reduce((a, b) => a + b, 0) / confidences.length
-    : null
 
   const slot = label ? slots.data?.get(label) : undefined
   const question = useQuestion(slot?.questionId)
@@ -524,11 +520,7 @@ export function EvaluationStep({
             answer={current}
             overlays={overlays}
           />
-          <DiagnosticPanel
-            answer={current}
-            question={question.data}
-            ocrConfidence={ocrConfidence}
-          />
+          <DiagnosticPanel answer={current} question={question.data} />
           <GradingPanel
             key={`${current.id}:${current.status}:${current.draft?.amendment_id ?? ''}`}
             answer={current}

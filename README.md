@@ -48,7 +48,7 @@ All ports bind to 127.0.0.1. Verification, invitation and reset emails go to the
 
 | Institution ID | Teacher | Content |
 | --- | --- | --- |
-| `DEMO_COM` | `pooja.rao@demo-com.example.test` | QP-CI, QP-IPR, Assignments 1 and 2 (synthetic keys) |
+| `DEMO_COM` | `anita.desai@demo-com.example.test` | QP-CI, QP-IPR, Assignments 1 and 2 (synthetic keys) |
 | `DEMO_ENG` | `kavya.shetty@demo-eng.example.test` | AI & ML keys K-AI1 to K-AI3 |
 
 (Admins: `admin@demo-com.example.test`, `admin@demo-eng.example.test`.) The keys without a faculty source are written for development and carry the badge **SYNTHETIC – dev only, needs teacher validation**.

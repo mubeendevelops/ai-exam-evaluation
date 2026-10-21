@@ -12,6 +12,7 @@ import {
   useBookletLock,
   reviewKey,
   useExamLabels,
+  useExamSlots,
   usePageTexts,
   useReview,
   useSegments,
@@ -82,6 +83,7 @@ export function SegmentationStep({
   const { texts } = usePageTexts(booklet)
   const diagrams = useStudentDiagrams(bookletId, hasSegments)
   const labelsQuery = useExamLabels(booklet?.blueprint.id)
+  const slots = useExamSlots(booklet?.blueprint.id)
   const guarded = useGuardedEdit(bookletId, reopen)
   const rescore = useRescoreLog(review.data)
 
@@ -151,6 +153,14 @@ export function SegmentationStep({
       setPageNumber(view.pages[0] ?? 1)
     }
     document.getElementById(`segment-${segmentId}`)?.scrollIntoView?.({ block: 'nearest' })
+  }
+
+  // Picking a line in the text shows that line on its page (after \`select\`, which would show
+  // the segment's first page).
+  const pickLine = (lineId: string | null) => {
+    setEditing(lineId)
+    const line = lineId ? lines.get(lineId) : undefined
+    if (line) setPageNumber(line.page)
   }
 
   const labelOf = (answerIds: string[]) =>
@@ -308,7 +318,8 @@ export function SegmentationStep({
           canEdit={canEdit}
           busy={busy}
           editingLine={editing}
-          onEditLine={setEditing}
+          onEditLine={pickLine}
+          questionId={(v.label && slots.data?.get(v.label)?.questionId) ?? null}
           actions={actions}
         />
       </div>
