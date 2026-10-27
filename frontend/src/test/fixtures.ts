@@ -11,18 +11,27 @@ export function userOf(overrides: Partial<User> = {}): User {
     college_id: COLLEGE_ID,
     display_name: 'Asha Rao',
     email: 'asha@college.test',
-    role: 'teacher',
+    role: 'sme',
     active: true,
     ...overrides,
   }
 }
 
+/** The server's capability table (tarn_core.domain.personas, D177). */
+export const CAPABILITIES: Record<User['role'], Me['capabilities']> = {
+  admin: ['manage_smes', 'manage_students', 'manage_subjects', 'upload_booklets', 'view_progress'],
+  sme: ['author_content', 'evaluate', 'view_progress'],
+  governor: [],
+}
+
 export function meOf(overrides: Partial<User> = {}, left = 10): Me {
+  const user = userOf(overrides)
   return {
-    user: userOf(overrides),
+    user,
     institution_id: 'SYNTH_COLLEGE',
     college_name: 'Synthetic College',
     recovery_codes_left: left,
+    capabilities: CAPABILITIES[user.role],
   }
 }
 

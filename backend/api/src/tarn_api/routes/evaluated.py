@@ -19,7 +19,7 @@ from tarn_api.schemas import (
 )
 from tarn_api.security import BackendsDep, PrincipalDep, current_user
 from tarn_core.domain.booklet import BookletStatus
-from tarn_core.domain.tenancy import Role
+from tarn_core.domain.personas import Capability
 from tarn_core.ids import BookletId
 from tarn_core.services.workflow.sheets import PDF_MEDIA_TYPE
 
@@ -55,9 +55,10 @@ def list_evaluated(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> EvaluatedPageOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.EVALUATE)
         page = unit.evaluated.search(
             who.college_id,
+            reach=unit.reach(user),
             exam=exam,
             student=student,
             usn=usn,
@@ -99,8 +100,10 @@ def download_sheet(
     booklet_id: UUID, version: int, who: PrincipalDep, backends: BackendsDep
 ) -> Response:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        sheet, pdf = unit.evaluated.pdf(who.college_id, BookletId(booklet_id), version)
+        user = current_user(unit, who, Capability.EVALUATE)
+        sheet, pdf = unit.evaluated.pdf(
+            who.college_id, BookletId(booklet_id), version, reach=unit.reach(user)
+        )
         student = unit.scope.students.get(
             who.college_id, unit.scope.booklets.get(who.college_id, sheet.booklet_id).student_id
         )

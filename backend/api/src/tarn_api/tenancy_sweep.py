@@ -24,6 +24,7 @@ A_TEACHER = "suresh.naik@demo-com.example.test"
 A_SECOND = "anita.desai@demo-com.example.test"
 B_TEACHER = "ravi.menon@demo-eng.example.test"
 B_ADMIN = "admin@demo-eng.example.test"
+A_ADMIN = "admin@demo-com.example.test"
 PNG_1PX = bytes.fromhex(
     "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
     "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082"
@@ -46,8 +47,11 @@ class Case:
 class World:
     client: "TestClient"
     a: dict[str, str]
+    """College A's SME (questions, papers, review)."""
     b: dict[str, str]
+    """College B's SME."""
     b_admin: dict[str, str]
+    a_admin: dict[str, str]
     ids: dict[str, str]
     """Path parameters (A's ids) and other values the requests need."""
     review: dict[str, Any]
@@ -70,13 +74,14 @@ def build_world(client: "TestClient", process: Callable[[], None]) -> World:
     a = login(c, A_INSTITUTION, A_TEACHER)
     b = login(c, B_INSTITUTION, B_TEACHER)
     b_admin = login(c, B_INSTITUTION, B_ADMIN)
-    student = c.get(f"{BASE}/students", headers=a).json()[0]
+    a_admin = login(c, A_INSTITUTION, A_ADMIN)
+    student = c.get(f"{BASE}/students", headers=a_admin).json()[0]
     blueprint = next(
         x for x in c.get(f"{BASE}/blueprints", headers=a).json() if x["title"].startswith("QP-CI")
     )
     upload = c.post(
         f"{BASE}/booklets",
-        headers=a,
+        headers=a_admin,
         data={"student_id": student["id"], "blueprint_id": blueprint["id"]},
         files=[("files", ("b.pdf", fake_pdf(1, "sweep"), "application/pdf"))],
     )
@@ -123,10 +128,9 @@ def build_world(client: "TestClient", process: Callable[[], None]) -> World:
     )
     assert diagram.status_code == 201, diagram.text
     detail = c.get(f"{BASE}/questions/{qid}", headers=a).json()
-    a_admin_login = login(c, A_INSTITUTION, "admin@demo-com.example.test")
     second = next(
         x["user"]["id"]
-        for x in c.get(f"{BASE}/accounts", headers=a_admin_login).json()
+        for x in c.get(f"{BASE}/accounts", headers=a_admin).json()
         if x["user"]["email"] == A_SECOND
     )
     own_blueprint = c.get(f"{BASE}/blueprints/{blueprint['id']}", headers=a).json()
@@ -135,6 +139,7 @@ def build_world(client: "TestClient", process: Callable[[], None]) -> World:
         a=a,
         b=b,
         b_admin=b_admin,
+        a_admin=a_admin,
         review=review,
         blueprint_document=own_blueprint["document"],
         ids={
@@ -151,6 +156,7 @@ def build_world(client: "TestClient", process: Callable[[], None]) -> World:
             "ref_diagram_id": diagram.json()["id"],
             "ref_answer_id": detail["reference_answers"][0]["id"],
             "student_id": student["id"],
+            "subject_id": blueprint["subject_id"],
             "segment_a": segments[0]["id"],
             "segment_b": segments[-1]["id"],
             "a_college": a_college,
@@ -188,7 +194,7 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("POST", "/api/v1/registrations"): Case("own"),
     ("POST", "/api/v1/registrations/verify-email"): Case("own"),
     ("GET", "/api/v1/accounts"): Case("own"),
-    ("POST", "/api/v1/accounts"): Case("own"),
+    ("POST", "/api/v1/accounts"): Case("own"),  # see ``invite_with_another_colleges_subject``
     ("POST", "/api/v1/roster/import"): Case("own"),
     ("GET", "/api/v1/students"): Case("own"),
     ("GET", "/api/v1/subjects"): Case("own"),
@@ -206,6 +212,14 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("POST", "/api/v1/accounts/{user_id}/enable"): Case("college", as_admin=True),
     ("POST", "/api/v1/accounts/{user_id}/force-reset"): Case("college", as_admin=True),
     ("POST", "/api/v1/accounts/{user_id}/unlock"): Case("college", as_admin=True),
+    ("GET", "/api/v1/accounts/{user_id}/subjects"): Case("college", as_admin=True),
+    ("POST", "/api/v1/accounts/{user_id}/subjects/{subject_id}"): Case("college", as_admin=True),
+    ("DELETE", "/api/v1/accounts/{user_id}/subjects/{subject_id}"): Case("college", as_admin=True),
+    # --- another college's subjects (the admin's list, D160) ----------------------------------
+    ("PUT", "/api/v1/subjects/{subject_id}"): Case(
+        "college", _json(lambda w: {"code": "TAKEN", "name": "Taken over"}), as_admin=True
+    ),
+    ("POST", "/api/v1/subjects/{subject_id}/retire"): Case("college", as_admin=True),
     # --- another college's content (D165) ---------------------------------------------------
     ("GET", "/api/v1/blueprints/{blueprint_id}"): Case("college"),
     ("GET", "/api/v1/blueprints/{blueprint_id}/versions"): Case("college"),
@@ -363,7 +377,7 @@ def url(world: World, path: str) -> str:
             if family in path and param == name:
                 key = renamed
         out = out.replace("{" + name + "}", world.ids[key])
-    for name in ("user_id", "blueprint_id", "question_id", "file_id"):
+    for name in ("user_id", "blueprint_id", "question_id", "file_id", "subject_id"):
         out = out.replace("{" + name + "}", world.ids[name])
     assert "{" not in out, out
     return out
@@ -376,12 +390,26 @@ def call(world: World, method: str, path: str, case: Case) -> Any:
     return world.client.request(method, url(world, path), headers=headers, **extra)
 
 
+def invite_with_another_colleges_subject(world: World) -> Any:
+    """B's admin invites an SME with A's subject: the subject is not B's, so it is refused
+    (422 "no such subject", the subject is never named) and nobody is invited."""
+    return world.client.post(
+        f"{BASE}/accounts",
+        headers=world.b_admin,
+        json={
+            "display_name": "Sweep SME",
+            "email": "sweep.sme@demo-eng.example.test",
+            "subject_ids": [world.ids["subject_id"]],
+        },
+    )
+
+
 def upload_for_another_college(world: World) -> Any:
     """B registers a booklet for A's student: the student is A's row, so it is not found."""
     blueprint = world.ids["blueprint_id"]
     return world.client.post(
         f"{BASE}/booklets",
-        headers=world.b,
+        headers=world.b_admin,
         data={"student_id": world.ids["student_id"], "blueprint_id": blueprint},
         files=[("files", ("b.pdf", fake_pdf(1, "b-takes-a"), "application/pdf"))],
     )

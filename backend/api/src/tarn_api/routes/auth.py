@@ -45,6 +45,7 @@ from tarn_api.security import (
     set_refresh_cookie,
 )
 from tarn_core.domain.identity import AuthPolicy, TenantRecord
+from tarn_core.domain.personas import CAPABILITIES
 from tarn_core.domain.tenancy import normalise_institution_id
 from tarn_core.errors import TokenError
 from tarn_core.ids import AuthSessionId
@@ -85,6 +86,8 @@ def login(
         (LOGIN_IP, ip_of(request)),
         (LOGIN_ACCOUNT, account_key(body.institution_id, body.email)),
     )
+    # The address also keys the shared admin login's lockout (D161, D179).
+    address = ip_of(request)
     tenant = find_tenant(backends, body.institution_id)
     if tenant is None:
         # As much work as a real attempt, so unknown institutions are not revealed by timing.
@@ -92,7 +95,11 @@ def login(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=SIGN_IN_FAILED)
     with unit_of_work(backends, tenant.college_id) as unit:
         outcome = unit.auth.login(
-            tenant.college_id, body.email, body.password, remember=body.remember
+            tenant.college_id,
+            body.email,
+            body.password,
+            remember=body.remember,
+            address=address,
         )
     if isinstance(outcome, ResetRequired):
         return ResetRequiredOut(reset_token=outcome.reset_token)
@@ -154,6 +161,7 @@ def me(who: PrincipalDep, backends: BackendsDep) -> MeOut:
         institution_id=tenant.institution_id,
         college_name=tenant.name,
         recovery_codes_left=left,
+        capabilities=sorted(CAPABILITIES[user.role] if user.active else ()),
     )
 
 
@@ -209,7 +217,11 @@ def recover_password(body: RecoverIn, request: Request, backends: BackendsDep) -
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Recovery failed.")
     with unit_of_work(backends, tenant.college_id) as unit:
         refused = unit.auth.recover(
-            tenant.college_id, body.email, body.recovery_code, body.new_password
+            tenant.college_id,
+            body.email,
+            body.recovery_code,
+            body.new_password,
+            address=ip_of(request),
         )
     if refused is not None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Recovery failed.")

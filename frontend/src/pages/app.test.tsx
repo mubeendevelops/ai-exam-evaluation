@@ -10,7 +10,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 /** A signed-in browser: the refresh cookie works and /auth/me answers. */
 function signedIn(
-  role: 'teacher' | 'admin' = 'teacher',
+  role: 'sme' | 'admin' | 'governor' = 'sme',
   extra: Parameters<typeof mockApi>[0] = {},
   left = 10,
 ) {
@@ -32,12 +32,30 @@ describe('route guards', () => {
     expect(await screen.findByRole('heading', { name: /Customer Sign In/ })).toBeInTheDocument()
   })
 
-  it('keeps /admin for administrators: a teacher is sent to the Q&A tab', async () => {
-    signedIn('teacher')
+  it('keeps /admin for the admin: an SME is sent to the Q&A tab', async () => {
+    signedIn('sme')
     renderApp('/admin')
     expect(
       await screen.findByRole('heading', { name: 'Questions & Answers Repository' }),
     ).toBeInTheDocument()
+  })
+
+  it('sends the admin from the SME tabs to the admin page, with no SME tabs (D167)', async () => {
+    signedIn('admin', {
+      'GET /api/v1/accounts': { json: [] },
+      'GET /api/v1/students': { json: [] },
+    })
+    renderApp('/evaluate')
+    expect(await screen.findByRole('heading', { name: /Administration/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Q&A DB/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /AI Evaluation/ })).not.toBeInTheDocument()
+  })
+
+  it('shows the Governor a placeholder page and nothing else', async () => {
+    signedIn('governor')
+    renderApp('/qna')
+    expect(await screen.findByRole('heading', { name: 'Governor portal' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Schema/ })).not.toBeInTheDocument()
   })
 
   it('unknown addresses go to the start page', async () => {
@@ -122,7 +140,7 @@ describe('app shell (project_idea.html)', () => {
   })
 
   it('signs out: tells the server, forgets the token and returns to the landing page', async () => {
-    const mock = signedIn('teacher', { 'POST /api/v1/auth/logout': { status: 204 } })
+    const mock = signedIn('sme', { 'POST /api/v1/auth/logout': { status: 204 } })
     const user = userEvent.setup()
     renderApp('/qna')
     await user.click(await screen.findByRole('button', { name: /Account menu/ }))
@@ -135,7 +153,7 @@ describe('app shell (project_idea.html)', () => {
   })
 
   it('signs out: forgets every cached answer of the server (the next user may be another college)', async () => {
-    signedIn('teacher', { 'POST /api/v1/auth/logout': { status: 204 } })
+    signedIn('sme', { 'POST /api/v1/auth/logout': { status: 204 } })
     const user = userEvent.setup()
     const { queryClient } = renderApp('/qna')
     await user.click(await screen.findByRole('button', { name: /Account menu/ }))
@@ -160,7 +178,7 @@ describe('app shell (project_idea.html)', () => {
 
 describe('status pill', () => {
   async function pillFor(health: unknown, status = 200) {
-    signedIn('teacher', { 'GET /api/v1/health': { status, json: health } })
+    signedIn('sme', { 'GET /api/v1/health': { status, json: health } })
     renderApp('/qna')
     await screen.findByRole('heading', { name: 'Questions & Answers Repository' })
   }
@@ -206,7 +224,7 @@ describe('profile and recovery codes', () => {
   }
 
   it('shows the profile and changes the password', async () => {
-    const mock = signedIn('teacher', {
+    const mock = signedIn('sme', {
       'POST /api/v1/auth/password/change': { status: 204 },
       'GET /api/v1/auth/password-bloom': { body: new ArrayBuffer(0), status: 500 },
     })
@@ -214,7 +232,7 @@ describe('profile and recovery codes', () => {
     const user = await openMenuItem(/Profile/)
     const dialog = screen.getByRole('dialog', { name: 'Profile' })
     expect(within(dialog).getByText('SYNTH_COLLEGE')).toBeInTheDocument()
-    expect(within(dialog).getByText('teacher')).toBeInTheDocument()
+    expect(within(dialog).getByText('SME')).toBeInTheDocument()
     await user.type(within(dialog).getByLabelText('Current Password'), 'old password here')
     await user.type(within(dialog).getByLabelText('New Password'), 'a long uncommon passphrase')
     await user.click(within(dialog).getByRole('button', { name: 'Change password' }))
@@ -227,7 +245,7 @@ describe('profile and recovery codes', () => {
   })
 
   it('refuses a wrong current password', async () => {
-    signedIn('teacher', {
+    signedIn('sme', {
       'POST /api/v1/auth/password/change': { status: 403, json: { detail: 'no' } },
       'GET /api/v1/auth/password-bloom': { status: 500, json: {} },
     })
@@ -245,7 +263,7 @@ describe('profile and recovery codes', () => {
   it('creates recovery codes, shows them once and forgets them when closed', async () => {
     const codes = Array.from({ length: 10 }, (_, i) => `ABCD-EFGH-IJKL-${String(1000 + i)}`)
     const mock = signedIn(
-      'teacher',
+      'sme',
       { 'POST /api/v1/auth/recovery-codes': { status: 201, json: { codes } } },
       3,
     )
@@ -278,7 +296,7 @@ describe('profile and recovery codes', () => {
   })
 
   it('needs the current password to be right', async () => {
-    signedIn('teacher', {
+    signedIn('sme', {
       'POST /api/v1/auth/recovery-codes': { status: 403, json: { detail: 'no' } },
     })
     renderApp('/qna')

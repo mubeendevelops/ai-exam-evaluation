@@ -150,7 +150,7 @@ export function EvaluationStep({
   const canEdit = lock.kind === 'mine'
   const holder = lock.kind === 'other' ? lock : null
   const readOnlyReason = holder
-    ? `${holder.holder ?? 'Another teacher'} has this booklet open${holder.until ? ` until ${new Date(holder.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}. You can look, but not decide anything.`
+    ? `${holder.holder ?? 'Another SME'} has this booklet open${holder.until ? ` until ${new Date(holder.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}. You can look, but not decide anything.`
     : lock.kind === 'error'
       ? lock.message
       : lock.kind === 'idle'

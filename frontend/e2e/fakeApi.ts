@@ -11,9 +11,18 @@ interface Tenant {
   approved: boolean
 }
 
+type Role = 'admin' | 'sme' | 'governor'
+
 interface Signed {
   tenant: Tenant
-  role: 'admin' | 'teacher'
+  role: Role
+}
+
+/** The server's capability table (tarn_core.domain.personas, D177). */
+const CAPABILITIES: Record<Role, string[]> = {
+  admin: ['manage_smes', 'manage_students', 'manage_subjects', 'upload_booklets', 'view_progress'],
+  sme: ['author_content', 'evaluate', 'view_progress'],
+  governor: [],
 }
 
 /**
@@ -29,8 +38,15 @@ export class FakeApi {
   resetTokens = new Map<string, string>() // token -> institution id
   verifyTokens = new Map<string, string>()
   refreshCalls = 0
+  /** Who signs in: an SME by default (the screens under test are the SME's). */
+  private readonly role: Role
+  /** Step 1's upload controls are the admin's since P24 (D162); `uploads` lets the SME of a
+   * test use them too, so a booklet can be uploaded and reviewed in one browser. */
+  private readonly uploads: boolean
 
-  constructor() {
+  constructor(options: { role?: Role; uploads?: boolean } = {}) {
+    this.role = options.role ?? 'sme'
+    this.uploads = options.uploads ?? false
     this.addTenant({
       institutionId: 'SYNTH_COLLEGE',
       collegeName: 'Synthetic College',
@@ -153,7 +169,7 @@ export class FakeApi {
             detail: 'Sign-in failed. Check the Institution ID, email and password.',
           })
         }
-        this.signed = { tenant, role: 'admin' }
+        this.signed = { tenant, role: this.role }
         return json(200, {
           status: 'signed_in',
           access_token: 'access-token',
@@ -182,6 +198,10 @@ export class FakeApi {
           institution_id: this.signed.tenant.institutionId,
           college_name: this.signed.tenant.collegeName,
           recovery_codes_left: 0,
+          capabilities: [
+            ...CAPABILITIES[this.signed.role],
+            ...(this.uploads ? ['upload_booklets'] : []),
+          ],
         })
 
       case 'POST /auth/logout':

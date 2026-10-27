@@ -57,17 +57,32 @@ class IdentityStore(Protocol):
         ...
 
     # --- lockout counters (atomic, apart from the encrypted record) ----------------------
-    def counters(self, college_id: CollegeId, user_id: UserId) -> LoginCounters: ...
+    # ``source`` is "" for the account-wide counter (SMEs, the Governor) or a pseudonymous
+    # client address for the shared admin login (``lockout_source``, D161/D179).
+    def counters(
+        self, college_id: CollegeId, user_id: UserId, source: str = ""
+    ) -> LoginCounters: ...
 
     def record_failed_login(
-        self, college_id: CollegeId, user_id: UserId, now: datetime, policy: AuthPolicy
+        self,
+        college_id: CollegeId,
+        user_id: UserId,
+        now: datetime,
+        policy: AuthPolicy,
+        source: str = "",
     ) -> LoginCounters:
         """One atomic increment. Reaching ``policy.max_failed_logins`` sets ``lockout_until``
         to ``now + policy.lockout`` and starts the count again."""
         ...
 
-    def set_counters(self, college_id: CollegeId, user_id: UserId, counters: LoginCounters) -> None:
+    def set_counters(
+        self, college_id: CollegeId, user_id: UserId, counters: LoginCounters, source: str = ""
+    ) -> None:
         """Reset after a good sign-in, unlock, or restore from a backup."""
+        ...
+
+    def clear_counters(self, college_id: CollegeId, user_id: UserId) -> None:
+        """Every counter of the user, whatever its source, back to zero (password set, unlock)."""
         ...
 
     # --- recovery codes -------------------------------------------------------------------

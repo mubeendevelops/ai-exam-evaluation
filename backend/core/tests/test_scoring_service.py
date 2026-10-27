@@ -103,7 +103,7 @@ def paper(seeded: tuple[InMemory, list[SeededCollege]]) -> Paper:
         make_services(mem)
         .booklets.register(
             college_id,
-            college.accounts.teacher_ids[0],
+            college.accounts.sme_ids[0],
             student_id=student.id,
             blueprint_id=blueprint.id,
             file_sha256=f"{mem.ids.new().int:064x}"[-64:],

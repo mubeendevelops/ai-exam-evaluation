@@ -21,9 +21,9 @@ from tarn_api.schemas import (
     SegmentsOut,
     SplitIn,
 )
-from tarn_api.security import BackendsDep, PrincipalDep, current_user
+from tarn_api.security import BackendsDep, PrincipalDep, booklet_user
 from tarn_core.domain.booklet import Segment
-from tarn_core.domain.tenancy import Role
+from tarn_core.domain.personas import Capability
 from tarn_core.ids import BookletId, RegionId, SegmentId
 from tarn_core.services.workflow import SegmentEdits
 from tarn_core.services.workflow.edits import SegmentEditResult
@@ -65,7 +65,7 @@ def _result(done: SegmentEditResult) -> SegmentsOut:
 )
 def list_segments(booklet_id: UUID, who: PrincipalDep, backends: BackendsDep) -> SegmentsOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         booklet = unit.scope.booklets.get(who.college_id, BookletId(booklet_id))
         segments = unit.scope.booklets.segments(who.college_id, booklet.id)
     return SegmentsOut(
@@ -80,7 +80,7 @@ def _edit(
     run: Callable[[SegmentEdits, BookletId], SegmentEditResult],
 ) -> SegmentsOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         done = run(unit.segment_edits(BookletId(booklet_id)), BookletId(booklet_id))
     return _result(done)
 
@@ -194,7 +194,7 @@ def resegment(
     booklet_id: UUID, body: ExpectedVersionIn, who: PrincipalDep, backends: BackendsDep
 ) -> ResegmentOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         booklet = unit.resegment().request(
             who.college_id,
             who.user_id,

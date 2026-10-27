@@ -64,6 +64,9 @@ class AuditAction(StrEnum):
     ACCOUNT_ENABLED = "account.enabled"
     ACCOUNT_FORCE_RESET = "account.force_reset"
     ACCOUNT_UNLOCKED = "account.unlocked"
+    SUBJECT_GRANTED = "subject.granted"
+    SUBJECT_REVOKED = "subject.revoked"
+    GOVERNOR_INVITED = "account.governor_invited"  # by a Tarn operator (P24, D180)
     ROSTER_IMPORTED = "roster.imported"
     # College settings (P19)
     COLLEGE_LLM_SCORING_SET = "college.llm_scoring_set"  # a Tarn operator switches the flag
@@ -79,6 +82,7 @@ ANONYMOUS_ACTIONS = frozenset(
         AuditAction.TENANT_SUSPENDED,
         AuditAction.TENANT_RESUMED,
         AuditAction.COLLEGE_LLM_SCORING_SET,
+        AuditAction.GOVERNOR_INVITED,
         AuditAction.BOOKLET_PROCESSED,
         AuditAction.BOOKLET_FAILED,
         AuditAction.BOOKLET_TEXT_READ,

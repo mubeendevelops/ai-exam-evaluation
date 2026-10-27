@@ -30,6 +30,7 @@ from tarn_core.testing.seed_world import SeededCollege, seed_in_memory, seeded_b
 
 BASE = "/api/v1"
 TEACHER = "suresh.naik@demo-com.example.test"
+ADMIN = "admin@demo-com.example.test"
 
 
 def commerce(mem: InMemory, seeded: list[SeededCollege]) -> SeededCollege:
@@ -53,7 +54,7 @@ def cli_result(tmp_path: Path) -> tuple[dict[str, Any], bytes]:
     )
     done = evaluation.evaluate(
         college.accounts.college_id,
-        college.accounts.teacher_ids[0],
+        college.accounts.sme_ids[0],
         student_id=mem.students.list(college.accounts.college_id)[0].id,
         blueprint_id=qp_ci(mem).id,
     )
@@ -64,16 +65,20 @@ def cli_result(tmp_path: Path) -> tuple[dict[str, Any], bytes]:
 def api_review(client: TestClient, backends: MemoryBackends) -> dict[str, Any]:
     mem = backends.mem
     college = commerce(mem, seed_in_memory(mem))
-    login = client.post(
-        f"{BASE}/auth/login",
-        json={"institution_id": "DEMO_COM", "email": TEACHER, "password": DEV_PASSWORD},
-    )
-    assert login.status_code == 200, login.text
-    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-    students = client.get(f"{BASE}/students", headers=headers).json()
+
+    def login(email: str) -> dict[str, str]:
+        response = client.post(
+            f"{BASE}/auth/login",
+            json={"institution_id": "DEMO_COM", "email": email, "password": DEV_PASSWORD},
+        )
+        assert response.status_code == 200, response.text
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+    headers, admin = login(TEACHER), login(ADMIN)
+    students = client.get(f"{BASE}/students", headers=admin).json()
     upload = client.post(
         f"{BASE}/booklets",
-        headers=headers,
+        headers=admin,  # the admin uploads (D162), the SME reviews
         data={"student_id": students[0]["id"], "blueprint_id": str(qp_ci(mem).id)},
         files=[("files", ("pages.pdf", fake_pdf(1), "application/pdf"))],
     )

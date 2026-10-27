@@ -30,7 +30,7 @@ from tarn_core.domain.content import (
 from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
-from tarn_core.domain.tenancy import College, Student, User
+from tarn_core.domain.tenancy import College, Student, SubjectGrant, User
 from tarn_core.ids import (
     AnswerId,
     BookletId,
@@ -69,6 +69,8 @@ class QuestionQuery:
     topic: str = ""
     subject_id: SubjectId | None = None
     difficulty: Difficulty | None = None
+    subject_ids: frozenset[SubjectId] | None = None
+    """Only these subjects (an SME's entitlements, P24); None = every subject."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -111,8 +113,15 @@ class ContentRepository(Protocol):
         id)."""
         ...
 
-    def topics(self, college_id: CollegeId, subject_id: SubjectId | None = None) -> Sequence[str]:
-        """Distinct non-empty topics of the college's latest question versions, sorted."""
+    def topics(
+        self,
+        college_id: CollegeId,
+        subject_id: SubjectId | None = None,
+        *,
+        subject_ids: frozenset[SubjectId] | None = None,
+    ) -> Sequence[str]:
+        """Distinct non-empty topics of the college's latest question versions, sorted;
+        ``subject_ids`` limits them to those subjects (an SME's, P24)."""
         ...
 
     def key_counts(
@@ -143,7 +152,26 @@ class UserRepository(Protocol):
 
     def list(self, college_id: CollegeId) -> Sequence[User]: ...
 
-    def save(self, college_id: CollegeId, user: User) -> None: ...
+    def save(self, college_id: CollegeId, user: User) -> None:
+        """Insert or update. A second admin or a second governor in the college is refused
+        (``InvariantError``; D161, D180)."""
+        ...
+
+
+class EntitlementRepository(Protocol):
+    """Which subjects each SME may work on (``sme_subjects``, P24). A college repository."""
+
+    def subjects_of(self, college_id: CollegeId, user_id: UserId) -> frozenset[SubjectId]: ...
+
+    def grants(self, college_id: CollegeId) -> Sequence[SubjectGrant]:
+        """Every grant of the college, oldest first."""
+        ...
+
+    def grant(self, college_id: CollegeId, grant: SubjectGrant) -> None:
+        """Adds the grant; an existing (user, subject) grant is left as it is."""
+        ...
+
+    def revoke(self, college_id: CollegeId, user_id: UserId, subject_id: SubjectId) -> None: ...
 
 
 class StudentRepository(Protocol):

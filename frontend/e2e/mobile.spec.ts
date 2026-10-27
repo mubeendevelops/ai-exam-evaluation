@@ -80,7 +80,7 @@ test('on a phone the question bank, a question and the New Question modal do not
 })
 
 test('on a phone the upload and segmentation steps do not scroll sideways', async ({ page }) => {
-  await new FakeApi().install(page)
+  await new FakeApi({ uploads: true }).install(page)
   await new FakeBooklets().install(page)
   await page.goto('/')
   await page.getByLabel('Institution / Org Domain ID').fill('SYNTH_COLLEGE')

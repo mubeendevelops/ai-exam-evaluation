@@ -56,11 +56,16 @@ def test_diagrams_from_reference_to_score_and_edit(
     with session(cid) as s:
         dw = diagram_world(s, college=world.a.college)
         bank = QuestionBankService(
-            content=s.content, users=s.users, blobs=s.blobs, runtime=s.runtime
+            content=s.content,
+            users=s.users,
+            entitlements=s.entitlements,
+            blobs=s.blobs,
+            runtime=s.runtime,
         )
         ref = ReferenceDiagrams(
             content=s.content,
             users=s.users,
+            entitlements=s.entitlements,
             blobs=s.blobs,
             runtime=s.runtime,
             recognizers={DiagramKind.FLOWCHART: ScriptedDiagramRecognizer(flowchart_detection())},

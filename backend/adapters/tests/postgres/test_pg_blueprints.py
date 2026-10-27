@@ -13,8 +13,9 @@ from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.blueprint import ExamBlueprint, OrGroup
 from tarn_core.domain.content import Subject
 from tarn_core.errors import InvariantError, NotFoundError
+from tarn_core.services.access import WHOLE_COLLEGE
 from tarn_core.services.blueprint_document import blueprint_to_document
-from tarn_core.testing.builders import make_services
+from tarn_core.testing.builders import make_services, make_subject
 
 pytestmark = pytest.mark.integration
 
@@ -31,7 +32,7 @@ def test_documents_survive_the_database_unchanged(session: Opener) -> None:
     college = new_college(session, "P6")
     with session(college.id) as s:
         svc = make_services(s)
-        subject = svc.subjects.create(college.id, college.teacher.id, code="S6", name="Subject six")
+        subject = make_subject(svc, college, code="S6", name="Subject six")
         ids = []
         for name in ("ci", "ipr", "objective"):
             created = svc.blueprints.create(
@@ -53,30 +54,32 @@ def test_edit_list_privacy_and_audit(session: Opener) -> None:
     b = new_college(session, "PB")
     with session(a.id) as s:
         svc = make_services(s)
-        subject = svc.subjects.create(a.id, a.teacher.id, code="SA", name="Subject A")
+        subject = make_subject(svc, a, code="SA", name="Subject A")
         created = svc.blueprints.create(a.id, a.teacher.id, _example("ci", subject.id))
     edited_doc = _example("ci", subject.id)
     edited_doc["title"] = "Second version"
 
     with session(b.id) as s:
         svc = make_services(s)
-        assert svc.blueprints.list(b.id) == []  # private to A (D165)
+        assert svc.blueprints.list(b.id, reach=WHOLE_COLLEGE) == []  # private to A (D165)
         with pytest.raises(NotFoundError):
-            svc.blueprints.get(b.id, created.id)
+            svc.blueprints.get(b.id, created.id, reach=WHOLE_COLLEGE)
         with pytest.raises(NotFoundError):
             svc.blueprints.update(b.id, b.teacher.id, created.id, edited_doc)
-        b_subject = svc.subjects.create(b.id, b.teacher.id, code="SA", name="Subject A")
+        b_subject = make_subject(svc, b, code="SA", name="Subject A")
         mine = svc.blueprints.create(b.id, b.teacher.id, _example("ci", b_subject.id))
 
     with session(a.id) as s:
         svc = make_services(s)
         v2 = svc.blueprints.update(a.id, a.teacher.id, created.id, edited_doc)
         assert v2.meta.version == 2
-        assert [v.title for v in svc.blueprints.versions(a.id, created.id)] == [
+        assert [
+            v.title for v in svc.blueprints.versions(a.id, created.id, reach=WHOLE_COLLEGE)
+        ] == [
             "Synthetic paper, CI shape",
             "Second version",
         ]
-        latest = {x.id: x for x in svc.blueprints.list(a.id)}
+        latest = {x.id: x for x in svc.blueprints.list(a.id, reach=WHOLE_COLLEGE)}
         assert latest[created.id].meta.version == 2 and mine.id not in latest
         # A cannot edit B's paper.
         with pytest.raises(NotFoundError):
@@ -95,11 +98,11 @@ def test_subjects_list_and_validation(session: Opener) -> None:
     college = new_college(session, "PS")
     with session(college.id) as s:
         svc = make_services(s)
-        made = svc.subjects.create(college.id, college.teacher.id, code="ZZ1", name="Zoology test")
-        assert made.id in {x.id for x in svc.subjects.list(college.id)}
+        made = make_subject(svc, college, code="ZZ1", name="Zoology test")
+        assert made.id in {x.id for x in svc.subjects.list(college.id, reach=WHOLE_COLLEGE)}
         assert isinstance(s.content.get(college.id, Subject, made.id), Subject)
         with pytest.raises(InvariantError):
-            svc.subjects.create(college.id, college.teacher.id, code=" ", name="x")
+            make_subject(svc, college, code=" ", name="x")
         with pytest.raises(InvariantError, match="no such subject"):
             svc.blueprints.create(
                 college.id,

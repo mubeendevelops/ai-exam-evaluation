@@ -29,6 +29,7 @@ from tarn_core.domain.common import Box, ContentRef, JsonValue
 from tarn_core.domain.content import (
     DiagramParams,
     Glossary,
+    Question,
     ReferenceDiagram,
     RubricCriterion,
 )
@@ -53,7 +54,12 @@ from tarn_core.ids import (
 )
 from tarn_core.ports.engines import DiagramRecognizer
 from tarn_core.ports.jobs import JobQueue
-from tarn_core.ports.repositories import BookletRepository, ContentRepository, UserRepository
+from tarn_core.ports.repositories import (
+    BookletRepository,
+    ContentRepository,
+    EntitlementRepository,
+    UserRepository,
+)
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime
 from tarn_core.services.content import ensure_author
@@ -110,6 +116,7 @@ class ReferenceDiagrams:
         *,
         content: ContentRepository,
         users: UserRepository,
+        entitlements: EntitlementRepository,
         blobs: BlobStore,
         runtime: Runtime,
         recognizers: Recognizers,
@@ -119,6 +126,7 @@ class ReferenceDiagrams:
     ) -> None:
         self._content = content
         self._users = users
+        self._entitlements = entitlements
         self._blobs = blobs
         self._rt = runtime
         self._recognizers = recognizers
@@ -172,7 +180,8 @@ class ReferenceDiagrams:
     ) -> ReferenceDiagram:
         """The teacher's corrections, as the next version."""
         diagram = self._content.get(college_id, ReferenceDiagram, diagram_id)
-        ensure_author(self._users, college_id, actor_id)
+        question = self._content.get(college_id, Question, diagram.question_id)
+        ensure_author(self._users, self._entitlements, college_id, actor_id, question.subject_id)
         if diagram.meta.version != expected_version:
             raise StaleGraphError("the reference graph changed since it was loaded")
         if not edits and (kind is None or kind is diagram.kind):

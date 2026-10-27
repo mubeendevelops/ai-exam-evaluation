@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router'
-import { RedirectIfSignedIn, RequireAdmin, RequireAuth } from './auth/guards'
+import { RedirectIfSignedIn, RequireAuth, RequireCapability, RequireGovernor } from './auth/guards'
 import { AppShell } from './components/app/AppShell'
 import { PublicLayout } from './components/public/PublicLayout'
 import AcceptInvitePage from './pages/AcceptInvitePage'
@@ -7,6 +7,7 @@ import AdminPage from './pages/AdminPage'
 import EvaluatePage from './pages/EvaluatePage'
 import EvaluatedPage from './pages/EvaluatedPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import GovernorPage from './pages/GovernorPage'
 import LandingPage from './pages/LandingPage'
 import QnaPage from './pages/QnaPage'
 import RecoverPage from './pages/RecoverPage'
@@ -34,12 +35,20 @@ export default function App() {
 
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
-          <Route path="qna" element={<QnaPage />} />
-          <Route path="evaluate" element={<EvaluatePage />} />
-          <Route path="evaluated" element={<EvaluatedPage />} />
-          <Route path="schema" element={<SchemaPage />} />
-          <Route element={<RequireAdmin />}>
+          {/* Each persona sees what its capabilities open (D177); the server checks again. */}
+          <Route element={<RequireCapability capability="author_content" />}>
+            <Route path="qna" element={<QnaPage />} />
+            <Route path="schema" element={<SchemaPage />} />
+          </Route>
+          <Route element={<RequireCapability capability="evaluate" />}>
+            <Route path="evaluate" element={<EvaluatePage />} />
+            <Route path="evaluated" element={<EvaluatedPage />} />
+          </Route>
+          <Route element={<RequireCapability capability="manage_smes" />}>
             <Route path="admin" element={<AdminPage />} />
+          </Route>
+          <Route element={<RequireGovernor />}>
+            <Route path="governor" element={<GovernorPage />} />
           </Route>
         </Route>
       </Route>

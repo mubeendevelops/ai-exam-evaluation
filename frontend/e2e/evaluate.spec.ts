@@ -3,7 +3,7 @@ import { FakeApi } from './fakeApi'
 import { FakeBooklets } from './fakeBooklets'
 
 async function signIn(page: Page) {
-  await new FakeApi().install(page)
+  await new FakeApi({ uploads: true }).install(page)
   const booklets = new FakeBooklets()
   await booklets.install(page)
   await page.goto('/')
@@ -89,7 +89,7 @@ test('upload a booklet, watch it being read, see its segments, correct a line an
   await expect(page).toHaveURL(/step=3/)
   await expect(page.getByRole('region', { name: 'Panel A: Answer Mapping' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Panel B: AI Diagnostic Reasoning' })).toBeVisible()
-  await expect(page.getByRole('region', { name: 'Panel C: Teacher Final Grading' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Panel C: SME Final Grading' })).toBeVisible()
   await expect(page.getByText('Suggested AI Marks: 2.5 / 3')).toBeVisible()
 })
 
@@ -124,7 +124,7 @@ test('approve every answer, approve the booklet, reopen one, amend it and find r
   await expect(mapping.getByRole('region', { name: "Student's answer" })).toContainText(
     'Lenz law opposes the change',
   )
-  const grading = page.getByRole('region', { name: 'Panel C: Teacher Final Grading' })
+  const grading = page.getByRole('region', { name: 'Panel C: SME Final Grading' })
   await grading.getByRole('button', { name: 'Approve answer' }).click()
   await expect(page.getByText('Question 1 approved.')).toBeVisible()
 
@@ -132,7 +132,7 @@ test('approve every answer, approve the booklet, reopen one, amend it and find r
   await expect(mapping).toContainText('Define resonance in an LCR circuit.')
   await expect(page.getByText('1 of 2 answers approved')).toBeVisible()
   await grading.getByRole('switch', { name: 'Override AI Score' }).click()
-  const marks = grading.getByLabel(/Teacher marks/)
+  const marks = grading.getByLabel(/SME marks/)
   await marks.fill('2.3')
   await expect(grading.getByRole('alert')).toContainText('steps of 0.5')
   await expect(grading.getByRole('button', { name: 'Approve answer' })).toBeDisabled()
@@ -165,7 +165,7 @@ test('approve every answer, approve the booklet, reopen one, amend it and find r
 
   // --- amend it: approving the last draft issues v2 ---
   await grading.getByRole('switch', { name: 'Override AI Score' }).click()
-  await grading.getByLabel(/Teacher marks/).fill('3')
+  await grading.getByLabel(/SME marks/).fill('3')
   await grading.getByRole('button', { name: 'Approve amendment' }).click()
   await expect(page.getByText(/The amendment is complete/)).toBeVisible()
   await expect(sheets).toContainText('Result sheet v2')

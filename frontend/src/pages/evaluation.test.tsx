@@ -271,7 +271,7 @@ async function open(initial: Review, extra: Routes = {}, query = '') {
   const s = server(initial, extra)
   const user = userEvent.setup()
   const view = renderApp(`/evaluate?booklet=${BOOKLET}&step=3${query}`)
-  await screen.findByRole('region', { name: 'Panel C: Teacher Final Grading' })
+  await screen.findByRole('region', { name: 'Panel C: SME Final Grading' })
   return { ...s, user, view }
 }
 
@@ -316,7 +316,7 @@ describe('step 3: evaluation view', () => {
       within(criteria).getByRole('progressbar', { name: 'Names the effect: 100% credit' }),
     ).toBeVisible()
 
-    const c = screen.getByRole('region', { name: 'Panel C: Teacher Final Grading' })
+    const c = screen.getByRole('region', { name: 'Panel C: SME Final Grading' })
     expect(within(c).getByText('Human In The Loop')).toBeVisible()
     expect(within(c).getByRole('button', { name: 'Approve answer' })).toBeEnabled()
     expect(screen.queryByText('Complete Evaluation for Q1')).toBeNull()
@@ -440,7 +440,7 @@ describe('step 3: evaluation view', () => {
 
   it('overrides the mark in the paper’s step only, and sends tags and remarks', async () => {
     const { mock, user } = await open(start())
-    const marks = screen.getByLabelText(/Teacher marks/)
+    const marks = screen.getByLabelText(/SME marks/)
     expect(marks).toBeDisabled()
     expect(marks).toHaveValue(2)
     expect(marks).toHaveAttribute('step', '0.5')
@@ -507,7 +507,7 @@ describe('step 3: evaluation view', () => {
     expect(screen.getByRole('switch', { name: 'Override AI Score' })).toBeDisabled()
     expect(screen.getByRole('switch', { name: 'Override AI Score' })).toBeChecked()
     expect(screen.getByRole('button', { name: 'Approve answer' })).toBeDisabled()
-    await user.type(screen.getByLabelText(/Teacher marks/), '1')
+    await user.type(screen.getByLabelText(/SME marks/), '1')
     await user.click(screen.getByRole('button', { name: 'Approve answer' }))
     await waitFor(() => expect(mock.callsTo(`POST ${B}/answers/a1/approve`)).toHaveLength(1))
     expect(lastBody(mock, `POST ${B}/answers/a1/approve`)).toMatchObject({ teacher_mark: 1 })
@@ -790,7 +790,7 @@ describe('step 3: evaluation view', () => {
       expect(screen.getByText('Amendment draft')).toBeVisible()
       expect(screen.getByText('Draft amendment')).toBeVisible()
       await user.click(screen.getByRole('switch', { name: 'Override AI Score' }))
-      const marks = screen.getByLabelText(/Teacher marks/)
+      const marks = screen.getByLabelText(/SME marks/)
       await user.clear(marks)
       await user.type(marks, '3')
       await user.click(screen.getByRole('button', { name: 'Approve amendment' }))

@@ -264,12 +264,12 @@ class PgIdentityStore:
 
     # --- counters ---------------------------------------------------------------------------
 
-    def counters(self, college_id: CollegeId, user_id: UserId) -> LoginCounters:
+    def counters(self, college_id: CollegeId, user_id: UserId, source: str = "") -> LoginCounters:
         self._bind(college_id)
+        c = m.login_counters.c
         row = self._conn.execute(
             select(m.login_counters).where(
-                m.login_counters.c.college_id == college_id,
-                m.login_counters.c.user_id == user_id,
+                c.college_id == college_id, c.user_id == user_id, c.source == source
             )
         ).first()
         if row is None:
@@ -280,7 +280,12 @@ class PgIdentityStore:
         )
 
     def record_failed_login(
-        self, college_id: CollegeId, user_id: UserId, now: datetime, policy: AuthPolicy
+        self,
+        college_id: CollegeId,
+        user_id: UserId,
+        now: datetime,
+        policy: AuthPolicy,
+        source: str = "",
     ) -> LoginCounters:
         """One statement: the row lock makes concurrent failures count exactly."""
         self._bind(college_id)
@@ -289,12 +294,13 @@ class PgIdentityStore:
         first_reached = policy.max_failed_logins <= 1
         stmt = insert(m.login_counters).values(
             user_id=user_id,
+            source=source,
             college_id=college_id,
             failed_login_attempts=0 if first_reached else 1,
             lockout_until=now + policy.lockout if first_reached else None,
         )
         upsert = stmt.on_conflict_do_update(
-            index_elements=["user_id"],
+            index_elements=["user_id", "source"],
             set_={
                 "failed_login_attempts": case((reached, 0), else_=c.failed_login_attempts + 1),
                 "lockout_until": case((reached, now + policy.lockout), else_=c.lockout_until),
@@ -305,10 +311,13 @@ class PgIdentityStore:
             row = self._conn.execute(upsert).one()
         return LoginCounters(failed_login_attempts=row[0], lockout_until=row[1])
 
-    def set_counters(self, college_id: CollegeId, user_id: UserId, counters: LoginCounters) -> None:
+    def set_counters(
+        self, college_id: CollegeId, user_id: UserId, counters: LoginCounters, source: str = ""
+    ) -> None:
         self._bind(college_id)
         stmt = insert(m.login_counters).values(
             user_id=user_id,
+            source=source,
             college_id=college_id,
             failed_login_attempts=counters.failed_login_attempts,
             lockout_until=counters.lockout_until,
@@ -316,13 +325,25 @@ class PgIdentityStore:
         with self._writing(f"counters of {user_id}", "counters"):
             self._conn.execute(
                 stmt.on_conflict_do_update(
-                    index_elements=["user_id"],
+                    index_elements=["user_id", "source"],
                     set_={
                         "failed_login_attempts": stmt.excluded.failed_login_attempts,
                         "lockout_until": stmt.excluded.lockout_until,
                     },
                     where=m.login_counters.c.college_id == college_id,
                 )
+            )
+
+    def clear_counters(self, college_id: CollegeId, user_id: UserId) -> None:
+        """Every source back to zero (an UPDATE: the app role deletes nothing here)."""
+        self._bind(college_id)
+        self.set_counters(college_id, user_id, LoginCounters())
+        c = m.login_counters.c
+        with self._writing(f"counters of {user_id}", "counters"):
+            self._conn.execute(
+                update(m.login_counters)
+                .where(c.college_id == college_id, c.user_id == user_id)
+                .values(failed_login_attempts=0, lockout_until=None)
             )
 
     # --- recovery codes ---------------------------------------------------------------------

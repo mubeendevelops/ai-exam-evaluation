@@ -23,6 +23,7 @@ from tarn_adapters.postgres.database import PostgresDatabase
 from tarn_adapters.postgres.jobs import JobSettings
 from tarn_adapters.runtime import SystemClock, UuidGenerator
 from tarn_adapters.sheets import PyMuPdfSheetRenderer
+from tarn_core.domain.tenancy import User
 from tarn_core.ids import BookletId, CollegeId
 from tarn_core.ports.identity import IdentityStore
 from tarn_core.ports.jobs import JobQueue
@@ -31,6 +32,7 @@ from tarn_core.ports.repositories import (
     BookletRepository,
     CollegeRepository,
     ContentRepository,
+    EntitlementRepository,
     ResultSheetRepository,
     ScoreRepository,
     StudentRepository,
@@ -39,11 +41,13 @@ from tarn_core.ports.repositories import (
 from tarn_core.ports.runtime import Clock, IdGenerator
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime
+from tarn_core.services.access import AccessService, Reach, reach_of
 from tarn_core.services.auth import AccountService, AuthKit, AuthService
 from tarn_core.services.blueprints import BlueprintService
 from tarn_core.services.booklets import BookletService
 from tarn_core.services.diagrams.jobs import QueuedRescore
 from tarn_core.services.diagrams.service import ReferenceDiagrams
+from tarn_core.services.entitlements import EntitlementService
 from tarn_core.services.evaluated import EvaluatedBooklets
 from tarn_core.services.pipeline import PageDecisions
 from tarn_core.services.question_bank import QuestionBankService
@@ -80,6 +84,9 @@ class CollegeScope(Protocol):
 
     @property
     def content(self) -> ContentRepository: ...
+
+    @property
+    def entitlements(self) -> EntitlementRepository: ...
 
     @property
     def booklets(self) -> BookletRepository: ...
@@ -134,8 +141,34 @@ class Unit:
     @property
     def accounts(self) -> AccountService:
         return AccountService(
-            identity=self.identity, users=self.scope.users, kit=self.kit, runtime=self.scope.runtime
+            identity=self.identity,
+            users=self.scope.users,
+            entitlements=self.scope.entitlements,
+            kit=self.kit,
+            runtime=self.scope.runtime,
         )
+
+    @property
+    def entitlements(self) -> EntitlementService:
+        return EntitlementService(
+            entitlements=self.scope.entitlements,
+            users=self.scope.users,
+            content=self.scope.content,
+            runtime=self.scope.runtime,
+        )
+
+    @property
+    def access(self) -> AccessService:
+        return AccessService(
+            users=self.scope.users,
+            entitlements=self.scope.entitlements,
+            content=self.scope.content,
+            booklets=self.scope.booklets,
+        )
+
+    def reach(self, user: User) -> Reach:
+        """The subjects ``user``'s work is limited to (D178)."""
+        return reach_of(user, self.scope.entitlements)
 
     @property
     def registration(self) -> RegistrationService:
@@ -156,7 +189,10 @@ class Unit:
     @property
     def subjects(self) -> SubjectService:
         return SubjectService(
-            content=self.scope.content, users=self.scope.users, runtime=self.scope.runtime
+            content=self.scope.content,
+            users=self.scope.users,
+            entitlements=self.scope.entitlements,
+            runtime=self.scope.runtime,
         )
 
     @property
@@ -164,6 +200,7 @@ class Unit:
         return QuestionBankService(
             content=self.scope.content,
             users=self.scope.users,
+            entitlements=self.scope.entitlements,
             blobs=self.scope.blobs,
             runtime=self.scope.runtime,
         )
@@ -171,7 +208,10 @@ class Unit:
     @property
     def blueprints(self) -> BlueprintService:
         return BlueprintService(
-            content=self.scope.content, users=self.scope.users, runtime=self.scope.runtime
+            content=self.scope.content,
+            users=self.scope.users,
+            entitlements=self.scope.entitlements,
+            runtime=self.scope.runtime,
         )
 
     @property
@@ -204,6 +244,7 @@ class Unit:
         return ReferenceDiagrams(
             content=self.scope.content,
             users=self.scope.users,
+            entitlements=self.scope.entitlements,
             blobs=self.scope.blobs,
             runtime=self.scope.runtime,
             recognizers={},

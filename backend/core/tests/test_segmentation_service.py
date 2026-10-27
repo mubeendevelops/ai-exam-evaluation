@@ -136,7 +136,7 @@ def world() -> World:
     return World(
         mem=mem,
         college=commerce.accounts.college_id,
-        teacher=commerce.accounts.teacher_ids[0],
+        teacher=commerce.accounts.sme_ids[0],
         other=engineering.accounts.college_id,
         blueprint=blueprint,
     )

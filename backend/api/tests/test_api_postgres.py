@@ -87,7 +87,7 @@ def _register(client: TestClient, mailer: CapturingMailer, institution: str, ema
 def _teacher(
     client: TestClient, mailer: CapturingMailer, admin: dict[str, str], institution: str, email: str
 ) -> dict[str, str]:
-    """Invite a teacher, accept the invitation and sign in (teachers author content, D165)."""
+    """Invite an SME, accept the invitation and sign in (SMEs author content, D165)."""
     invited = client.post(
         "/api/v1/accounts", json={"display_name": "Teacher", "email": email}, headers=admin
     )
@@ -143,8 +143,11 @@ def test_question_bank_with_real_database_and_minio(
     a = _teacher(client, mailer, a_admin, "PG_QA", "teacher@pg-qa.example")
     b = _teacher(client, mailer, b_admin, "PG_QB", "teacher@pg-qb.example")
     subject = client.post(
-        "/api/v1/subjects", json={"code": "PHY", "name": "Physics"}, headers=a
-    ).json()["id"]
+        "/api/v1/subjects", json={"code": "PHY", "name": "Physics"}, headers=a_admin
+    ).json()["id"]  # the admin keeps the subjects and grants them (D160)
+    a_id = client.get("/api/v1/auth/me", headers=a).json()["user"]["id"]
+    granted = client.post(f"/api/v1/accounts/{a_id}/subjects/{subject}", headers=a_admin)
+    assert granted.status_code == 200, granted.text
     created = client.post(
         "/api/v1/questions",
         json={
@@ -186,7 +189,7 @@ def test_question_bank_with_real_database_and_minio(
     )
     assert up.status_code == 201, up.text
     assert client.get(up.json()["content_url"], headers=a).content == pdf  # from MinIO
-    assert client.get(up.json()["content_url"], headers=a_admin).content == pdf  # admin reads
+    assert client.get(up.json()["content_url"], headers=a_admin).status_code == 403  # D167
     seen = client.get(f"/api/v1/questions/{qid}", headers=a).json()
     assert seen["rubric"]["complete"] is True and seen["key_count"] == 2
 
@@ -199,7 +202,7 @@ def test_question_bank_with_real_database_and_minio(
     assert page["total"] == 0
     mine = client.get("/api/v1/questions", params={"keyword": "rayleigh"}, headers=a).json()
     assert [i["code"] for i in mine["items"]] == ["PG-Q1"] and mine["items"][0]["key_count"] == 2
-    # The admin reads but does not edit.
+    # The admin neither reads nor edits content (P24).
     assert client.put(f"/api/v1/questions/{qid}", json=edit, headers=a_admin).status_code == 403
 
 
@@ -229,12 +232,16 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
     client.post("/api/v1/roster/import", content=csv, headers=a | {"Content-Type": "text/csv"})
     student = client.get("/api/v1/students", headers=a).json()[0]["id"]
     ids, clock = UuidGenerator(), SystemClock()
+    sme = _teacher(client, mailer, a, "PG_BK", "sme@pg-bk.example")  # opens the pages
     with backends._app.session(college_id, ids=ids, clock=clock, blobs=backends._blobs) as s:
-        admin = s.users.list(college_id)[0]
-        blueprint = ci_shaped_blueprint(
+        users = s.users.list(college_id)
+        blueprint = ci_shaped_blueprint(  # granted to the SME by the builder
             s,
             CollegeFixture(
-                college=s.colleges.get(college_id), teacher=admin, admin=admin, students=()
+                college=s.colleges.get(college_id),
+                teacher=next(u for u in users if u.role.value == "sme"),
+                admin=next(u for u in users if u.role.value == "admin"),
+                students=(),
             ),
         )
 
@@ -285,17 +292,21 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
     )
     assert runner.run_one() is True  # page cleaning; the reading job is queued next
 
-    detail = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()
+    assert (
+        client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()["pages"][0]["image_url"]
+        is None
+    )  # the admin sees progress, not pages (D167)
+    detail = client.get(f"/api/v1/booklets/{booklet['id']}", headers=sme).json()
     assert detail["status"] == "pages_ready" and detail["page_count"] == 2
     assert [p["cleaned"] for p in detail["pages"]] == [True, True]
     assert detail["pages"][0]["cropped"] is True and detail["pages"][1]["cropped"] is False
-    cleaned = client.get(detail["pages"][0]["image_url"], headers=a)
+    cleaned = client.get(detail["pages"][0]["image_url"], headers=sme)
     assert cleaned.status_code == 200 and cleaned.content[:3] == b"\xff\xd8\xff"
-    original = client.get(detail["pages"][0]["original_url"], headers=a)
+    original = client.get(detail["pages"][0]["original_url"], headers=sme)
     assert original.status_code == 200 and original.content[:3] == b"\xff\xd8\xff"
     assert client.get("/api/v1/booklets", headers=a).json()["waiting"] == 1  # waits for OCR
     assert runner.run_one() is True  # reading
-    read = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()
+    read = client.get(f"/api/v1/booklets/{booklet['id']}", headers=sme).json()
     assert read["status"] == "text_ready" and read["pages_read"] == 2
     assert runner.run_one() is True  # segmentation (P12)
     assert runner.run_one() is True  # diagrams (P14): no diagram question, scoring is queued
@@ -303,13 +314,14 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
     assert runner.run_one() is False
     scored = client.get(f"/api/v1/booklets/{booklet['id']}", headers=a).json()
     assert scored["status"] == "scored"
-    text = client.get(read["pages"][0]["text_url"], headers=a).json()
+    text = client.get(read["pages"][0]["text_url"], headers=sme).json()
     assert [r["text"] for r in text["regions"]] == ["synthetic line"]
-    assert client.get(read["pages"][0]["text_url"], headers=b).status_code == 404
+    b_sme = _teacher(client, mailer, b, "PG_BK2", "sme@pg-bk2.example")
+    assert client.get(read["pages"][0]["text_url"], headers=b_sme).status_code == 404
     listing = client.get("/api/v1/booklets", headers=a).json()
     assert [x["id"] for x in listing["items"]] == [booklet["id"]] and listing["waiting"] == 0
     assert client.get(f"/api/v1/booklets/{booklet['id']}", headers=b).status_code == 404
-    assert client.get(detail["pages"][0]["image_url"], headers=b).status_code == 404
+    assert client.get(detail["pages"][0]["image_url"], headers=b_sme).status_code == 404
 
     stored = [
         f"college/{college_id}/booklet/{booklet['id']}/source/001.pdf",
@@ -318,5 +330,6 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
         f"college/{college_id}/booklet/{booklet['id']}/clean/002.jpg",
     ]
     assert all(backends._blobs.exists(BlobKey(k)) for k in stored)
-    assert client.delete(f"/api/v1/booklets/{booklet['id']}", headers=a).status_code == 204
+    assert client.delete(f"/api/v1/booklets/{booklet['id']}", headers=a).status_code == 403
+    assert client.delete(f"/api/v1/booklets/{booklet['id']}", headers=sme).status_code == 204
     assert not any(backends._blobs.exists(BlobKey(k)) for k in stored)

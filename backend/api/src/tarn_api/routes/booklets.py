@@ -1,6 +1,8 @@
-"""Booklets: upload (one PDF, or a set of images), the page-cleaning and reading status the UI
-shows, the cleaned and original page images, what OCR read on a page, and the teacher's "use
-anyway" and delete."""
+"""Booklets: upload (one PDF, or a set of images; the admin's job, D162), the page-cleaning
+and reading status the UI shows (admin and SMEs: ``view_progress``; the admin sees no marks,
+page images or text, D167), the cleaned and original page images, what OCR read on a page, and
+the SME's "use anyway" and delete (``evaluate``). An SME sees the booklets of their subjects
+only; a booklet's subject is its paper's (D178)."""
 
 from typing import Annotated, Literal
 from uuid import UUID
@@ -32,11 +34,12 @@ from tarn_api.schemas import (
     ReadingOut,
     RegionOut,
 )
-from tarn_api.security import BackendsDep, PrincipalDep, current_user
+from tarn_api.security import BackendsDep, PrincipalDep, booklet_user, current_user
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import Booklet, Page, Region
 from tarn_core.domain.common import BlobKey
-from tarn_core.domain.tenancy import Role
+from tarn_core.domain.personas import CAPABILITIES, Capability
+from tarn_core.domain.tenancy import User
 from tarn_core.errors import UploadTooLargeError
 from tarn_core.ids import BlueprintId, BookletId, CollegeId, StudentId
 
@@ -49,7 +52,12 @@ router = APIRouter(
 _MEDIA = {"jpg": "image/jpeg", "png": "image/png"}
 
 
-def _page_out(base: str, page: Page) -> PageOut:
+def _evaluator(user: User) -> bool:
+    """Marks, page images and text are for the SME (D167)."""
+    return Capability.EVALUATE in CAPABILITIES[user.role]
+
+
+def _page_out(base: str, page: Page, evaluator: bool = True) -> PageOut:
     m = page.metrics
     number = page.index + 1
     return PageOut(
@@ -68,12 +76,14 @@ def _page_out(base: str, page: Page) -> PageOut:
         perspective_corrected=None if m is None else m.perspective_corrected,
         neighbour_removed=None if m is None else m.neighbour_removed,
         page_found=None if m is None else m.page_found,
-        image_url=f"{base}/pages/{number}/image" if page.cleaned else None,
-        original_url=f"{base}/pages/{number}/image?kind=original" if page.original else None,
+        image_url=f"{base}/pages/{number}/image" if page.cleaned and evaluator else None,
+        original_url=(
+            f"{base}/pages/{number}/image?kind=original" if page.original and evaluator else None
+        ),
         text_read=page.text_read,
         needs_text=page.needs_text,
         ocr_failures=list(page.ocr_failures),
-        text_url=f"{base}/pages/{number}/text" if page.text_read else None,
+        text_url=f"{base}/pages/{number}/text" if page.text_read and evaluator else None,
     )
 
 
@@ -83,6 +93,7 @@ def _booklet_out(
     booklet: Booklet,
     *,
     duplicates: tuple[UUID, ...] = (),
+    evaluator: bool = True,
 ) -> tuple[BookletOut, list[Page]]:
     pages = list(unit.scope.booklets.pages(college_id, booklet.id))
     student = unit.scope.students.get(college_id, booklet.student_id)
@@ -107,7 +118,7 @@ def _booklet_out(
         failure_reason=booklet.failure_reason,
         duplicate_of=list(duplicates),
     )
-    if booklet.approved:
+    if booklet.approved and evaluator:
         sheets = unit.scope.sheets.versions(college_id, booklet.id)
         if sheets:
             latest = sheets[-1]
@@ -164,7 +175,7 @@ async def upload_booklet(
             )
         data.append(content)
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.UPLOAD_BOOKLETS)
         registration = unit.uploads.upload(
             who.college_id,
             who.user_id,
@@ -174,7 +185,11 @@ async def upload_booklet(
             allow_duplicate=allow_duplicate,
         )
         out, _ = _booklet_out(
-            unit, who.college_id, registration.booklet, duplicates=tuple(registration.duplicates)
+            unit,
+            who.college_id,
+            registration.booklet,
+            duplicates=tuple(registration.duplicates),
+            evaluator=_evaluator(user),
         )
     return out
 
@@ -196,15 +211,22 @@ def list_booklets(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> BookletPageOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.VIEW_PROGRESS)
+        visible = unit.access.visible(
+            who.college_id, unit.reach(user), unit.scope.booklets.list(who.college_id)
+        )
         every = [
             b
-            for b in unit.scope.booklets.list(who.college_id)
+            for b in visible
             if (not mine or b.uploaded_by == who.user_id)
             and (booklet_status is None or b.status.value == booklet_status)
         ]
         every.sort(key=lambda b: (b.uploaded_at, str(b.id)), reverse=True)
-        items = [_booklet_out(unit, who.college_id, b)[0] for b in every[offset : offset + limit]]
+        evaluator = _evaluator(user)
+        items = [
+            _booklet_out(unit, who.college_id, b, evaluator=evaluator)[0]
+            for b in every[offset : offset + limit]
+        ]
         waiting = unit.scope.booklets.count_waiting(who.college_id, who.user_id)
     return BookletPageOut(
         items=items,
@@ -224,11 +246,14 @@ def list_booklets(
 )
 def get_booklet(booklet_id: UUID, who: PrincipalDep, backends: BackendsDep) -> BookletDetailOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = booklet_user(unit, who, Capability.VIEW_PROGRESS, booklet_id)
         booklet = unit.scope.booklets.get(who.college_id, BookletId(booklet_id))
-        out, pages = _booklet_out(unit, who.college_id, booklet)
+        evaluator = _evaluator(user)
+        out, pages = _booklet_out(unit, who.college_id, booklet, evaluator=evaluator)
     base = f"/api/v1/booklets/{booklet_id}"
-    return BookletDetailOut(**out.model_dump(), pages=[_page_out(base, p) for p in pages])
+    return BookletDetailOut(
+        **out.model_dump(), pages=[_page_out(base, p, evaluator) for p in pages]
+    )
 
 
 @router.get(
@@ -244,7 +269,7 @@ def page_image(
     kind: Annotated[Literal["cleaned", "original"], Query()] = "cleaned",
 ) -> Response:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         pages = unit.scope.booklets.pages(who.college_id, BookletId(booklet_id))
         page = next((p for p in pages if p.index + 1 == number), None)
         key: BlobKey | None = None
@@ -309,7 +334,7 @@ def page_text(
     booklet_id: UUID, number: int, who: PrincipalDep, backends: BackendsDep
 ) -> PageTextOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         pages = unit.scope.booklets.pages(who.college_id, BookletId(booklet_id))
         page = next((p for p in pages if p.index + 1 == number), None)
         if page is None:
@@ -336,7 +361,7 @@ def use_page_anyway(
     booklet_id: UUID, number: int, who: PrincipalDep, backends: BackendsDep
 ) -> BookletOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         booklet = unit.page_decisions.use_anyway(
             who.college_id, who.user_id, BookletId(booklet_id), number - 1
         )
@@ -352,6 +377,6 @@ def use_page_anyway(
 )
 def delete_booklet(booklet_id: UUID, who: PrincipalDep, backends: BackendsDep) -> Response:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         unit.booklet_service.delete(who.college_id, who.user_id, BookletId(booklet_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

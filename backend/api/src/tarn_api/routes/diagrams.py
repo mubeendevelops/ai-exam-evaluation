@@ -1,6 +1,6 @@
 """Diagram graphs (R6, U6 Q20): the reference diagram's graph (the college's own content,
-edited by its teachers as a new version) and the drawings recognised in a booklet (college data,
-edited by the teacher, after which the answer is re-scored by the worker), and the R6
+edited by the SMEs of its subject as a new version) and the drawings recognised in a booklet
+(college data, edited by the SME, after which the answer is re-scored by the worker), and the R6
 comparison documents of an answer's latest score. Recognition itself runs in the worker."""
 
 from uuid import UUID
@@ -18,11 +18,11 @@ from tarn_api.schemas import (
     StudentDiagramOut,
     StudentGraphEditIn,
 )
-from tarn_api.security import BackendsDep, PrincipalDep, current_user
+from tarn_api.security import BackendsDep, PrincipalDep, booklet_user, current_user
 from tarn_core.domain.common import Box
-from tarn_core.domain.content import ReferenceDiagram
+from tarn_core.domain.content import Question, ReferenceDiagram
 from tarn_core.domain.diagram import DiagramGraph, DiagramKind, NodeShape, StudentDiagram
-from tarn_core.domain.tenancy import Role
+from tarn_core.domain.personas import Capability
 from tarn_core.errors import NotFoundError
 from tarn_core.ids import AnswerId, BookletId, QuestionId, ReferenceDiagramId, StudentDiagramId
 from tarn_core.services.content import ensure_author
@@ -102,9 +102,12 @@ def reference_graph(
     question_id: UUID, diagram_id: UUID, who: PrincipalDep, backends: BackendsDep
 ) -> ReferenceGraphOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
         diagram, _ = unit.bank.read_reference_diagram(
-            who.college_id, QuestionId(question_id), ReferenceDiagramId(diagram_id)
+            who.college_id,
+            QuestionId(question_id),
+            ReferenceDiagramId(diagram_id),
+            reach=unit.reach(user),
         )
     return _reference_out(question_id, diagram)
 
@@ -113,7 +116,7 @@ def reference_graph(
     "/questions/{question_id}/diagrams/{diagram_id}/graph/edits",
     response_model=ReferenceGraphOut,
     responses=_EDIT_ERRORS,
-    summary="Correct the reference graph or change its kind (teachers)",
+    summary="Correct the reference graph or change its kind (SMEs)",
     description="Applies the edits in order and stores the next version. Add, remove, relabel or "
     "reshape nodes; add, remove or relabel edges; reverse an arrow; re-attach an arrow's ends. "
     "Removing a node removes its edges. Scores already made keep the version they used.",
@@ -126,9 +129,12 @@ def edit_reference_graph(
     backends: BackendsDep,
 ) -> ReferenceGraphOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
         unit.bank.read_reference_diagram(
-            who.college_id, QuestionId(question_id), ReferenceDiagramId(diagram_id)
+            who.college_id,
+            QuestionId(question_id),
+            ReferenceDiagramId(diagram_id),
+            reach=unit.reach(user),
         )
         diagram = unit.reference_diagrams.edit(
             who.college_id,
@@ -145,7 +151,7 @@ def edit_reference_graph(
     "/questions/{question_id}/diagrams/{diagram_id}/recognize",
     status_code=status.HTTP_202_ACCEPTED,
     response_class=Response,
-    summary="Read the reference PNG again (teachers)",
+    summary="Read the reference PNG again (SMEs)",
     description="Queues recognition; the worker stores the result as the next version, "
     "replacing any edits in that version (earlier versions are kept).",
 )
@@ -153,11 +159,21 @@ def recognize_reference(
     question_id: UUID, diagram_id: UUID, who: PrincipalDep, backends: BackendsDep
 ) -> Response:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
         diagram, _ = unit.bank.read_reference_diagram(
-            who.college_id, QuestionId(question_id), ReferenceDiagramId(diagram_id)
+            who.college_id,
+            QuestionId(question_id),
+            ReferenceDiagramId(diagram_id),
+            reach=unit.reach(user),
         )
-        ensure_author(unit.scope.users, who.college_id, who.user_id)
+        question = unit.scope.content.get(who.college_id, Question, diagram.question_id)
+        ensure_author(
+            unit.scope.users,
+            unit.scope.entitlements,
+            who.college_id,
+            who.user_id,
+            question.subject_id,
+        )
         queue_reference_recognition(unit.scope.jobs, who.college_id, who.user_id, diagram)
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
@@ -174,8 +190,7 @@ def booklet_diagrams(
     booklet_id: UUID, who: PrincipalDep, backends: BackendsDep
 ) -> list[StudentDiagramOut]:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        unit.scope.booklets.get(who.college_id, BookletId(booklet_id))
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         diagrams = unit.scope.booklets.diagrams(who.college_id, BookletId(booklet_id))
     return [_student_out(d) for d in diagrams]
 
@@ -197,7 +212,7 @@ def edit_student_diagram(
     backends: BackendsDep,
 ) -> StudentDiagramOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         diagram = unit.student_diagrams(BookletId(booklet_id)).edit(
             who.college_id,
             who.user_id,
@@ -220,7 +235,7 @@ def diagram_comparisons(
     booklet_id: UUID, answer_id: UUID, who: PrincipalDep, backends: BackendsDep
 ) -> list[DiagramComparisonOut]:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         answer = unit.scope.booklets.get_answer(who.college_id, AnswerId(answer_id))
         if answer.booklet_id != BookletId(booklet_id):
             raise NotFoundError(f"answer {answer_id}")

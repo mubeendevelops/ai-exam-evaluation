@@ -4,7 +4,7 @@ Synthetic names and USNs only."""
 import pytest
 
 from tarn_core.domain.audit import AuditAction
-from tarn_core.errors import NotFoundError
+from tarn_core.errors import NotFoundError, PermissionDeniedError
 from tarn_core.services.roster import MAX_ROWS, parse_roster
 from tarn_core.testing import InMemory
 from tarn_core.testing.auth_world import AuthWorld
@@ -45,10 +45,11 @@ def test_reimport_upserts_by_usn_and_keeps_ids(w: AuthWorld) -> None:
     assert after.id == before.id and after.name == "Asha R. Rao" and after.class_section == "CSE-C"
 
 
-def test_teachers_can_import_too(w: AuthWorld) -> None:
+def test_smes_cannot_import_the_roster(w: AuthWorld) -> None:
     cid, admin = w.register("COLLEGE_A", "admin@a.example")
-    teacher = w.invite(cid, admin, "t@a.example")
-    assert w.roster.import_csv(cid, teacher, GOOD).imported
+    sme = w.invite(cid, admin, "t@a.example")
+    with pytest.raises(PermissionDeniedError):
+        w.roster.import_csv(cid, sme, GOOD)  # the admin's job since P24 (D177)
 
 
 def test_any_row_error_writes_nothing_and_reports_every_error(w: AuthWorld) -> None:

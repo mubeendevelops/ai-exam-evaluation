@@ -17,6 +17,7 @@ from tarn_core.domain.review import AmendmentOutcome
 from tarn_core.domain.tenancy import Role, User
 from tarn_core.errors import BookletLockedError, StaleWriteError
 from tarn_core.ids import CollegeId, UserId
+from tarn_core.services.access import WHOLE_COLLEGE
 from tarn_core.services.evaluated import EvaluatedBooklets
 from tarn_core.services.workflow import LockPolicy, sheet_key
 from tarn_core.testing.builders import add_college, ci_shaped_blueprint
@@ -78,7 +79,12 @@ def test_review_with_amendment_round_trips(session: Opener) -> None:
             content=s.content,
             sheets=s.sheets,
             blobs=s.blobs,
-        ).search(cid, usn=college.students[0].usn, status=BookletStatus.APPROVED_AMENDED)
+        ).search(
+            cid,
+            reach=WHOLE_COLLEGE,
+            usn=college.students[0].usn,
+            status=BookletStatus.APPROVED_AMENDED,
+        )
         assert [e.booklet.id for e in found.items] == [booklet.id]
         assert [x.version for x in found.items[0].sheets] == [1, 2]
         amendment = s.booklets.amendments(cid, booklet.id)[0]
@@ -100,7 +106,7 @@ def test_the_lock_serialises_writes_to_one_booklet(session: Opener, world: World
         college_id=a.id,
         display_name="Teacher A2",
         email="teacher.a2@example.test",
-        role=Role.TEACHER,
+        role=Role.SME,
     )
     with session(a.id) as s:
         s.booklets.delete_lock(a.id, a.booklet.id)

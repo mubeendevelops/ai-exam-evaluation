@@ -93,6 +93,7 @@ login_counters = Table(
     "login_counters",
     metadata,
     _uuid("user_id", primary_key=True),
+    Column("source", Text(), primary_key=True, server_default=""),
     _uuid("college_id"),
     _int("failed_login_attempts"),
     _time("lockout_until", nullable=True),

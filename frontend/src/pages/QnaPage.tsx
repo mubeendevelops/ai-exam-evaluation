@@ -5,6 +5,7 @@ import { QuestionDetailView } from '../components/qna/QuestionDetailView'
 import { QuestionList } from '../components/qna/QuestionList'
 import { QuestionModal } from '../components/qna/QuestionModal'
 import { useMe } from '../auth/AuthProvider'
+import { can } from '../auth/capabilities'
 import { useToast } from '../components/ui'
 
 /**
@@ -13,8 +14,8 @@ import { useToast } from '../components/ui'
  */
 export default function QnaPage() {
   const toast = useToast()
-  // Teachers author the college's content; the admin account reads it (D165, D172).
-  const author = useMe().user.role !== 'admin'
+  // SMEs author the content of their subjects (D165, D178); only they reach this page.
+  const author = can(useMe(), 'author_content')
   const [params, setParams] = useSearchParams()
   const [creating, setCreating] = useState(false)
   const openId = params.get('question')

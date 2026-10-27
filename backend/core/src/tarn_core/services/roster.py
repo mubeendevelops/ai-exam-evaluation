@@ -12,11 +12,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 
 from tarn_core.domain.audit import AuditAction
+from tarn_core.domain.personas import Capability
 from tarn_core.domain.tenancy import Student, normalise_usn
-from tarn_core.errors import PermissionDeniedError
 from tarn_core.ids import CollegeId, StudentId, UserId
 from tarn_core.ports.repositories import StudentRepository, UserRepository
 from tarn_core.services._support import Runtime
+from tarn_core.services.access import require
 
 MAX_ROWS = 5000
 MAX_CHARS = 1_000_000
@@ -174,7 +175,7 @@ def _check_row(
 
 
 class RosterService:
-    """Admins and teachers of the college may import and search the roster."""
+    """The college admin imports the roster (D162; the route checks ``manage_students``)."""
 
     def __init__(
         self, *, students: StudentRepository, users: UserRepository, runtime: Runtime
@@ -184,9 +185,7 @@ class RosterService:
         self._rt = runtime
 
     def import_csv(self, college_id: CollegeId, actor_id: UserId, text: str) -> RosterReport:
-        actor = self._users.get(college_id, actor_id)
-        if not actor.active:
-            raise PermissionDeniedError("the account is disabled")
+        require(self._users.get(college_id, actor_id), Capability.MANAGE_STUDENTS)
         rows, errors = parse_roster(text)
         if errors:
             return RosterReport(rows=len(rows), errors=tuple(errors))

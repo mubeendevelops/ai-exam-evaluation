@@ -113,7 +113,12 @@ question_versions = Table(
     *_meta_columns(),
 )
 
-subjects = _versioned("subjects", _text("code"), _text("name"))
+subjects = _versioned(
+    "subjects",
+    _text("code"),
+    _text("name"),
+    Column("retired", Boolean(), nullable=False, server_default="false"),
+)
 
 reference_answers = _versioned(
     "reference_answers",
@@ -204,6 +209,19 @@ users = Table(
     _text("email"),
     _text("role"),
     Column("active", Boolean(), nullable=False),
+    _seq(),
+)
+
+# An SME's subjects (P24, migration 0013, D160).
+sme_subjects = Table(
+    "sme_subjects",
+    metadata,
+    _uuid("college_id", primary_key=True),
+    _uuid("user_id", primary_key=True),
+    _uuid("subject_id", primary_key=True),
+    Column("subject_version", Integer(), nullable=False, server_default="1"),
+    _uuid("granted_by", nullable=True),
+    Column("granted_at", DateTime(timezone=True), nullable=False),
     _seq(),
 )
 
@@ -550,6 +568,7 @@ CONTENT_TABLES: tuple[Table, ...] = (
 COLLEGE_TABLES: tuple[Table, ...] = (
     colleges,
     users,
+    sme_subjects,
     students,
     booklets,
     pages,

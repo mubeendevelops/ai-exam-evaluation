@@ -30,7 +30,7 @@ from tarn_core.domain.content import (
     SemanticParams,
     Subject,
 )
-from tarn_core.domain.tenancy import College, Role, Student, User
+from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
 from tarn_core.ids import (
     AnswerId,
     BlueprintId,
@@ -49,6 +49,7 @@ from tarn_core.ports.repositories import (
     BookletRepository,
     CollegeRepository,
     ContentRepository,
+    EntitlementRepository,
     ResultSheetRepository,
     ScoreRepository,
     StudentRepository,
@@ -60,6 +61,7 @@ from tarn_core.services._support import Runtime
 from tarn_core.services.blueprints import BlueprintService
 from tarn_core.services.booklets import BookletService
 from tarn_core.services.content import ContentService
+from tarn_core.services.entitlements import EntitlementService
 from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.scoring import ScoringService
 from tarn_core.services.subjects import SubjectService
@@ -80,6 +82,8 @@ class Backend(Protocol):
     def students(self) -> StudentRepository: ...
     @property
     def content(self) -> ContentRepository: ...
+    @property
+    def entitlements(self) -> EntitlementRepository: ...
     @property
     def booklets(self) -> BookletRepository: ...
     @property
@@ -107,8 +111,8 @@ class CollegeFixture:
 
 
 def add_college(mem: Backend, code: str, college_id: CollegeId | None = None) -> CollegeFixture:
-    """A college with one teacher, one admin and three students. Pass ``college_id`` when the
-    backend must know the college before its row exists (a database session bound to it)."""
+    """A college with one SME (``teacher``), one admin and three students. Pass ``college_id``
+    when the backend must know the college before its row exists (a session bound to it)."""
     college = College(
         id=CollegeId(mem.ids.new()) if college_id is None else college_id,
         name=f"Test College {code}",
@@ -120,7 +124,7 @@ def add_college(mem: Backend, code: str, college_id: CollegeId | None = None) ->
         college_id=college.id,
         display_name=f"Teacher {code}",
         email=f"teacher.{code.lower()}@example.test",
-        role=Role.TEACHER,
+        role=Role.SME,
     )
     admin = User(
         id=UserId(mem.ids.new()),
@@ -143,6 +147,35 @@ def add_college(mem: Backend, code: str, college_id: CollegeId | None = None) ->
     for student in students:
         mem.students.save(college.id, student)
     return CollegeFixture(college=college, teacher=teacher, admin=admin, students=students)
+
+
+def grant(mem: Backend, owner: CollegeFixture, subject_id: SubjectId) -> None:
+    """The college's SME may work on the subject (D160)."""
+    mem.entitlements.grant(
+        owner.id,
+        SubjectGrant(
+            college_id=owner.id,
+            user_id=owner.teacher.id,
+            subject_id=subject_id,
+            granted_by=owner.admin.id,
+            granted_at=mem.runtime.clock.now(),
+        ),
+    )
+
+
+def add_subject(mem: Backend, owner: CollegeFixture, code: str, name: str) -> Subject:
+    """A subject of the college, granted to its SME."""
+    subject = Subject(id=SubjectId(mem.ids.new()), meta=meta(owner), code=code, name=name)
+    mem.content.save(owner.id, subject)
+    grant(mem, owner, subject.id)
+    return subject
+
+
+def make_subject(svc: "Services", owner: CollegeFixture, *, code: str, name: str) -> Subject:
+    """A subject made the way the app makes it: by the admin, then granted to the SME."""
+    subject = svc.subjects.create(owner.id, owner.admin.id, code=code, name=name)
+    svc.entitlements.grant(owner.id, owner.admin.id, owner.teacher.id, subject.id)
+    return subject
 
 
 def meta(owner: CollegeFixture, version: int = 1) -> ContentMeta:
@@ -203,10 +236,7 @@ def add_rubric(mem: Backend, owner: CollegeFixture, question: Question) -> None:
 
 def ci_shaped_blueprint(mem: Backend, owner: CollegeFixture) -> ExamBlueprint:
     """50 marks: A any 5 of 7 x 2, B any 4 of 7 x 5, C any 2 of 3 x 10. Questions numbered 1-17."""
-    subject = Subject(
-        id=SubjectId(mem.ids.new()), meta=meta(owner), code="SYN101", name="Synthetic Civics"
-    )
-    mem.content.save(owner.id, subject)
+    subject = add_subject(mem, owner, "SYN101", "Synthetic Civics")
     sections = []
     number = 1
     for label, n, m, marks in (("A", 5, 7, "2"), ("B", 4, 7, "5"), ("C", 2, 3, "10")):
@@ -231,10 +261,7 @@ def ci_shaped_blueprint(mem: Backend, owner: CollegeFixture) -> ExamBlueprint:
 
 def ipr_shaped_blueprint(mem: Backend, owner: CollegeFixture) -> ExamBlueprint:
     """60 marks: A any 5 of 7 x 3, B any 3 of 4 x 10, C Q12 (a 10 + b 5) OR Q13 (a 10 + b 5)."""
-    subject = Subject(
-        id=SubjectId(mem.ids.new()), meta=meta(owner), code="SYN201", name="Synthetic IP Law"
-    )
-    mem.content.save(owner.id, subject)
+    subject = add_subject(mem, owner, "SYN201", "Synthetic IP Law")
 
     def plain(number: int, marks: str) -> QuestionSlot:
         q = add_question(mem.content, owner, mem.ids.new(), subject.id, Decimal(marks))
@@ -271,6 +298,7 @@ class Services:
     blueprints: BlueprintService
     booklets: BookletService
     content: ContentService
+    entitlements: EntitlementService
     scoring: ScoringService
     subjects: SubjectService
     totals: TotalsService
@@ -283,11 +311,19 @@ def make_services(mem: Backend, scorers: Sequence[Scorer] | None = None) -> Serv
         bank=QuestionBankService(
             content=mem.content,
             users=mem.users,
+            entitlements=mem.entitlements,
             blobs=mem.blobs,
             runtime=rt,
         ),
-        blueprints=BlueprintService(content=mem.content, users=mem.users, runtime=rt),
-        subjects=SubjectService(content=mem.content, users=mem.users, runtime=rt),
+        blueprints=BlueprintService(
+            content=mem.content, users=mem.users, entitlements=mem.entitlements, runtime=rt
+        ),
+        subjects=SubjectService(
+            content=mem.content, users=mem.users, entitlements=mem.entitlements, runtime=rt
+        ),
+        entitlements=EntitlementService(
+            entitlements=mem.entitlements, users=mem.users, content=mem.content, runtime=rt
+        ),
         booklets=BookletService(
             booklets=mem.booklets,
             students=mem.students,
@@ -298,7 +334,9 @@ def make_services(mem: Backend, scorers: Sequence[Scorer] | None = None) -> Serv
             blobs=mem.blobs,
             runtime=rt,
         ),
-        content=ContentService(content=mem.content, users=mem.users, runtime=rt),
+        content=ContentService(
+            content=mem.content, users=mem.users, entitlements=mem.entitlements, runtime=rt
+        ),
         scoring=ScoringService(
             booklets=mem.booklets,
             scores=mem.scores,

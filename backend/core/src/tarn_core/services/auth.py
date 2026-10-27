@@ -23,10 +23,17 @@ from tarn_core.domain.identity import (
     TenantRecord,
     TenantStatus,
     TokenPurpose,
+    lockout_source,
 )
+from tarn_core.domain.personas import Capability
 from tarn_core.domain.tenancy import Role, User, canonical_email, check_email
-from tarn_core.errors import NotFoundError, PermissionDeniedError, TokenError
-from tarn_core.ids import AuthSessionId, CollegeId, UserId
+from tarn_core.errors import (
+    AlreadyExistsError,
+    NotFoundError,
+    PermissionDeniedError,
+    TokenError,
+)
+from tarn_core.ids import AuthSessionId, CollegeId, SubjectId, UserId
 from tarn_core.ports.identity import (
     Cipher,
     CommonPasswords,
@@ -37,8 +44,9 @@ from tarn_core.ports.identity import (
     PasswordHasher,
     RandomSource,
 )
-from tarn_core.ports.repositories import UserRepository
+from tarn_core.ports.repositories import EntitlementRepository, UserRepository
 from tarn_core.services._support import Runtime
+from tarn_core.services.access import require
 from tarn_core.services.passwords import (
     RECOVERY_CODE_COUNT,
     check_password,
@@ -117,6 +125,8 @@ class AccountView:
     status: IdentityStatus
     locked_until: datetime | None
     force_reset: bool
+    subject_ids: frozenset[SubjectId] = frozenset()
+    """An SME's subjects (D160); empty for the admin and the Governor."""
 
 
 def _link(settings: AuthSettings, path: str, token: str) -> str:
@@ -182,7 +192,7 @@ class _Base:
             **changes,  # type: ignore[arg-type]  # dataclass fields, checked by __post_init__
         )
         self._identity.save_identity(tenant.college_id, updated)
-        self._identity.set_counters(tenant.college_id, identity.user_id, LoginCounters())
+        self._identity.clear_counters(tenant.college_id, identity.user_id)
         self._identity.revoke_user_sessions(tenant.college_id, identity.user_id, now)
         return updated
 
@@ -198,6 +208,16 @@ class _Base:
     def _send(self, to: str, subject: str, text: str) -> None:
         self._kit.mailer.send(EmailMessage(to=to, subject=subject, text=text))
 
+    def _lock_key(self, college_id: CollegeId, user_id: UserId, address: str) -> str:
+        """The shared admin login (D161) counts failures per client address, so a device
+        guessing wrong does not lock out the other admin staff; SMEs and the Governor are
+        counted per account (D179)."""
+        try:
+            role = self._users.get(college_id, user_id).role
+        except NotFoundError:
+            return ""
+        return lockout_source(address) if role is Role.ADMIN else ""
+
 
 class AuthService(_Base):
     """What a user does for themself: sign in, refresh, sign out, reset, recover."""
@@ -205,8 +225,15 @@ class AuthService(_Base):
     # --- sign-in ----------------------------------------------------------------------------
 
     def login(
-        self, college_id: CollegeId, email: str, password: str, *, remember: bool = False
+        self,
+        college_id: CollegeId,
+        email: str,
+        password: str,
+        *,
+        remember: bool = False,
+        address: str = "",
     ) -> LoginOutcome:
+        """``address`` is the client's address; it only matters for the shared admin login."""
         tenant = self._identity.get_tenant(college_id)
         now = self._now
         identity = self._identity.find_identity(college_id, canonical_email(email))
@@ -216,13 +243,14 @@ class AuthService(_Base):
             self._rt.record(college_id, None, AuditAction.LOGIN_FAILED, after={"reason": "unknown"})
             return Refused(reason="unknown")
         uid = identity.user_id
-        if self._identity.counters(college_id, uid).locked(now):
+        key = self._lock_key(college_id, uid, address)
+        if self._identity.counters(college_id, uid, key).locked(now):
             # Same work as a real check: a locked account must not answer faster (P21).
             self._kit.hasher.hash(password, tenant.policy.hash_params)
             self._rt.record(college_id, uid, AuditAction.LOGIN_FAILED, after={"reason": "locked"})
             return Refused(reason="locked")
         if not self._kit.hasher.verify(identity.password_hash, password):
-            counters = self._identity.record_failed_login(college_id, uid, now, tenant.policy)
+            counters = self._identity.record_failed_login(college_id, uid, now, tenant.policy, key)
             self._rt.record(
                 college_id,
                 uid,
@@ -245,7 +273,7 @@ class AuthService(_Base):
             self._rt.record(college_id, uid, AuditAction.LOGIN_FAILED, after={"reason": reason})
             return Refused(reason=reason)
         user = self._users.get(college_id, uid)
-        self._identity.set_counters(college_id, uid, LoginCounters())
+        self._identity.set_counters(college_id, uid, LoginCounters(), key)
         if self._kit.hasher.needs_rehash(
             identity.password_hash, tenant.policy.hash_params
         ) or not self._kit.hasher.pepper_is_current(identity.password_hash, password):
@@ -416,7 +444,7 @@ class AuthService(_Base):
         return sum(not c.used for c in self._identity.recovery_codes(college_id, user_id))
 
     def recover(
-        self, college_id: CollegeId, email: str, code: str, new_password: str
+        self, college_id: CollegeId, email: str, code: str, new_password: str, *, address: str = ""
     ) -> Refused | None:
         """Set a new password with a one-time recovery code. Wrong codes count towards the
         lockout like wrong passwords. Returns None on success."""
@@ -431,7 +459,8 @@ class AuthService(_Base):
             return Refused(reason="unknown")
         uid = identity.user_id
         now = self._now
-        if self._identity.counters(college_id, uid).locked(now):
+        key = self._lock_key(college_id, uid, address)
+        if self._identity.counters(college_id, uid, key).locked(now):
             self._pad(wanted, params, RECOVERY_CODE_COUNT)
             self._rt.record(
                 college_id, uid, AuditAction.RECOVERY_FAILED, after={"reason": "locked"}
@@ -446,7 +475,7 @@ class AuthService(_Base):
         if match is None or not self._identity.use_recovery_code(
             college_id, uid, match.ordinal, now
         ):
-            counters = self._identity.record_failed_login(college_id, uid, now, tenant.policy)
+            counters = self._identity.record_failed_login(college_id, uid, now, tenant.policy, key)
             self._rt.record(college_id, uid, AuditAction.RECOVERY_FAILED, after={"reason": "code"})
             if counters.locked(now):
                 self._rt.record(college_id, uid, AuditAction.LOCKED_OUT)
@@ -481,7 +510,7 @@ class AuthService(_Base):
         self._rt.record(college_id, user_id, AuditAction.PASSWORD_CHANGED)
 
     def accept_invite(self, college_id: CollegeId, token: str, password: str) -> None:
-        """A new teacher sets a first password from the invitation link."""
+        """A new SME or Governor sets a first password from the invitation link."""
         found = self._usable_token(college_id, token, TokenPurpose.INVITE)
         tenant = self._identity.get_tenant(college_id)
         identity = self._identity.get_identity(college_id, found.user_id)
@@ -500,22 +529,39 @@ class AuthService(_Base):
 
 
 class AccountService(_Base):
-    """College admins manage teacher accounts. Teachers can do none of this."""
+    """The college admin manages SME accounts (D159, D177); a Tarn operator creates the
+    Governor (D180). SMEs and the Governor can do none of this. The college has exactly one
+    admin account, the one registration creates (D161)."""
+
+    def __init__(
+        self,
+        *,
+        identity: IdentityStore,
+        users: UserRepository,
+        entitlements: EntitlementRepository,
+        kit: AuthKit,
+        runtime: Runtime,
+    ) -> None:
+        super().__init__(identity=identity, users=users, kit=kit, runtime=runtime)
+        self._entitlements = entitlements
 
     def _admin(self, college_id: CollegeId, actor_id: UserId) -> User:
-        actor = self._users.get(college_id, actor_id)
-        if actor.role is not Role.ADMIN or not actor.active:
-            raise PermissionDeniedError("only a college admin can manage accounts")
-        return actor
+        try:
+            return require(self._users.get(college_id, actor_id), Capability.MANAGE_SMES)
+        except PermissionDeniedError:
+            raise PermissionDeniedError("only the college admin can manage accounts") from None
 
-    def _teacher(self, college_id: CollegeId, user_id: UserId) -> User:
+    def _sme(self, college_id: CollegeId, user_id: UserId) -> User:
         user = self._users.get(college_id, user_id)
-        if user.role is not Role.TEACHER:
-            raise PermissionDeniedError("admins manage teacher accounts only")
+        if user.role is not Role.SME:
+            raise PermissionDeniedError("the admin manages SME accounts only")
         return user
 
     def list_accounts(self, college_id: CollegeId, actor_id: UserId) -> Sequence[AccountView]:
         self._admin(college_id, actor_id)
+        grants: dict[UserId, set[SubjectId]] = {}
+        for g in self._entitlements.grants(college_id):
+            grants.setdefault(g.user_id, set()).add(g.subject_id)
         views = []
         for user in self._users.list(college_id):
             identity = self._identity.get_identity(college_id, user.id)
@@ -526,14 +572,64 @@ class AccountService(_Base):
                     status=identity.status,
                     locked_until=counters.lockout_until if counters.locked(self._now) else None,
                     force_reset=identity.force_reset,
+                    subject_ids=frozenset(grants.get(user.id, ())),
                 )
             )
         return views
 
-    def invite_teacher(
+    def invite_sme(
         self, college_id: CollegeId, actor_id: UserId, *, display_name: str, email: str
     ) -> User:
+        """An SME account, pending until the emailed invitation is accepted. The subjects are
+        granted separately (``EntitlementService``), in the same unit of work."""
         self._admin(college_id, actor_id)
+        tenant = self._identity.get_tenant(college_id)
+        user = self._invite(
+            college_id,
+            Role.SME,
+            display_name=display_name,
+            email=email,
+            invited_by=f"An administrator of {tenant.name} created an SME account for you.",
+        )
+        self._rt.record(
+            college_id,
+            actor_id,
+            AuditAction.ACCOUNT_CREATED,
+            after={"user_id": str(user.id), "role": user.role.value},
+        )
+        return user
+
+    def invite_governor(
+        self, college_id: CollegeId, *, display_name: str, email: str, operator: str
+    ) -> User:
+        """The college's Governor, created by a Tarn operator standing in for the Provisioner
+        (D159, D180). One per college, pending or active."""
+        if not operator.strip():
+            raise PermissionDeniedError("the operator's name is required")
+        if any(u.role is Role.GOVERNOR for u in self._users.list(college_id)):
+            raise AlreadyExistsError("The college already has a Governor account.")
+        tenant = self._identity.get_tenant(college_id)
+        user = self._invite(
+            college_id,
+            Role.GOVERNOR,
+            display_name=display_name,
+            email=email,
+            invited_by=f"Tarn created the Governor account of {tenant.name} for you.",
+        )
+        self._rt.record(
+            college_id,
+            None,
+            AuditAction.GOVERNOR_INVITED,
+            after={"user_id": str(user.id), "role": user.role.value, "operator": operator},
+        )
+        return user
+
+    def _invite(
+        self, college_id: CollegeId, role: Role, *, display_name: str, email: str, invited_by: str
+    ) -> User:
+        if role is Role.ADMIN:
+            # The admin account is the one registration creates; a second is refused (D161).
+            raise AlreadyExistsError("The college has its admin account already.")
         handle = email.strip()
         canonical = canonical_email(handle)
         check_email(canonical)
@@ -543,7 +639,7 @@ class AccountService(_Base):
             college_id=college_id,
             display_name=display_name.strip(),
             email=handle,
-            role=Role.TEACHER,
+            role=role,
         )
         # The identity first: it refuses a duplicate email before anything else is written.
         self._identity.save_identity(
@@ -566,16 +662,10 @@ class AccountService(_Base):
         self._send(
             handle,
             "You're invited to Tarn AI Evaluation",
-            f"An administrator of {tenant.name} created a teacher account for you.\n\n"
+            f"{invited_by}\n\n"
             f"Institution ID: {tenant.institution_id}\n"
             f"Choose your password here (the link works once):\n"
             f"{_link(self._kit.settings, 'accept-invite', token)}",
-        )
-        self._rt.record(
-            college_id,
-            actor_id,
-            AuditAction.ACCOUNT_CREATED,
-            after={"user_id": str(user.id), "role": user.role.value},
         )
         return user
 
@@ -583,7 +673,7 @@ class AccountService(_Base):
         self, college_id: CollegeId, actor_id: UserId, user_id: UserId, *, active: bool
     ) -> User:
         self._admin(college_id, actor_id)
-        user = self._teacher(college_id, user_id)
+        user = self._sme(college_id, user_id)
         identity = self._identity.get_identity(college_id, user_id)
         now = self._now
         if identity.status is not IdentityStatus.PENDING:
@@ -608,7 +698,7 @@ class AccountService(_Base):
         """The user must choose a new password at the next sign-in; open sessions end and a
         reset link is emailed."""
         self._admin(college_id, actor_id)
-        self._teacher(college_id, user_id)
+        self._sme(college_id, user_id)
         identity = self._identity.get_identity(college_id, user_id)
         now = self._now
         self._identity.save_identity(
@@ -631,8 +721,8 @@ class AccountService(_Base):
 
     def unlock(self, college_id: CollegeId, actor_id: UserId, user_id: UserId) -> None:
         self._admin(college_id, actor_id)
-        self._teacher(college_id, user_id)
-        self._identity.set_counters(college_id, user_id, LoginCounters())
+        self._sme(college_id, user_id)
+        self._identity.clear_counters(college_id, user_id)
         self._rt.record(
             college_id, actor_id, AuditAction.ACCOUNT_UNLOCKED, after={"user_id": str(user_id)}
         )

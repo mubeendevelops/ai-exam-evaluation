@@ -34,6 +34,7 @@ from tarn_core.domain.identity import (
     TenantRecord,
     TenantStatus,
     TokenPurpose,
+    lockout_source,
 )
 from tarn_core.errors import AlreadyExistsError, NotFoundError, TenantViolationError
 from tarn_core.ids import AuthSessionId, CollegeId, UserId
@@ -361,7 +362,7 @@ def test_identity_migrations_up_down_up() -> None:
     settings = Settings()
     db = create_test_identity_database(settings.database_url, settings.identity_app_database_url)
     try:
-        assert imigrate.current_revision(db.owner_url) == "i0002"
+        assert imigrate.current_revision(db.owner_url) == "i0003"
         imigrate.downgrade(db.owner_url, "base")
         with db.owner() as conn:
             tables = conn.execute(
@@ -370,9 +371,27 @@ def test_identity_migrations_up_down_up() -> None:
             ).fetchone()
         assert tables == (0,)
         imigrate.upgrade(db.owner_url)
-        assert imigrate.current_revision(db.owner_url) == "i0002"
+        assert imigrate.current_revision(db.owner_url) == "i0003"
     finally:
         drop_test_database(settings.database_url, db.name)
+
+
+def test_the_admin_counters_are_kept_per_address(identity_db: IdentityDatabase) -> None:
+    """i0003 (P24, D179): one row per (account, source); clearing resets every source."""
+    tenant, identity = _seed(identity_db, "PERSONA_LOCK")
+    cid, uid = tenant.college_id, identity.user_id
+    policy = AuthPolicy(max_failed_logins=2, lockout_minutes=15)
+    here, there = lockout_source("198.51.100.7"), lockout_source("203.0.113.9")
+    assert here.startswith("addr:") and "198" not in here
+    with identity_db.session() as store:
+        store.record_failed_login(cid, uid, NOW, policy, here)
+        locked = store.record_failed_login(cid, uid, NOW, policy, here)
+        assert locked.lockout_until == NOW + timedelta(minutes=15)
+        assert store.counters(cid, uid, there) == LoginCounters()
+        assert store.counters(cid, uid) == LoginCounters(failed_login_attempts=1)  # _seed's
+        store.clear_counters(cid, uid)
+        assert store.counters(cid, uid, here) == LoginCounters()
+        assert store.counters(cid, uid) == LoginCounters()
 
 
 # --- the services on the real store and real crypto ------------------------------------------

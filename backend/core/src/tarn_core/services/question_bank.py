@@ -45,11 +45,13 @@ from tarn_core.ids import (
 )
 from tarn_core.ports.repositories import (
     ContentRepository,
+    EntitlementRepository,
     QuestionQuery,
     UserRepository,
 )
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime, ref_json
+from tarn_core.services.access import Reach
 from tarn_core.services.content import ensure_author
 from tarn_core.services.uploads import check_upload_image
 
@@ -148,22 +150,40 @@ class QuestionBankService:
         *,
         content: ContentRepository,
         users: UserRepository,
+        entitlements: EntitlementRepository,
         blobs: BlobStore,
         runtime: Runtime,
     ):
         self._content = content
         self._users = users
+        self._entitlements = entitlements
         self._blobs = blobs
         self._rt = runtime
 
     # ---- reading --------------------------------------------------------------------------
 
-    def topics(self, college_id: CollegeId, subject_id: SubjectId | None = None) -> Sequence[str]:
-        return self._content.topics(college_id, subject_id)
+    # Every read takes the reader's ``reach`` (P24): an SME sees the subjects granted to them
+    # only; anything else is "not found" (D178).
+
+    def topics(
+        self, college_id: CollegeId, subject_id: SubjectId | None = None, *, reach: Reach
+    ) -> Sequence[str]:
+        return self._content.topics(college_id, subject_id, subject_ids=reach.subjects)
 
     def search(
-        self, college_id: CollegeId, query: QuestionQuery, *, limit: int, offset: int = 0
+        self,
+        college_id: CollegeId,
+        query: QuestionQuery,
+        *,
+        reach: Reach,
+        limit: int,
+        offset: int = 0,
     ) -> QuestionList:
+        if reach.subjects is not None:
+            wanted = reach.subjects
+            if query.subject_ids is not None:
+                wanted = wanted & query.subject_ids
+            query = replace(query, subject_ids=wanted)
         page = self._content.search_questions(college_id, query, limit=limit, offset=offset)
         counts = self._content.key_counts(college_id, [q.id for q in page.items])
         subjects = {s.id: s for s in self._content.latest(college_id, Subject)}
@@ -179,8 +199,10 @@ class QuestionBankService:
             total=page.total,
         )
 
-    def detail(self, college_id: CollegeId, question_id: QuestionId) -> QuestionDetail:
-        question = self._content.get(college_id, Question, question_id)
+    def detail(
+        self, college_id: CollegeId, question_id: QuestionId, *, reach: Reach
+    ) -> QuestionDetail:
+        question = self._readable(college_id, question_id, reach)
         try:
             subject: Subject | None = self._content.get(college_id, Subject, question.subject_id)
         except NotFoundError:
@@ -215,8 +237,8 @@ class QuestionBankService:
     ) -> Question:
         """The question with, optionally, its first reference answer and rubric, in one step:
         everything is checked before anything is written."""
-        ensure_author(self._users, college_id, actor_id)
         self._require_subject(college_id, subject_id)
+        ensure_author(self._users, self._entitlements, college_id, actor_id, subject_id)
         code = code.strip()
         check_code(code)
         self._require_free_code(college_id, code)
@@ -710,8 +732,9 @@ class QuestionBankService:
         return diagram
 
     def read_key_file(
-        self, college_id: CollegeId, question_id: QuestionId, file_id: KeyFileId
+        self, college_id: CollegeId, question_id: QuestionId, file_id: KeyFileId, *, reach: Reach
     ) -> tuple[KeyFile, bytes]:
+        self._readable(college_id, question_id, reach)
         found = next(
             (
                 f
@@ -725,8 +748,14 @@ class QuestionBankService:
         return found, self._blobs.get(found.blob)
 
     def read_reference_diagram(
-        self, college_id: CollegeId, question_id: QuestionId, diagram_id: ReferenceDiagramId
+        self,
+        college_id: CollegeId,
+        question_id: QuestionId,
+        diagram_id: ReferenceDiagramId,
+        *,
+        reach: Reach,
     ) -> tuple[ReferenceDiagram, bytes]:
+        self._readable(college_id, question_id, reach)
         found = next(
             (
                 d
@@ -794,7 +823,12 @@ class QuestionBankService:
         """The question, if the actor may edit the college's content. Looked up first, so
         another college's id is "not found" whoever asks (D174)."""
         question = self._content.get(college_id, Question, question_id)
-        ensure_author(self._users, college_id, actor_id)
+        ensure_author(self._users, self._entitlements, college_id, actor_id, question.subject_id)
+        return question
+
+    def _readable(self, college_id: CollegeId, question_id: QuestionId, reach: Reach) -> Question:
+        question = self._content.get(college_id, Question, question_id)
+        reach.check(question.subject_id, f"question {question_id}")
         return question
 
     def _require_subject(self, college_id: CollegeId, subject_id: SubjectId) -> None:

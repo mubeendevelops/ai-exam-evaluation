@@ -26,7 +26,13 @@ class AuthWorld:
     @property
     def accounts(self) -> AccountService:
         m = self.mem
-        return AccountService(identity=m.identity, users=m.users, kit=m.auth_kit, runtime=m.runtime)
+        return AccountService(
+            identity=m.identity,
+            users=m.users,
+            entitlements=m.entitlements,
+            kit=m.auth_kit,
+            runtime=m.runtime,
+        )
 
     @property
     def registration(self) -> RegistrationService:
@@ -63,9 +69,7 @@ class AuthWorld:
         return college_id, admin.id
 
     def invite(self, college_id: CollegeId, admin_id: UserId, email: str) -> UserId:
-        user = self.accounts.invite_teacher(
-            college_id, admin_id, display_name="Teacher T", email=email
-        )
+        user = self.accounts.invite_sme(college_id, admin_id, display_name="Teacher T", email=email)
         self.auth.accept_invite(college_id, self.mem.mailer.last_token(email), TEACHER_PASSWORD)
         return user.id
 

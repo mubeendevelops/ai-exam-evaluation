@@ -2,11 +2,12 @@
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
 from tarn_core.domain.common import check_text
 from tarn_core.errors import InvariantError
-from tarn_core.ids import CollegeId, StudentId, UserId
+from tarn_core.ids import CollegeId, StudentId, SubjectId, UserId
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -24,8 +25,12 @@ class College:
 
 
 class Role(StrEnum):
+    """The three personas (D159, D176). ``SME`` is the subject expert who was called "teacher"
+    before P24; names that mean the human's mark (``teacher_mark``) keep the old word."""
+
     ADMIN = "admin"
-    TEACHER = "teacher"
+    SME = "sme"
+    GOVERNOR = "governor"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -43,6 +48,22 @@ class User:
         check_text("display name", self.display_name)
         if "@" not in self.email:
             raise InvariantError("email must contain '@'")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SubjectGrant:
+    """An SME's entitlement to one subject of the college (D160). Everything the SME sees is
+    filtered on these. ``granted_by`` is None for grants made by migration 0013."""
+
+    college_id: CollegeId
+    user_id: UserId
+    subject_id: SubjectId
+    granted_by: UserId | None
+    granted_at: datetime
+
+    def __post_init__(self) -> None:
+        if self.granted_at.tzinfo is None:
+            raise InvariantError("granted_at must be timezone-aware")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

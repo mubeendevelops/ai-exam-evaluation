@@ -11,7 +11,7 @@ from tarn_core.domain.content import KeyFile, Question, ReferenceAnswer
 from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
-from tarn_core.domain.tenancy import College, Student, User
+from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
 from tarn_core.errors import InvariantError, NotFoundError, TenantViolationError
 from tarn_core.ids import (
     AnswerId,
@@ -142,6 +142,8 @@ class MemoryContentRepository:
     def _matches(self, college_id: CollegeId, query: QuestionQuery, q: Question) -> bool:
         if query.subject_id is not None and q.subject_id != query.subject_id:
             return False
+        if query.subject_ids is not None and q.subject_id not in query.subject_ids:
+            return False
         if query.difficulty is not None and q.difficulty != query.difficulty:
             return False
         if query.topic and q.category.casefold() != query.topic.casefold():
@@ -158,10 +160,20 @@ class MemoryContentRepository:
                 return False
         return True
 
-    def topics(self, college_id: CollegeId, subject_id: SubjectId | None = None) -> Sequence[str]:
+    def topics(
+        self,
+        college_id: CollegeId,
+        subject_id: SubjectId | None = None,
+        *,
+        subject_ids: frozenset[SubjectId] | None = None,
+    ) -> Sequence[str]:
         found: dict[str, str] = {}
         for q in self.latest(college_id, Question):
-            if q.category.strip() and (subject_id is None or q.subject_id == subject_id):
+            if (
+                q.category.strip()
+                and (subject_id is None or q.subject_id == subject_id)
+                and (subject_ids is None or q.subject_id in subject_ids)
+            ):
                 found.setdefault(q.category.casefold(), q.category)
         return sorted(found.values(), key=str.casefold)
 
@@ -227,7 +239,30 @@ class MemoryUserRepository:
         return self._t.values(college_id)
 
     def save(self, college_id: CollegeId, user: User) -> None:
+        # Like the partial unique indexes of migration 0013: one admin and one governor.
+        if user.role in (Role.ADMIN, Role.GOVERNOR) and any(
+            u.role is user.role and u.id != user.id for u in self._t.values(college_id)
+        ):
+            raise InvariantError(f"the college already has a {user.role.value}")
         self._t.put(college_id, user.id, user)
+
+
+class MemoryEntitlementRepository:
+    def __init__(self, log: TenantLog) -> None:
+        self._t: _Table[tuple[UserId, SubjectId], SubjectGrant] = _Table(log, "subject grant")
+
+    def subjects_of(self, college_id: CollegeId, user_id: UserId) -> frozenset[SubjectId]:
+        return frozenset(g.subject_id for g in self._t.values(college_id) if g.user_id == user_id)
+
+    def grants(self, college_id: CollegeId) -> Sequence[SubjectGrant]:
+        return self._t.values(college_id)
+
+    def grant(self, college_id: CollegeId, grant: SubjectGrant) -> None:
+        if (grant.user_id, grant.subject_id) not in self._t.rows(college_id):
+            self._t.put(college_id, (grant.user_id, grant.subject_id), grant)
+
+    def revoke(self, college_id: CollegeId, user_id: UserId, subject_id: SubjectId) -> None:
+        self._t.rows(college_id).pop((user_id, subject_id), None)
 
 
 class MemoryStudentRepository:

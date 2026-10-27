@@ -106,6 +106,42 @@ def test_failures_look_the_same_and_lock_the_account(
     assert attempt("COLLEGE_A", TEACHER, TEACHER_PASSWORD)[0] == 200
 
 
+def _attempt_from(client: TestClient, address: str, email: str, password: str) -> int:
+    """A sign-in from ``address`` (behind one trusted proxy: ``X-Forwarded-For``)."""
+    client.app.state.trusted_proxy_hops = 1  # type: ignore[attr-defined]
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"institution_id": "COLLEGE_A", "email": email, "password": password},
+        headers={"X-Forwarded-For": address},
+    )
+    return response.status_code
+
+
+def test_the_shared_admin_login_is_locked_per_address(
+    client: TestClient, backends: MemoryBackends, college: tuple[CollegeId, UserId, UserId]
+) -> None:
+    """D161: wrong passwords from one device do not lock the other admin staff out."""
+    for _ in range(5):
+        assert _attempt_from(client, "198.51.100.7", ADMIN, "wrong password 1") == 401
+    assert _attempt_from(client, "198.51.100.7", ADMIN, ADMIN_PASSWORD) == 401  # locked here
+    assert _attempt_from(client, "203.0.113.9", ADMIN, ADMIN_PASSWORD) == 200  # not there
+    backends.mem.clock.advance(minutes=16)
+    assert _attempt_from(client, "198.51.100.7", ADMIN, ADMIN_PASSWORD) == 200
+    # The identity store holds a digest of the address, never the address itself.
+    sources = {key[1] for key in backends.mem.identity._counters if key[0] == college[1]}
+    assert "198.51.100.7" not in str(sources) and any(x.startswith("addr:") for x in sources)
+
+
+def test_an_sme_account_is_locked_whatever_the_address(
+    client: TestClient, backends: MemoryBackends, college: tuple[CollegeId, UserId, UserId]
+) -> None:
+    for _ in range(5):
+        assert _attempt_from(client, "198.51.100.7", TEACHER, "wrong password 1") == 401
+    assert _attempt_from(client, "203.0.113.9", TEACHER, TEACHER_PASSWORD) == 401  # locked
+    backends.mem.clock.advance(minutes=16)
+    assert _attempt_from(client, "203.0.113.9", TEACHER, TEACHER_PASSWORD) == 200
+
+
 def test_access_token_expires(
     client: TestClient, backends: MemoryBackends, college: tuple[CollegeId, UserId, UserId]
 ) -> None:
@@ -273,7 +309,13 @@ CSV = "name,usn,class/section\nAsha Rao,1AB21CS001,CSE-A\nRavi Kumar,1AB21CS002,
 def test_roster_import_and_search(
     client: TestClient, college: tuple[CollegeId, UserId, UserId]
 ) -> None:
-    teacher = _bearer(_login(client, "COLLEGE_A", TEACHER, TEACHER_PASSWORD))
+    sme = _bearer(_login(client, "COLLEGE_A", TEACHER, TEACHER_PASSWORD))
+    refused = client.post(
+        "/api/v1/roster/import", content=CSV, headers=sme | {"Content-Type": "text/csv"}
+    )
+    assert refused.status_code == 403  # the roster is the admin's (D162)
+    assert client.get("/api/v1/students", headers=sme).status_code == 403
+    teacher = _bearer(_login(client, "COLLEGE_A", ADMIN, ADMIN_PASSWORD))
     headers = teacher | {"Content-Type": "text/csv"}
     r = client.post("/api/v1/roster/import", content=CSV, headers=headers)
     assert r.status_code == 200 and r.json()["created"] == 2 and r.json()["imported"]
@@ -300,7 +342,7 @@ def test_another_college_sees_nothing_of_this_one(
 ) -> None:
     _, _, teacher_a = college
     world.register("COLLEGE_B", "admin@b.example")
-    a = _bearer(_login(client, "COLLEGE_A", TEACHER, TEACHER_PASSWORD))
+    a = _bearer(_login(client, "COLLEGE_A", ADMIN, ADMIN_PASSWORD))
     client.post("/api/v1/roster/import", content=CSV, headers=a | {"Content-Type": "text/csv"})
     b = _bearer(_login(client, "COLLEGE_B", "admin@b.example", ADMIN_PASSWORD))
     assert client.get("/api/v1/students", headers=b).json() == []

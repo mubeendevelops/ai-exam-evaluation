@@ -33,7 +33,7 @@ class MemoryIdentityStore:
         self.log = log or TenantLog()
         self.tenants: dict[CollegeId, TenantRecord] = {}
         self.identities: dict[UserId, IdentityRecord] = {}
-        self._counters: dict[UserId, LoginCounters] = {}
+        self._counters: dict[tuple[UserId, str], LoginCounters] = {}
         self._codes: dict[UserId, list[RecoveryCode]] = {}
         self.tokens: dict[str, ActionToken] = {}
         self.sessions: dict[AuthSessionId, AuthSession] = {}
@@ -103,25 +103,37 @@ class MemoryIdentityStore:
 
     # --- counters ---------------------------------------------------------------------------
 
-    def counters(self, college_id: CollegeId, user_id: UserId) -> LoginCounters:
+    def counters(self, college_id: CollegeId, user_id: UserId, source: str = "") -> LoginCounters:
         self._identity(college_id, user_id)
-        return self._counters.get(user_id, LoginCounters())
+        return self._counters.get((user_id, source), LoginCounters())
 
     def record_failed_login(
-        self, college_id: CollegeId, user_id: UserId, now: datetime, policy: AuthPolicy
+        self,
+        college_id: CollegeId,
+        user_id: UserId,
+        now: datetime,
+        policy: AuthPolicy,
+        source: str = "",
     ) -> LoginCounters:
-        current = self.counters(college_id, user_id)
+        current = self.counters(college_id, user_id, source)
         failed = current.failed_login_attempts + 1
         if failed >= policy.max_failed_logins:
             updated = LoginCounters(failed_login_attempts=0, lockout_until=now + policy.lockout)
         else:
             updated = replace(current, failed_login_attempts=failed)
-        self._counters[user_id] = updated
+        self._counters[(user_id, source)] = updated
         return updated
 
-    def set_counters(self, college_id: CollegeId, user_id: UserId, counters: LoginCounters) -> None:
+    def set_counters(
+        self, college_id: CollegeId, user_id: UserId, counters: LoginCounters, source: str = ""
+    ) -> None:
         self._identity(college_id, user_id)
-        self._counters[user_id] = counters
+        self._counters[(user_id, source)] = counters
+
+    def clear_counters(self, college_id: CollegeId, user_id: UserId) -> None:
+        self._identity(college_id, user_id)
+        for key in [k for k in self._counters if k[0] == user_id]:
+            self._counters[key] = LoginCounters()
 
     # --- recovery codes ---------------------------------------------------------------------
 

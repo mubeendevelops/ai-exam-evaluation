@@ -13,9 +13,9 @@ ENGINEERING = CollegeSeed(
     institution_id="DEMO_ENG",
     name="Demo Engineering College (synthetic)",
     admin=PersonSeed("Asha Verma (demo admin)", "admin@demo-eng.example.test"),
-    teachers=(
-        PersonSeed("Ravi Menon (demo teacher)", "ravi.menon@demo-eng.example.test"),
-        PersonSeed("Kavya Shetty (demo teacher)", "kavya.shetty@demo-eng.example.test"),
+    smes=(
+        PersonSeed("Ravi Menon (demo SME)", "ravi.menon@demo-eng.example.test"),
+        PersonSeed("Kavya Shetty (demo SME)", "kavya.shetty@demo-eng.example.test"),
     ),
     students=tuple(
         StudentSeed(name, f"DEMOE{n:04d}", "CSE-5A" if n <= 6 else "CSE-5B")
@@ -46,9 +46,9 @@ COMMERCE = CollegeSeed(
     institution_id="DEMO_COM",
     name="Demo Commerce College (synthetic)",
     admin=PersonSeed("Meera Iyer (demo admin)", "admin@demo-com.example.test"),
-    teachers=(
-        PersonSeed("Suresh Naik (demo teacher)", "suresh.naik@demo-com.example.test"),
-        PersonSeed("Anita Desai (demo teacher)", "anita.desai@demo-com.example.test"),
+    smes=(
+        PersonSeed("Suresh Naik (demo SME)", "suresh.naik@demo-com.example.test"),
+        PersonSeed("Anita Desai (demo SME)", "anita.desai@demo-com.example.test"),
     ),
     students=tuple(
         StudentSeed(name, f"DEMOC{n:04d}", "BCOM-ACCA-2" if n <= 6 else "BCOM-CMA-3")

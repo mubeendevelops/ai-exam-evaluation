@@ -259,8 +259,8 @@ def seed() -> None:
     for college, _accounts in summary.colleges:
         typer.echo(f"  {college.institution_id:9} {college.name}")
         typer.echo(f"    admin   {college.admin.email}")
-        for teacher in college.teachers:
-            typer.echo(f"    teacher {teacher.email}")
+        for sme in college.smes:
+            typer.echo(f"    SME     {sme.email}")
 
 
 # --- tenants (Tarn operators) -----------------------------------------------------------------
@@ -382,6 +382,63 @@ def tenants_resume(
 ) -> None:
     """Lift a suspension."""
     _change_tenant(institution_id, operator, suspend=False)
+
+
+@tenants.command("governor")
+def tenants_governor(
+    institution_id: str = typer.Argument(...),
+    email: str = typer.Option(..., help="The Governor's email: the invitation goes there."),
+    operator: str = typer.Option(..., help="Who creates it (recorded in the audit log)."),
+    name: str = typer.Option("Governor", help="The Governor's display name."),
+) -> None:
+    """Create the college's Governor account and email the invitation (P24, D180). The Tarn
+    operator stands in for the Provisioner (D159). One Governor per college; the Governor signs
+    in to a placeholder page until the Governor portal is built."""
+    from dataclasses import replace
+
+    from tarn_adapters.auth.mail import DeferredMailer
+    from tarn_adapters.auth.wiring import auth_kit
+    from tarn_adapters.identity.database import IdentityDatabase
+    from tarn_adapters.postgres.database import PostgresDatabase
+    from tarn_adapters.runtime import UuidGenerator
+    from tarn_core.errors import DomainError
+    from tarn_core.services.auth import AccountService
+
+    settings = get_settings()
+    kit = auth_kit(settings)
+    mailer = DeferredMailer(kit.mailer)
+    identity_db = IdentityDatabase(settings.identity_app_database_url)
+    app_db = PostgresDatabase(settings.app_database_url)
+    try:
+        with identity_db.session() as store:
+            tenant = store.find_tenant(institution_id)
+        if tenant is None:
+            typer.echo(f"no tenant {institution_id}")
+            raise typer.Exit(code=1)
+        try:
+            with (
+                identity_db.session() as store,
+                app_db.session(
+                    tenant.college_id, ids=UuidGenerator(), clock=SystemClock(), blobs=NoBlobStore()
+                ) as session,
+            ):
+                user = AccountService(
+                    identity=store,
+                    users=session.users,
+                    entitlements=session.entitlements,
+                    kit=replace(kit, mailer=mailer),
+                    runtime=session.runtime,
+                ).invite_governor(
+                    tenant.college_id, display_name=name, email=email, operator=operator
+                )
+        except DomainError as exc:
+            typer.echo(f"{institution_id}: {exc}")
+            raise typer.Exit(code=1) from None
+        mailer.flush()  # only once both databases have committed
+    finally:
+        identity_db.dispose()
+        app_db.dispose()
+    typer.echo(f"{institution_id}: governor {user.email} invited (pending until accepted)")
 
 
 @tenants.command("llm")
@@ -1447,12 +1504,14 @@ def diagram_references(
                 bank = QuestionBankService(
                     content=s.content,
                     users=s.users,
+                    entitlements=s.entitlements,
                     blobs=blobs,
                     runtime=s.runtime,
                 )
                 new = ReferenceDiagrams(
                     content=s.content,
                     users=s.users,
+                    entitlements=s.entitlements,
                     blobs=blobs,
                     runtime=s.runtime,
                     recognizers=setup.recognizers,

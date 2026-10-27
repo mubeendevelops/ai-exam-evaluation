@@ -15,13 +15,14 @@ from tarn_core.domain.blueprint import AnyN, EvaluationMethod, OrGroup
 from tarn_core.domain.content import ContentMeta
 from tarn_core.errors import InvariantError, NotFoundError, PermissionDeniedError
 from tarn_core.ids import BlueprintId, CollegeId, UserId
+from tarn_core.services.access import WHOLE_COLLEGE
 from tarn_core.services.blueprint_document import (
     DocumentReport,
     blueprint_to_document,
     check_document,
 )
 from tarn_core.testing import InMemory
-from tarn_core.testing.builders import add_college, make_services
+from tarn_core.testing.builders import add_college, make_services, make_subject
 
 EXAMPLES = Path(__file__).resolve().parents[3] / "docs" / "api"
 SUBJECT = "00000000-0000-4000-8000-000000000001"
@@ -283,7 +284,7 @@ def _document(subject_id: object) -> dict[str, Any]:
 
 def test_create_edit_and_listing_stay_in_the_college() -> None:
     mem, a, b, svc = _world()
-    subject = svc.subjects.create(a.id, a.teacher.id, code=" SYN1 ", name=" Synthetic Civics ")
+    subject = make_subject(svc, a, code=" SYN1 ", name=" Synthetic Civics ")
     assert (subject.code, subject.name) == ("SYN1", "Synthetic Civics")
 
     created = svc.blueprints.create(a.id, a.teacher.id, _document(subject.id))
@@ -292,41 +293,46 @@ def test_create_edit_and_listing_stay_in_the_college() -> None:
     assert _last_action(mem) is AuditAction.CONTENT_CREATED
 
     # Another college neither sees nor edits it (D165).
-    assert [x.id for x in svc.blueprints.list(a.id)] == [created.id]
-    assert svc.blueprints.list(b.id) == []
+    assert [x.id for x in svc.blueprints.list(a.id, reach=WHOLE_COLLEGE)] == [created.id]
+    assert svc.blueprints.list(b.id, reach=WHOLE_COLLEGE) == []
     edited_doc = _document(subject.id)
     edited_doc["title"] = "Renamed"
     with pytest.raises(NotFoundError):
         svc.blueprints.update(b.id, b.teacher.id, created.id, edited_doc)
     with pytest.raises(NotFoundError):
-        svc.blueprints.get(b.id, created.id)
+        svc.blueprints.get(b.id, created.id, reach=WHOLE_COLLEGE)
     # The admin reads papers but does not author them.
     with pytest.raises(PermissionDeniedError):
         svc.blueprints.update(a.id, a.admin.id, created.id, edited_doc)
 
     edited = svc.blueprints.update(a.id, a.teacher.id, created.id, edited_doc)
     assert edited.meta.version == 2 and edited.title == "Renamed"
-    assert svc.blueprints.get(a.id, created.id, 1).title == "Synthetic paper, CI shape"
-    assert [x.title for x in svc.blueprints.list(a.id)] == ["Renamed"]
-    assert [x.meta.version for x in svc.blueprints.versions(a.id, created.id)] == [1, 2]
+    assert (
+        svc.blueprints.get(a.id, created.id, 1, reach=WHOLE_COLLEGE).title
+        == "Synthetic paper, CI shape"
+    )
+    assert [x.title for x in svc.blueprints.list(a.id, reach=WHOLE_COLLEGE)] == ["Renamed"]
+    assert [
+        x.meta.version for x in svc.blueprints.versions(a.id, created.id, reach=WHOLE_COLLEGE)
+    ] == [1, 2]
     assert _last_action(mem) is AuditAction.CONTENT_EDITED
 
 
 def test_create_refuses_an_invalid_document_and_an_unknown_subject() -> None:
     _, a, _, svc = _world()
-    subject = svc.subjects.create(a.id, a.teacher.id, code="S", name="Subject")
+    subject = make_subject(svc, a, code="S", name="Subject")
     bad = _document(subject.id)
     bad["total_marks"] = 49
     with pytest.raises(InvariantError, match="total_marks: The exam total is 49"):
         svc.blueprints.create(a.id, a.teacher.id, bad)
     with pytest.raises(InvariantError, match="no such subject"):
         svc.blueprints.create(a.id, a.teacher.id, _document("00000000-0000-4000-8000-0000000000ff"))
-    assert svc.blueprints.list(a.id) == []
+    assert svc.blueprints.list(a.id, reach=WHOLE_COLLEGE) == []
 
 
 def test_a_blueprint_with_unlinked_questions_cannot_register_booklets() -> None:
     _, a, _, svc = _world()
-    subject = svc.subjects.create(a.id, a.teacher.id, code="S", name="Subject")
+    subject = make_subject(svc, a, code="S", name="Subject")
     blueprint = svc.blueprints.create(a.id, a.teacher.id, _document(subject.id))
     with pytest.raises(InvariantError, match="no question linked for 1, 2, 3"):
         svc.booklets.register(

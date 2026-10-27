@@ -71,6 +71,9 @@ class Subject:
     meta: ContentMeta
     code: str
     name: str
+    retired: bool = False
+    """Retired by the admin (a new version, P24): it cannot be granted to an SME or used for a
+    new paper; existing questions, papers and scores keep it."""
 
     def __post_init__(self) -> None:
         check_text("subject code", self.code)

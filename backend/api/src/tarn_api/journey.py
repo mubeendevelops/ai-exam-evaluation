@@ -3,10 +3,11 @@ twice: on the in-memory adapters (default suite) and on PostgreSQL + MinIO with 
 (integration). The caller supplies the client, how the queue is drained, and how to read the
 college's audit log.
 
-The demo seed's commerce college (``DEMO_COM``, exam QP-CI) is the stage: one teacher queues
-five booklets (the sixth is refused), the queue drains one booklet at a time to ``scored``,
-each booklet is opened, its answers approved (one overridden with tags and remarks) and the
-booklet approved (sheet v1, PDF downloaded); a second teacher meets the lock; one booklet is
+The demo seed's commerce college (``DEMO_COM``, exam QP-CI) is the stage: the admin queues
+five booklets (the sixth is refused; uploads are the admin's since P24, D162), the queue drains
+one booklet at a time to ``scored``, the SME opens each booklet, approves its answers (one
+overridden with tags and remarks) and the booklet (sheet v1, PDF downloaded); a second SME
+meets the lock; one booklet is
 amended (sheet v2); the evaluated list shows the five; one booklet is deleted. Every write is
 checked for its audit event, and the audit log for secrets and student text."""
 
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
 BASE = "/api/v1"
 INSTITUTION = "DEMO_COM"
 TEACHER = "suresh.naik@demo-com.example.test"
+ADMIN = "admin@demo-com.example.test"
 SECOND_TEACHER = "anita.desai@demo-com.example.test"
 QUEUE = 5
 
@@ -76,9 +78,10 @@ class Journey:
     def run(self) -> dict[str, Any]:
         c = self.client
         t1, t2 = self.login(TEACHER), self.login(SECOND_TEACHER)
+        admin = self.login(ADMIN)
         me = c.get(f"{BASE}/auth/me", headers=t1).json()
         college = UUID(me["user"]["college_id"])
-        students = c.get(f"{BASE}/students", params={"limit": 50}, headers=t1).json()
+        students = c.get(f"{BASE}/students", params={"limit": 50}, headers=admin).json()
         assert len(students) >= QUEUE + 1
         blueprint = next(
             b
@@ -98,20 +101,21 @@ class Journey:
         booklets: list[str] = []
         for i in range(QUEUE):
             response = self.audited(
-                college, "booklet.registered", partial(upload, t1, students[i], f"b{i}")
+                college, "booklet.registered", partial(upload, admin, students[i], f"b{i}")
             )
             assert response.status_code == 201, response.text
             assert response.json()["status"] == "uploaded"
             booklets.append(response.json()["id"])
-        listing = c.get(f"{BASE}/booklets", params={"mine": True}, headers=t1).json()
+        listing = c.get(f"{BASE}/booklets", params={"mine": True}, headers=admin).json()
         assert listing["waiting"] == QUEUE == listing["max_waiting"]
-        sixth = upload(t1, students[QUEUE], "b-sixth")
+        sixth = upload(admin, students[QUEUE], "b-sixth")
         assert sixth.status_code == 429, sixth.text
-        assert upload(t2, students[0], "b0").status_code == 409  # duplicate, another teacher
+        assert upload(t1, students[QUEUE], "b-sme").status_code == 403  # SMEs do not upload
 
         # 2. The worker drains the queue: every booklet reaches "scored".
         self.process()
-        listing = c.get(f"{BASE}/booklets", params={"mine": True}, headers=t1).json()
+        assert upload(admin, students[0], "b0").status_code == 409  # the same file: duplicate
+        listing = c.get(f"{BASE}/booklets", params={"mine": True}, headers=admin).json()
         assert {b["id"]: b["status"] for b in listing["items"]} == dict.fromkeys(booklets, "scored")
         assert listing["waiting"] == 0
         actions = [e.action for e in self.events(college)]

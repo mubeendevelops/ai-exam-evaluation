@@ -23,9 +23,9 @@ def test_roster_import_search_and_isolation(session: Opener, world: World) -> No
     a, b = world.a, world.b
     with session(a.id) as s:
         roster = RosterService(students=s.students, users=s.users, runtime=s.runtime)
-        report = roster.import_csv(a.id, a.college.teacher.id, CSV)
+        report = roster.import_csv(a.id, a.college.admin.id, CSV)
         assert report.imported and report.created == 3
-        again = roster.import_csv(a.id, a.college.teacher.id, CSV.replace("CSE-B", "CSE-C"))
+        again = roster.import_csv(a.id, a.college.admin.id, CSV.replace("CSE-B", "CSE-C"))
         assert (again.created, again.updated, again.unchanged) == (0, 1, 2)
         found = roster.search(a.id, "1ab21cs1", 10)
         assert [x.usn for x in found] == ["1AB21CS101", "1AB21CS102"]

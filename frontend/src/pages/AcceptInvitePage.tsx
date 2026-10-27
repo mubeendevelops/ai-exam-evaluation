@@ -6,7 +6,7 @@ import { AuthScreen, BackToSignIn, Notice } from '../components/public/AuthScree
 import { NewPasswordForm } from '../components/public/NewPasswordForm'
 import { useLinkToken } from '../hooks/useLinkToken'
 
-/** `/accept-invite`: a teacher invited by an administrator sets the first password. */
+/** `/accept-invite`: an SME (invited by the admin) or the Governor (by Tarn) sets the first password. */
 export default function AcceptInvitePage() {
   const { token } = useLinkToken()
   const [busy, setBusy] = useState(false)

@@ -4,9 +4,10 @@ tests and on PostgreSQL + MinIO for ``tarn seed`` / ``make seed``.
 Two steps per college, each idempotent (a second run finds what is there and changes nothing):
 
 1. ``seed_accounts``: register the college and its admin the way a person would (verify the
-   email, operator approval), invite two teachers who accept, import the fictitious roster.
-2. ``seed_content``: subjects, the questions of the college (reference answers, rubric,
-   glossary, reference diagrams) and the exam blueprints linked to them.
+   email, operator approval), invite two SMEs who accept, import the fictitious roster.
+2. ``seed_content``: subjects (made by the admin and granted to every SME), the questions of
+   the college (reference answers, rubric, glossary, reference diagrams) and the exam
+   blueprints linked to them.
 
 A question is found by its code within the college and a blueprint by its title; what
 exists is left alone, even if the seed data changed since (edit it in the app instead)."""
@@ -36,14 +37,17 @@ from tarn_core.ports.identity import EmailMessage, IdentityStore
 from tarn_core.ports.repositories import (
     CollegeRepository,
     ContentRepository,
+    EntitlementRepository,
     QuestionQuery,
     StudentRepository,
     UserRepository,
 )
 from tarn_core.seed.model import CollegeSeed, CriterionSeed, PaperSeed, QuestionSeed
 from tarn_core.services._support import Runtime
+from tarn_core.services.access import WHOLE_COLLEGE
 from tarn_core.services.auth import AccountService, AuthKit, AuthService
 from tarn_core.services.blueprints import BlueprintService
+from tarn_core.services.entitlements import EntitlementService
 from tarn_core.services.marking import check_blueprint_questions
 from tarn_core.services.question_bank import CriterionSpec, QuestionBankService
 from tarn_core.services.registration import RegistrationService
@@ -101,7 +105,7 @@ class _MailCatcher:
 class SeededAccounts:
     college_id: CollegeId
     admin_id: UserId
-    teacher_ids: tuple[UserId, ...]
+    sme_ids: tuple[UserId, ...]
 
 
 def seed_accounts(
@@ -114,11 +118,12 @@ def seed_accounts(
     users: UserRepository,
     colleges: CollegeRepository,
     students: StudentRepository,
+    entitlements: EntitlementRepository,
     kit: AuthKit,
     runtime: Runtime,
     report: SeedReport,
 ) -> SeededAccounts:
-    """The college, its admin and two teachers (who have chosen ``password``), the roster.
+    """The college, its admin and two SMEs (who have chosen ``password``), the roster.
 
     ``tenant`` is the registry entry found for the Institution ID (None: register it with
     ``college_id``); the caller opens the units of work for that college."""
@@ -149,24 +154,26 @@ def seed_accounts(
 
     present = {canonical_email(u.email): u for u in users.list(college_id)}
     admin = _only(u for u in present.values() if u.role is Role.ADMIN)
-    accounts = AccountService(identity=identity, users=users, kit=kit, runtime=runtime)
+    accounts = AccountService(
+        identity=identity, users=users, entitlements=entitlements, kit=kit, runtime=runtime
+    )
     auth = AuthService(identity=identity, users=users, kit=kit, runtime=runtime)
-    teacher_ids: list[UserId] = []
-    for person in college.teachers:
+    sme_ids: list[UserId] = []
+    for person in college.smes:
         known = present.get(canonical_email(person.email))
         if known is not None:
-            teacher_ids.append(known.id)
-            report.found("teachers")
+            sme_ids.append(known.id)
+            report.found("SMEs")
             continue
-        teacher = accounts.invite_teacher(
+        sme = accounts.invite_sme(
             college_id, admin.id, display_name=person.name, email=person.email
         )
         auth.accept_invite(college_id, catcher.token(person.email), password)
-        teacher_ids.append(teacher.id)
-        report.made("teachers")
+        sme_ids.append(sme.id)
+        report.made("SMEs")
 
     _import_roster(college, college_id, admin, students, users, runtime, report)
-    return SeededAccounts(college_id=college_id, admin_id=admin.id, teacher_ids=tuple(teacher_ids))
+    return SeededAccounts(college_id=college_id, admin_id=admin.id, sme_ids=tuple(sme_ids))
 
 
 def _only(users: Iterable[User]) -> User:
@@ -225,24 +232,29 @@ def seed_content(
     college: CollegeSeed,
     *,
     college_id: CollegeId,
-    question_author: UserId,
-    paper_author: UserId,
+    accounts: SeededAccounts,
     content: ContentRepository,
     bank: QuestionBankService,
     subjects: SubjectService,
+    entitlements: EntitlementService,
     blueprints: BlueprintService,
     assets: AssetReader,
     report: SeedReport,
 ) -> SeededContent:
-    by_code = {s.code: s for s in subjects.list(college_id)}
+    """The admin makes the subjects and grants each to every SME (D160); the first SME writes
+    the questions, the second the papers."""
+    question_author, paper_author = accounts.sme_ids[0], accounts.sme_ids[1]
+    by_code = {s.code: s for s in subjects.all(college_id)}
     for subject in college.subjects:
         if subject.code in by_code:
             report.found("subjects")
-            continue
-        by_code[subject.code] = subjects.create(
-            college_id, question_author, code=subject.code, name=subject.name
-        )
-        report.made("subjects")
+        else:
+            by_code[subject.code] = subjects.create(
+                college_id, accounts.admin_id, code=subject.code, name=subject.name
+            )
+            report.made("subjects")
+        for sme in accounts.sme_ids:
+            entitlements.grant(college_id, accounts.admin_id, sme, by_code[subject.code].id)
 
     ids: dict[str, QuestionId] = {}
     for subject_code, seed in college.questions:
@@ -280,7 +292,12 @@ def _seed_question(
     assets: AssetReader,
     report: SeedReport,
 ) -> QuestionId:
-    existing = bank.search(college_id, QuestionQuery(code=seed.code, exact_code=True), limit=1)
+    existing = bank.search(
+        college_id,
+        QuestionQuery(code=seed.code, exact_code=True),
+        reach=WHOLE_COLLEGE,
+        limit=1,
+    )
     if existing.items:
         report.found("questions")
         found = existing.items[0].question.id
@@ -400,7 +417,7 @@ def _seed_paper(
     blueprints: BlueprintService,
     report: SeedReport,
 ) -> None:
-    if any(b.title == paper.title for b in blueprints.list(college_id)):
+    if any(b.title == paper.title for b in blueprints.list(college_id, reach=WHOLE_COLLEGE)):
         report.found("blueprints")
         return
     document = resolve_document(paper, SubjectId(subject.id), question_ids)

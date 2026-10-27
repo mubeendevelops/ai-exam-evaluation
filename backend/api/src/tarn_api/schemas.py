@@ -48,7 +48,10 @@ class UserOut(BaseModel):
     college_id: UUID
     display_name: str
     email: str
-    role: Literal["admin", "teacher"]
+    role: Literal["admin", "sme", "governor"] = Field(
+        description="The persona (D159): the college's shared admin login, a subject expert "
+        "(SME) or the Governor."
+    )
     active: bool
 
     @classmethod
@@ -78,11 +81,25 @@ class ResetRequiredOut(BaseModel):
     reset_token: str = Field(description="Use with POST /api/v1/auth/password/reset.")
 
 
+CapabilityName = Literal[
+    "manage_smes",
+    "manage_subjects",
+    "manage_students",
+    "upload_booklets",
+    "view_progress",
+    "author_content",
+    "evaluate",
+]
+
+
 class MeOut(BaseModel):
     user: UserOut
     institution_id: str
     college_name: str
     recovery_codes_left: int
+    capabilities: list[CapabilityName] = Field(
+        description="What this persona may do (D177); the screens show what these allow."
+    )
 
 
 # --- passwords --------------------------------------------------------------------------------
@@ -169,11 +186,24 @@ class AccountOut(BaseModel):
     status: Literal["PENDING", "ACTIVE", "DISABLED"]
     locked_until: datetime | None
     force_reset: bool
+    subject_ids: list[UUID] = Field(
+        default_factory=list, description="An SME's subjects (D160); empty for other personas."
+    )
 
 
 class InviteIn(_In):
     display_name: str = Field(min_length=1, max_length=200)
     email: str = Email
+    subject_ids: list[UUID] = Field(
+        default_factory=list,
+        max_length=200,
+        description="Subjects granted to the new SME at once (optional for now).",
+    )
+
+
+class AccountSubjectsOut(BaseModel):
+    user_id: UUID
+    subject_ids: list[UUID]
 
 
 # --- roster -----------------------------------------------------------------------------------
@@ -213,6 +243,11 @@ class SubjectOut(BaseModel):
     id: UUID
     code: str
     name: str
+    version: int = 1
+    retired: bool = Field(
+        default=False,
+        description="Retired by the admin: not granted, not used for a new paper (D181).",
+    )
 
 
 class IssueOut(BaseModel):

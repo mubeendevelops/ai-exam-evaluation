@@ -1,6 +1,7 @@
 """Subjects and exam blueprints, the college's own content (D165): ``/api/v1/subjects``,
-``/api/v1/blueprints``. Admins and teachers read; teachers write (the admin cannot author
-papers). Another college's subject or blueprint is a 404. Blueprints are never deleted yet:
+``/api/v1/blueprints``. The admin keeps the subject list (D160); SMEs read and write the papers
+of their own subjects (D178). Another college's subject or blueprint, and a paper of a subject
+the SME does not have, is a 404. Blueprints are never deleted yet:
 booklets pin a version and content rows are append-only until P28."""
 
 from typing import Annotated, Any
@@ -22,9 +23,9 @@ from tarn_api.schemas import (
 from tarn_api.security import BackendsDep, PrincipalDep, current_user
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.content import Subject
-from tarn_core.domain.tenancy import Role
+from tarn_core.domain.personas import Capability
 from tarn_core.errors import NotFoundError
-from tarn_core.ids import BlueprintId, CollegeId
+from tarn_core.ids import BlueprintId, CollegeId, SubjectId
 from tarn_core.services.blueprint_document import DocumentReport, blueprint_to_document
 
 router = APIRouter(
@@ -50,7 +51,13 @@ _INVALID: dict[int | str, dict[str, Any]] = {
 
 
 def _subject_out(subject: Subject) -> SubjectOut:
-    return SubjectOut(id=subject.id, code=subject.code, name=subject.name)
+    return SubjectOut(
+        id=subject.id,
+        code=subject.code,
+        name=subject.name,
+        version=subject.meta.version,
+        retired=subject.retired,
+    )
 
 
 def _summary(b: ExamBlueprint, subjects: dict[UUID, Subject]) -> dict[str, Any]:
@@ -71,7 +78,7 @@ def _summary(b: ExamBlueprint, subjects: dict[UUID, Subject]) -> dict[str, Any]:
 
 
 def _subjects(unit: Unit, college_id: CollegeId) -> dict[UUID, Subject]:
-    return {s.id: s for s in unit.subjects.list(college_id)}
+    return {s.id: s for s in unit.subjects.all(college_id)}
 
 
 def _full_out(b: ExamBlueprint, unit: Unit) -> BlueprintOut:
@@ -103,11 +110,17 @@ def _validation_out(report: DocumentReport) -> ValidationOut:
 # --- subjects ---------------------------------------------------------------------------------
 
 
-@router.get("/subjects", response_model=list[SubjectOut], summary="My college's subjects, by name")
+@router.get(
+    "/subjects",
+    response_model=list[SubjectOut],
+    summary="The subjects I work with, by name",
+    description="The admin gets the college's whole list, retired subjects included; an SME "
+    "the live subjects granted to them (D160).",
+)
 def list_subjects(who: PrincipalDep, backends: BackendsDep) -> list[SubjectOut]:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        subjects = unit.subjects.list(who.college_id)
+        current_user(unit, who, Capability.MANAGE_SUBJECTS, Capability.AUTHOR_CONTENT)
+        subjects = unit.subjects.visible_to(who.college_id, who.user_id)
     return [_subject_out(s) for s in subjects]
 
 
@@ -115,13 +128,46 @@ def list_subjects(who: PrincipalDep, backends: BackendsDep) -> list[SubjectOut]:
     "/subjects",
     status_code=status.HTTP_201_CREATED,
     response_model=SubjectOut,
-    responses={422: {"model": ErrorOut}},
-    summary="Create a subject of my college",
+    responses={409: {"model": ErrorOut}, 422: {"model": ErrorOut}},
+    summary="Create a subject of my college (admin)",
 )
 def create_subject(body: SubjectIn, who: PrincipalDep, backends: BackendsDep) -> SubjectOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        current_user(unit, who, Capability.MANAGE_SUBJECTS)
         subject = unit.subjects.create(who.college_id, who.user_id, code=body.code, name=body.name)
+    return _subject_out(subject)
+
+
+@router.put(
+    "/subjects/{subject_id}",
+    response_model=SubjectOut,
+    responses={404: {"model": ErrorOut}, 409: {"model": ErrorOut}, 422: {"model": ErrorOut}},
+    summary="Rename a subject (admin)",
+    description="Saves the next version; questions, papers and scores keep the subject.",
+)
+def rename_subject(
+    subject_id: UUID, body: SubjectIn, who: PrincipalDep, backends: BackendsDep
+) -> SubjectOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.MANAGE_SUBJECTS)
+        subject = unit.subjects.rename(
+            who.college_id, who.user_id, SubjectId(subject_id), code=body.code, name=body.name
+        )
+    return _subject_out(subject)
+
+
+@router.post(
+    "/subjects/{subject_id}/retire",
+    response_model=SubjectOut,
+    responses={404: {"model": ErrorOut}},
+    summary="Retire a subject (admin)",
+    description="A retired subject cannot be granted to an SME or used for a new paper "
+    "(D181); its questions, papers, grants and scores stay.",
+)
+def retire_subject(subject_id: UUID, who: PrincipalDep, backends: BackendsDep) -> SubjectOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.MANAGE_SUBJECTS)
+        subject = unit.subjects.retire(who.college_id, who.user_id, SubjectId(subject_id))
     return _subject_out(subject)
 
 
@@ -139,7 +185,7 @@ def validate_blueprint(
     document: Document, who: PrincipalDep, backends: BackendsDep
 ) -> ValidationOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
         report = unit.blueprints.check(document)
     return _validation_out(report)
 
@@ -151,9 +197,9 @@ def validate_blueprint(
 )
 def list_blueprints(who: PrincipalDep, backends: BackendsDep) -> list[BlueprintSummaryOut]:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
         subjects = _subjects(unit, who.college_id)
-        found = unit.blueprints.list(who.college_id)
+        found = unit.blueprints.list(who.college_id, reach=unit.reach(user))
     return [BlueprintSummaryOut(**_summary(b, subjects)) for b in found]
 
 
@@ -161,12 +207,12 @@ def list_blueprints(who: PrincipalDep, backends: BackendsDep) -> list[BlueprintS
     "/blueprints",
     status_code=status.HTTP_201_CREATED,
     response_model=BlueprintOut,
-    responses={**_INVALID, 403: {"model": ErrorOut, "description": "Teachers only."}},
+    responses={**_INVALID, 403: {"model": ErrorOut, "description": "SMEs only."}},
     summary="Create a blueprint of my college",
 )
 def create_blueprint(document: Document, who: PrincipalDep, backends: BackendsDep) -> BlueprintOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
         blueprint = unit.blueprints.create(who.college_id, who.user_id, document)
         return _full_out(blueprint, unit)
 
@@ -184,8 +230,10 @@ def get_blueprint(
     version: Annotated[int | None, Query(ge=1)] = None,
 ) -> BlueprintOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        blueprint = unit.blueprints.get(who.college_id, BlueprintId(blueprint_id), version)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
+        blueprint = unit.blueprints.get(
+            who.college_id, BlueprintId(blueprint_id), version, reach=unit.reach(user)
+        )
         return _full_out(blueprint, unit)
 
 
@@ -199,8 +247,10 @@ def blueprint_versions(
     blueprint_id: UUID, who: PrincipalDep, backends: BackendsDep
 ) -> list[BlueprintSummaryOut]:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        versions = unit.blueprints.versions(who.college_id, BlueprintId(blueprint_id))
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
+        versions = unit.blueprints.versions(
+            who.college_id, BlueprintId(blueprint_id), reach=unit.reach(user)
+        )
         subjects = _subjects(unit, who.college_id)
     if not versions:
         raise NotFoundError(f"blueprint {blueprint_id}")
@@ -211,14 +261,14 @@ def blueprint_versions(
     "/blueprints/{blueprint_id}",
     response_model=BlueprintOut,
     responses={**_INVALID, 403: {"model": ErrorOut}, 404: {"model": ErrorOut}},
-    summary="Save the document as the next version (teachers only)",
+    summary="Save the document as the next version (SMEs only)",
     description="Earlier versions stay valid for booklets pinned to them.",
 )
 def update_blueprint(
     blueprint_id: UUID, document: Document, who: PrincipalDep, backends: BackendsDep
 ) -> BlueprintOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
         blueprint = unit.blueprints.update(
             who.college_id, who.user_id, BlueprintId(blueprint_id), document
         )

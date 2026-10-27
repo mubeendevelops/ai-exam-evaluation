@@ -23,8 +23,9 @@ from tarn_core.domain.content import (
 from tarn_core.errors import InvariantError, NotFoundError, TenantViolationError
 from tarn_core.ids import CollegeId, CriterionId, KeyFileId
 from tarn_core.ports.repositories import QuestionQuery
+from tarn_core.services.access import WHOLE_COLLEGE
 from tarn_core.services.question_bank import CriterionSpec
-from tarn_core.testing.builders import make_services
+from tarn_core.testing.builders import make_services, make_subject
 
 pytestmark = pytest.mark.integration
 
@@ -46,7 +47,7 @@ def test_a_question_with_its_key_and_rubric_round_trips(session: Opener) -> None
     a = new_college(session, "QA")
     with session(a.id) as s:
         svc = make_services(s)
-        subject = svc.subjects.create(a.id, a.teacher.id, code="S", name="Subject")
+        subject = make_subject(svc, a, code="S", name="Subject")
         q = svc.bank.create_question(
             a.id,
             a.teacher.id,
@@ -78,7 +79,7 @@ def test_a_question_with_its_key_and_rubric_round_trips(session: Opener) -> None
         ]
         stored = s.content.for_question(a.id, KeyFile, q.id)
         assert stored == [key]
-        detail = make_services(s).bank.detail(a.id, q.id)
+        detail = make_services(s).bank.detail(a.id, q.id, reach=WHOLE_COLLEGE)
         assert detail.subject is not None
         assert key.blob.value.startswith(f"college/{a.id}/content/keys/")
         assert detail.rubric_total == Decimal("4.5")
@@ -88,7 +89,7 @@ def test_retired_items_leave_the_listing_but_keep_their_history(session: Opener)
     a = new_college(session, "QR")
     with session(a.id) as s:
         svc = make_services(s)
-        subject = svc.subjects.create(a.id, a.teacher.id, code="S", name="Subject")
+        subject = make_subject(svc, a, code="S", name="Subject")
         q = svc.bank.create_question(
             a.id,
             a.teacher.id,
@@ -99,10 +100,15 @@ def test_retired_items_leave_the_listing_but_keep_their_history(session: Opener)
             reference_answer="zebra answer",
             criteria=[_spec("A", "1"), _spec("B", "1")],
         )
-        answer = svc.bank.detail(a.id, q.id).answers[0]
+        answer = svc.bank.detail(a.id, q.id, reach=WHOLE_COLLEGE).answers[0]
         crit = {c.label: c for c in s.content.for_question(a.id, RubricCriterion, q.id)}
         svc.bank.set_rubric(a.id, a.teacher.id, q.id, [_spec("A", "2", crit["A"].id)])
-        assert svc.bank.search(a.id, QuestionQuery(keyword="zebra"), limit=5).total == 1
+        assert (
+            svc.bank.search(
+                a.id, QuestionQuery(keyword="zebra"), limit=5, reach=WHOLE_COLLEGE
+            ).total
+            == 1
+        )
         svc.bank.retire_reference_answer(a.id, a.teacher.id, q.id, answer.id)
     with session(a.id) as s:
         assert [c.label for c in s.content.for_question(a.id, RubricCriterion, q.id)] == ["A"]
@@ -112,8 +118,16 @@ def test_retired_items_leave_the_listing_but_keep_their_history(session: Opener)
             True,
         ]
         svc = make_services(s)
-        assert svc.bank.search(a.id, QuestionQuery(keyword="zebra"), limit=5).total == 0
-        assert svc.bank.search(a.id, QuestionQuery(), limit=5).items[0].key_count == 0
+        assert (
+            svc.bank.search(
+                a.id, QuestionQuery(keyword="zebra"), limit=5, reach=WHOLE_COLLEGE
+            ).total
+            == 0
+        )
+        assert (
+            svc.bank.search(a.id, QuestionQuery(), limit=5, reach=WHOLE_COLLEGE).items[0].key_count
+            == 0
+        )
 
 
 def test_filters_match_the_in_memory_behaviour(session: Opener) -> None:
@@ -122,8 +136,8 @@ def test_filters_match_the_in_memory_behaviour(session: Opener) -> None:
     tag = uuid4().hex[:6].upper()
     with session(a.id) as s:
         svc = make_services(s)
-        phy = svc.subjects.create(a.id, a.teacher.id, code="P", name="Physics")
-        mat = svc.subjects.create(a.id, a.teacher.id, code="M", name="Maths")
+        phy = make_subject(svc, a, code="P", name="Physics")
+        mat = make_subject(svc, a, code="M", name="Maths")
 
         def add(
             code: str,
@@ -151,7 +165,7 @@ def test_filters_match_the_in_memory_behaviour(session: Opener) -> None:
         add("P%", "Percent sign 100% literal", "Edge", Difficulty.MEDIUM)
     with session(b.id) as s:
         svc = make_services(s)
-        b_phy = svc.subjects.create(b.id, b.teacher.id, code="P", name="Physics")
+        b_phy = make_subject(svc, b, code="P", name="Physics")
         svc.bank.create_question(
             b.id,
             b.teacher.id,
@@ -164,7 +178,9 @@ def test_filters_match_the_in_memory_behaviour(session: Opener) -> None:
 
     def codes(college: CollegeId = a.id, **kw: Any) -> list[str]:
         with session(college) as s:
-            page = make_services(s).bank.search(college, QuestionQuery(code=tag, **kw), limit=20)
+            page = make_services(s).bank.search(
+                college, QuestionQuery(code=tag, **kw), limit=20, reach=WHOLE_COLLEGE
+            )
         assert page.total == len(page.items)
         return [i.question.code.removeprefix(f"{tag}-") for i in page.items]
 
@@ -183,14 +199,21 @@ def test_filters_match_the_in_memory_behaviour(session: Opener) -> None:
     assert codes(keyword="lenz", difficulty=Difficulty.HARD) == []
     with session(a.id) as s:
         svc = make_services(s)
-        assert set(svc.bank.topics(a.id)) == {"Calculus", "AC Circuits", "Electromagnetism", "Edge"}
-        assert list(svc.bank.topics(a.id, mat.id)) == ["Calculus"]
-        first = svc.bank.search(a.id, QuestionQuery(code=tag), limit=2)
-        rest = svc.bank.search(a.id, QuestionQuery(code=tag), limit=2, offset=2)
+        assert set(svc.bank.topics(a.id, reach=WHOLE_COLLEGE)) == {
+            "Calculus",
+            "AC Circuits",
+            "Electromagnetism",
+            "Edge",
+        }
+        assert list(svc.bank.topics(a.id, mat.id, reach=WHOLE_COLLEGE)) == ["Calculus"]
+        first = svc.bank.search(a.id, QuestionQuery(code=tag), limit=2, reach=WHOLE_COLLEGE)
+        rest = svc.bank.search(
+            a.id, QuestionQuery(code=tag), limit=2, offset=2, reach=WHOLE_COLLEGE
+        )
         assert (first.total, len(first.items), len(rest.items)) == (4, 2, 2)
         assert first.items[1].subject_name is not None
         exact = QuestionQuery(code=f"{tag}-q1".lower(), exact_code=True)
-        assert svc.bank.search(a.id, exact, limit=3).total == 1
+        assert svc.bank.search(a.id, exact, limit=3, reach=WHOLE_COLLEGE).total == 1
 
 
 def test_database_refuses_what_the_service_forbids(session: Opener) -> None:
@@ -198,7 +221,7 @@ def test_database_refuses_what_the_service_forbids(session: Opener) -> None:
     b = new_college(session, "QE")
     with session(a.id) as s:
         svc = make_services(s)
-        subject = svc.subjects.create(a.id, a.teacher.id, code="S", name="S")
+        subject = make_subject(svc, a, code="S", name="S")
         q = svc.bank.create_question(
             a.id, a.teacher.id, subject_id=subject.id, code="D-1", text="t", max_marks=Decimal(1)
         )

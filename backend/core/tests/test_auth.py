@@ -263,7 +263,7 @@ def test_force_reset_sends_the_user_to_the_reset_page(w: AuthWorld) -> None:
 
 def test_invited_teacher_cannot_sign_in_before_accepting(w: AuthWorld) -> None:
     cid, admin = w.register("COLLEGE_A", ADMIN)
-    user = w.accounts.invite_teacher(cid, admin, display_name="New T", email=TEACHER)
+    user = w.accounts.invite_sme(cid, admin, display_name="New T", email=TEACHER)
     assert w.mem.identity.get_identity(cid, user.id).status is IdentityStatus.PENDING
     assert isinstance(w.auth.login(cid, TEACHER, TEACHER_PASSWORD), Refused)
     token = w.mem.mailer.last_token(TEACHER)
@@ -290,7 +290,7 @@ def test_teachers_cannot_manage_accounts(w: AuthWorld) -> None:
     teacher = w.invite(cid, admin, TEACHER)
     other = w.invite(cid, admin, "other@college-a.example")
     with pytest.raises(PermissionDeniedError):
-        w.accounts.invite_teacher(cid, teacher, display_name="X", email="x@college-a.example")
+        w.accounts.invite_sme(cid, teacher, display_name="X", email="x@college-a.example")
     with pytest.raises(PermissionDeniedError):
         w.accounts.set_active(cid, teacher, other, active=False)
     with pytest.raises(PermissionDeniedError):
@@ -313,7 +313,7 @@ def test_duplicate_email_in_a_college_is_refused(w: AuthWorld) -> None:
     cid, admin = w.register("COLLEGE_A", ADMIN)
     w.invite(cid, admin, TEACHER)
     with pytest.raises(AlreadyExistsError):
-        w.accounts.invite_teacher(cid, admin, display_name="T2", email=TEACHER.upper())
+        w.accounts.invite_sme(cid, admin, display_name="T2", email=TEACHER.upper())
 
 
 # --- across colleges --------------------------------------------------------------------------

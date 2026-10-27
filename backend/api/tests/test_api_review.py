@@ -2,7 +2,7 @@
 result sheet v2, correct OCR text and segments, and the 409/423 refusals. In-memory backends;
 the worker's re-score runs here with the trigram scorer."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from uuid import UUID
 
@@ -14,8 +14,8 @@ from tarn_core.domain.booklet import Booklet
 from tarn_core.domain.tenancy import Role, Student
 from tarn_core.ids import AnswerId, AnswerScoreId, CollegeId, StudentId
 from tarn_core.ports.jobs import JOB_RESCORE_ANSWERS, JOB_RESEGMENT_BOOKLET
-from tarn_core.testing.auth_world import ADMIN_PASSWORD, TEACHER_PASSWORD, AuthWorld
-from tarn_core.testing.builders import CollegeFixture, ci_shaped_blueprint
+from tarn_core.testing.auth_world import TEACHER_PASSWORD, AuthWorld
+from tarn_core.testing.builders import CollegeFixture, ci_shaped_blueprint, grant
 from tarn_core.testing.workflow import GOOD, HALF, booklet_scorer, scored_booklet
 
 BASE = "/api/v1"
@@ -68,7 +68,8 @@ def s(client: TestClient, backends: MemoryBackends, world: AuthWorld) -> Setup:
     cid, admin = world.register("COLLEGE_A", "admin@a.example")
     world.invite(cid, admin, "teacher@a.example")
     world.invite(cid, admin, "teacher2@a.example")
-    world.register("COLLEGE_B", "admin@b.example")
+    b_cid, b_admin = world.register("COLLEGE_B", "admin@b.example")
+    world.invite(b_cid, b_admin, "sme@b.example")
     users = list(mem.users.list(cid))
     student = Student(id=StudentId(mem.ids.new()), college_id=cid, name="S One", usn="TST001")
     mem.students.save(cid, student)
@@ -78,15 +79,16 @@ def s(client: TestClient, backends: MemoryBackends, world: AuthWorld) -> Setup:
         admin=next(u for u in users if u.role is Role.ADMIN),
         students=(student,),
     )
-    booklet = scored_booklet(
-        mem, fixture, ci_shaped_blueprint(mem, fixture), {"1": GOOD, "2": HALF}
-    )
+    blueprint = ci_shaped_blueprint(mem, fixture)
+    second = next(u for u in users if u.email == "teacher2@a.example")
+    grant(mem, replace(fixture, teacher=second), blueprint.subject_id)  # both SMEs have it
+    booklet = scored_booklet(mem, fixture, blueprint, {"1": GOOD, "2": HALF})
     return Setup(
         client=client,
         mem=mem,
         teacher=_login(client, "COLLEGE_A", "teacher@a.example", TEACHER_PASSWORD),
         teacher2=_login(client, "COLLEGE_A", "teacher2@a.example", TEACHER_PASSWORD),
-        other=_login(client, "COLLEGE_B", "admin@b.example", ADMIN_PASSWORD),
+        other=_login(client, "COLLEGE_B", "sme@b.example", TEACHER_PASSWORD),
         college_id=cid,
         booklet=booklet,
     )

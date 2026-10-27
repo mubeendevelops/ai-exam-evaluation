@@ -31,7 +31,7 @@ function bank(extra: Parameters<typeof mockApi>[0] = {}, questions = [summary()]
   })
 }
 
-/** The college's shared admin account: it reads content, teachers author it (D165). */
+/** The college's shared admin account: SMEs author content; the admin never opens it (D167). */
 const AS_ADMIN = {
   'POST /api/v1/auth/refresh': { json: tokenOf({ role: 'admin' }) },
   'GET /api/v1/auth/me': { json: meOf({ role: 'admin' }) },
@@ -212,25 +212,15 @@ describe('question detail', () => {
     expect(screen.queryByRole('note')).toBeNull()
   })
 
-  it('is read-only for the admin account (teachers author content)', async () => {
-    opened(detail(), AS_ADMIN)
-    await openFirst()
-    expect(screen.getByRole('note')).toHaveTextContent('the admin account reads them')
-    expect(screen.queryByRole('button', { name: 'Copy to my college' })).toBeNull()
-    for (const name of [
-      'Edit question',
-      'Upload Answer Key',
-      'Edit rubric',
-      'Edit glossary',
-      'Add reference answer',
-      'Remove answer',
-      'Upload reference diagram',
-    ]) {
-      expect(screen.queryByRole('button', { name })).toBeNull()
-    }
-    // reading stays possible: the files can be downloaded
-    expect(screen.getByRole('button', { name: 'Download key.pdf' })).toBeVisible()
-    expect(screen.queryByRole('button', { name: /New Question/ })).toBeNull()
+  it('is not for the admin account: it is sent to the admin page (D167, P24)', async () => {
+    opened(detail(), {
+      ...AS_ADMIN,
+      'GET /api/v1/accounts': { json: [] },
+      'GET /api/v1/students': { json: [] },
+    })
+    renderApp('/qna')
+    expect(await screen.findByRole('heading', { name: /Administration/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open PHY-Q1' })).toBeNull()
   })
 
   it('flags weights that do not add up', async () => {
@@ -738,16 +728,6 @@ describe('reference diagram graph editor', () => {
     await user.click(await within(dialog).findByRole('button', { name: 'Read the picture again' }))
     expect(await screen.findByText(/being read again/)).toBeVisible()
     expect(mock.callsTo(`POST ${REF}/recognize`)).toHaveLength(1)
-  })
-
-  it('is view-only for the admin account', async () => {
-    withGraph(false)
-    const user = await openFirst()
-    await user.click(screen.getByRole('button', { name: 'View graph of coil.png' }))
-    const dialog = await screen.findByRole('dialog', { name: 'coil.png' })
-    expect(await within(dialog).findByText(/the admin account reads them/)).toBeVisible()
-    expect(within(dialog).queryByRole('button', { name: 'Read the picture again' })).toBeNull()
-    expect(within(dialog).getByRole('button', { name: 'Add at centre' })).toBeDisabled()
   })
 
   it('says when the graph cannot be loaded', async () => {

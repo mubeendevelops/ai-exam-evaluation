@@ -23,7 +23,7 @@ from tarn_core.services.diagrams.scorer import DiagramScorer
 from tarn_core.services.diagrams.service import BookletDiagrams, ReferenceDiagrams
 from tarn_core.services.scoring import ScoringService
 from tarn_core.testing import ScriptedDiagramRecognizer
-from tarn_core.testing.auth_world import ADMIN_PASSWORD, TEACHER_PASSWORD, AuthWorld
+from tarn_core.testing.auth_world import TEACHER_PASSWORD, AuthWorld
 from tarn_core.testing.builders import CollegeFixture, make_services
 from tarn_core.testing.diagrams import PNG, DiagramWorld, diagram_world, flowchart_detection
 
@@ -56,6 +56,7 @@ class Setup:
         ReferenceDiagrams(
             content=self.mem.content,
             users=self.mem.users,
+            entitlements=self.mem.entitlements,
             blobs=self.mem.blobs,
             runtime=self.mem.runtime,
             recognizers={DiagramKind.FLOWCHART: ScriptedDiagramRecognizer(flowchart_detection())},
@@ -103,13 +104,14 @@ def s(client: TestClient, backends: MemoryBackends, world: AuthWorld) -> Setup:
     mem = backends.mem
     cid, admin = world.register("COLLEGE_A", "admin@a.example")
     world.invite(cid, admin, "teacher@a.example")
-    world.register("COLLEGE_B", "admin@b.example")
+    b_cid, b_admin = world.register("COLLEGE_B", "admin@b.example")
+    world.invite(b_cid, b_admin, "sme@b.example")
     users = list(mem.users.list(cid))
     student = Student(id=StudentId(mem.ids.new()), college_id=cid, name="S One", usn="TST001")
     mem.students.save(cid, student)
     fixture = CollegeFixture(
         college=mem.colleges.get(cid),
-        teacher=next(u for u in users if u.role is Role.TEACHER),
+        teacher=next(u for u in users if u.role is Role.SME),
         admin=next(u for u in users if u.role is Role.ADMIN),
         students=(student,),
     )
@@ -117,7 +119,7 @@ def s(client: TestClient, backends: MemoryBackends, world: AuthWorld) -> Setup:
         client=client,
         mem=mem,
         teacher=_login(client, "COLLEGE_A", "teacher@a.example", TEACHER_PASSWORD),
-        other=_login(client, "COLLEGE_B", "admin@b.example", ADMIN_PASSWORD),
+        other=_login(client, "COLLEGE_B", "sme@b.example", TEACHER_PASSWORD),
         college_id=cid,
         dw=diagram_world(mem, college=fixture),
     )

@@ -48,7 +48,7 @@ def second_teacher(mem: InMemory, college: CollegeFixture) -> User:
         college_id=college.id,
         display_name="Teacher A2",
         email="teacher.a2@example.test",
-        role=Role.TEACHER,
+        role=Role.SME,
     )
     mem.users.save(college.id, other)
     return other

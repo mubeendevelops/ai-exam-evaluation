@@ -100,7 +100,7 @@ calibrations stay global (Tarn-operator content, D72).
 | Tokens | HS256 access token, 15 min, signing key ≥ 32 bytes from Secret Manager. The role is never trusted from the token, and every request reloads the user and checks the session (so logout, disable, force reset and suspension take effect at the next request). Refresh token: opaque, HttpOnly, `SameSite=Strict`, path `/api/v1/auth`, `Secure` in production, rotated on every use; a replayed old token revokes the session. The access token lives only in memory in the browser |
 | Password policy | NIST style: at least 12 characters (per tenant 8–128), at most 256, not the email, its local part or the Institution ID, no composition rules |
 | Breached passwords | Exact match against the NCSC top-100k list, offline (D43). No online lookup, so nothing leaves the machine (kept; see open items) |
-| Lockout | 5 wrong passwords or recovery codes → 15 min lockout per account (persisted). An admin can unlock, and a reset link clears the lockout. The per-account rate limits (F7) also cover unknown and locked accounts |
+| Lockout | 5 wrong passwords or recovery codes → 15 min lockout (persisted): per account for SMEs and the Governor, per (account, client address) for the shared admin login (P24, D179; only a SHA-256 prefix of the address is stored). The admin can unlock an SME, and a reset link clears every lockout of the account. The per-account rate limits (F7) also cover unknown and locked accounts |
 | Rate limits | F7. Each API instance counts on its own; Cloud Armor counts across instances |
 | Reset links / invitations / email verification | 256-bit random, only the SHA-256 is stored, single use (an atomic `use_action_token`; 8 racing uses → 1 wins, P4 test), 30 min / 72 h / 24 h; a newer reset link cancels the older; a link of college A is useless in B |
 | Recovery codes | 10 × 80 bits, argon2id with the pepper, each usable once (atomic), a wrong code counts towards the lockout, constant work (F8) |
@@ -255,8 +255,10 @@ Every write is checked for its audit event, and the audit log for secrets and st
 - **Rate limits per instance (D148).** Each Cloud Run instance counts on its own; Cloud Armor is
   the cross-instance limit. The `X-Forwarded-For` layout (`TRUSTED_PROXY_HOPS=2`) has not been
   seen on a deployment (O102).
-- **Lockout as denial of service.** Anyone who knows an email and Institution ID can lock that
-  account for 15 minutes. A reset link or an admin unlocks it.
+- **Lockout as denial of service.** Anyone who knows an email and Institution ID can lock an SME
+  account for 15 minutes. A reset link or the admin unlocks it. The shared admin login is locked
+  per client address (P24), but its per-account rate limit (10 per 15 minutes) can still hold it
+  briefly, and its per-address counter rows are never pruned (O107).
 - **Breached-password list.** The list holds 100k passwords and is checked offline. An online
   k-anonymity lookup would send hash prefixes to a third party, so it was not added.
 - **Uploads held in memory** up to the cap (O39) and Cloud Run's 32 MiB request limit (O98).

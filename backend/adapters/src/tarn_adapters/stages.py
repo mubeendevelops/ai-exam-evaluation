@@ -38,6 +38,7 @@ from tarn_core.ports.repositories import (
     BookletRepository,
     CollegeRepository,
     ContentRepository,
+    EntitlementRepository,
     ScoreRepository,
     UserRepository,
 )
@@ -86,6 +87,8 @@ class StageSession(Protocol):
     def colleges(self) -> CollegeRepository: ...
     @property
     def users(self) -> UserRepository: ...
+    @property
+    def entitlements(self) -> EntitlementRepository: ...
     @property
     def jobs(self) -> JobQueue: ...
     @property
@@ -236,12 +239,14 @@ class Stages:
         bank = QuestionBankService(
             content=session.content,
             users=session.users,
+            entitlements=session.entitlements,
             blobs=self.blobs,
             runtime=session.runtime,
         )
         return ReferenceDiagrams(
             content=session.content,
             users=session.users,
+            entitlements=session.entitlements,
             blobs=self.blobs,
             runtime=session.runtime,
             recognizers=self.recognizers,

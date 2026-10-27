@@ -2,6 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { uploadBooklet } from '../../api/booklets'
+import { useMe } from '../../auth/AuthProvider'
+import { can } from '../../auth/capabilities'
 import { SelectInput, SmallButton } from '../schema/controls'
 import { EmptyState, GlassPanel, useToast } from '../ui'
 import { checkFiles, Dropzone, inPageOrder } from './Dropzone'
@@ -19,8 +21,13 @@ interface Item {
   message?: string
 }
 
-/** Step 1, "Scan Upload": pick the student and the exam, drop the scans, watch the queue. */
+/**
+ * Step 1, "Scan Upload": pick the student and the exam, drop the scans, watch the queue. Since
+ * P24 the admin uploads (D162): an SME sees the submissions of their subjects only, without the
+ * upload controls, until P26 brings units.
+ */
 export function UploadStep({ onOpen }: { onOpen: (bookletId: string) => void }) {
+  const uploads = can(useMe(), 'upload_booklets')
   const toast = useToast()
   const queryClient = useQueryClient()
   const [student, setStudent] = useState<Student | null>(null)
@@ -110,31 +117,44 @@ export function UploadStep({ onOpen }: { onOpen: (bookletId: string) => void }) 
 
   return (
     <div className="space-y-6">
-      <GlassPanel as="section" aria-label="Who and what" className="grid gap-4 p-4 md:grid-cols-2">
-        <StudentPicker value={student} onChange={setStudent} />
-        <SelectInput
-          label="Exam"
-          value={blueprintId}
-          onChange={(e) => setBlueprintId(e.target.value)}
-          hint={
-            exams.isError
-              ? 'The exams could not be loaded.'
-              : exam
-                ? `${exam.course_code} · ${exam.total_marks} marks · ${exam.question_count} questions`
-                : 'The exam blueprint the booklet is marked against.'
-          }
+      {!uploads && (
+        <p className="glass-panel rounded-xl border border-gray-800 p-4 text-xs text-gray-300">
+          <i className="fa-solid fa-circle-info mr-2 text-cyan-400" aria-hidden="true" />
+          Scanned booklets are uploaded by your admin. The submissions of your subjects appear
+          below.
+        </p>
+      )}
+      {uploads && (
+        <GlassPanel
+          as="section"
+          aria-label="Who and what"
+          className="grid gap-4 p-4 md:grid-cols-2"
         >
-          <option value="">Choose an exam…</option>
-          {exams.data?.map((e) => (
-            <option key={e.id} value={e.id} disabled={e.unlinked_count > 0}>
-              {e.title}
-              {e.unlinked_count > 0 ? ` (${e.unlinked_count} questions not linked)` : ''}
-            </option>
-          ))}
-        </SelectInput>
-      </GlassPanel>
+          <StudentPicker value={student} onChange={setStudent} />
+          <SelectInput
+            label="Exam"
+            value={blueprintId}
+            onChange={(e) => setBlueprintId(e.target.value)}
+            hint={
+              exams.isError
+                ? 'The exams could not be loaded.'
+                : exam
+                  ? `${exam.course_code} · ${exam.total_marks} marks · ${exam.question_count} questions`
+                  : 'The exam blueprint the booklet is marked against.'
+            }
+          >
+            <option value="">Choose an exam…</option>
+            {exams.data?.map((e) => (
+              <option key={e.id} value={e.id} disabled={e.unlinked_count > 0}>
+                {e.title}
+                {e.unlinked_count > 0 ? ` (${e.unlinked_count} questions not linked)` : ''}
+              </option>
+            ))}
+          </SelectInput>
+        </GlassPanel>
+      )}
 
-      <Dropzone disabled={disabled} hint={hint} onFiles={accept} />
+      {uploads && <Dropzone disabled={disabled} hint={hint} onFiles={accept} />}
       {problem && (
         <p role="alert" className="text-xs text-red-300">
           {problem}
@@ -204,7 +224,9 @@ export function UploadStep({ onOpen }: { onOpen: (bookletId: string) => void }) 
         )}
         {list && list.items.length === 0 && (
           <EmptyState icon="fa-solid fa-file-circle-plus" title="No submissions yet">
-            Choose a student and an exam, then drop the scanned booklet above.
+            {uploads
+              ? 'Choose a student and an exam, then drop the scanned booklet above.'
+              : 'Booklets of your subjects appear here once your admin uploads them.'}
           </EmptyState>
         )}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">

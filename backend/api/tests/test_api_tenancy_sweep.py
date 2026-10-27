@@ -17,11 +17,15 @@ from tarn_api.tenancy_sweep import (
     World,
     build_world,
     call,
+    invite_with_another_colleges_subject,
+    login,
     unclassified,
     upload_for_another_college,
+    url,
 )
 from tarn_api.testing import MemoryBackends
 from tarn_core.ids import BookletId, CollegeId
+from tarn_core.seed import DEV_PASSWORD
 from tarn_core.testing.seed_world import seed_in_memory
 
 EXPECTED = {"college": {404}}
@@ -90,6 +94,14 @@ def test_b_cannot_register_a_booklet_for_a_student_of_a(
     assert upload_for_another_college(world).status_code == 404
 
 
+def test_b_cannot_grant_a_subject_of_a(sweep: tuple[World, MemoryBackends]) -> None:
+    world, _ = sweep
+    response = invite_with_another_colleges_subject(world)
+    assert response.status_code == 422 and "no such subject" in response.json()["detail"]
+    accounts = world.client.get("/api/v1/accounts", headers=world.b_admin).json()
+    assert "sweep.sme@demo-eng.example.test" not in {x["user"]["email"] for x in accounts}
+
+
 def test_lists_show_only_the_callers_college(sweep: tuple[World, MemoryBackends]) -> None:
     world, _ = sweep
     c, b = world.client, world.b
@@ -97,12 +109,13 @@ def test_lists_show_only_the_callers_college(sweep: tuple[World, MemoryBackends]
     assert a_booklet not in c.get("/api/v1/booklets", headers=b).text
     assert a_booklet not in c.get("/api/v1/evaluated-booklets", headers=b).text
     a_student = world.ids["student_id"]
-    a_students = c.get("/api/v1/students", params={"limit": 50}, headers=world.a).json()
+    a_students = c.get("/api/v1/students", params={"limit": 50}, headers=world.a_admin).json()
     names = {s["name"] for s in a_students}
-    b_students = c.get("/api/v1/students", params={"limit": 50}, headers=b).json()
+    b_admin = world.b_admin
+    b_students = c.get("/api/v1/students", params={"limit": 50}, headers=b_admin).json()
     assert a_student not in {s["id"] for s in b_students}
     for name in names:
-        found = c.get("/api/v1/students", params={"q": name}, headers=b).json()
+        found = c.get("/api/v1/students", params={"q": name}, headers=b_admin).json()
         assert all(s["id"] != a_student for s in found)
     accounts = c.get("/api/v1/accounts", headers=world.b_admin).json()
     assert world.ids["user_id"] not in {x["user"]["id"] for x in accounts}
@@ -140,3 +153,59 @@ def test_b_cannot_link_a_question_in_its_own_paper(sweep: tuple[World, MemoryBac
     response = c.post("/api/v1/blueprints", json=document, headers=b)
     assert response.status_code == 422, response.text
     assert "not in your college" in response.json()["detail"]
+
+
+# --- subjects inside one college (P24, D178) ----------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def physics(sweep: tuple[World, MemoryBackends]) -> dict[str, str]:
+    """An SME of college A granted only a new Physics subject: A's commerce content and
+    booklets are as missing to them as to college B."""
+    world, backends = sweep
+    c, admin = world.client, world.a_admin
+    subject = c.post("/api/v1/subjects", json={"code": "PHY", "name": "Physics"}, headers=admin)
+    assert subject.status_code == 201, subject.text
+    email = "physics.sme@demo-com.example.test"
+    invited = c.post(
+        "/api/v1/accounts",
+        json={"display_name": "Physics SME", "email": email, "subject_ids": [subject.json()["id"]]},
+        headers=admin,
+    )
+    assert invited.status_code == 201 and invited.json()["subject_ids"] == [subject.json()["id"]]
+    token = backends.mem.mailer.last_token(email)
+    accepted = c.post(
+        "/api/v1/auth/invitations/accept", json={"token": token, "password": DEV_PASSWORD}
+    )
+    assert accepted.status_code == 204, accepted.text
+    return login(c, "DEMO_COM", email)
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [op for op, case in CASES.items() if case.kind == "college" and not case.as_admin],
+    ids=lambda v: str(v),
+)
+def test_a_physics_sme_finds_nothing_of_the_other_subjects(
+    sweep: tuple[World, MemoryBackends], physics: dict[str, str], method: str, path: str
+) -> None:
+    world, _ = sweep
+    case = CASES[(method, path)]
+    extra = case.request(world) if case.request else {}
+    headers = physics | extra.pop("headers", {})
+    response = world.client.request(method, url(world, path), headers=headers, **extra)
+    assert response.status_code == 404, (method, path, response.text)
+    assert response.json() == {"detail": "Not found."}
+
+
+def test_a_physics_sme_lists_nothing_of_the_other_subjects(
+    sweep: tuple[World, MemoryBackends], physics: dict[str, str]
+) -> None:
+    world, _ = sweep
+    c = world.client
+    assert c.get("/api/v1/questions", headers=physics).json()["total"] == 0
+    assert c.get("/api/v1/blueprints", headers=physics).json() == []
+    assert c.get("/api/v1/booklets", headers=physics).json()["total"] == 0
+    assert c.get("/api/v1/evaluated-booklets", headers=physics).json()["total"] == 0
+    assert c.get("/api/v1/question-topics", headers=physics).json() == []
+    assert [s["code"] for s in c.get("/api/v1/subjects", headers=physics).json()] == ["PHY"]

@@ -117,7 +117,7 @@ def choose(
         college=found,
         blueprint=hits[0],
         student=picked.id,
-        actor=found.accounts.teacher_ids[0],
+        actor=found.accounts.sme_ids[0],
         college_id=college_id,
     )
 

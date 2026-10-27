@@ -124,7 +124,7 @@ class CollegeSeed:
     institution_id: str
     name: str
     admin: PersonSeed
-    teachers: tuple[PersonSeed, ...]
+    smes: tuple[PersonSeed, ...]
     students: tuple[StudentSeed, ...]
     subjects: tuple[SubjectSeed, ...]
     questions: tuple[tuple[str, QuestionSeed], ...]

@@ -80,7 +80,7 @@ def test_each_college_has_an_admin_and_two_teachers_and_its_own_roster(
     assert len(colleges) == 2
     for c in colleges:
         users = mem.users.list(c.accounts.college_id)
-        assert sorted(u.role.value for u in users) == ["admin", "teacher", "teacher"]
+        assert sorted(u.role.value for u in users) == ["admin", "sme", "sme"]
         assert all(u.active for u in users)
         assert len(mem.students.search(c.accounts.college_id, "DEMO", limit=50)) == 12
     admins = {c.seed.admin.email for c in colleges}
@@ -90,7 +90,7 @@ def test_each_college_has_an_admin_and_two_teachers_and_its_own_roster(
     assert {u.id for u in mem.users.list(first.accounts.college_id)}.isdisjoint(
         {u.id for u in mem.users.list(second.accounts.college_id)}
     )
-    assert {u.role for u in mem.users.list(first.accounts.college_id)} == {Role.ADMIN, Role.TEACHER}
+    assert {u.role for u in mem.users.list(first.accounts.college_id)} == {Role.ADMIN, Role.SME}
 
 
 def test_teachers_can_sign_in_with_the_dev_password(
@@ -103,7 +103,7 @@ def test_teachers_can_sign_in_with_the_dev_password(
     mem, colleges, _ = seeded
     world = AuthWorld(mem)
     for c in colleges:
-        for person in (c.seed.admin, *c.seed.teachers):
+        for person in (c.seed.admin, *c.seed.smes):
             outcome = world.auth.login(c.accounts.college_id, person.email, DEV_PASSWORD)
             assert isinstance(outcome, SignedIn), person.email
 

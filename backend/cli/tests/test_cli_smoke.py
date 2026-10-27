@@ -54,6 +54,15 @@ def test_tenants_llm_needs_an_operator_and_defaults_to_off() -> None:
     assert "--on" in help_text and "--off" in help_text and "--operator" in help_text
 
 
+def test_tenants_governor_needs_an_email_and_an_operator() -> None:
+    assert runner.invoke(app, ["tenants", "governor", "ACME"]).exit_code != 0
+    only_email = ["tenants", "governor", "ACME", "--email", "gov@acme.example"]
+    assert runner.invoke(app, only_email).exit_code != 0  # no anonymous creation
+    raw_help = runner.invoke(app, ["tenants", "governor", "--help"]).stdout
+    help_text = re.sub(r"\x1b\[[0-9;]*m", "", raw_help)
+    assert "--email" in help_text and "--operator" in help_text
+
+
 def test_db_commands_are_listed() -> None:
     result = runner.invoke(app, ["db", "--help"])
     assert result.exit_code == 0

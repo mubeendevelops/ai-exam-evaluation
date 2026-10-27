@@ -7,6 +7,7 @@ The JSON forms are ``docs/auth/identity-record.schema.json`` and
 Nothing here is ever logged or audited: hashes, wrapped keys and encrypted values stay in
 the identity store and in encrypted backups."""
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -172,11 +173,23 @@ class IdentityRecord:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class LoginCounters:
+    """Failed sign-ins of one account, or of one account from one client address (the shared
+    admin login, D161: see ``lockout_source``)."""
+
     failed_login_attempts: int = 0
     lockout_until: datetime | None = None
 
     def locked(self, now: datetime) -> bool:
         return self.lockout_until is not None and self.lockout_until > now
+
+
+def lockout_source(address: str) -> str:
+    """The counter key of the shared admin login for one client address (D161, D179): a
+    SHA-256 prefix, so the identity store keeps no address. "" (the account-wide counter) when
+    the address is unknown."""
+    if not address:
+        return ""
+    return "addr:" + hashlib.sha256(address.encode()).hexdigest()[:32]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

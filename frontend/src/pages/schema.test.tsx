@@ -15,6 +15,8 @@ const physics: Subject = {
   id: SUBJECT_ID,
   code: 'PHY-501',
   name: 'Physics',
+  version: 1,
+  retired: false,
 }
 
 beforeEach(() => globalThis.sessionStorage.clear())
@@ -347,52 +349,21 @@ describe('copy, download, reset', () => {
 })
 
 describe('subjects', () => {
-  it('lists the global subjects and creates a new one for my college', async () => {
-    const subjects: Subject[] = [physics]
-    const mock = designer(
-      {
-        'POST /api/v1/subjects': (call) => {
-          const body = call.body as { code: string; name: string }
-          const made: Subject = {
-            id: '55555555-5555-4555-8555-555555555555',
-            ...body,
-          }
-          subjects.push(made)
-          return { status: 201, json: made }
-        },
-      },
-      subjects,
-    )
-    const user = await open()
+  it('lists the subjects the admin granted me and offers no way to create one', async () => {
+    designer({}, [physics])
+    await open()
     const select = await screen.findByRole('combobox', { name: 'Subject' })
     expect(
       within(select)
         .getAllByRole('option')
         .map((o) => o.textContent),
     ).toEqual(['Select a subject…', 'Physics (PHY-501)'])
-
-    await user.click(screen.getByRole('button', { name: 'New' }))
-    await user.type(screen.getByRole('textbox', { name: 'Subject code' }), 'MAT-101')
-    await user.type(screen.getByRole('textbox', { name: 'Subject name' }), 'Mathematics')
-    await user.click(screen.getByRole('button', { name: 'Create subject' }))
-
-    await waitFor(() => expect(shownJson().subject_id).toBe('55555555-5555-4555-8555-555555555555'))
-    expect(mock.callsTo('POST /api/v1/subjects')[0]?.body).toEqual({
-      code: 'MAT-101',
-      name: 'Mathematics',
-    })
-    expect(await screen.findByRole('option', { name: 'Mathematics (MAT-101)' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'New' })).not.toBeInTheDocument()
   })
 
-  it('shows the server reason when a subject is refused', async () => {
-    designer({
-      'POST /api/v1/subjects': { status: 422, json: { detail: 'subject code must not be blank' } },
-    })
-    const user = await open()
-    await user.click(await screen.findByRole('button', { name: 'New' }))
-    await user.type(screen.getByRole('textbox', { name: 'Subject code' }), 'X')
-    await user.type(screen.getByRole('textbox', { name: 'Subject name' }), 'Y')
-    await user.click(screen.getByRole('button', { name: 'Create subject' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('subject code must not be blank')
+  it('tells an SME without subjects to ask the admin', async () => {
+    designer({}, [])
+    await open()
+    expect(await screen.findByText(/ask your admin to grant you one/)).toBeInTheDocument()
   })
 })

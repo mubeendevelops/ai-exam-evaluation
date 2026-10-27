@@ -30,6 +30,7 @@ from tarn_core.testing.memory_repositories import (
     MemoryBookletRepository,
     MemoryCollegeRepository,
     MemoryContentRepository,
+    MemoryEntitlementRepository,
     MemoryResultSheetRepository,
     MemoryScoreRepository,
     MemoryStudentRepository,
@@ -78,6 +79,7 @@ class InMemory:
         self.content = MemoryContentRepository(self.log)
         self.colleges = MemoryCollegeRepository(self.log)
         self.users = MemoryUserRepository(self.log)
+        self.entitlements = MemoryEntitlementRepository(self.log)
         self.students = MemoryStudentRepository(self.log)
         self.booklets = MemoryBookletRepository(self.log)
         self.scores = MemoryScoreRepository(self.log)
@@ -118,6 +120,7 @@ __all__ = [
     "MemoryCalibrationStore",
     "MemoryCollegeRepository",
     "MemoryContentRepository",
+    "MemoryEntitlementRepository",
     "MemoryIdentityStore",
     "MemoryJobQueue",
     "MemoryMailer",

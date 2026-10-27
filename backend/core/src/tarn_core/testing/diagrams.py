@@ -26,7 +26,6 @@ from tarn_core.domain.content import (
     ListParams,
     Question,
     ReferenceDiagram,
-    Subject,
 )
 from tarn_core.domain.diagram import (
     DetectedArrow,
@@ -36,9 +35,16 @@ from tarn_core.domain.diagram import (
     NodeShape,
     Point,
 )
-from tarn_core.ids import AnswerId, BlueprintId, PageId, RegionId, SegmentId, SubjectId
+from tarn_core.ids import AnswerId, BlueprintId, PageId, RegionId, SegmentId
 from tarn_core.services.question_bank import CriterionSpec
-from tarn_core.testing.builders import Backend, CollegeFixture, add_college, make_services, meta
+from tarn_core.testing.builders import (
+    Backend,
+    CollegeFixture,
+    add_college,
+    add_subject,
+    make_services,
+    meta,
+)
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"synthetic reference diagram"
 OCR = EngineRef(name="scripted", version="1")
@@ -172,13 +178,7 @@ def diagram_world[B: Backend](
     (a PostgreSQL session is bound to one college), else a new one."""
     college = college or add_college(mem, f"DIA{mem.ids.new().hex[:4]}")
     services = make_services(mem)
-    subject = Subject(
-        id=SubjectId(mem.ids.new()),
-        meta=meta(college),
-        code=f"SYN3{mem.ids.new().hex[:5]}",
-        name="Synthetic Logic",
-    )
-    mem.content.save(college.id, subject)
+    subject = add_subject(mem, college, f"SYN3{mem.ids.new().hex[:5]}", "Synthetic Logic")
     marks = Decimal(2 + 2 * len(components))
     question = services.bank.create_question(
         college.id,

@@ -18,6 +18,7 @@ from tarn_core.errors import (
 )
 from tarn_core.ids import SubjectId
 from tarn_core.ports.repositories import QuestionQuery
+from tarn_core.services.access import WHOLE_COLLEGE
 from tarn_core.services.blueprint_document import blueprint_to_document
 from tarn_core.testing import InMemory
 from tarn_core.testing.builders import (
@@ -25,6 +26,7 @@ from tarn_core.testing.builders import (
     add_college,
     ci_shaped_blueprint,
     make_services,
+    make_subject,
     meta,
 )
 
@@ -49,12 +51,12 @@ def test_teachers_edit_their_colleges_content_others_never_see_it() -> None:
     with pytest.raises(NotFoundError):
         svc.content.edit_question(b.id, b.teacher.id, question_id, text="Hijack.")
     with pytest.raises(NotFoundError):
-        svc.blueprints.get(b.id, blueprint.id)
-    assert svc.blueprints.versions(b.id, blueprint.id) == []
-    assert svc.blueprints.list(b.id) == []
-    assert svc.subjects.list(b.id) == []
-    assert svc.bank.search(b.id, QuestionQuery(), limit=100).total == 0
-    assert svc.bank.topics(b.id) == []
+        svc.blueprints.get(b.id, blueprint.id, reach=WHOLE_COLLEGE)
+    assert svc.blueprints.versions(b.id, blueprint.id, reach=WHOLE_COLLEGE) == []
+    assert svc.blueprints.list(b.id, reach=WHOLE_COLLEGE) == []
+    assert svc.subjects.list(b.id, reach=WHOLE_COLLEGE) == []
+    assert svc.bank.search(b.id, QuestionQuery(), limit=100, reach=WHOLE_COLLEGE).total == 0
+    assert svc.bank.topics(b.id, reach=WHOLE_COLLEGE) == []
     assert mem.content.get(a.id, Question, question_id).text == "New wording."
 
     actions = [(e.college_id, e.action) for e in mem.audit.events]
@@ -91,7 +93,7 @@ def test_the_admin_and_disabled_teachers_do_not_author() -> None:
     with pytest.raises(PermissionDeniedError):
         svc.content.edit_question(a.id, a.teacher.id, question_id, text="Disabled.")
     # Reading stays open to the admin (P24 decides what an admin sees).
-    assert svc.bank.detail(a.id, question_id).question.id == question_id
+    assert svc.bank.detail(a.id, question_id, reach=WHOLE_COLLEGE).question.id == question_id
 
 
 def test_actor_must_belong_to_the_calling_college() -> None:
@@ -109,9 +111,7 @@ def test_codes_are_unique_per_college() -> None:
     a = add_college(mem, "A")
     b = add_college(mem, "B")
     svc = make_services(mem)
-    subjects = {
-        c.id: svc.subjects.create(c.id, c.teacher.id, code="SYN", name="Synthetic") for c in (a, b)
-    }
+    subjects = {c.id: make_subject(svc, c, code="SYN", name="Synthetic") for c in (a, b)}
 
     def create(college: CollegeFixture) -> Question:
         return svc.bank.create_question(
@@ -137,7 +137,7 @@ def test_a_paper_links_only_its_own_colleges_questions() -> None:
     b = add_college(mem, "B")
     svc = make_services(mem)
     a_paper = ci_shaped_blueprint(mem, a)
-    b_subject = svc.subjects.create(b.id, b.teacher.id, code="SYN", name="Synthetic")
+    b_subject = make_subject(svc, b, code="SYN", name="Synthetic")
     copy = replace(a_paper, subject_id=SubjectId(b_subject.id), course_code="SYN101")
     document = blueprint_to_document(copy)
     with pytest.raises(InvariantError, match="not in your college"):

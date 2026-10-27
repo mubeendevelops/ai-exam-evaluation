@@ -783,8 +783,8 @@
         "tags": [
           "accounts"
         ],
-        "summary": "Create a teacher account and email an invitation (admin)",
-        "operationId": "invite_teacher_api_v1_accounts_post",
+        "summary": "Create an SME account, grant its subjects and email an invitation (admin)",
+        "operationId": "invite_sme_api_v1_accounts_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -837,11 +837,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Unprocessable Entity",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorOut"
                 }
               }
             }
@@ -859,7 +859,7 @@
         "tags": [
           "accounts"
         ],
-        "summary": "Disable a teacher (admin)",
+        "summary": "Disable an SME (admin)",
         "operationId": "disable_api_v1_accounts__user_id__disable_post",
         "security": [
           {
@@ -927,7 +927,7 @@
         "tags": [
           "accounts"
         ],
-        "summary": "Enable a teacher (admin)",
+        "summary": "Enable an SME (admin)",
         "operationId": "enable_api_v1_accounts__user_id__enable_post",
         "security": [
           {
@@ -1112,6 +1112,270 @@
         }
       }
     },
+    "/api/v1/accounts/{user_id}/subjects": {
+      "get": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "The subjects of an SME (admin)",
+        "operationId": "sme_subjects_api_v1_accounts__user_id__subjects_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSubjectsOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{user_id}/subjects/{subject_id}": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Grant a subject to an SME (admin)",
+        "description": "A retired subject cannot be granted (422). Granting a held subject changes nothing. Audited.",
+        "operationId": "grant_subject_api_v1_accounts__user_id__subjects__subject_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "subject_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSubjectsOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Take a subject away from an SME (admin)",
+        "description": "An SME keeps at least one subject (409 for the last one). Audited.",
+        "operationId": "revoke_subject_api_v1_accounts__user_id__subjects__subject_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "subject_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSubjectsOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/roster/import": {
       "post": {
         "tags": [
@@ -1280,7 +1544,8 @@
         "tags": [
           "blueprints"
         ],
-        "summary": "My college's subjects, by name",
+        "summary": "The subjects I work with, by name",
+        "description": "The admin gets the college's whole list, retired subjects included; an SME the live subjects granted to them (D160).",
         "operationId": "list_subjects_api_v1_subjects_get",
         "responses": {
           "200": {
@@ -1328,7 +1593,7 @@
         "tags": [
           "blueprints"
         ],
-        "summary": "Create a subject of my college",
+        "summary": "Create a subject of my college (admin)",
         "operationId": "create_subject_api_v1_subjects_post",
         "requestBody": {
           "content": {
@@ -1371,6 +1636,16 @@
               }
             }
           },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Unprocessable Entity",
             "content": {
@@ -1387,6 +1662,184 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/subjects/{subject_id}": {
+      "put": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Rename a subject (admin)",
+        "description": "Saves the next version; questions, papers and scores keep the subject.",
+        "operationId": "rename_subject_api_v1_subjects__subject_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "subject_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubjectIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubjectOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/v1/subjects/{subject_id}/retire": {
+      "post": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Retire a subject (admin)",
+        "description": "A retired subject cannot be granted to an SME or used for a new paper (D181); its questions, papers, grants and scores stay.",
+        "operationId": "retire_subject_api_v1_subjects__subject_id__retire_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "subject_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubjectOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/blueprints/validate": {
@@ -1549,7 +2002,7 @@
             }
           },
           "403": {
-            "description": "Teachers only.",
+            "description": "SMEs only.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1674,7 +2127,7 @@
         "tags": [
           "blueprints"
         ],
-        "summary": "Save the document as the next version (teachers only)",
+        "summary": "Save the document as the next version (SMEs only)",
         "description": "Earlier versions stay valid for booklets pinned to them.",
         "operationId": "update_blueprint_api_v1_blueprints__blueprint_id__put",
         "security": [
@@ -2039,7 +2492,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Teachers only: the admin does not edit content.",
+            "description": "SMEs only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2293,7 +2746,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Teachers only: the admin does not edit content.",
+            "description": "SMEs only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2392,7 +2845,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Teachers only: the admin does not edit content.",
+            "description": "SMEs only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2480,7 +2933,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Teachers only: the admin does not edit content.",
+            "description": "SMEs only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2578,7 +3031,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Teachers only: the admin does not edit content.",
+            "description": "SMEs only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2658,7 +3111,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Teachers only: the admin does not edit content.",
+            "description": "SMEs only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2747,7 +3200,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Teachers only: the admin does not edit content.",
+            "description": "SMEs only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2861,7 +3314,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Teachers only: the admin does not edit content.",
+            "description": "SMEs only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3097,7 +3550,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Teachers only: the admin does not edit content.",
+            "description": "SMEs only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3973,7 +4426,7 @@
         "tags": [
           "diagrams"
         ],
-        "summary": "Correct the reference graph or change its kind (teachers)",
+        "summary": "Correct the reference graph or change its kind (SMEs)",
         "description": "Applies the edits in order and stores the next version. Add, remove, relabel or reshape nodes; add, remove or relabel edges; reverse an arrow; re-attach an arrow's ends. Removing a node removes its edges. Scores already made keep the version they used.",
         "operationId": "edit_reference_graph_api_v1_questions__question_id__diagrams__diagram_id__graph_edits_post",
         "security": [
@@ -4082,7 +4535,7 @@
         "tags": [
           "diagrams"
         ],
-        "summary": "Read the reference PNG again (teachers)",
+        "summary": "Read the reference PNG again (SMEs)",
         "description": "Queues recognition; the worker stores the result as the next version, replacing any edits in that version (earlier versions are kept).",
         "operationId": "recognize_reference_api_v1_questions__question_id__diagrams__diagram_id__recognize_post",
         "security": [
@@ -6347,6 +6800,15 @@
           "force_reset": {
             "type": "boolean",
             "title": "Force Reset"
+          },
+          "subject_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Subject Ids",
+            "description": "An SME's subjects (D160); empty for other personas."
           }
         },
         "type": "object",
@@ -6357,6 +6819,29 @@
           "force_reset"
         ],
         "title": "AccountOut"
+      },
+      "AccountSubjectsOut": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "subject_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Subject Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "subject_ids"
+        ],
+        "title": "AccountSubjectsOut"
       },
       "ApprovalOut": {
         "properties": {
@@ -8164,6 +8649,16 @@
             "examples": [
               "evaluator@institution.edu"
             ]
+          },
+          "subject_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Subject Ids",
+            "description": "Subjects granted to the new SME at once (optional for now)."
           }
         },
         "additionalProperties": false,
@@ -8468,6 +8963,23 @@
           "recovery_codes_left": {
             "type": "integer",
             "title": "Recovery Codes Left"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "manage_smes",
+                "manage_subjects",
+                "manage_students",
+                "upload_booklets",
+                "view_progress",
+                "author_content",
+                "evaluate"
+              ]
+            },
+            "type": "array",
+            "title": "Capabilities",
+            "description": "What this persona may do (D177); the screens show what these allow."
           }
         },
         "type": "object",
@@ -8475,7 +8987,8 @@
           "user",
           "institution_id",
           "college_name",
-          "recovery_codes_left"
+          "recovery_codes_left",
+          "capabilities"
         ],
         "title": "MeOut"
       },
@@ -11074,6 +11587,17 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 1
+          },
+          "retired": {
+            "type": "boolean",
+            "title": "Retired",
+            "description": "Retired by the admin: not granted, not used for a new paper (D181).",
+            "default": false
           }
         },
         "type": "object",
@@ -11262,9 +11786,11 @@
             "type": "string",
             "enum": [
               "admin",
-              "teacher"
+              "sme",
+              "governor"
             ],
-            "title": "Role"
+            "title": "Role",
+            "description": "The persona (D159): the college's shared admin login, a subject expert (SME) or the Governor."
           },
           "active": {
             "type": "boolean",

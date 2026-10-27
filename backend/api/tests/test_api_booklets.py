@@ -65,7 +65,7 @@ class Setup:
     ) -> Any:
         return self.client.post(
             f"{BASE}/booklets",
-            headers=headers or self.teacher,
+            headers=headers or self.admin,  # uploading is the admin's job (D162)
             data={"student_id": self.students[student], "blueprint_id": self.blueprint_id, **form},
             files=[
                 ("files", (f"page{n}", data, "application/octet-stream"))
@@ -129,10 +129,10 @@ def s(client: TestClient, backends: MemoryBackends, world: AuthWorld) -> Setup:
     teacher = login(client, "COLLEGE_A", "teacher@a.example", TEACHER_PASSWORD)
     admin = login(client, "COLLEGE_A", "admin@a.example", ADMIN_PASSWORD)
     imported = client.post(
-        f"{BASE}/roster/import", content=ROSTER, headers={**teacher, "Content-Type": "text/csv"}
+        f"{BASE}/roster/import", content=ROSTER, headers={**admin, "Content-Type": "text/csv"}
     )
     assert imported.status_code == 200, imported.text
-    students = [x["id"] for x in client.get(f"{BASE}/students", headers=teacher).json()]
+    students = [x["id"] for x in client.get(f"{BASE}/students", headers=admin).json()]
     users = list(backends.mem.users.list(cid))
     fixture = CollegeFixture(
         college=backends.mem.colleges.get(cid), teacher=users[1], admin=users[0], students=()
@@ -143,6 +143,14 @@ def s(client: TestClient, backends: MemoryBackends, world: AuthWorld) -> Setup:
 
 @pytest.fixture
 def other(client: TestClient, world: AuthWorld) -> dict[str, str]:
+    """An SME of college B (the persona that may open booklets)."""
+    cid, admin_id = world.register("COLLEGE_B", "admin@b.example")
+    world.invite(cid, admin_id, "sme@b.example")
+    return login(client, "COLLEGE_B", "sme@b.example", TEACHER_PASSWORD)
+
+
+@pytest.fixture
+def other_admin(client: TestClient, world: AuthWorld) -> dict[str, str]:
     world.register("COLLEGE_B", "admin@b.example")
     return login(client, "COLLEGE_B", "admin@b.example", ADMIN_PASSWORD)
 
@@ -208,25 +216,26 @@ def test_the_same_file_is_a_duplicate_unless_confirmed(s: Setup) -> None:
     assert allowed.json()["duplicate_of"] == [first["id"]]
 
 
-def test_a_teacher_may_have_a_limited_number_waiting(s: Setup) -> None:
+def test_an_uploader_may_have_a_limited_number_waiting(s: Setup) -> None:
     s.backends.upload_limits = UploadLimits(max_waiting=2)
     first = s.upload(fake_pdf(1, "1")).json()
     assert s.upload(fake_pdf(1, "2")).status_code == 201
     full = s.upload(fake_pdf(1, "3"))
     assert full.status_code == 429 and "waiting" in full.json()["detail"]
-    assert s.upload(fake_pdf(1, "4"), headers=s.admin).status_code == 201  # another user
-    listing = s.client.get(f"{BASE}/booklets", headers=s.teacher).json()
+    assert s.upload(fake_pdf(1, "4"), headers=s.teacher).status_code == 403  # SMEs do not upload
+    listing = s.client.get(f"{BASE}/booklets", headers=s.admin).json()
     assert listing["waiting"] == 2 and listing["max_waiting"] == 2
     s.process(first["id"])
     assert s.upload(fake_pdf(1, "5")).status_code == 429  # clean pages still wait for OCR
     s.read(first["id"])
     assert s.upload(fake_pdf(1, "5")).status_code == 201  # a slot freed up
-    assert s.client.get(f"{BASE}/booklets", headers=s.teacher).json()["waiting"] == 2
+    assert s.client.get(f"{BASE}/booklets", headers=s.admin).json()["waiting"] == 2
 
 
 def test_the_student_and_exam_must_belong_to_the_college(
-    s: Setup, other: dict[str, str], client: TestClient
+    s: Setup, other_admin: dict[str, str], client: TestClient
 ) -> None:
+    other = other_admin
     students_b = client.post(
         f"{BASE}/roster/import",
         content=ROSTER.replace("TST", "OTH"),
@@ -236,14 +245,14 @@ def test_the_student_and_exam_must_belong_to_the_college(
     foreign = client.get(f"{BASE}/students", headers=other).json()[0]["id"]
     response = client.post(
         f"{BASE}/booklets",
-        headers=s.teacher,
+        headers=s.admin,
         data={"student_id": foreign, "blueprint_id": s.blueprint_id},
         files=[("files", ("f", fake_pdf(1), "application/pdf"))],
     )
     assert response.status_code == 404
     unknown = client.post(
         f"{BASE}/booklets",
-        headers=s.teacher,
+        headers=s.admin,
         data={"student_id": s.students[0], "blueprint_id": "00000000-0000-0000-0000-00000000dead"},
         files=[("files", ("f", fake_pdf(1), "application/pdf"))],
     )
@@ -287,15 +296,14 @@ def test_an_unreadable_file_shows_as_failed_with_a_reason(s: Setup) -> None:
 def test_the_list_is_newest_first_filterable_and_paged(s: Setup) -> None:
     ids = []
     for n in range(4):
-        ids.append(
-            s.upload(fake_pdf(1, str(n)), headers=s.teacher if n % 2 == 0 else s.admin).json()["id"]
-        )
+        ids.append(s.upload(fake_pdf(1, str(n))).json()["id"])
         s.backends.mem.clock.advance(minutes=1)
     s.process(ids[0])
     everything = s.client.get(f"{BASE}/booklets", headers=s.teacher).json()
     assert [b["id"] for b in everything["items"]] == ids[::-1] and everything["total"] == 4
-    mine = s.client.get(f"{BASE}/booklets?mine=true", headers=s.teacher).json()
-    assert {b["id"] for b in mine["items"]} == {ids[0], ids[2]}
+    assert s.client.get(f"{BASE}/booklets?mine=true", headers=s.teacher).json()["total"] == 0
+    mine = s.client.get(f"{BASE}/booklets?mine=true", headers=s.admin).json()
+    assert {b["id"] for b in mine["items"]} == set(ids)
     ready = s.client.get(f"{BASE}/booklets?status=pages_ready", headers=s.teacher).json()
     assert [b["id"] for b in ready["items"]] == [ids[0]]
     page = s.client.get(f"{BASE}/booklets?limit=2&offset=1", headers=s.teacher).json()
@@ -339,7 +347,8 @@ def test_use_anyway_moves_the_booklet_on_when_the_last_flag_is_overridden(s: Set
     first = s.client.post(f"{base}/2/use-anyway", headers=s.teacher)
     assert first.status_code == 200 and first.json()["status"] == "needs_retake"
     assert first.json()["flagged_pages"] == [3]
-    last = s.client.post(f"{base}/3/use-anyway", headers=s.admin)
+    assert s.client.post(f"{base}/3/use-anyway", headers=s.admin).status_code == 403  # D167
+    last = s.client.post(f"{base}/3/use-anyway", headers=s.teacher)
     assert last.json()["status"] == "pages_ready" and last.json()["flagged_pages"] == []
     detail = s.client.get(f"{BASE}/booklets/{booklet['id']}", headers=s.teacher).json()
     assert [p["use_anyway"] for p in detail["pages"]] == [False, True, True]
@@ -464,3 +473,37 @@ def test_a_segmented_booklet_and_a_failed_segmentation_are_served(s: Setup) -> N
     segmenter.abandon(s.college_id, BookletId(UUID(failed["id"])))
     detail = s.client.get(f"{BASE}/booklets/{failed['id']}", headers=s.teacher).json()
     assert detail["status"] == "failed" and detail["failure_reason"] == "segmentation_failed"
+
+
+# --- personas (P24) ----------------------------------------------------------------------------
+
+
+def test_the_admin_sees_progress_but_no_pages_text_or_marks(s: Setup) -> None:
+    booklet = s.upload(fake_pdf(1)).json()
+    s.process(booklet["id"])
+    s.read(booklet["id"])
+    url = f"{BASE}/booklets/{booklet['id']}"
+    admin_view = s.client.get(url, headers=s.admin).json()
+    assert admin_view["status"] == "text_ready" and admin_view["result"] is None
+    (page,) = admin_view["pages"]
+    assert page["image_url"] is None and page["original_url"] is None and page["text_url"] is None
+    sme_view = s.client.get(url, headers=s.teacher).json()["pages"][0]
+    assert sme_view["image_url"] and sme_view["text_url"]
+    for path in ("/pages/1/image", "/pages/1/text"):
+        assert s.client.get(url + path, headers=s.admin).status_code == 403
+    assert s.client.delete(url, headers=s.admin).status_code == 403
+    listed = s.client.get(f"{BASE}/booklets", headers=s.admin).json()["items"]
+    assert [b["id"] for b in listed] == [booklet["id"]] and listed[0]["result"] is None
+
+
+def test_an_sme_sees_only_the_booklets_of_their_subjects(s: Setup) -> None:
+    booklet = s.upload(fake_pdf(1)).json()
+    mem = s.backends.mem
+    sme = next(u for u in mem.users.list(s.college_id) if u.role.value == "sme")
+    for subject in mem.entitlements.subjects_of(s.college_id, sme.id):
+        mem.entitlements.revoke(s.college_id, sme.id, subject)
+    url = f"{BASE}/booklets/{booklet['id']}"
+    assert s.client.get(url, headers=s.teacher).status_code == 404
+    assert s.client.get(f"{url}/pages/1/image", headers=s.teacher).status_code == 404
+    assert s.client.get(f"{BASE}/booklets", headers=s.teacher).json()["total"] == 0
+    assert s.client.get(url, headers=s.admin).status_code == 200  # the admin sees the college

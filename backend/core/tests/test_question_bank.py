@@ -27,6 +27,7 @@ from tarn_core.domain.diagram import DiagramGraph, DiagramNode, NodeShape
 from tarn_core.errors import AlreadyExistsError, InvariantError, NotFoundError
 from tarn_core.ids import CriterionId
 from tarn_core.ports.repositories import QuestionQuery
+from tarn_core.services.access import WHOLE_COLLEGE
 from tarn_core.services.question_bank import (
     NO_STUDENT_DATA,
     CriterionSpec,
@@ -34,7 +35,7 @@ from tarn_core.services.question_bank import (
     sniff_media_type,
 )
 from tarn_core.testing import InMemory
-from tarn_core.testing.builders import add_college, make_services
+from tarn_core.testing.builders import add_college, make_services, make_subject
 
 PDF = b"%PDF-1.7\nsynthetic key"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
@@ -63,15 +64,9 @@ class World:
         self.a = add_college(self.mem, "A")
         self.b = add_college(self.mem, "B")
         self.svc = make_services(self.mem)
-        self.subject = self.svc.subjects.create(
-            self.a.id, self.a.teacher.id, code="PHY", name="Physics"
-        )
-        self.maths = self.svc.subjects.create(
-            self.a.id, self.a.teacher.id, code="MAT", name="Maths"
-        )
-        self.b_subject = self.svc.subjects.create(
-            self.b.id, self.b.teacher.id, code="PHY", name="Physics"
-        )
+        self.subject = make_subject(self.svc, self.a, code="PHY", name="Physics")
+        self.maths = make_subject(self.svc, self.a, code="MAT", name="Maths")
+        self.b_subject = make_subject(self.svc, self.b, code="PHY", name="Physics")
 
     def question(self, code: str = "PHY-Q1", marks: str = "4", **kw: Any) -> Any:
         kw.setdefault("text", f"Explain {code}.")
@@ -284,7 +279,7 @@ def test_another_college_finds_nothing_to_read_or_edit(w: World) -> None:
     )
     kf = w.upload(q, keywords=["lens"])
     w.svc.bank.set_glossary_terms(w.a.id, w.a.teacher.id, q.id, ["focal length"])
-    answer = w.svc.bank.detail(w.a.id, q.id).answers[0]
+    answer = w.svc.bank.detail(w.a.id, q.id, reach=WHOLE_COLLEGE).answers[0]
     same: dict[str, Any] = {
         "code": q.code,
         "text": "Hijack",
@@ -294,8 +289,8 @@ def test_another_college_finds_nothing_to_read_or_edit(w: World) -> None:
     }
     b, bank = w.b, w.svc.bank
     attempts: list[Callable[[], object]] = [
-        lambda: bank.detail(b.id, q.id),
-        lambda: bank.read_key_file(b.id, q.id, kf.id),
+        lambda: bank.detail(b.id, q.id, reach=WHOLE_COLLEGE),
+        lambda: bank.read_key_file(b.id, q.id, kf.id, reach=WHOLE_COLLEGE),
         lambda: bank.update_question(b.id, b.teacher.id, q.id, **same),
         lambda: bank.add_reference_answer(b.id, b.teacher.id, q.id, text="mine"),
         lambda: bank.edit_reference_answer(
@@ -317,8 +312,8 @@ def test_another_college_finds_nothing_to_read_or_edit(w: World) -> None:
     for attempt in attempts:
         with pytest.raises(NotFoundError):
             attempt()
-    assert bank.search(b.id, QuestionQuery(), limit=10).total == 0
-    detail = bank.detail(w.a.id, q.id)
+    assert bank.search(b.id, QuestionQuery(), limit=10, reach=WHOLE_COLLEGE).total == 0
+    detail = bank.detail(w.a.id, q.id, reach=WHOLE_COLLEGE)
     assert [a.text for a in detail.answers] == ["The model answer."]
     assert detail.glossary is not None and detail.glossary.teacher_terms == ("focal length",)
 
@@ -386,7 +381,7 @@ def test_reference_answers_edit_and_retire(w: World) -> None:
     )
     assert edited.meta.version == 2
     w.svc.bank.retire_reference_answer(w.a.id, w.a.teacher.id, q.id, a2.id)
-    live = w.svc.bank.detail(w.a.id, q.id).answers
+    live = w.svc.bank.detail(w.a.id, q.id, reach=WHOLE_COLLEGE).answers
     assert [(a.text, a.guidance_only) for a in live] == [("First, better", False)]
     assert [a.retired for a in w.mem.content.versions(w.a.id, ReferenceAnswer, a2.id)] == [
         False,
@@ -409,12 +404,15 @@ def test_pdf_and_image_keys_are_stored_and_read_back(w: World) -> None:
     ):
         kf = w.upload(q, file_name=name, data=data, declared_type=kind)
         assert kf.media_type == kind and kf.size_bytes == len(data)
-        stored = w.svc.bank.read_key_file(w.a.id, q.id, kf.id)
+        stored = w.svc.bank.read_key_file(w.a.id, q.id, kf.id, reach=WHOLE_COLLEGE)
         assert stored[1] == data and kf.blob.value.startswith(
             f"college/{w.a.id}/content/keys/{q.id}/"
         )
         assert w.mem.blobs.exists(kf.blob)
-    assert w.svc.bank.search(w.a.id, QuestionQuery(), limit=5).items[0].key_count == 3
+    assert (
+        w.svc.bank.search(w.a.id, QuestionQuery(), limit=5, reach=WHOLE_COLLEGE).items[0].key_count
+        == 3
+    )
 
 
 def test_the_type_is_read_from_the_bytes(w: World) -> None:
@@ -505,7 +503,7 @@ def test_reference_diagrams_are_png_only(w: World) -> None:
         no_student_data=True,
     )
     assert d.png.value.endswith("/Flow_chart_v2_.PNG") and d.png.college_id == w.a.id
-    assert w.svc.bank.read_reference_diagram(w.a.id, q.id, d.id)[1] == PNG
+    assert w.svc.bank.read_reference_diagram(w.a.id, q.id, d.id, reach=WHOLE_COLLEGE)[1] == PNG
 
 
 def test_file_names_cannot_escape_their_folder(w: World) -> None:
@@ -554,7 +552,7 @@ def test_glossary_is_teacher_terms_plus_reference_diagram_labels(w: World) -> No
         no_student_data=True,
     )
     assert (
-        w.svc.bank.detail(w.a.id, q.id).glossary is None
+        w.svc.bank.detail(w.a.id, q.id, reach=WHOLE_COLLEGE).glossary is None
     )  # no terms, and the graph has no labels yet
 
     # The recognizer / the teacher fills the graph later (P14): a new diagram version.
@@ -610,7 +608,7 @@ def test_filters_topic_keyword_code_subject_difficulty(w: World) -> None:
     )
 
     def codes(**kw: Any) -> list[str]:
-        page = w.svc.bank.search(w.a.id, QuestionQuery(**kw), limit=20)
+        page = w.svc.bank.search(w.a.id, QuestionQuery(**kw), limit=20, reach=WHOLE_COLLEGE)
         assert page.total == len(page.items)
         return [i.question.code for i in page.items]
 
@@ -628,9 +626,13 @@ def test_filters_topic_keyword_code_subject_difficulty(w: World) -> None:
     assert codes(keyword="PHY-Q2") == ["PHY-Q2"]  # code
     assert codes(keyword="PHY-B") == []  # B's question is not in A's bank
     assert codes(keyword="lenz", difficulty=Difficulty.HARD) == []  # filters combine
-    assert list(w.svc.bank.topics(w.a.id)) == ["AC Circuits", "Calculus", "Electromagnetism"]
-    assert list(w.svc.bank.topics(w.b.id)) == ["Quantum"]
-    assert list(w.svc.bank.topics(w.a.id, w.maths.id)) == ["Calculus"]
+    assert list(w.svc.bank.topics(w.a.id, reach=WHOLE_COLLEGE)) == [
+        "AC Circuits",
+        "Calculus",
+        "Electromagnetism",
+    ]
+    assert list(w.svc.bank.topics(w.b.id, reach=WHOLE_COLLEGE)) == ["Quantum"]
+    assert list(w.svc.bank.topics(w.a.id, w.maths.id, reach=WHOLE_COLLEGE)) == ["Calculus"]
 
 
 def test_search_pages_names_subjects_and_counts_keys(w: World) -> None:
@@ -638,8 +640,8 @@ def test_search_pages_names_subjects_and_counts_keys(w: World) -> None:
         w.question(f"Q-{i}")
     q = w.question("Q-9", reference_answer="Answer.")
     w.upload(q)
-    first = w.svc.bank.search(w.a.id, QuestionQuery(), limit=4)
-    rest = w.svc.bank.search(w.a.id, QuestionQuery(), limit=4, offset=4)
+    first = w.svc.bank.search(w.a.id, QuestionQuery(), limit=4, reach=WHOLE_COLLEGE)
+    rest = w.svc.bank.search(w.a.id, QuestionQuery(), limit=4, offset=4, reach=WHOLE_COLLEGE)
     assert (first.total, len(first.items), len(rest.items)) == (6, 4, 2)
     got = {i.question.code: i for i in [*first.items, *rest.items]}
     assert got["Q-9"].key_count == 2 and got["Q-0"].key_count == 0
@@ -648,11 +650,24 @@ def test_search_pages_names_subjects_and_counts_keys(w: World) -> None:
 
 def test_retired_answers_stop_matching_and_counting(w: World) -> None:
     q = w.question(reference_answer="Unique phrase zebra.")
-    assert w.svc.bank.search(w.a.id, QuestionQuery(keyword="zebra"), limit=5).total == 1
-    answer = w.svc.bank.detail(w.a.id, q.id).answers[0]
+    assert (
+        w.svc.bank.search(
+            w.a.id, QuestionQuery(keyword="zebra"), limit=5, reach=WHOLE_COLLEGE
+        ).total
+        == 1
+    )
+    answer = w.svc.bank.detail(w.a.id, q.id, reach=WHOLE_COLLEGE).answers[0]
     w.svc.bank.retire_reference_answer(w.a.id, w.a.teacher.id, q.id, answer.id)
-    assert w.svc.bank.search(w.a.id, QuestionQuery(keyword="zebra"), limit=5).total == 0
-    assert w.svc.bank.search(w.a.id, QuestionQuery(), limit=5).items[0].key_count == 0
+    assert (
+        w.svc.bank.search(
+            w.a.id, QuestionQuery(keyword="zebra"), limit=5, reach=WHOLE_COLLEGE
+        ).total
+        == 0
+    )
+    assert (
+        w.svc.bank.search(w.a.id, QuestionQuery(), limit=5, reach=WHOLE_COLLEGE).items[0].key_count
+        == 0
+    )
 
 
 def test_scoring_ignores_retired_criteria(w: World) -> None:

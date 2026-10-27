@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { api } from '../../api/client'
 import { useMe } from '../../auth/AuthProvider'
+import { can } from '../../auth/capabilities'
 import { NETWORK_PROBLEM, problemOf } from '../../api/errors'
 import { fetchBlob, saveBlob } from '../../api/files'
 import type { components } from '../../api/schema'
@@ -129,8 +130,8 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
   }
 
   const rubric = q.rubric
-  // Content is the college's own (D165): its teachers edit it, the admin only reads it.
-  const own = me.user.role !== 'admin'
+  // Content is the college's own (D165): the SMEs of its subject edit it (D178).
+  const own = can(me, 'author_content')
   const close = () => {
     setDialog(null)
     setAnswer(undefined)

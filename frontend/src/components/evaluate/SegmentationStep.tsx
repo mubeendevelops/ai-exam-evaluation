@@ -328,7 +328,7 @@ export function SegmentationStep({
 
   const holder = lock.kind === 'other' ? lock : null
   const readOnlyReason = holder
-    ? `${holder.holder ?? 'Another teacher'} has this booklet open${holder.until ? ` until ${new Date(holder.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}. You can look, but not change anything.`
+    ? `${holder.holder ?? 'Another SME'} has this booklet open${holder.until ? ` until ${new Date(holder.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}. You can look, but not change anything.`
     : approved
       ? leaveNote(status)
       : lock.kind === 'error'

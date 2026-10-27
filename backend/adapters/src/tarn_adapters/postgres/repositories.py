@@ -67,7 +67,7 @@ from tarn_core.domain.review import (
     Review,
 )
 from tarn_core.domain.scoring import AnswerFlag, AnswerScore, CriterionScore, SentenceVector
-from tarn_core.domain.tenancy import College, Role, Student, User
+from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
 from tarn_core.errors import (
     DomainError,
     InvariantError,
@@ -179,11 +179,11 @@ class _Kind:
 
 
 def _subject_values(s: Subject) -> dict[str, object]:
-    return {"id": s.id, "code": s.code, "name": s.name}
+    return {"id": s.id, "code": s.code, "name": s.name, "retired": s.retired}
 
 
 def _subject(r: Row[Any]) -> Subject:
-    return Subject(id=SubjectId(r.id), meta=_meta(r), code=r.code, name=r.name)
+    return Subject(id=SubjectId(r.id), meta=_meta(r), code=r.code, name=r.name, retired=r.retired)
 
 
 def _answer_key_values(a: ReferenceAnswer) -> dict[str, object]:
@@ -450,6 +450,8 @@ class PgContentRepository:
         conditions = [qv.c.college_id == college_id]
         if query.subject_id is not None:
             conditions.append(q.c.subject_id == query.subject_id)
+        if query.subject_ids is not None:
+            conditions.append(q.c.subject_id.in_(sorted(query.subject_ids)))
         if query.difficulty is not None:
             conditions.append(qv.c.difficulty == query.difficulty.value)
         if query.topic:
@@ -490,7 +492,13 @@ class PgContentRepository:
         )
         return QuestionPage(items=tuple(_question(r) for r in rows), total=total)
 
-    def topics(self, college_id: CollegeId, subject_id: SubjectId | None = None) -> Sequence[str]:
+    def topics(
+        self,
+        college_id: CollegeId,
+        subject_id: SubjectId | None = None,
+        *,
+        subject_ids: frozenset[SubjectId] | None = None,
+    ) -> Sequence[str]:
         qv, q = m.question_versions, m.questions
         stmt = (
             select(qv.c.category)
@@ -499,6 +507,8 @@ class PgContentRepository:
         )
         if subject_id is not None:
             stmt = stmt.where(q.c.subject_id == subject_id)
+        if subject_ids is not None:
+            stmt = stmt.where(q.c.subject_id.in_(sorted(subject_ids)))
         found: dict[str, str] = {}
         for (category,) in self._conn.execute(stmt):
             found.setdefault(category.casefold(), category)
@@ -638,6 +648,58 @@ class PgUserRepository:
                     "role": user.role.value,
                     "active": user.active,
                 },
+            )
+
+
+class PgEntitlementRepository:
+    """``sme_subjects`` (0013): composite keys tie each grant to a user and a subject of the
+    same college; RLS keeps the rows in the session's college."""
+
+    def __init__(self, conn: Connection) -> None:
+        self._conn = conn
+
+    def subjects_of(self, college_id: CollegeId, user_id: UserId) -> frozenset[SubjectId]:
+        t = m.sme_subjects
+        rows = self._conn.execute(
+            select(t.c.subject_id).where(t.c.college_id == college_id, t.c.user_id == user_id)
+        )
+        return frozenset(SubjectId(r.subject_id) for r in rows)
+
+    def grants(self, college_id: CollegeId) -> Sequence[SubjectGrant]:
+        t = m.sme_subjects
+        rows = self._conn.execute(select(t).where(t.c.college_id == college_id).order_by(t.c.seq))
+        return [
+            SubjectGrant(
+                college_id=CollegeId(r.college_id),
+                user_id=UserId(r.user_id),
+                subject_id=SubjectId(r.subject_id),
+                granted_by=None if r.granted_by is None else UserId(r.granted_by),
+                granted_at=r.granted_at,
+            )
+            for r in rows
+        ]
+
+    def grant(self, college_id: CollegeId, grant: SubjectGrant) -> None:
+        _check_tenant(college_id, grant.college_id, "subject grant")
+        stmt = insert(m.sme_subjects).values(
+            college_id=grant.college_id,
+            user_id=grant.user_id,
+            subject_id=grant.subject_id,
+            granted_by=grant.granted_by,
+            granted_at=grant.granted_at,
+        )
+        with writing(self._conn, f"subject grant {grant.subject_id}"):
+            self._conn.execute(stmt.on_conflict_do_nothing())
+
+    def revoke(self, college_id: CollegeId, user_id: UserId, subject_id: SubjectId) -> None:
+        t = m.sme_subjects
+        with writing(self._conn, f"subject grant {subject_id}"):
+            self._conn.execute(
+                delete(t).where(
+                    t.c.college_id == college_id,
+                    t.c.user_id == user_id,
+                    t.c.subject_id == subject_id,
+                )
             )
 
 

@@ -269,8 +269,8 @@ export interface paths {
         /** Accounts of my college (admin) */
         get: operations["list_accounts_api_v1_accounts_get"];
         put?: never;
-        /** Create a teacher account and email an invitation (admin) */
-        post: operations["invite_teacher_api_v1_accounts_post"];
+        /** Create an SME account, grant its subjects and email an invitation (admin) */
+        post: operations["invite_sme_api_v1_accounts_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -286,7 +286,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Disable a teacher (admin) */
+        /** Disable an SME (admin) */
         post: operations["disable_api_v1_accounts__user_id__disable_post"];
         delete?: never;
         options?: never;
@@ -303,7 +303,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Enable a teacher (admin) */
+        /** Enable an SME (admin) */
         post: operations["enable_api_v1_accounts__user_id__enable_post"];
         delete?: never;
         options?: never;
@@ -340,6 +340,47 @@ export interface paths {
         /** Clear a lockout (admin) */
         post: operations["unlock_api_v1_accounts__user_id__unlock_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/accounts/{user_id}/subjects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The subjects of an SME (admin) */
+        get: operations["sme_subjects_api_v1_accounts__user_id__subjects_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/accounts/{user_id}/subjects/{subject_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grant a subject to an SME (admin)
+         * @description A retired subject cannot be granted (422). Granting a held subject changes nothing. Audited.
+         */
+        post: operations["grant_subject_api_v1_accounts__user_id__subjects__subject_id__post"];
+        /**
+         * Take a subject away from an SME (admin)
+         * @description An SME keeps at least one subject (409 for the last one). Audited.
+         */
+        delete: operations["revoke_subject_api_v1_accounts__user_id__subjects__subject_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -389,11 +430,54 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** My college's subjects, by name */
+        /**
+         * The subjects I work with, by name
+         * @description The admin gets the college's whole list, retired subjects included; an SME the live subjects granted to them (D160).
+         */
         get: operations["list_subjects_api_v1_subjects_get"];
         put?: never;
-        /** Create a subject of my college */
+        /** Create a subject of my college (admin) */
         post: operations["create_subject_api_v1_subjects_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subjects/{subject_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rename a subject (admin)
+         * @description Saves the next version; questions, papers and scores keep the subject.
+         */
+        put: operations["rename_subject_api_v1_subjects__subject_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subjects/{subject_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retire a subject (admin)
+         * @description A retired subject cannot be granted to an SME or used for a new paper (D181); its questions, papers, grants and scores stay.
+         */
+        post: operations["retire_subject_api_v1_subjects__subject_id__retire_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -448,7 +532,7 @@ export interface paths {
         /** One blueprint: the newest version, or ?version= */
         get: operations["get_blueprint_api_v1_blueprints__blueprint_id__get"];
         /**
-         * Save the document as the next version (teachers only)
+         * Save the document as the next version (SMEs only)
          * @description Earlier versions stay valid for booklets pinned to them.
          */
         put: operations["update_blueprint_api_v1_blueprints__blueprint_id__put"];
@@ -810,7 +894,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Correct the reference graph or change its kind (teachers)
+         * Correct the reference graph or change its kind (SMEs)
          * @description Applies the edits in order and stores the next version. Add, remove, relabel or reshape nodes; add, remove or relabel edges; reverse an arrow; re-attach an arrow's ends. Removing a node removes its edges. Scores already made keep the version they used.
          */
         post: operations["edit_reference_graph_api_v1_questions__question_id__diagrams__diagram_id__graph_edits_post"];
@@ -830,7 +914,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Read the reference PNG again (teachers)
+         * Read the reference PNG again (SMEs)
          * @description Queues recognition; the worker stores the result as the next version, replacing any edits in that version (earlier versions are kept).
          */
         post: operations["recognize_reference_api_v1_questions__question_id__diagrams__diagram_id__recognize_post"];
@@ -1227,6 +1311,21 @@ export interface components {
             locked_until: string | null;
             /** Force Reset */
             force_reset: boolean;
+            /**
+             * Subject Ids
+             * @description An SME's subjects (D160); empty for other personas.
+             */
+            subject_ids?: string[];
+        };
+        /** AccountSubjectsOut */
+        AccountSubjectsOut: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Subject Ids */
+            subject_ids: string[];
         };
         /** ApprovalOut */
         ApprovalOut: {
@@ -1958,6 +2057,11 @@ export interface components {
              * @example evaluator@institution.edu
              */
             email: string;
+            /**
+             * Subject Ids
+             * @description Subjects granted to the new SME at once (optional for now).
+             */
+            subject_ids?: string[];
         };
         /** IssueOut */
         IssueOut: {
@@ -2094,6 +2198,11 @@ export interface components {
             college_name: string;
             /** Recovery Codes Left */
             recovery_codes_left: number;
+            /**
+             * Capabilities
+             * @description What this persona may do (D177); the screens show what these allow.
+             */
+            capabilities: ("manage_smes" | "manage_subjects" | "manage_students" | "upload_booklets" | "view_progress" | "author_content" | "evaluate")[];
         };
         /** MergeIn */
         MergeIn: {
@@ -3183,6 +3292,17 @@ export interface components {
             code: string;
             /** Name */
             name: string;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+            /**
+             * Retired
+             * @description Retired by the admin: not granted, not used for a new paper (D181).
+             * @default false
+             */
+            retired: boolean;
         };
         /** SuggestionOut */
         SuggestionOut: {
@@ -3272,9 +3392,10 @@ export interface components {
             email: string;
             /**
              * Role
+             * @description The persona (D159): the college's shared admin login, a subject expert (SME) or the Governor.
              * @enum {string}
              */
-            role: "admin" | "teacher";
+            role: "admin" | "sme" | "governor";
             /** Active */
             active: boolean;
         };
@@ -3995,7 +4116,7 @@ export interface operations {
             };
         };
     };
-    invite_teacher_api_v1_accounts_post: {
+    invite_sme_api_v1_accounts_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4044,13 +4165,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Entity */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorOut"];
                 };
             };
         };
@@ -4229,6 +4350,191 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sme_subjects_api_v1_accounts__user_id__subjects_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountSubjectsOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    grant_subject_api_v1_accounts__user_id__subjects__subject_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                subject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountSubjectsOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    revoke_subject_api_v1_accounts__user_id__subjects__subject_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                subject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountSubjectsOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4439,6 +4745,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
             /** @description Unprocessable Entity */
             422: {
                 headers: {
@@ -4446,6 +4761,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    rename_subject_api_v1_subjects__subject_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubjectIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubjectOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    retire_subject_api_v1_subjects__subject_id__retire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubjectOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4574,7 +5018,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Teachers only. */
+            /** @description SMEs only. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4865,7 +5309,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Teachers only: the admin does not edit content. */
+            /** @description SMEs only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5043,7 +5487,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Teachers only: the admin does not edit content. */
+            /** @description SMEs only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5114,7 +5558,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Teachers only: the admin does not edit content. */
+            /** @description SMEs only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5176,7 +5620,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Teachers only: the admin does not edit content. */
+            /** @description SMEs only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5239,7 +5683,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Teachers only: the admin does not edit content. */
+            /** @description SMEs only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5296,7 +5740,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Teachers only: the admin does not edit content. */
+            /** @description SMEs only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5358,7 +5802,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Teachers only: the admin does not edit content. */
+            /** @description SMEs only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5426,7 +5870,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Teachers only: the admin does not edit content. */
+            /** @description SMEs only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5560,7 +6004,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Teachers only: the admin does not edit content. */
+            /** @description SMEs only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;

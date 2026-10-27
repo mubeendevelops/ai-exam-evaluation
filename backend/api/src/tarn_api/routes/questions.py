@@ -1,7 +1,8 @@
 """The question bank: ``/api/v1/questions``. Questions, reference answers, rubric criteria,
 glossaries, answer-key files and reference diagrams are the college's own content (D165):
-admins and teachers read them, teachers edit them (a new version each time), and another
-college's question is a 404. Nothing is deleted yet; removing a key or criterion retires it."""
+SMEs read and edit those of their subjects (a new version each time; D178); another
+college's question, or one of a subject the SME does not have, is a 404. Nothing is deleted
+yet; removing a key or criterion retires it."""
 
 from decimal import Decimal
 from typing import Annotated
@@ -55,7 +56,7 @@ from tarn_core.domain.content import (
     SemanticParams,
 )
 from tarn_core.domain.diagram import DiagramKind
-from tarn_core.domain.tenancy import Role
+from tarn_core.domain.personas import Capability
 from tarn_core.ids import (
     CriterionId,
     KeyFileId,
@@ -85,7 +86,7 @@ _FAILED: dict[int | str, dict[str, object]] = {
 }
 _TEACHERS: dict[int | str, dict[str, object]] = {
     **_FAILED,
-    403: {"model": ErrorOut, "description": "Teachers only: the admin does not edit content."},
+    403: {"model": ErrorOut, "description": "SMEs only: the admin does not edit content."},
 }
 _UPLOAD_BODY = {
     "required": True,
@@ -320,8 +321,10 @@ def search_questions(
         difficulty=difficulty,
     )
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        page = unit.bank.search(who.college_id, query, limit=limit, offset=offset)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
+        page = unit.bank.search(
+            who.college_id, query, reach=unit.reach(user), limit=limit, offset=offset
+        )
     return QuestionPageOut(
         items=[_summary_out(s) for s in page.items],
         total=page.total,
@@ -339,9 +342,9 @@ def list_topics(
     who: PrincipalDep, backends: BackendsDep, subject_id: UUID | None = None
 ) -> list[str]:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
         subject = None if subject_id is None else SubjectId(subject_id)
-        return list(unit.bank.topics(who.college_id, subject))
+        return list(unit.bank.topics(who.college_id, subject, reach=unit.reach(user)))
 
 
 # --- one question -----------------------------------------------------------------------------
@@ -358,7 +361,7 @@ def create_question(
     body: QuestionCreateIn, who: PrincipalDep, backends: BackendsDep
 ) -> QuestionOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
         question = unit.bank.create_question(
             who.college_id,
             who.user_id,
@@ -371,7 +374,7 @@ def create_question(
             reference_answer=body.reference_answer,
             criteria=[_spec(c) for c in body.criteria],
         )
-        return _detail_out(unit.bank.detail(who.college_id, question.id))
+        return _detail_out(unit.bank.detail(who.college_id, question.id, reach=unit.reach(user)))
 
 
 @router.get(
@@ -382,8 +385,10 @@ def create_question(
 )
 def get_question(question_id: UUID, who: PrincipalDep, backends: BackendsDep) -> QuestionOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        return _detail_out(unit.bank.detail(who.college_id, QuestionId(question_id)))
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
+        return _detail_out(
+            unit.bank.detail(who.college_id, QuestionId(question_id), reach=unit.reach(user))
+        )
 
 
 @router.put(
@@ -398,7 +403,7 @@ def update_question(
     question_id: UUID, body: QuestionUpdateIn, who: PrincipalDep, backends: BackendsDep
 ) -> QuestionOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
         unit.bank.update_question(
             who.college_id,
             who.user_id,
@@ -410,7 +415,9 @@ def update_question(
             category=body.category,
             criteria=None if body.criteria is None else [_spec(c) for c in body.criteria],
         )
-        return _detail_out(unit.bank.detail(who.college_id, QuestionId(question_id)))
+        return _detail_out(
+            unit.bank.detail(who.college_id, QuestionId(question_id), reach=unit.reach(user))
+        )
 
 
 # --- rubric, reference answers, glossary ------------------------------------------------------
@@ -429,14 +436,16 @@ def put_rubric(
     question_id: UUID, body: RubricIn, who: PrincipalDep, backends: BackendsDep
 ) -> RubricOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
         unit.bank.set_rubric(
             who.college_id,
             who.user_id,
             QuestionId(question_id),
             [_spec(c) for c in body.criteria],
         )
-        return _detail_out(unit.bank.detail(who.college_id, QuestionId(question_id))).rubric
+        return _detail_out(
+            unit.bank.detail(who.college_id, QuestionId(question_id), reach=unit.reach(user))
+        ).rubric
 
 
 def _answer_out(a: ReferenceAnswer) -> ReferenceAnswerOut:
@@ -460,7 +469,7 @@ def add_reference_answer(
     question_id: UUID, body: ReferenceAnswerIn, who: PrincipalDep, backends: BackendsDep
 ) -> ReferenceAnswerOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
         return _answer_out(
             unit.bank.add_reference_answer(
                 who.college_id,
@@ -486,7 +495,7 @@ def edit_reference_answer(
     backends: BackendsDep,
 ) -> ReferenceAnswerOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
         return _answer_out(
             unit.bank.edit_reference_answer(
                 who.college_id,
@@ -510,7 +519,7 @@ def retire_reference_answer(
     question_id: UUID, answer_id: UUID, who: PrincipalDep, backends: BackendsDep
 ) -> Response:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
         unit.bank.retire_reference_answer(
             who.college_id, who.user_id, QuestionId(question_id), ReferenceAnswerId(answer_id)
         )
@@ -529,11 +538,13 @@ def put_glossary(
     question_id: UUID, body: GlossaryIn, who: PrincipalDep, backends: BackendsDep
 ) -> GlossaryOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
         unit.bank.set_glossary_terms(
             who.college_id, who.user_id, QuestionId(question_id), body.terms
         )
-        return _detail_out(unit.bank.detail(who.college_id, QuestionId(question_id))).glossary
+        return _detail_out(
+            unit.bank.detail(who.college_id, QuestionId(question_id), reach=unit.reach(user))
+        ).glossary
 
 
 # --- files ------------------------------------------------------------------------------------
@@ -561,7 +572,7 @@ async def upload_key_file(
 ) -> KeyFileOut:
     data = await _upload_bytes(request, KEY_FILE_MAX_BYTES)
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
         key_file = unit.bank.upload_key_file(
             who.college_id,
             who.user_id,
@@ -585,9 +596,9 @@ def key_file_content(
     question_id: UUID, file_id: UUID, who: PrincipalDep, backends: BackendsDep
 ) -> Response:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
         key_file, data = unit.bank.read_key_file(
-            who.college_id, QuestionId(question_id), KeyFileId(file_id)
+            who.college_id, QuestionId(question_id), KeyFileId(file_id), reach=unit.reach(user)
         )
     return _file_response(data, key_file.media_type, key_file.name)
 
@@ -615,7 +626,7 @@ async def upload_reference_diagram(
 ) -> ReferenceDiagramOut:
     data = await _upload_bytes(request, DIAGRAM_MAX_BYTES)
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
         diagram = unit.bank.upload_reference_diagram(
             who.college_id,
             who.user_id,
@@ -640,9 +651,12 @@ def diagram_content(
     question_id: UUID, diagram_id: UUID, who: PrincipalDep, backends: BackendsDep
 ) -> Response:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
         diagram, data = unit.bank.read_reference_diagram(
-            who.college_id, QuestionId(question_id), ReferenceDiagramId(diagram_id)
+            who.college_id,
+            QuestionId(question_id),
+            ReferenceDiagramId(diagram_id),
+            reach=unit.reach(user),
         )
     return _file_response(data, "image/png", _file_name(diagram.png.value))
 

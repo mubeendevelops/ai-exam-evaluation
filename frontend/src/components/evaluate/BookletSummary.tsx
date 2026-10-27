@@ -204,8 +204,8 @@ export function BookletSummary({
           </table>
         </div>
         <p className="mt-2 text-[10px] text-gray-400">
-          Marks marked “AI” are suggestions the teacher has not approved yet. Struck-through marks
-          do not count towards the total.
+          Marks marked “AI” are suggestions the SME has not approved yet. Struck-through marks do
+          not count towards the total.
         </p>
 
         {reopening && (

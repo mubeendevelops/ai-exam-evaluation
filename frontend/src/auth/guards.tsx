@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router'
 import { useAuth } from './AuthProvider'
+import { can, homeOf, type Capability } from './capabilities'
 
 function Splash() {
   return (
@@ -23,11 +24,23 @@ export function RequireAuth() {
   return <Outlet />
 }
 
-/** Administrator pages; teachers are sent back to the Q&A tab. */
-export function RequireAdmin() {
+/**
+ * Pages for the personas that have `capability` (D177); anyone else goes to their own home.
+ * The server checks the same table, so this only spares people a page of refusals.
+ */
+export function RequireCapability({ capability }: { capability: Capability }) {
   const { state } = useAuth()
-  if (state.status === 'authenticated' && state.me.user.role !== 'admin') {
-    return <Navigate to="/qna" replace />
+  if (state.status === 'authenticated' && !can(state.me, capability)) {
+    return <Navigate to={homeOf(state.me)} replace />
+  }
+  return <Outlet />
+}
+
+/** The Governor's page: the other personas go home. */
+export function RequireGovernor() {
+  const { state } = useAuth()
+  if (state.status === 'authenticated' && state.me.user.role !== 'governor') {
+    return <Navigate to={homeOf(state.me)} replace />
   }
   return <Outlet />
 }
@@ -38,6 +51,6 @@ export function RequireAdmin() {
  */
 export function RedirectIfSignedIn() {
   const { state } = useAuth()
-  if (state.status === 'authenticated') return <Navigate to="/qna" replace />
+  if (state.status === 'authenticated') return <Navigate to={homeOf(state.me)} replace />
   return <Outlet />
 }

@@ -17,6 +17,7 @@ from tarn_core.ports.repositories import (
     StudentRepository,
 )
 from tarn_core.ports.storage import BlobStore
+from tarn_core.services.access import Reach
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -59,6 +60,7 @@ class EvaluatedBooklets:
         self,
         college_id: CollegeId,
         *,
+        reach: Reach,
         exam: str = "",
         student: str = "",
         usn: str = "",
@@ -90,6 +92,8 @@ class EvaluatedBooklets:
                 blueprint = blueprints[(ref.id, ref.version)] = self._content.get(
                     college_id, ExamBlueprint, ref.id, ref.version
                 )
+            if not reach.sees(blueprint.subject_id):
+                continue
             if exam_q and exam_q not in f"{blueprint.title} {blueprint.course_code}".lower():
                 continue
             versions = tuple(self._sheets.versions(college_id, booklet.id))
@@ -108,11 +112,14 @@ class EvaluatedBooklets:
         return EvaluatedPage(items=tuple(found[offset : offset + limit]), total=len(found))
 
     def pdf(
-        self, college_id: CollegeId, booklet_id: BookletId, version: int
+        self, college_id: CollegeId, booklet_id: BookletId, version: int, *, reach: Reach
     ) -> tuple[ResultSheet, bytes]:
-        """The stored PDF of one version. ``NotFoundError`` for a booklet of another college,
-        a version that was never issued, or a sheet issued without a PDF."""
-        self._booklets.get(college_id, booklet_id)
+        """The stored PDF of one version. ``NotFoundError`` for a booklet of another college
+        or out of reach, a version that was never issued, or a sheet issued without a PDF."""
+        booklet = self._booklets.get(college_id, booklet_id)
+        ref = booklet.blueprint
+        paper = self._content.get(college_id, ExamBlueprint, ref.id, ref.version)
+        reach.check(paper.subject_id, f"booklet {booklet_id}")
         sheet = next(
             (s for s in self._sheets.versions(college_id, booklet_id) if s.version == version),
             None,

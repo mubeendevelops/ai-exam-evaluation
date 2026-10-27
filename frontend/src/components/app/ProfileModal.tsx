@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { api } from '../../api/client'
 import { NETWORK_PROBLEM, problemOf } from '../../api/errors'
 import { useMe } from '../../auth/AuthProvider'
+import { roleLabel } from '../../auth/capabilities'
 import { Badge, Modal, useToast } from '../ui'
 import { FormError, SubmitButton, TextField } from '../public/fields'
 import { PasswordHint } from '../public/PasswordHint'
@@ -62,7 +63,7 @@ export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => 
         <div className="flex justify-between gap-4 border-b border-gray-800 pb-2">
           <dt className="text-gray-400">Role</dt>
           <dd>
-            <Badge tone={user.role === 'admin' ? 'amber' : 'purple'}>{user.role}</Badge>
+            <Badge tone={user.role === 'admin' ? 'amber' : 'purple'}>{roleLabel[user.role]}</Badge>
           </dd>
         </div>
       </dl>

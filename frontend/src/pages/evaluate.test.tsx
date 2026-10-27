@@ -52,10 +52,14 @@ const listOf = (items = [booklet()], extra: Record<string, unknown> = {}) => ({
   json: { items, total: items.length, limit: 100, offset: 0, waiting: 0, max_waiting: 5, ...extra },
 })
 
-function signedIn(extra: Parameters<typeof mockApi>[0] = {}) {
+/** Step 1's upload controls belong to whoever may upload (the admin since P24, D162); the
+ * tests sign in with both capabilities so the controls and the review can be tried together. */
+const UPLOADER = { ...meOf(), capabilities: [...meOf().capabilities, 'upload_booklets' as const] }
+
+function signedIn(extra: Parameters<typeof mockApi>[0] = {}, me = UPLOADER) {
   return mockApi({
     'POST /api/v1/auth/refresh': { json: tokenOf() },
-    'GET /api/v1/auth/me': { json: meOf() },
+    'GET /api/v1/auth/me': { json: me },
     'GET /api/v1/health': { json: healthy },
     'GET /api/v1/blueprints': { json: [exam] },
     'GET /api/v1/booklets': listOf(),
@@ -84,6 +88,14 @@ function sentFiles(): string[] {
 // ---------------------------------------------------------------------------------------------
 
 describe('step 1: scan upload', () => {
+  it('shows an SME the submissions of their subjects without upload controls', async () => {
+    signedIn({}, meOf())
+    renderApp('/evaluate')
+    expect(await screen.findByText(/Scanned booklets are uploaded by your admin/)).toBeVisible()
+    expect(screen.queryByText('Drag & Drop Scanned Student Answer Sheets')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Student' })).toBeNull()
+  })
+
   const pdf = () => new File(['%PDF-1.7 synthetic'], 'booklet.pdf', { type: 'application/pdf' })
 
   async function readyToDrop(extra: Parameters<typeof mockApi>[0] = {}) {
@@ -699,7 +711,7 @@ describe('step 2: AI segmentation', () => {
     expect(screen.getByRole('button', { name: 'Re-Segment' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Proceed to Evaluation' }))
     // step 3 opens read-only too, with the holder named
-    const grading = await screen.findByRole('region', { name: 'Panel C: Teacher Final Grading' })
+    const grading = await screen.findByRole('region', { name: 'Panel C: SME Final Grading' })
     expect(within(grading).getByRole('button', { name: 'Approve answer' })).toBeDisabled()
     expect(screen.getAllByText(/Dr\. Other has this booklet open/).length).toBeGreaterThan(0)
   })

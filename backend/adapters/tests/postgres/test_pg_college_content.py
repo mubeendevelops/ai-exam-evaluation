@@ -183,7 +183,7 @@ def test_0012_back_fills_a_seeded_database_and_relocation_moves_its_files(
     for key, data in legacy.items():
         blobs.put(BlobKey(key), data, "application/octet-stream")
 
-    migrate.upgrade(db.owner_url)
+    migrate.upgrade(db.owner_url, "0012")
     assert migrate.current_revision(db.owner_url) == "0012"
     with db.owner() as conn:
         for table in ("subjects", "questions", "question_versions", "reference_diagrams"):
@@ -251,7 +251,7 @@ def test_0012_refuses_content_used_across_colleges(old_schema: TestDatabase) -> 
 
 def test_0012_downgrade_refuses_a_database_with_content(old_schema: TestDatabase) -> None:
     db = old_schema
-    migrate.upgrade(db.owner_url)
+    migrate.upgrade(db.owner_url, "0012")
     with db.owner() as conn:
         college, teacher = _college(conn, "DA")
         conn.execute(

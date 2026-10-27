@@ -20,6 +20,7 @@ from tarn_adapters.postgres.repositories import (
     PgBookletRepository,
     PgCollegeRepository,
     PgContentRepository,
+    PgEntitlementRepository,
     PgResultSheetRepository,
     PgScoreRepository,
     PgStudentRepository,
@@ -58,6 +59,7 @@ class PostgresSession:
     blobs: BlobStore
     colleges: PgCollegeRepository = field(init=False)
     users: PgUserRepository = field(init=False)
+    entitlements: PgEntitlementRepository = field(init=False)
     students: PgStudentRepository = field(init=False)
     content: PgContentRepository = field(init=False)
     booklets: PgBookletRepository = field(init=False)
@@ -71,6 +73,7 @@ class PostgresSession:
     def __post_init__(self) -> None:
         self.colleges = PgCollegeRepository(self.conn)
         self.users = PgUserRepository(self.conn)
+        self.entitlements = PgEntitlementRepository(self.conn)
         self.students = PgStudentRepository(self.conn)
         self.content = PgContentRepository(self.conn)
         self.booklets = PgBookletRepository(self.conn)

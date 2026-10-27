@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api } from '../api/client'
+import { roleLabel } from '../auth/capabilities'
 import { NETWORK_PROBLEM, problemOf } from '../api/errors'
 import type { components } from '../api/schema'
 import { PageBanner } from '../components/app/PageBanner'
@@ -19,7 +20,7 @@ function isLocked(account: Account): boolean {
 
 type Action = 'disable' | 'force-reset'
 
-// ---- teachers ---------------------------------------------------------------------------
+// ---- SMEs ----------------------------------------------------------------------------
 
 function InviteForm() {
   const toast = useToast()
@@ -42,7 +43,7 @@ function InviteForm() {
         setName('')
         setEmail('')
         await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      } else setError(problemOf(err, 'Could not invite this teacher.'))
+      } else setError(problemOf(err, 'Could not invite this SME.'))
     } catch {
       setError({ message: NETWORK_PROBLEM, reasons: [] })
     } finally {
@@ -51,10 +52,8 @@ function InviteForm() {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4" aria-label="Invite a teacher">
-      <h3 className="text-sm font-bold tracking-wider text-purple-400 uppercase">
-        Invite a teacher
-      </h3>
+    <form onSubmit={submit} className="space-y-4" aria-label="Invite an SME">
+      <h3 className="text-sm font-bold tracking-wider text-purple-400 uppercase">Invite an SME</h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <TextField
           label="Full Name"
@@ -69,7 +68,7 @@ function InviteForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          placeholder="teacher@institution.edu"
+          placeholder="sme@institution.edu"
         />
       </div>
       <FormError message={error?.message ?? null} reasons={error?.reasons} />
@@ -80,7 +79,7 @@ function InviteForm() {
   )
 }
 
-function TeachersSection() {
+function SmesSection() {
   const toast = useToast()
   const queryClient = useQueryClient()
   const [pending, setPending] = useState<{ action: Action; account: Account } | null>(null)
@@ -162,13 +161,13 @@ function TeachersSection() {
             <tbody className="divide-y divide-gray-800">
               {accounts.data.map((account) => {
                 const { user } = account
-                const teacher = user.role === 'teacher'
+                const sme = user.role === 'sme'
                 return (
                   <tr key={user.id}>
                     <td className="py-2.5 pr-4 font-semibold text-white">{user.display_name}</td>
                     <td className="py-2.5 pr-4 text-gray-300">{user.email}</td>
                     <td className="py-2.5 pr-4">
-                      <Badge tone={teacher ? 'purple' : 'amber'}>{user.role}</Badge>
+                      <Badge tone={sme ? 'purple' : 'amber'}>{roleLabel[user.role]}</Badge>
                     </td>
                     <td className="space-x-1 py-2.5 pr-4">
                       <Badge tone={STATUS_TONE[account.status] ?? 'gray'}>
@@ -178,7 +177,7 @@ function TeachersSection() {
                       {account.force_reset && <Badge tone="amber">reset required</Badge>}
                     </td>
                     <td className="py-2.5 text-right">
-                      {teacher && (
+                      {sme && (
                         <div className="flex flex-wrap justify-end gap-1.5">
                           {account.status === 'DISABLED' ? (
                             <button
@@ -258,7 +257,7 @@ function TeachersSection() {
         <p className="text-sm text-gray-300">
           {pending?.action === 'disable'
             ? `${pending.account.user.display_name} will be signed out and cannot sign in until you enable the account again.`
-            : `${pending?.account.user.display_name ?? 'This teacher'} will have to choose a new password at the next sign-in.`}
+            : `${pending?.account.user.display_name ?? 'This SME'} will have to choose a new password at the next sign-in.`}
         </p>
       </Modal>
     </GlassPanel>
@@ -464,7 +463,7 @@ function RosterSection() {
   )
 }
 
-/** `/admin` (administrators only): teacher accounts and the roster. */
+/** `/admin` (the admin account only): SME accounts and the roster. The admin portal is P25. */
 export default function AdminPage() {
   return (
     <div className="space-y-6">
@@ -472,9 +471,9 @@ export default function AdminPage() {
         icon="fa-solid fa-user-shield"
         iconTone="text-amber-400"
         title="Administration"
-        description="Invite teachers, manage their access, and keep the student roster up to date."
+        description="Invite SMEs, manage their access, and keep the student roster up to date."
       />
-      <TeachersSection />
+      <SmesSection />
       <RosterSection />
     </div>
   )

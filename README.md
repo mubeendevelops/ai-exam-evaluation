@@ -46,17 +46,17 @@ All ports bind to 127.0.0.1. Verification, invitation and reset emails go to the
 
 `make seed` creates two fictitious colleges and prints the development password. Sign in on http://localhost:5173 with an Institution ID and an email:
 
-| Institution ID | Teacher | Content |
+| Institution ID | SME (subject expert) | Content |
 | --- | --- | --- |
 | `DEMO_COM` | `anita.desai@demo-com.example.test` | QP-CI, QP-IPR, Assignments 1 and 2 (synthetic keys) |
 | `DEMO_ENG` | `kavya.shetty@demo-eng.example.test` | AI & ML keys K-AI1 to K-AI3 |
 
-(Admins: `admin@demo-com.example.test`, `admin@demo-eng.example.test`.) The keys without a faculty source are written for development and carry the badge **SYNTHETIC – dev only, needs teacher validation**.
+(Admins: `admin@demo-com.example.test`, `admin@demo-eng.example.test`: one shared admin login per college, which manages SMEs, subjects, the roster and uploads and never sees marks (P24). A Governor is created with `tarn tenants governor DEMO_COM --email … --operator …` and sees a placeholder page for now.) The keys without a faculty source are written for development and carry the badge **SYNTHETIC – dev only, needs teacher validation**.
 
-The teacher's path through the three tabs:
+The SME's path through the tabs (an SME sees only the subjects the admin granted; uploads are the admin's since P24 and have no screen until P25/P26, so step 1 shows the submissions only):
 
 1. **Q&A DB** – questions, benchmark answers, rubrics, glossaries, reference diagrams and key files.
-2. **AI Evaluation** – step 1 pick the student and exam and drop the booklet (a PDF, or page images in order; one drop is one booklet); step 2 check the segmentation (the machine reads and splits it; the teacher can correct lines, split, merge and reassign); step 3 approve answer by answer (AI suggestion, reference beside the student's text, per-criterion reasons, override in the paper's mark step), then approve the booklet.
+2. **AI Evaluation** – step 1 the submissions (for an uploader: pick the student and exam and drop the booklet, a PDF or page images in order; one drop is one booklet); step 2 check the segmentation (the machine reads and splits it; the teacher can correct lines, split, merge and reassign); step 3 approve answer by answer (AI suggestion, reference beside the student's text, per-criterion reasons, override in the paper's mark step), then approve the booklet.
 3. **Evaluated** – approved booklets and their result-sheet PDFs (a new version when an approved booklet is amended).
 4. **Schema Designer** – exam blueprints (any N of M, OR pairs, sub-parts, per-step marks); the JSON is validated by the server.
 

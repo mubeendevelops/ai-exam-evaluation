@@ -121,8 +121,8 @@ def client(settings: Settings) -> Iterator[TestClient]:
 def test_seeded_teachers_sign_in_and_see_their_bank(settings: Settings, client: TestClient) -> None:
     run_seed(settings, blobs=InMemory().blobs)
     for college, teacher, owned, papers in (
-        (ENGINEERING, ENGINEERING.teachers[0], 28, set()),
-        (COMMERCE, COMMERCE.teachers[1], 35, {QP_CI_TITLE}),
+        (ENGINEERING, ENGINEERING.smes[0], 28, set()),
+        (COMMERCE, COMMERCE.smes[1], 35, {QP_CI_TITLE}),
     ):
         login = client.post(
             "/api/v1/auth/login",

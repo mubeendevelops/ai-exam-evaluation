@@ -7,7 +7,7 @@ test.describe('visitor journey', () => {
   test('register (approval stubbed), verify email, sign in, switch tabs, sign out', async ({
     page,
   }) => {
-    const api = new FakeApi()
+    const api = new FakeApi({ role: 'admin' })
     await api.install(page)
 
     // --- register ---
@@ -56,17 +56,40 @@ test.describe('visitor journey', () => {
     await fillSignIn()
     await expect(page.getByRole('alert')).toContainText('Sign-in failed')
 
-    // --- operator approves (stubbed), then sign in ---
+    // --- operator approves (stubbed), then the admin signs in: the admin page, no SME tabs ---
     api.approve('NEW_COLLEGE')
     await fillSignIn()
-    await expect(
-      page.getByRole('heading', { name: 'Questions & Answers Repository' }),
-    ).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Account menu for Dr. New Admin/ })).toHaveText(
       'DA',
     )
+    await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0)
+    await page.goto('/evaluate') // marks are not the admin's (D167)
+    await expect(page).toHaveURL(/\/admin$/)
 
-    // --- switch tabs ---
+    // The status pill shows the real API and worker state.
+    await expect(page.getByRole('status').filter({ hasText: 'API & worker online' })).toBeVisible()
+
+    // --- a reload keeps the session (refresh cookie), then sign out ---
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible()
+    await page.getByRole('button', { name: /Account menu/ }).click()
+    await page.getByRole('menuitem', { name: /Sign out/ }).click()
+    await expect(page.getByRole('heading', { name: /Customer Sign In/ })).toBeVisible()
+    await page.goto('/admin')
+    await expect(page.getByRole('heading', { name: /Customer Sign In/ })).toBeVisible() // guarded again
+  })
+
+  test('an SME signs in and switches between the SME tabs', async ({ page }) => {
+    await new FakeApi().install(page)
+    await page.goto('/')
+    await page.getByLabel('Institution / Org Domain ID').fill('SYNTH_COLLEGE')
+    await page.getByLabel('Username / Evaluator Email').fill('admin@synthetic.test')
+    await page.getByLabel('Security Access Password').fill('correct horse battery staple')
+    await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
+    await expect(
+      page.getByRole('heading', { name: 'Questions & Answers Repository' }),
+    ).toBeVisible()
     const nav = page.getByRole('navigation', { name: 'Main' })
     await nav.getByRole('link', { name: 'AI Evaluation' }).click()
     await expect(page).toHaveURL(/\/evaluate$/)
@@ -80,20 +103,6 @@ test.describe('visitor journey', () => {
     ).toBeVisible()
     await nav.getByRole('link', { name: 'Q&A DB' }).click()
     await expect(page).toHaveURL(/\/qna$/)
-
-    // The status pill shows the real API and worker state.
-    await expect(page.getByRole('status').filter({ hasText: 'API & worker online' })).toBeVisible()
-
-    // --- a reload keeps the session (refresh cookie), then sign out ---
-    await page.reload()
-    await expect(
-      page.getByRole('heading', { name: 'Questions & Answers Repository' }),
-    ).toBeVisible()
-    await page.getByRole('button', { name: /Account menu/ }).click()
-    await page.getByRole('menuitem', { name: /Sign out/ }).click()
-    await expect(page.getByRole('heading', { name: /Customer Sign In/ })).toBeVisible()
-    await page.goto('/qna')
-    await expect(page.getByRole('heading', { name: /Customer Sign In/ })).toBeVisible() // guarded again
   })
 
   test('forgot password, then reset with the emailed link', async ({ page }) => {

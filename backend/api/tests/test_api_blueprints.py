@@ -50,26 +50,78 @@ def a_admin(client: TestClient, a: dict[str, str]) -> dict[str, str]:
     return _login(client, "COLLEGE_A", "admin@a.example", ADMIN_PASSWORD)
 
 
-def _subject(client: TestClient, headers: dict[str, str]) -> str:
-    response = client.post(
-        f"{BASE}/subjects", json={"code": "PHY-501", "name": "Physics"}, headers=headers
-    )
+def _admin(client: TestClient, institution: str) -> dict[str, str]:
+    email = f"admin@{institution[-1].lower()}.example"
+    return _login(client, institution, email, ADMIN_PASSWORD)
+
+
+def _subject(
+    client: TestClient, institution: str, code: str = "PHY-501", name: str = "Physics"
+) -> str:
+    """Made by the college's admin and granted to each of its SMEs (D160)."""
+    admin = _admin(client, institution)
+    response = client.post(f"{BASE}/subjects", json={"code": code, "name": name}, headers=admin)
     assert response.status_code == 201, response.text
-    return str(response.json()["id"])
+    subject = str(response.json()["id"])
+    for account in client.get(f"{BASE}/accounts", headers=admin).json():
+        if account["user"]["role"] == "sme":
+            path = f"{BASE}/accounts/{account['user']['id']}/subjects/{subject}"
+            assert client.post(path, headers=admin).status_code == 200
+    return subject
 
 
 def test_subjects_belong_to_the_college(
     client: TestClient, a: dict[str, str], b: dict[str, str]
 ) -> None:
-    subject_id = _subject(client, a)
+    subject_id = _subject(client, "COLLEGE_A")
     mine = client.get(f"{BASE}/subjects", headers=a).json()
     theirs = client.get(f"{BASE}/subjects", headers=b).json()
     assert [s["id"] for s in mine] == [subject_id] and "owned" not in mine[0]
     assert theirs == []
-    other = _subject(client, b)  # the same code in another college is its own subject
+    other = _subject(client, "COLLEGE_B")  # the same code in another college is its own subject
     assert other != subject_id
-    blank = client.post(f"{BASE}/subjects", json={"code": " ", "name": "x"}, headers=a)
+    admin = _admin(client, "COLLEGE_A")
+    blank = client.post(f"{BASE}/subjects", json={"code": " ", "name": "x"}, headers=admin)
     assert blank.status_code == 422
+    taken = client.post(f"{BASE}/subjects", json={"code": "phy-501", "name": "x"}, headers=admin)
+    assert taken.status_code == 409
+    assert (
+        client.post(f"{BASE}/subjects", json={"code": "S", "name": "S"}, headers=a).status_code
+        == 403
+    )
+
+
+def test_the_admin_renames_and_retires_subjects(
+    client: TestClient, a: dict[str, str], world: AuthWorld
+) -> None:
+    physics = _subject(client, "COLLEGE_A")
+    maths = _subject(client, "COLLEGE_A", "MAT", "Maths")
+    admin = _admin(client, "COLLEGE_A")
+    renamed = client.put(
+        f"{BASE}/subjects/{physics}", json={"code": "PHY-502", "name": "Physics II"}, headers=admin
+    )
+    assert renamed.status_code == 200 and renamed.json()["version"] == 2
+    assert renamed.json()["name"] == "Physics II"
+    assert (
+        client.put(
+            f"{BASE}/subjects/{physics}", json={"code": "X", "name": "X"}, headers=a
+        ).status_code
+        == 403
+    )
+    retired = client.post(f"{BASE}/subjects/{maths}/retire", headers=admin)
+    assert retired.status_code == 200 and retired.json()["retired"] is True
+    # The SME no longer picks it, nor can a new paper use it; the admin still lists it.
+    assert [x["code"] for x in client.get(f"{BASE}/subjects", headers=a).json()] == ["PHY-502"]
+    assert {x["code"] for x in client.get(f"{BASE}/subjects", headers=admin).json()} == {
+        "PHY-502",
+        "MAT",
+    }
+    sme = client.get(f"{BASE}/auth/me", headers=a).json()["user"]["id"]
+    regrant = client.post(f"{BASE}/accounts/{sme}/subjects/{maths}", headers=admin)
+    assert regrant.status_code == 422 and "retired" in regrant.json()["detail"]
+    paper = client.post(f"{BASE}/blueprints", json=_example("ci", maths), headers=a)
+    assert paper.status_code == 422 and "retired" in paper.json()["detail"]
+    assert client.post(f"{BASE}/subjects/{maths}/retire", headers=a).status_code == 403
 
 
 def test_validate_reports_every_problem_and_the_totals(
@@ -106,7 +158,7 @@ def test_validate_reports_every_problem_and_the_totals(
 
 
 def test_create_read_edit_versions(client: TestClient, a: dict[str, str]) -> None:
-    subject_id = _subject(client, a)
+    subject_id = _subject(client, "COLLEGE_A")
     created = client.post(f"{BASE}/blueprints", json=_example("ci", subject_id), headers=a)
     assert created.status_code == 201, created.text
     body = created.json()
@@ -133,7 +185,7 @@ def test_create_read_edit_versions(client: TestClient, a: dict[str, str]) -> Non
 def test_an_invalid_blueprint_is_refused_with_all_reasons(
     client: TestClient, a: dict[str, str]
 ) -> None:
-    subject_id = _subject(client, a)
+    subject_id = _subject(client, "COLLEGE_A")
     broken = _example("ci", subject_id)
     broken["total_marks"] = 49
     broken["sections"][2]["items"][1]["marks"] = 9
@@ -154,7 +206,7 @@ def test_an_invalid_blueprint_is_refused_with_all_reasons(
 def test_another_college_finds_nothing_and_there_is_no_copy(
     client: TestClient, a: dict[str, str], b: dict[str, str]
 ) -> None:
-    subject_id = _subject(client, a)
+    subject_id = _subject(client, "COLLEGE_A")
     original = client.post(f"{BASE}/blueprints", json=_example("ipr", subject_id), headers=a).json()
     path = f"{BASE}/blueprints/{original['id']}"
 
@@ -169,20 +221,20 @@ def test_another_college_finds_nothing_and_there_is_no_copy(
     assert client.get(path, headers=a).json()["version"] == 1
 
 
-def test_teachers_author_papers_the_admin_reads_them(
+def test_smes_author_papers_the_admin_does_not_open_them(
     client: TestClient, a: dict[str, str], a_admin: dict[str, str]
 ) -> None:
-    subject_id = _subject(client, a)
+    subject_id = _subject(client, "COLLEGE_A")
     made = client.post(f"{BASE}/blueprints", json=_example("ci", subject_id), headers=a).json()
-    assert client.get(f"{BASE}/blueprints/{made['id']}", headers=a_admin).status_code == 200
+    assert client.get(f"{BASE}/blueprints/{made['id']}", headers=a_admin).status_code == 403
     edit = client.put(f"{BASE}/blueprints/{made['id']}", json=made["document"], headers=a_admin)
-    assert edit.status_code == 403 and "teachers" in edit.json()["detail"]
+    assert edit.status_code == 403 and "role" in edit.json()["detail"]
     create = client.post(f"{BASE}/blueprints", json=made["document"], headers=a_admin)
     assert create.status_code == 403
 
 
 def test_no_delete_endpoint_and_sign_in_required(client: TestClient, a: dict[str, str]) -> None:
-    subject_id = _subject(client, a)
+    subject_id = _subject(client, "COLLEGE_A")
     made = client.post(f"{BASE}/blueprints", json=_example("ci", subject_id), headers=a).json()
     assert client.delete(f"{BASE}/blueprints/{made['id']}", headers=a).status_code == 405
     for method, path in (

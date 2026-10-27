@@ -21,9 +21,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from tarn_api.backends import Backends, Unit
 from tarn_core.domain.identity import AuthSession
-from tarn_core.domain.tenancy import Role, User
+from tarn_core.domain.personas import CAPABILITIES, Capability
+from tarn_core.domain.tenancy import User
 from tarn_core.errors import NotFoundError
-from tarn_core.ids import AuthSessionId, CollegeId, UserId
+from tarn_core.ids import AuthSessionId, BookletId, CollegeId, UserId
 
 REFRESH_COOKIE = "tarn_refresh"
 REFRESH_PATH = "/api/v1/auth"
@@ -101,17 +102,29 @@ def principal(
 PrincipalDep = Annotated[Principal, Depends(principal)]
 
 
-def current_user(unit: Unit, who: Principal, *roles: Role) -> User:
+ROLE_REFUSED = "Your role cannot do this."
+
+
+def current_user(unit: Unit, who: Principal, *capabilities: Capability) -> User:
     """The signed-in user, reloaded in this request's college session. 401 if the user or
-    session is gone or disabled; 403 if the role is not among ``roles`` (when given)."""
+    session is gone or disabled; 403 unless the persona has one of ``capabilities`` (when
+    given; the table is ``tarn_core.domain.personas.CAPABILITIES``, D177)."""
     try:
         user = unit.scope.users.get(who.college_id, who.user_id)
     except NotFoundError:
         raise _unauthorized() from None
     if not user.active or not unit.auth.session_active(who.college_id, who.session_id):
         raise _unauthorized()
-    if roles and user.role not in roles:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Your role cannot do this.")
+    if capabilities and not CAPABILITIES[user.role] & set(capabilities):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=ROLE_REFUSED)
+    return user
+
+
+def booklet_user(unit: Unit, who: Principal, capability: Capability, booklet_id: UUID) -> User:
+    """``current_user`` for a route on one booklet: the booklet must be in the user's reach
+    (its paper's subject is one of the SME's, D178), otherwise it is not found (404)."""
+    user = current_user(unit, who, capability)
+    unit.access.booklet(who.college_id, unit.reach(user), BookletId(booklet_id))
     return user
 
 

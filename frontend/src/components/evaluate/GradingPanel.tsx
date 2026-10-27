@@ -298,7 +298,7 @@ function Editor({
           </p>
         )}
         <label className="block text-[11px] text-gray-400">
-          Teacher marks (0 to {formatMark(answer.max_marks)}, in steps of {formatMark(step)})
+          SME marks (0 to {formatMark(answer.max_marks)}, in steps of {formatMark(step)})
           <input
             type="number"
             inputMode="decimal"
@@ -379,7 +379,7 @@ function Editor({
   )
 }
 
-/** Panel C, "Teacher Final Grading": the teacher's decision on one answer. The AI suggests, the
+/** Panel C, "SME Final Grading": the SME's decision on one answer. The AI suggests, the
  * teacher decides: nothing is final until the answer is approved. */
 export function GradingPanel(props: Props) {
   const { answer, readOnlyReason } = props
@@ -387,12 +387,12 @@ export function GradingPanel(props: Props) {
   return (
     <GlassPanel
       as="section"
-      aria-label="Panel C: Teacher Final Grading"
+      aria-label="Panel C: SME Final Grading"
       className="space-y-3 p-4 lg:col-span-4"
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-xs font-bold tracking-wider text-pink-400 uppercase">
-          Panel C: Teacher Final Grading
+          Panel C: SME Final Grading
         </h3>
         <Badge tone="purple">
           <i className="fa-solid fa-user-check" aria-hidden="true" />

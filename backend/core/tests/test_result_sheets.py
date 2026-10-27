@@ -14,6 +14,7 @@ from tarn_core.domain.common import Box
 from tarn_core.domain.diagram import DiagramGraph, StudentDiagram
 from tarn_core.errors import InvariantError, NotFoundError
 from tarn_core.ids import AnswerId, StudentDiagramId
+from tarn_core.services.access import WHOLE_COLLEGE
 from tarn_core.services.evaluated import EvaluatedBooklets
 from tarn_core.services.workflow import LockPolicy, sheet_key
 from tarn_core.testing import InMemory
@@ -201,11 +202,11 @@ def test_an_amendment_issues_a_new_pdf_and_leaves_the_first_alone() -> None:
     assert second.total != first.total
     assert approved.status is BookletStatus.APPROVED
 
-    page = evaluated(mem).search(college.id)
+    page = evaluated(mem).search(college.id, reach=WHOLE_COLLEGE)
     (item,) = page.items
     assert item.latest.version == 2 and [s.version for s in item.sheets] == [1, 2]
-    _, pdf1 = evaluated(mem).pdf(college.id, booklet.id, 1)
-    _, pdf2 = evaluated(mem).pdf(college.id, booklet.id, 2)
+    _, pdf1 = evaluated(mem).pdf(college.id, booklet.id, 1, reach=WHOLE_COLLEGE)
+    _, pdf2 = evaluated(mem).pdf(college.id, booklet.id, 2, reach=WHOLE_COLLEGE)
     assert pdf1 == v1_bytes and pdf2 != pdf1
 
 
@@ -236,7 +237,7 @@ def two_evaluated() -> tuple[InMemory, CollegeFixture, Booklet, Booklet, Workflo
 def test_search_by_exam_student_usn_and_status() -> None:
     mem, college, first, second, _ = two_evaluated()
     found = evaluated(mem)
-    everything = found.search(college.id)
+    everything = found.search(college.id, reach=WHOLE_COLLEGE)
     assert [e.booklet.id for e in everything.items] == [second.id, first.id]  # newest first
     assert everything.total == 2 and everything.items[0].exam == "Synthetic paper, CI shape"
     names = {s.id: s.name for s in college.students}
@@ -246,7 +247,7 @@ def test_search_by_exam_student_usn_and_status() -> None:
     ]
 
     def ids(**kw: object) -> list[object]:
-        return [e.booklet.id for e in found.search(college.id, **kw).items]  # type: ignore[arg-type]
+        return [e.booklet.id for e in found.search(college.id, reach=WHOLE_COLLEGE, **kw).items]  # type: ignore[arg-type]
 
     assert ids(exam="ci shape") == [second.id, first.id] and ids(exam="physics") == []
     assert ids(exam="  Synthetic ") == [second.id, first.id]
@@ -257,41 +258,43 @@ def test_search_by_exam_student_usn_and_status() -> None:
     assert ids(status=BookletStatus.APPROVED) == [second.id, first.id]
     assert ids(status=BookletStatus.APPROVED_AMENDED) == []
     assert ids(student="a1", usn="0002") == []  # every filter must match
-    assert [e.booklet.id for e in found.search(college.id, limit=1, offset=1).items] == [first.id]
+    assert [
+        e.booklet.id for e in found.search(college.id, limit=1, offset=1, reach=WHOLE_COLLEGE).items
+    ] == [first.id]
     with pytest.raises(InvariantError):
-        found.search(college.id, status=BookletStatus.SCORED)
+        found.search(college.id, status=BookletStatus.SCORED, reach=WHOLE_COLLEGE)
 
 
 def test_booklets_not_yet_approved_are_not_listed() -> None:
     mem, college, booklet, wf = setup()
-    assert evaluated(mem).search(college.id).total == 0
+    assert evaluated(mem).search(college.id, reach=WHOLE_COLLEGE).total == 0
     wf.review.open(college.id, college.teacher.id, booklet.id)
-    assert evaluated(mem).search(college.id).total == 0
+    assert evaluated(mem).search(college.id, reach=WHOLE_COLLEGE).total == 0
 
 
 def test_another_college_sees_nothing_and_cannot_download() -> None:
     mem, college, booklet, wf = setup()
     approve(mem, college, booklet, wf)
     other = add_college(mem, "B")
-    assert evaluated(mem).search(other.id).total == 0
+    assert evaluated(mem).search(other.id, reach=WHOLE_COLLEGE).total == 0
     with pytest.raises(NotFoundError):
-        evaluated(mem).pdf(other.id, booklet.id, 1)
+        evaluated(mem).pdf(other.id, booklet.id, 1, reach=WHOLE_COLLEGE)
 
 
 def test_unknown_versions_and_sheets_without_a_pdf_are_not_found() -> None:
     mem, college, booklet, wf = setup()
     approve(mem, college, booklet, wf)
     with pytest.raises(NotFoundError, match="v2"):
-        evaluated(mem).pdf(college.id, booklet.id, 2)
+        evaluated(mem).pdf(college.id, booklet.id, 2, reach=WHOLE_COLLEGE)
     (sheet,) = mem.sheets.versions(college.id, booklet.id)
     mem.blobs.delete(sheet.pdf)  # type: ignore[arg-type]
     with pytest.raises(NotFoundError):
-        evaluated(mem).pdf(college.id, booklet.id, 1)
+        evaluated(mem).pdf(college.id, booklet.id, 1, reach=WHOLE_COLLEGE)
     # A sheet issued before PDFs were stored.
     mem.sheets.delete_for_booklet(college.id, booklet.id)
     mem.sheets.save(college.id, replace(sheet, pdf=None))
     with pytest.raises(NotFoundError, match="no PDF"):
-        evaluated(mem).pdf(college.id, booklet.id, 1)
+        evaluated(mem).pdf(college.id, booklet.id, 1, reach=WHOLE_COLLEGE)
 
 
 # --- deletion ---------------------------------------------------------------------------------
@@ -319,8 +322,8 @@ def test_deleting_a_booklet_removes_every_version_of_its_sheet() -> None:
 
     assert not any(mem.blobs.exists(k) for k in keys)
     assert not [k for k in mem.blobs.keys if "sheets" in k.value]
-    assert evaluated(mem).search(college.id).total == 0
+    assert evaluated(mem).search(college.id, reach=WHOLE_COLLEGE).total == 0
     with pytest.raises(NotFoundError):
-        evaluated(mem).pdf(college.id, booklet.id, 1)
+        evaluated(mem).pdf(college.id, booklet.id, 1, reach=WHOLE_COLLEGE)
     deleted = mem.audit.events[-1]
     assert deleted.action.value == "booklet.deleted" and deleted.after is None

@@ -43,21 +43,31 @@ def a_admin(client: TestClient, a: dict[str, str]) -> dict[str, str]:
     return _login(client, "COLLEGE_A", "admin@a.example", ADMIN_PASSWORD)
 
 
-def _new_subject(client: TestClient, headers: dict[str, str]) -> str:
-    response = client.post(
-        f"{BASE}/subjects", json={"code": "PHY", "name": "Physics"}, headers=headers
-    )
-    return str(response.json()["id"])
+def _new_subject(
+    client: TestClient, institution: str, admin_email: str, code: str = "PHY", name: str = "Physics"
+) -> str:
+    """The admin makes the subject and grants it to every SME of the college (D160)."""
+    admin = _login(client, institution, admin_email, ADMIN_PASSWORD)
+    response = client.post(f"{BASE}/subjects", json={"code": code, "name": name}, headers=admin)
+    assert response.status_code == 201, response.text
+    subject = str(response.json()["id"])
+    for account in client.get(f"{BASE}/accounts", headers=admin).json():
+        if account["user"]["role"] == "sme":
+            granted = client.post(
+                f"{BASE}/accounts/{account['user']['id']}/subjects/{subject}", headers=admin
+            )
+            assert granted.status_code == 200, granted.text
+    return subject
 
 
 @pytest.fixture
 def subject(client: TestClient, a: dict[str, str]) -> str:
-    return _new_subject(client, a)
+    return _new_subject(client, "COLLEGE_A", "admin@a.example")
 
 
 @pytest.fixture
 def b_subject(client: TestClient, b: dict[str, str]) -> str:
-    return _new_subject(client, b)
+    return _new_subject(client, "COLLEGE_B", "admin@b.example")
 
 
 def semantic(label: str, weight: float, **extra: Any) -> dict[str, Any]:
@@ -299,17 +309,46 @@ def test_another_college_finds_nothing_to_read_or_edit(
     assert client.get(f"{BASE}/questions/{qid}", headers=a).json()["text"] == q["text"]
 
 
-def test_teachers_edit_the_admin_reads(
+def test_smes_edit_the_admin_neither_reads_nor_edits(
     client: TestClient, a: dict[str, str], a_admin: dict[str, str], subject: str
 ) -> None:
     q = make(client, a, subject, reference_answer="Model.")
-    assert client.get(f"{BASE}/questions/{q['id']}", headers=a_admin).status_code == 200
+    assert client.get(f"{BASE}/questions/{q['id']}", headers=a_admin).status_code == 403
+    assert client.get(f"{BASE}/questions", headers=a_admin).status_code == 403
     refused = client.post(
         f"{BASE}/questions/{q['id']}/reference-answers", json={"text": "x"}, headers=a_admin
     )
-    assert refused.status_code == 403 and "teachers" in refused.json()["detail"]
+    assert refused.status_code == 403 and "role" in refused.json()["detail"]
     created = client.post(f"{BASE}/questions", json=body(subject, code="ADM-1"), headers=a_admin)
     assert created.status_code == 403
+    made = client.post(f"{BASE}/subjects", json={"code": "X", "name": "X"}, headers=a)
+    assert made.status_code == 403  # SMEs no longer create subjects (D160)
+
+
+def test_an_sme_sees_only_the_content_of_their_subjects(
+    client: TestClient, a: dict[str, str], world: AuthWorld, subject: str
+) -> None:
+    """A Physics SME next to a Maths SME: each other's questions are a 404, not a 403."""
+    q = make(client, a, subject)
+    cid = world.mem.identity.find_tenant("COLLEGE_A").college_id  # type: ignore[union-attr]
+    admin_id = next(u.id for u in world.mem.users.list(cid) if u.role.value == "admin")
+    world.invite(cid, admin_id, "maths@a.example")
+    maths_sme = _login(client, "COLLEGE_A", "maths@a.example", TEACHER_PASSWORD)
+    admin = _login(client, "COLLEGE_A", "admin@a.example", ADMIN_PASSWORD)
+    maths = client.post(f"{BASE}/subjects", json={"code": "MAT", "name": "Maths"}, headers=admin)
+    me = client.get(f"{BASE}/auth/me", headers=maths_sme).json()["user"]["id"]
+    client.post(f"{BASE}/accounts/{me}/subjects/{maths.json()['id']}", headers=admin)
+    url = f"{BASE}/questions/{q['id']}"
+    assert client.get(url, headers=maths_sme).status_code == 404
+    update = {k: v for k, v in body(subject, code="X-1").items() if k != "subject_id"}
+    edit = client.put(url, json=update, headers=maths_sme)
+    assert edit.status_code == 404
+    assert client.get(f"{BASE}/questions", headers=maths_sme).json()["total"] == 0
+    assert client.get(f"{BASE}/question-topics", headers=maths_sme).json() == []
+    assert [x["code"] for x in client.get(f"{BASE}/subjects", headers=maths_sme).json()] == ["MAT"]
+    stolen = client.post(f"{BASE}/questions", json=body(subject, code="M-1"), headers=maths_sme)
+    assert stolen.status_code == 404
+    assert client.get(url, headers=a).status_code == 200
 
 
 def test_codes_are_unique_per_college(
@@ -499,7 +538,7 @@ def test_huge_uploads_are_refused_before_reading(
 def test_filters_pagination_and_topics(
     client: TestClient, a: dict[str, str], b: dict[str, str], subject: str
 ) -> None:
-    maths = client.post(f"{BASE}/subjects", json={"code": "MAT", "name": "Maths"}, headers=a).json()
+    maths = {"id": _new_subject(client, "COLLEGE_A", "admin@a.example", "MAT", "Maths")}
     make(
         client,
         a,
@@ -528,7 +567,7 @@ def test_filters_pagination_and_topics(
         category="Calculus",
         difficulty="easy",
     )
-    b_subject = _new_subject(client, b)
+    b_subject = _new_subject(client, "COLLEGE_B", "admin@b.example")
     make(client, b, b_subject, code="PHY-B1", text="B's question.", category="Optics")
 
     def codes(**params: Any) -> list[str]:

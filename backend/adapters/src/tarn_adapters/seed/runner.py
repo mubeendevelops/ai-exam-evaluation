@@ -28,6 +28,7 @@ from tarn_core.seed import (
 )
 from tarn_core.seed.model import CollegeSeed
 from tarn_core.services.blueprints import BlueprintService
+from tarn_core.services.entitlements import EntitlementService
 from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.subjects import SubjectService
 
@@ -87,6 +88,7 @@ def run_seed(settings: Settings, *, blobs: BlobStore | None = None) -> SeedSumma
                     users=scope.users,
                     colleges=scope.colleges,
                     students=scope.students,
+                    entitlements=scope.entitlements,
                     kit=kit,
                     runtime=scope.runtime,
                     report=report,
@@ -111,18 +113,32 @@ def _content(
     seed_content(
         college,
         college_id=accounts.college_id,
-        question_author=accounts.teacher_ids[0],
-        paper_author=accounts.teacher_ids[1],
+        accounts=accounts,
         content=scope.content,
         bank=QuestionBankService(
             content=scope.content,
             users=scope.users,
+            entitlements=scope.entitlements,
             blobs=scope.blobs,
             runtime=scope.runtime,
         ),
-        subjects=SubjectService(content=scope.content, users=scope.users, runtime=scope.runtime),
+        subjects=SubjectService(
+            content=scope.content,
+            users=scope.users,
+            entitlements=scope.entitlements,
+            runtime=scope.runtime,
+        ),
+        entitlements=EntitlementService(
+            entitlements=scope.entitlements,
+            users=scope.users,
+            content=scope.content,
+            runtime=scope.runtime,
+        ),
         blueprints=BlueprintService(
-            content=scope.content, users=scope.users, runtime=scope.runtime
+            content=scope.content,
+            users=scope.users,
+            entitlements=scope.entitlements,
+            runtime=scope.runtime,
         ),
         assets=assets,
         report=report,

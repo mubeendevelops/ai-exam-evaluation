@@ -96,6 +96,7 @@ def references(world: World, **kw: object) -> ReferenceDiagrams:
     return ReferenceDiagrams(
         content=mem.content,
         users=mem.users,
+        entitlements=mem.entitlements,
         blobs=mem.blobs,
         runtime=mem.runtime,
         recognizers=kw.get(  # type: ignore[arg-type]

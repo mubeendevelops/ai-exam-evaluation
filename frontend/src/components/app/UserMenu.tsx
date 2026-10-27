@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useAuth, useMe } from '../../auth/AuthProvider'
+import { can } from '../../auth/capabilities'
 
 interface Props {
   onProfile: () => void
@@ -85,7 +86,7 @@ export function UserMenu({ onProfile, onRecoveryCodes }: Props) {
             <i className="fa-solid fa-life-ring w-4 text-cyan-400" aria-hidden="true" /> Recovery
             codes
           </button>
-          {user.role === 'admin' && (
+          {can(me, 'manage_smes') && (
             <Link
               role="menuitem"
               to="/admin"

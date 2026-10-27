@@ -1,11 +1,11 @@
-"""The roster: CSV import and the student picker's search. Admins and teachers."""
+"""The roster: CSV import and the student picker's search. The admin's (D162, D177)."""
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from tarn_api.backends import unit_of_work
 from tarn_api.schemas import ErrorOut, RosterReportOut, RowErrorOut, StudentOut
 from tarn_api.security import BackendsDep, PrincipalDep, current_user
-from tarn_core.domain.tenancy import Role
+from tarn_core.domain.personas import Capability
 from tarn_core.services.roster import MAX_CHARS
 
 router = APIRouter(
@@ -55,7 +55,7 @@ async def import_roster(
             status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Save the CSV as UTF-8."
         ) from None
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        current_user(unit, who, Capability.MANAGE_STUDENTS)
         report = unit.roster.import_csv(who.college_id, who.user_id, text)
     return RosterReportOut(
         imported=report.imported,
@@ -79,7 +79,7 @@ def search_students(
     limit: int = Query(20, ge=1, le=50),
 ) -> list[StudentOut]:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        current_user(unit, who, Capability.MANAGE_STUDENTS)
         students = unit.roster.search(who.college_id, q, limit)
     return [
         StudentOut(id=s.id, name=s.name, usn=s.usn, class_section=s.class_section) for s in students

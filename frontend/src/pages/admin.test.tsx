@@ -17,13 +17,13 @@ const teacher = userOf({
   id: 't-1',
   display_name: 'Asha Rao',
   email: 'asha@college.test',
-  role: 'teacher',
+  role: 'sme',
 })
 const disabled = userOf({
   id: 't-2',
   display_name: 'Ravi Kumar',
   email: 'ravi@college.test',
-  role: 'teacher',
+  role: 'sme',
   active: false,
 })
 
@@ -127,7 +127,7 @@ describe('admin page', () => {
     })
     const user = userEvent.setup()
     renderApp('/admin')
-    const form = await screen.findByRole('form', { name: 'Invite a teacher' })
+    const form = await screen.findByRole('form', { name: 'Invite an SME' })
     await user.type(within(form).getByLabelText('Full Name'), 'Prof. New Person')
     await user.type(within(form).getByLabelText('Email'), 'new@college.test')
     await user.click(within(form).getByRole('button', { name: 'Send invitation' }))
@@ -148,7 +148,7 @@ describe('admin page', () => {
     })
     const user = userEvent.setup()
     renderApp('/admin')
-    const form = await screen.findByRole('form', { name: 'Invite a teacher' })
+    const form = await screen.findByRole('form', { name: 'Invite an SME' })
     await user.type(within(form).getByLabelText('Full Name'), 'Someone')
     await user.type(within(form).getByLabelText('Email'), 'dup@college.test')
     await user.click(within(form).getByRole('button', { name: 'Send invitation' }))

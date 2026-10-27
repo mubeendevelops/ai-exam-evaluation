@@ -35,11 +35,11 @@ from tarn_api.schemas import (
     SuggestionOut,
     TotalsOut,
 )
-from tarn_api.security import BackendsDep, PrincipalDep, current_user
+from tarn_api.security import BackendsDep, PrincipalDep, booklet_user
 from tarn_core.domain.booklet import BookletStatus
+from tarn_core.domain.personas import Capability
 from tarn_core.domain.review import BookletLock, ResultSheet
 from tarn_core.domain.scoring import DISAGREE, AnswerScore
-from tarn_core.domain.tenancy import Role
 from tarn_core.ids import AnswerId, BookletId, CollegeId, RegionId, UserId
 from tarn_core.services.workflow import BookletReview
 
@@ -244,7 +244,7 @@ def _view(unit: Unit, who: PrincipalDep, booklet_id: BookletId) -> ReviewOut:
 )
 def open_booklet(booklet_id: UUID, who: PrincipalDep, backends: BackendsDep) -> ReviewOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         review = unit.review(BookletId(booklet_id))
         opened = review.open(who.college_id, who.user_id, BookletId(booklet_id))
         view = review.view(who.college_id, BookletId(booklet_id))
@@ -266,7 +266,7 @@ def open_booklet(booklet_id: UUID, who: PrincipalDep, backends: BackendsDep) -> 
 )
 def close_booklet(booklet_id: UUID, who: PrincipalDep, backends: BackendsDep) -> Response:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         unit.scope.booklets.get(who.college_id, BookletId(booklet_id))
         unit.review(BookletId(booklet_id)).close(who.college_id, who.user_id, BookletId(booklet_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -279,7 +279,7 @@ def close_booklet(booklet_id: UUID, who: PrincipalDep, backends: BackendsDep) ->
 )
 def get_review(booklet_id: UUID, who: PrincipalDep, backends: BackendsDep) -> ReviewOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         return _view(unit, who, BookletId(booklet_id))
 
 
@@ -292,7 +292,7 @@ def result_sheets(
     booklet_id: UUID, who: PrincipalDep, backends: BackendsDep
 ) -> list[ResultSheetOut]:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         unit.scope.booklets.get(who.college_id, BookletId(booklet_id))
         sheets = unit.scope.sheets.versions(who.college_id, BookletId(booklet_id))
     return [_sheet_out(BookletId(booklet_id), s) for s in sheets]
@@ -317,7 +317,7 @@ def approve_answer(
     backends: BackendsDep,
 ) -> ReviewOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         unit.review(BookletId(booklet_id)).approve_answer(
             who.college_id,
             who.user_id,
@@ -345,7 +345,7 @@ def skip_answer(
     backends: BackendsDep,
 ) -> ReviewOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         unit.review(BookletId(booklet_id)).skip(
             who.college_id,
             who.user_id,
@@ -373,7 +373,7 @@ def reopen_answer(
     backends: BackendsDep,
 ) -> ReviewOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         unit.review(BookletId(booklet_id)).reopen(
             who.college_id,
             who.user_id,
@@ -399,7 +399,7 @@ def withdraw_draft(
     backends: BackendsDep,
 ) -> ReviewOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         unit.review(BookletId(booklet_id)).withdraw_draft(
             who.college_id,
             who.user_id,
@@ -421,7 +421,7 @@ def approve_booklet(
     booklet_id: UUID, body: ExpectedVersionIn, who: PrincipalDep, backends: BackendsDep
 ) -> ReviewOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         unit.review(BookletId(booklet_id)).approve_booklet(
             who.college_id,
             who.user_id,
@@ -451,7 +451,7 @@ def edit_region(
     backends: BackendsDep,
 ) -> RegionEditOut:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
+        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
         done = unit.text_editor(BookletId(booklet_id)).correct(
             who.college_id,
             who.user_id,

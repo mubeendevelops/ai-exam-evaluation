@@ -83,7 +83,7 @@ def test_the_scoring_model_scores_a_booklet_without_the_network(
         make_services(mem)
         .booklets.register(
             college_id,
-            college.accounts.teacher_ids[0],
+            college.accounts.sme_ids[0],
             student_id=mem.students.list(college_id)[0].id,
             blueprint_id=blueprint.id,
             file_sha256="e" * 64,
