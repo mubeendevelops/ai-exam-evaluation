@@ -41,12 +41,9 @@ describe('route guards', () => {
   })
 
   it('sends the admin from the SME tabs to the admin page, with no SME tabs (D167)', async () => {
-    signedIn('admin', {
-      'GET /api/v1/accounts': { json: [] },
-      'GET /api/v1/students': { json: [] },
-    })
+    signedIn('admin')
     renderApp('/evaluate')
-    expect(await screen.findByRole('heading', { name: /Administration/ })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Dashboard Overview' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Q&A DB/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /AI Evaluation/ })).not.toBeInTheDocument()
   })
@@ -136,7 +133,7 @@ describe('app shell (project_idea.html)', () => {
     renderApp('/qna')
     await user.click(await screen.findByRole('button', { name: /Account menu/ }))
     await user.click(screen.getByRole('menuitem', { name: /Administration/ }))
-    expect(await screen.findByRole('heading', { name: 'Administration' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Dashboard Overview' })).toBeInTheDocument()
   })
 
   it('signs out: tells the server, forgets the token and returns to the landing page', async () => {

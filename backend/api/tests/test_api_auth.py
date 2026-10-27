@@ -333,6 +333,33 @@ def test_roster_import_and_search(
     found = client.get("/api/v1/students", params={"q": "ravi"}, headers=teacher).json()
     assert [s["usn"] for s in found] == ["1AB21CS002"]
 
+    added = client.post(
+        "/api/v1/students",
+        json={"name": "Meera Iyer", "usn": "1ab21cs003", "class_section": "CSE-A"},
+        headers=teacher,
+    )
+    assert added.status_code == 201 and added.json()["usn"] == "1AB21CS003"
+    taken = client.post(
+        "/api/v1/students", json={"name": "Other", "usn": "1AB21CS003"}, headers=teacher
+    )
+    assert taken.status_code == 409
+    wrong = client.post("/api/v1/students", json={"name": "Other", "usn": "1-2"}, headers=teacher)
+    assert wrong.status_code == 422
+    sid = added.json()["id"]
+    fixed = client.put(
+        f"/api/v1/students/{sid}",
+        json={"name": "Meera Iyer", "usn": "1AB21CS030", "class_section": "CSE-B"},
+        headers=teacher,
+    )
+    assert fixed.status_code == 200 and fixed.json()["usn"] == "1AB21CS030"
+    clash = client.put(
+        f"/api/v1/students/{sid}", json={"name": "Meera", "usn": "1AB21CS002"}, headers=teacher
+    )
+    assert clash.status_code == 409
+    sme_json = {"name": "Meera", "usn": "1AB21CS031"}
+    assert client.post("/api/v1/students", json=sme_json, headers=sme).status_code == 403
+    assert client.put(f"/api/v1/students/{sid}", json=sme_json, headers=sme).status_code == 403
+
 
 # --- across colleges --------------------------------------------------------------------------
 

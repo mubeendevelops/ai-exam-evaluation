@@ -213,13 +213,9 @@ describe('question detail', () => {
   })
 
   it('is not for the admin account: it is sent to the admin page (D167, P24)', async () => {
-    opened(detail(), {
-      ...AS_ADMIN,
-      'GET /api/v1/accounts': { json: [] },
-      'GET /api/v1/students': { json: [] },
-    })
+    opened(detail(), AS_ADMIN)
     renderApp('/qna')
-    expect(await screen.findByRole('heading', { name: /Administration/ })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Dashboard Overview' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Open PHY-Q1' })).toBeNull()
   })
 

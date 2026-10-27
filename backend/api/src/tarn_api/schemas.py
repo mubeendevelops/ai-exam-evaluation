@@ -231,6 +231,14 @@ class StudentOut(BaseModel):
     class_section: str
 
 
+class StudentIn(_In):
+    name: str = Field(min_length=1, max_length=200, examples=["Asha Rao"])
+    usn: str = Field(
+        min_length=1, max_length=40, description="Roll number; stored upper case, no spaces."
+    )
+    class_section: str = Field(default="", max_length=80, examples=["CSE-A"])
+
+
 # --- subjects and exam blueprints -------------------------------------------------------------
 
 

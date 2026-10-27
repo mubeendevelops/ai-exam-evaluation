@@ -12,8 +12,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 
 from tarn_core.domain.audit import AuditAction
+from tarn_core.domain.common import JsonValue
 from tarn_core.domain.personas import Capability
 from tarn_core.domain.tenancy import Student, normalise_usn
+from tarn_core.errors import AlreadyExistsError, InvariantError
 from tarn_core.ids import CollegeId, StudentId, UserId
 from tarn_core.ports.repositories import StudentRepository, UserRepository
 from tarn_core.services._support import Runtime
@@ -174,6 +176,20 @@ def _check_row(
     return [], RosterRow(line=line, name=name, usn=usn, class_section=class_section)
 
 
+def _checked_row(name: str, usn: str, class_section: str) -> RosterRow:
+    """The CSV import's rules for one student typed in by hand. The message names the field,
+    never the value."""
+    errors, row = _check_row(
+        0,
+        [name, usn, class_section],
+        {"name": 0, "usn": 1, "class_section": 2},
+        {},
+    )
+    if row is None:
+        raise InvariantError(f"{errors[0].field}: {errors[0].message}")
+    return row
+
+
 class RosterService:
     """The college admin imports the roster (D162; the route checks ``manage_students``)."""
 
@@ -219,6 +235,69 @@ class RosterService:
             after={"rows": report.rows, "created": created, "updated": updated},
         )
         return report
+
+    def add(
+        self,
+        college_id: CollegeId,
+        actor_id: UserId,
+        *,
+        name: str,
+        usn: str,
+        class_section: str = "",
+    ) -> Student:
+        """One new student by hand (P25). The USN must be free in the college."""
+        require(self._users.get(college_id, actor_id), Capability.MANAGE_STUDENTS)
+        row = _checked_row(name, usn, class_section)
+        if self._students.find_by_usn(college_id, row.usn) is not None:
+            raise AlreadyExistsError("A student with this USN is already on the roster.")
+        student = Student(
+            id=self._rt.new_id(StudentId),
+            college_id=college_id,
+            name=row.name,
+            usn=row.usn,
+            class_section=row.class_section,
+        )
+        self._students.save(college_id, student)
+        # Audit events hold no student data: the opaque id only.
+        self._rt.record(
+            college_id, actor_id, AuditAction.STUDENT_ADDED, after={"student_id": str(student.id)}
+        )
+        return student
+
+    def update(
+        self,
+        college_id: CollegeId,
+        actor_id: UserId,
+        student_id: StudentId,
+        *,
+        name: str,
+        usn: str,
+        class_section: str = "",
+    ) -> Student:
+        """Corrects a student's name, USN or class/section, e.g. a roll number a booklet was
+        filed under by mistake (P26). Booklets follow the student by id, so they keep their
+        link. The audit names the fields that changed, never their values."""
+        require(self._users.get(college_id, actor_id), Capability.MANAGE_STUDENTS)
+        current = self._students.get(college_id, student_id)
+        row = _checked_row(name, usn, class_section)
+        other = self._students.find_by_usn(college_id, row.usn)
+        if other is not None and other.id != current.id:
+            raise AlreadyExistsError("Another student with this USN is already on the roster.")
+        edited = replace(current, name=row.name, usn=row.usn, class_section=row.class_section)
+        changed: list[JsonValue] = [
+            field_name
+            for field_name in ("name", "usn", "class_section")
+            if getattr(current, field_name) != getattr(edited, field_name)
+        ]
+        if changed:
+            self._students.save(college_id, edited)
+            self._rt.record(
+                college_id,
+                actor_id,
+                AuditAction.STUDENT_EDITED,
+                after={"student_id": str(student_id), "changed": changed},
+            )
+        return edited
 
     def search(self, college_id: CollegeId, query: str, limit: int = 20) -> Sequence[Student]:
         return self._students.search(college_id, query, max(1, min(limit, SEARCH_LIMIT)))

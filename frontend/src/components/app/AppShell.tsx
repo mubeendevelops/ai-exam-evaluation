@@ -35,7 +35,8 @@ export const appTabs: readonly (TabItem & { capability: Capability })[] = [
 export function AppShell() {
   const [dialog, setDialog] = useState<'profile' | 'codes' | null>(null)
   const me = useMe()
-  // The SME's tabs; the admin's screens come in P25 and the Governor's later (D159).
+  // The SME's tabs. The admin has none: its sidebar (AdminLayout) replaces them (P25), and the
+  // Governor's screens come later (D159).
   const tabs = appTabs.filter((tab) => can(me, tab.capability))
   return (
     <ToastProvider>

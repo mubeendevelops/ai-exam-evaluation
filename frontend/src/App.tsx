@@ -3,7 +3,16 @@ import { RedirectIfSignedIn, RequireAuth, RequireCapability, RequireGovernor } f
 import { AppShell } from './components/app/AppShell'
 import { PublicLayout } from './components/public/PublicLayout'
 import AcceptInvitePage from './pages/AcceptInvitePage'
-import AdminPage from './pages/AdminPage'
+import { AdminLayout } from './pages/admin/AdminLayout'
+import SmeDirectoryPage from './pages/admin/SmeDirectoryPage'
+import {
+  OverviewPage,
+  ProgressPage,
+  RedistributePage,
+  ReportsPage,
+  UploadAssignPage,
+} from './pages/admin/sections'
+import StudentsPage from './pages/admin/StudentsPage'
 import EvaluatePage from './pages/EvaluatePage'
 import EvaluatedPage from './pages/EvaluatedPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
@@ -45,7 +54,16 @@ export default function App() {
             <Route path="evaluated" element={<EvaluatedPage />} />
           </Route>
           <Route element={<RequireCapability capability="manage_smes" />}>
-            <Route path="admin" element={<AdminPage />} />
+            <Route path="admin" element={<AdminLayout />}>
+              <Route index element={<OverviewPage />} />
+              <Route path="smes" element={<SmeDirectoryPage />} />
+              <Route path="upload" element={<UploadAssignPage />} />
+              <Route path="upload/students" element={<StudentsPage />} />
+              <Route path="progress" element={<ProgressPage />} />
+              <Route path="redistribute" element={<RedistributePage />} />
+              <Route path="reports" element={<ReportsPage />} />
+              <Route path="*" element={<Navigate to="/admin" replace />} />
+            </Route>
           </Route>
           <Route element={<RequireGovernor />}>
             <Route path="governor" element={<GovernorPage />} />

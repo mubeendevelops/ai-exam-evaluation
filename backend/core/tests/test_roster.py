@@ -4,7 +4,12 @@ Synthetic names and USNs only."""
 import pytest
 
 from tarn_core.domain.audit import AuditAction
-from tarn_core.errors import NotFoundError, PermissionDeniedError
+from tarn_core.errors import (
+    AlreadyExistsError,
+    InvariantError,
+    NotFoundError,
+    PermissionDeniedError,
+)
 from tarn_core.services.roster import MAX_ROWS, parse_roster
 from tarn_core.testing import InMemory
 from tarn_core.testing.auth_world import AuthWorld
@@ -127,3 +132,55 @@ def test_roster_is_per_college(w: AuthWorld) -> None:
     ids_a = {s.id for s in w.mem.students.list(a)}
     ids_b = {s.id for s in w.mem.students.list(b)}
     assert ids_a.isdisjoint(ids_b)
+
+
+def test_add_a_student_by_hand(w: AuthWorld) -> None:
+    cid, admin = w.register("COLLEGE_A", "admin@a.example")
+    student = w.roster.add(cid, admin, name="  Asha  Rao ", usn=" 1ab21cs001", class_section="A")
+    assert (student.name, student.usn) == ("Asha Rao", "1AB21CS001")
+    assert w.mem.students.find_by_usn(cid, "1AB21CS001") == student
+    event = [e for e in w.mem.audit.events if e.action is AuditAction.STUDENT_ADDED][-1]
+    assert event.after == {"student_id": str(student.id)}  # an opaque id, no student data
+    with pytest.raises(AlreadyExistsError):
+        w.roster.add(cid, admin, name="Other", usn="1AB21CS001")
+    with pytest.raises(InvariantError, match="usn"):
+        w.roster.add(cid, admin, name="Other", usn="1AB-21")
+    with pytest.raises(InvariantError, match="name") as refused:
+        w.roster.add(cid, admin, name="  ", usn="1AB21CS009")
+    assert "1AB21CS009" not in str(refused.value)
+
+
+def test_edit_a_student_fixes_the_usn_and_audits_field_names_only(w: AuthWorld) -> None:
+    cid, admin = w.register("COLLEGE_A", "admin@a.example")
+    w.roster.import_csv(cid, admin, GOOD)
+    asha = w.mem.students.find_by_usn(cid, "1AB21CS001")
+    assert asha is not None
+    edited = w.roster.update(
+        cid, admin, asha.id, name="Asha Rao", usn="1ab21cs099", class_section="B"
+    )
+    assert edited.id == asha.id and edited.usn == "1AB21CS099"
+    assert w.mem.students.find_by_usn(cid, "1AB21CS001") is None
+    event = [e for e in w.mem.audit.events if e.action is AuditAction.STUDENT_EDITED][-1]
+    assert event.after == {"student_id": str(asha.id), "changed": ["usn", "class_section"]}
+    assert "1AB21CS099" not in str(event.after)
+    # Saving it unchanged writes and audits nothing.
+    count = len(w.mem.audit.events)
+    w.roster.update(cid, admin, asha.id, name="Asha Rao", usn="1AB21CS099", class_section="B")
+    assert len(w.mem.audit.events) == count
+    with pytest.raises(AlreadyExistsError):  # Ravi's USN
+        w.roster.update(cid, admin, asha.id, name="Asha Rao", usn="1AB21CS002")
+
+
+def test_add_and_edit_belong_to_the_admin_and_the_college(w: AuthWorld) -> None:
+    a, admin_a = w.register("COLLEGE_A", "admin@a.example")
+    b, admin_b = w.register("COLLEGE_B", "admin@b.example")
+    sme = w.invite(a, admin_a, "t@a.example")
+    with pytest.raises(PermissionDeniedError):
+        w.roster.add(a, sme, name="X", usn="1AB21CS001")
+    w.roster.import_csv(a, admin_a, GOOD)
+    asha = w.mem.students.find_by_usn(a, "1AB21CS001")
+    assert asha is not None
+    with pytest.raises(PermissionDeniedError):
+        w.roster.update(a, sme, asha.id, name="X", usn="1AB21CS001")
+    with pytest.raises(NotFoundError):
+        w.roster.update(b, admin_b, asha.id, name="X", usn="1AB21CS001")

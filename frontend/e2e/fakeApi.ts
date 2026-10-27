@@ -38,6 +38,23 @@ export class FakeApi {
   resetTokens = new Map<string, string>() // token -> institution id
   verifyTokens = new Map<string, string>()
   refreshCalls = 0
+  /** The admin's lists (P25), kept in the browser test like the server would. */
+  subjects: { id: string; code: string; name: string; version: number; retired: boolean }[] = [
+    {
+      id: '33333333-3333-4333-8333-333333333333',
+      code: 'PHY-501',
+      name: 'Physics',
+      version: 1,
+      retired: false,
+    },
+  ]
+  smes: {
+    user: Record<string, unknown>
+    status: 'PENDING' | 'ACTIVE' | 'DISABLED'
+    subject_ids: string[]
+  }[] = []
+  students: { id: string; name: string; usn: string; class_section: string }[] = []
+  private nextId = 1
   /** Who signs in: an SME by default (the screens under test are the SME's). */
   private readonly role: Role
   /** Step 1's upload controls are the admin's since P24 (D162); `uploads` lets the SME of a
@@ -73,6 +90,10 @@ export class FakeApi {
 
   async install(page: Page) {
     await page.route('**/api/v1/**', (route) => this.handle(route))
+  }
+
+  private newId(prefix: string) {
+    return `${prefix}-${this.nextId++}`
   }
 
   private user(signed: Signed) {
@@ -226,13 +247,44 @@ export class FakeApi {
       }
 
       case 'GET /subjects':
-        return json(200, [
-          {
-            id: '33333333-3333-4333-8333-333333333333',
-            code: 'PHY-501',
-            name: 'Physics',
+        return json(200, this.subjects)
+
+      case 'POST /subjects': {
+        if (this.subjects.some((s) => s.code === body.code))
+          return json(409, { detail: 'That subject code is taken.' })
+        const subject = { id: this.newId('sub'), ...body, version: 1, retired: false }
+        this.subjects.push(subject)
+        return json(201, subject)
+      }
+
+      case 'POST /accounts': {
+        if (this.smes.some((a) => a.user.email === body.email))
+          return json(409, { detail: 'That email already has an account.' })
+        const account = {
+          user: {
+            id: this.newId('sme'),
+            college_id: '11111111-1111-4111-8111-111111111111',
+            display_name: body.display_name,
+            email: body.email,
+            role: 'sme',
+            active: true,
           },
-        ])
+          status: 'PENDING' as const,
+          locked_until: null,
+          force_reset: false,
+          subject_ids: body.subject_ids ?? [],
+        }
+        this.smes.push(account)
+        return json(201, account)
+      }
+
+      case 'POST /students': {
+        if (this.students.some((s) => s.usn === String(body.usn).toUpperCase()))
+          return json(409, { detail: 'A student with this USN is already on the roster.' })
+        const student = { id: this.newId('stu'), ...body, usn: String(body.usn).toUpperCase() }
+        this.students.push(student)
+        return json(201, student)
+      }
 
       case 'POST /blueprints/validate': {
         // The real rules live in the backend (tests in Python); here only the title decides.
@@ -265,11 +317,53 @@ export class FakeApi {
       }
 
       case 'GET /accounts':
-        return json(200, [])
-      case 'GET /students':
-        return json(200, [])
+        return json(200, [
+          {
+            user: this.user({ tenant: this.tenants.get('SYNTH_COLLEGE')!, role: 'admin' }),
+            status: 'ACTIVE',
+            locked_until: null,
+            force_reset: false,
+            subject_ids: [],
+          },
+          ...this.smes.map((a) => ({ locked_until: null, force_reset: false, ...a })),
+        ])
+      case 'GET /students': {
+        const q = (url.searchParams.get('q') ?? '').toLowerCase()
+        return json(
+          200,
+          this.students.filter(
+            (s) => !q || s.usn.toLowerCase().startsWith(q) || s.name.toLowerCase().includes(q),
+          ),
+        )
+      }
 
       default: {
+        const subject = /^(PUT|POST) \/subjects\/([^/]+?)(\/retire)?$/.exec(key)
+        if (subject) {
+          const found = this.subjects.find((s) => s.id === subject[2])
+          if (!found) return json(404, { detail: 'Not found.' })
+          if (subject[3]) found.retired = true
+          else Object.assign(found, body, { version: found.version + 1 })
+          return json(200, found)
+        }
+        const account =
+          /^(POST|DELETE) \/accounts\/([^/]+)\/(disable|enable|subjects)(?:\/([^/]+))?$/.exec(key)
+        if (account) {
+          const found = this.smes.find((a) => a.user.id === account[2])
+          if (!found) return json(404, { detail: 'Not found.' })
+          if (account[3] === 'disable') found.status = 'DISABLED'
+          else if (account[3] === 'enable') found.status = 'ACTIVE'
+          else if (account[1] === 'POST') found.subject_ids.push(account[4] as string)
+          else found.subject_ids = found.subject_ids.filter((id) => id !== account[4])
+          return json(200, found.subject_ids)
+        }
+        const student = /^PUT \/students\/([^/]+)$/.exec(key)
+        if (student) {
+          const found = this.students.find((s) => s.id === student[1])
+          if (!found) return json(404, { detail: 'Not found.' })
+          Object.assign(found, body, { usn: String(body.usn).toUpperCase() })
+          return json(200, found)
+        }
         const one = /^GET \/questions\/(q-\d+)$/.exec(key)
         const found = one ? QUESTIONS.find((q) => q.id === one[1]) : undefined
         if (found) return json(200, questionDetail(found))

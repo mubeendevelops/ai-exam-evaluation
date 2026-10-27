@@ -59,11 +59,12 @@ test.describe('visitor journey', () => {
     // --- operator approves (stubbed), then the admin signs in: the admin page, no SME tabs ---
     api.approve('NEW_COLLEGE')
     await fillSignIn()
-    await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Dashboard Overview' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Account menu for Dr. New Admin/ })).toHaveText(
       'DA',
     )
-    await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0)
+    await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0) // no SME tabs
+    await expect(page.getByRole('navigation', { name: 'Admin sections' })).toBeVisible()
     await page.goto('/evaluate') // marks are not the admin's (D167)
     await expect(page).toHaveURL(/\/admin$/)
 
@@ -72,7 +73,7 @@ test.describe('visitor journey', () => {
 
     // --- a reload keeps the session (refresh cookie), then sign out ---
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Dashboard Overview' })).toBeVisible()
     await page.getByRole('button', { name: /Account menu/ }).click()
     await page.getByRole('menuitem', { name: /Sign out/ }).click()
     await expect(page.getByRole('heading', { name: /Customer Sign In/ })).toBeVisible()

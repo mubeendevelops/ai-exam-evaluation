@@ -68,6 +68,8 @@ class AuditAction(StrEnum):
     SUBJECT_REVOKED = "subject.revoked"
     GOVERNOR_INVITED = "account.governor_invited"  # by a Tarn operator (P24, D180)
     ROSTER_IMPORTED = "roster.imported"
+    STUDENT_ADDED = "student.added"  # P25: by hand, ids only (no student data)
+    STUDENT_EDITED = "student.edited"  # names the fields changed, not their values
     # College settings (P19)
     COLLEGE_LLM_SCORING_SET = "college.llm_scoring_set"  # a Tarn operator switches the flag
 

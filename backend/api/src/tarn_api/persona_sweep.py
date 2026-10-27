@@ -69,6 +69,8 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("POST", "/api/v1/subjects/{subject_id}/retire"): _SUBJECTS,
     ("POST", "/api/v1/roster/import"): _STUDENTS,
     ("GET", "/api/v1/students"): _STUDENTS,
+    ("POST", "/api/v1/students"): _STUDENTS,
+    ("PUT", "/api/v1/students/{student_id}"): _STUDENTS,
     ("POST", "/api/v1/booklets"): _UPLOAD,
     # --- progress: admin and SME, no marks for the admin (D167) -------------------------------
     ("GET", "/api/v1/booklets"): _PROGRESS,
@@ -142,6 +144,12 @@ _OWN_BODIES: Mapping[tuple[str, str], Callable[[World], dict[str, Any]]] = {
     ("POST", "/api/v1/roster/import"): lambda w: {
         "content": _ROSTER,
         "headers": {"Content-Type": "text/csv"},
+    },
+    ("POST", "/api/v1/students"): lambda w: {
+        "json": {"name": "Persona Student", "usn": "PERSONA002", "class_section": "X"}
+    },
+    ("PUT", "/api/v1/students/{student_id}"): lambda w: {
+        "json": {"name": "Persona Student", "usn": "PERSONA003", "class_section": "X"}
     },
     ("POST", "/api/v1/blueprints/validate"): lambda w: {"json": w.blueprint_document},
     ("POST", "/api/v1/blueprints"): lambda w: {"json": w.blueprint_document},

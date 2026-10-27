@@ -1,11 +1,15 @@
 """The roster: CSV import and the student picker's search. The admin's (D162, D177)."""
 
+from uuid import UUID
+
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from tarn_api.backends import unit_of_work
-from tarn_api.schemas import ErrorOut, RosterReportOut, RowErrorOut, StudentOut
+from tarn_api.schemas import ErrorOut, RosterReportOut, RowErrorOut, StudentIn, StudentOut
 from tarn_api.security import BackendsDep, PrincipalDep, current_user
 from tarn_core.domain.personas import Capability
+from tarn_core.domain.tenancy import Student
+from tarn_core.ids import StudentId
 from tarn_core.services.roster import MAX_CHARS
 
 router = APIRouter(
@@ -81,6 +85,52 @@ def search_students(
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Capability.MANAGE_STUDENTS)
         students = unit.roster.search(who.college_id, q, limit)
-    return [
-        StudentOut(id=s.id, name=s.name, usn=s.usn, class_section=s.class_section) for s in students
-    ]
+    return [_student_out(s) for s in students]
+
+
+def _student_out(student: Student) -> StudentOut:
+    return StudentOut(
+        id=student.id, name=student.name, usn=student.usn, class_section=student.class_section
+    )
+
+
+@router.post(
+    "/students",
+    status_code=status.HTTP_201_CREATED,
+    response_model=StudentOut,
+    responses={409: {"model": ErrorOut}, 422: {"model": ErrorOut}},
+    summary="Add one student to the roster (admin)",
+)
+def add_student(body: StudentIn, who: PrincipalDep, backends: BackendsDep) -> StudentOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.MANAGE_STUDENTS)
+        student = unit.roster.add(
+            who.college_id,
+            who.user_id,
+            name=body.name,
+            usn=body.usn,
+            class_section=body.class_section,
+        )
+    return _student_out(student)
+
+
+@router.put(
+    "/students/{student_id}",
+    response_model=StudentOut,
+    responses={404: {"model": ErrorOut}, 409: {"model": ErrorOut}, 422: {"model": ErrorOut}},
+    summary="Correct a student's name, USN or class/section (admin)",
+)
+def edit_student(
+    student_id: UUID, body: StudentIn, who: PrincipalDep, backends: BackendsDep
+) -> StudentOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.MANAGE_STUDENTS)
+        student = unit.roster.update(
+            who.college_id,
+            who.user_id,
+            StudentId(student_id),
+            name=body.name,
+            usn=body.usn,
+            class_section=body.class_section,
+        )
+    return _student_out(student)

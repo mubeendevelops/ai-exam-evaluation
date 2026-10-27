@@ -197,6 +197,7 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("POST", "/api/v1/accounts"): Case("own"),  # see ``invite_with_another_colleges_subject``
     ("POST", "/api/v1/roster/import"): Case("own"),
     ("GET", "/api/v1/students"): Case("own"),
+    ("POST", "/api/v1/students"): Case("own"),
     ("GET", "/api/v1/subjects"): Case("own"),
     ("POST", "/api/v1/subjects"): Case("own"),
     ("POST", "/api/v1/blueprints/validate"): Case("own"),
@@ -220,6 +221,12 @@ CASES: Mapping[tuple[str, str], Case] = {
         "college", _json(lambda w: {"code": "TAKEN", "name": "Taken over"}), as_admin=True
     ),
     ("POST", "/api/v1/subjects/{subject_id}/retire"): Case("college", as_admin=True),
+    # --- another college's student (P25) -------------------------------------------------------
+    ("PUT", "/api/v1/students/{student_id}"): Case(
+        "college",
+        _json(lambda w: {"name": "Taken Over", "usn": "TAKEN001", "class_section": ""}),
+        as_admin=True,
+    ),
     # --- another college's content (D165) ---------------------------------------------------
     ("GET", "/api/v1/blueprints/{blueprint_id}"): Case("college"),
     ("GET", "/api/v1/blueprints/{blueprint_id}/versions"): Case("college"),
@@ -377,7 +384,7 @@ def url(world: World, path: str) -> str:
             if family in path and param == name:
                 key = renamed
         out = out.replace("{" + name + "}", world.ids[key])
-    for name in ("user_id", "blueprint_id", "question_id", "file_id", "subject_id"):
+    for name in ("user_id", "blueprint_id", "question_id", "file_id", "subject_id", "student_id"):
         out = out.replace("{" + name + "}", world.ids[name])
     assert "{" not in out, out
     return out
