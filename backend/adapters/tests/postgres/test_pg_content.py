@@ -1,11 +1,13 @@
-"""Global content in PostgreSQL: owner edits make versions; other colleges copy (decision 3)."""
+"""College content in PostgreSQL (D165): private to the college, versioned, and refused by the
+repository, row-level security and the composite foreign keys when another college reaches
+for it."""
 
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
 
 from tarn_adapters.postgres.testing import Opener, World
-from tarn_core.domain.common import global_blob_key
 from tarn_core.domain.content import (
     ContentMeta,
     CriterionType,
@@ -15,10 +17,12 @@ from tarn_core.domain.content import (
     ReferenceAnswer,
     ReferenceDiagram,
     RubricCriterion,
+    content_blob_key,
 )
 from tarn_core.domain.diagram import DiagramGraph, DiagramNode, NodeShape
-from tarn_core.errors import InvariantError, NotOwnerError
+from tarn_core.errors import InvariantError, NotFoundError, TenantViolationError
 from tarn_core.ids import GlossaryId, QuestionId, ReferenceAnswerId, ReferenceDiagramId
+from tarn_core.ports.repositories import QuestionQuery
 from tarn_core.testing.builders import make_services
 
 pytestmark = pytest.mark.integration
@@ -30,85 +34,79 @@ def _first_question(world: World) -> QuestionId:
     return slot.question_id
 
 
-def test_copy_on_edit_for_another_college(session: Opener, world: World) -> None:
+def test_another_college_finds_nothing_and_writes_nothing(session: Opener, world: World) -> None:
     a, b = world.a, world.b
     qid = _first_question(world)
-
-    # A's question gets a key, a glossary and a reference diagram before B copies it.
     with session(a.id) as s:
-        meta = ContentMeta(owning_college_id=a.id, created_by=a.college.teacher.id)
-        s.content.save(
-            ReferenceAnswer(
-                id=ReferenceAnswerId(s.ids.new()),
-                meta=meta,
-                question_id=qid,
-                text="Alpha and beta.",
-                synthetic=True,
-            )
-        )
-        s.content.save(
-            Glossary(
-                id=GlossaryId(s.ids.new()), meta=meta, question_id=qid, teacher_terms=("alpha",)
-            )
-        )
-        diagram = ReferenceDiagram(
-            id=ReferenceDiagramId(s.ids.new()),
-            meta=meta,
-            question_id=qid,
-            png=global_blob_key("diagrams", "synthetic.png"),
-            graph=DiagramGraph(nodes=(DiagramNode(id="n", shape=NodeShape.BLOCK, label="A"),)),
-        )
-        s.content.save(diagram)
+        original = s.content.get(a.id, Question, qid)
 
     with session(b.id) as s:
         svc = make_services(s)
-        with pytest.raises(NotOwnerError):
+        with pytest.raises(NotFoundError):
+            s.content.get(b.id, Question, qid)
+        assert s.content.versions(b.id, Question, qid) == []
+        assert s.content.for_question(b.id, RubricCriterion, qid) == []
+        assert qid not in {q.id for q in s.content.latest(b.id, Question)}
+        found = s.content.search_questions(b.id, QuestionQuery(code=original.code), limit=5)
+        assert found.total == 0
+        with pytest.raises(NotFoundError):
             svc.content.edit_question(b.id, b.college.teacher.id, qid, text="B's wording")
-        # The repository (row-level security) refuses too, without the service's check.
-        original = s.content.get(Question, qid)
-        with pytest.raises(NotOwnerError):
+        # Asking for A by name through B's session: row-level security still says no.
+        with pytest.raises(NotFoundError):
+            s.content.get(a.id, Question, qid)
+        assert s.content.latest(a.id, Question) == []
+        # A's item written through B: refused before any SQL.
+        with pytest.raises(TenantViolationError):
+            s.content.save(b.id, replace(original, meta=replace(original.meta, version=2)))
+        # Claimed as B's: B has no version 1 of it, so version 2 is refused.
+        with pytest.raises(InvariantError):
             s.content.save(
-                Question(
-                    id=qid,
-                    meta=ContentMeta(
-                        version=2, owning_college_id=a.id, created_by=b.college.teacher.id
-                    ),
-                    subject_id=original.subject_id,
-                    code=original.code,
-                    text="B's wording",
-                    max_marks=original.max_marks,
-                )
+                b.id,
+                replace(
+                    original,
+                    meta=ContentMeta(version=2, college_id=b.id, created_by=b.college.teacher.id),
+                ),
             )
-        copy = svc.content.copy_question(b.id, b.college.teacher.id, qid)
+        # A key of B's that points at A's question: the composite foreign key refuses it.
+        with pytest.raises(NotFoundError):
+            s.content.save(
+                b.id,
+                ReferenceAnswer(
+                    id=ReferenceAnswerId(s.ids.new()),
+                    meta=ContentMeta(college_id=b.id, created_by=b.college.teacher.id),
+                    question_id=qid,
+                    text="Hijacked key.",
+                ),
+            )
 
     with session(a.id) as s:
-        # A sees B's copy (global visibility) with its provenance, but cannot edit it.
-        got = s.content.get(Question, copy.id)
-        assert got == copy
-        assert got.meta.owning_college_id == b.id
-        assert got.meta.copied_from == original.ref
-        with pytest.raises(NotOwnerError):
-            make_services(s).content.edit_question(a.id, a.college.teacher.id, copy.id, text="x")
-        # Keys, rubric, glossary and diagrams came along, owned by B, pointing at the copy.
-        parts: list[ReferenceAnswer | RubricCriterion | Glossary | ReferenceDiagram] = [
-            *s.content.for_question(ReferenceAnswer, copy.id),
-            *s.content.for_question(RubricCriterion, copy.id),
-            *s.content.for_question(Glossary, copy.id),
-            *s.content.for_question(ReferenceDiagram, copy.id),
-        ]
-        assert len(parts) == 5  # key, 2 criteria, glossary, diagram
-        assert all(p.meta.owning_college_id == b.id for p in parts)
-        assert all(p.meta.copied_from is not None for p in parts)
-        assert s.content.for_question(Glossary, qid)[0].teacher_terms == ("alpha",)
+        assert s.content.versions(a.id, Question, qid) == [original]
 
-        # A's own edit makes version 2; version 1 stays for the scores that used it.
+
+def test_edits_make_versions_and_old_ones_stay(session: Opener, world: World) -> None:
+    a = world.a
+    qid = _first_question(world)
+    with session(a.id) as s:
+        original = s.content.get(a.id, Question, qid)
+        meta = ContentMeta(college_id=a.id, created_by=a.college.teacher.id)
+        s.content.save(
+            a.id,
+            Glossary(
+                id=GlossaryId(s.ids.new()), meta=meta, question_id=qid, teacher_terms=("beta",)
+            ),
+        )
         edited = make_services(s).content.edit_question(
             a.id, a.college.teacher.id, qid, text="Better wording", max_marks=Decimal(2)
         )
-        assert edited.meta.version == 2
-        assert [q.text for q in s.content.versions(Question, qid)] == [original.text, edited.text]
-        assert s.content.get(Question, qid, 1) == original
-        assert s.content.get(Question, qid) == edited
+        assert edited.meta.version == 2 and edited.meta.college_id == a.id
+        assert [q.text for q in s.content.versions(a.id, Question, qid)] == [
+            original.text,
+            edited.text,
+        ]
+        assert s.content.get(a.id, Question, qid, 1) == original
+        assert s.content.get(a.id, Question, qid) == edited
+        terms = {t for g in s.content.for_question(a.id, Glossary, qid) for t in g.teacher_terms}
+        assert "beta" in terms
 
 
 def test_versions_are_contiguous(session: Opener, world: World) -> None:
@@ -116,42 +114,47 @@ def test_versions_are_contiguous(session: Opener, world: World) -> None:
     qid = _first_question(world)
     with session(a.id) as s:
         criterion = next(
-            c for c in s.content.for_question(RubricCriterion, qid) if c.type is CriterionType.LIST
+            c
+            for c in s.content.for_question(a.id, RubricCriterion, qid)
+            if c.type is CriterionType.LIST
         )
         meta = criterion.meta
         with pytest.raises(InvariantError):  # skips version 2
             s.content.save(
+                a.id,
                 RubricCriterion(
                     id=criterion.id,
-                    meta=ContentMeta(version=3, owning_college_id=a.id, created_by=meta.created_by),
+                    meta=ContentMeta(version=3, college_id=a.id, created_by=meta.created_by),
                     question_id=qid,
                     label="Skipped",
                     type=criterion.type,
                     weight=criterion.weight,
                     params=criterion.params,
-                )
+                ),
             )
         with pytest.raises(InvariantError):  # version 1 again
-            s.content.save(criterion)
+            s.content.save(a.id, criterion)
         # A diagram criterion's params round-trip.
         diagram_id = ReferenceDiagramId(s.ids.new())
         s.content.save(
+            a.id,
             ReferenceDiagram(
                 id=diagram_id,
-                meta=ContentMeta(owning_college_id=a.id, created_by=meta.created_by),
+                meta=ContentMeta(college_id=a.id, created_by=meta.created_by),
                 question_id=qid,
-                png=global_blob_key("diagrams", "d.png"),
-            )
+                png=content_blob_key(a.id, "diagrams", str(qid), str(diagram_id), "d.png"),
+                graph=DiagramGraph(nodes=(DiagramNode(id="n", shape=NodeShape.BLOCK, label="A"),)),
+            ),
         )
         v2 = RubricCriterion(
             id=criterion.id,
-            meta=ContentMeta(version=2, owning_college_id=a.id, created_by=meta.created_by),
+            meta=ContentMeta(version=2, college_id=a.id, created_by=meta.created_by),
             question_id=qid,
             label="Draws the diagram",
             type=CriterionType.DIAGRAM,
             weight=criterion.weight,
             params=DiagramParams(reference_diagram_id=diagram_id),
         )
-        s.content.save(v2)
-        assert s.content.get(RubricCriterion, criterion.id) == v2
-        assert s.content.versions(RubricCriterion, criterion.id) == [criterion, v2]
+        s.content.save(a.id, v2)
+        assert s.content.get(a.id, RubricCriterion, criterion.id) == v2
+        assert s.content.versions(a.id, RubricCriterion, criterion.id) == [criterion, v2]

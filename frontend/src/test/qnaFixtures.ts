@@ -1,11 +1,9 @@
 import type { components } from '../api/schema'
-import { COLLEGE_ID } from './fixtures'
 
 export type Summary = components['schemas']['QuestionSummaryOut']
 export type Detail = components['schemas']['QuestionOut']
 
 export const SUBJECT_ID = '33333333-3333-4333-8333-333333333333'
-export const OTHER_COLLEGE = '99999999-9999-4999-8999-999999999999'
 
 export function summary(overrides: Partial<Summary> = {}): Summary {
   return {
@@ -19,10 +17,6 @@ export function summary(overrides: Partial<Summary> = {}): Summary {
     subject_id: SUBJECT_ID,
     subject_name: 'Physics',
     key_count: 2,
-    owning_college_id: COLLEGE_ID,
-    owner_name: 'Synthetic College',
-    owned: true,
-    copied_from: null,
     ...overrides,
   }
 }

@@ -29,7 +29,6 @@ from tarn_core.domain.common import Box, ContentRef, JsonValue
 from tarn_core.domain.content import (
     DiagramParams,
     Glossary,
-    Question,
     ReferenceDiagram,
     RubricCriterion,
 )
@@ -54,10 +53,10 @@ from tarn_core.ids import (
 )
 from tarn_core.ports.engines import DiagramRecognizer
 from tarn_core.ports.jobs import JobQueue
-from tarn_core.ports.repositories import BookletRepository, ContentRepository
+from tarn_core.ports.repositories import BookletRepository, ContentRepository, UserRepository
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime
-from tarn_core.services.content import ensure_can_edit
+from tarn_core.services.content import ensure_author
 from tarn_core.services.diagrams.build import GraphBuilder, centre, inside
 from tarn_core.services.diagrams.editor import GraphEdit, apply_edits
 from tarn_core.services.diagrams.jobs import queue_diagrams, queue_reference_recognition
@@ -110,6 +109,7 @@ class ReferenceDiagrams:
         self,
         *,
         content: ContentRepository,
+        users: UserRepository,
         blobs: BlobStore,
         runtime: Runtime,
         recognizers: Recognizers,
@@ -118,6 +118,7 @@ class ReferenceDiagrams:
         builder: GraphBuilder | None = None,
     ) -> None:
         self._content = content
+        self._users = users
         self._blobs = blobs
         self._rt = runtime
         self._recognizers = recognizers
@@ -130,7 +131,7 @@ class ReferenceDiagrams:
     ) -> ReferenceDiagram:
         """Read the PNG into the next version's graph. A recognizer failure is stored as
         ``failed`` (the teacher draws the graph), not raised."""
-        diagram = self._content.get(ReferenceDiagram, diagram_id)
+        diagram = self._content.get(college_id, ReferenceDiagram, diagram_id)
         recognizer = self._recognizers.get(diagram.kind)
         state = RecognitionState.FAILED
         graph = DiagramGraph(nodes=())
@@ -142,7 +143,7 @@ class ReferenceDiagrams:
                 detection = None
             if detection is not None:
                 texts, engines = self._read_labels(
-                    image, diagram.question_id, [s.box for s in detection.shapes]
+                    college_id, image, diagram.question_id, [s.box for s in detection.shapes]
                 )
                 graph = self._builder.build(
                     detection, texts, recognizer=recognizer.ref, label_engines=engines
@@ -154,7 +155,7 @@ class ReferenceDiagrams:
             graph=graph,
             recognition=state,
         )
-        self._content.save(new)
+        self._content.save(college_id, new)
         self._audit(college_id, actor_id, diagram, new, action="recognised")
         self._glossary.refresh_reference_labels(college_id, actor_id, diagram.question_id)
         return new
@@ -169,9 +170,9 @@ class ReferenceDiagrams:
         edits: Sequence[GraphEdit] = (),
         kind: DiagramKind | None = None,
     ) -> ReferenceDiagram:
-        """The teacher's corrections (owning college only), as the next version."""
-        diagram = self._content.get(ReferenceDiagram, diagram_id)
-        ensure_can_edit(college_id, self._content.get(Question, diagram.question_id))
+        """The teacher's corrections, as the next version."""
+        diagram = self._content.get(college_id, ReferenceDiagram, diagram_id)
+        ensure_author(self._users, college_id, actor_id)
         if diagram.meta.version != expected_version:
             raise StaleGraphError("the reference graph changed since it was loaded")
         if not edits and (kind is None or kind is diagram.kind):
@@ -184,18 +185,20 @@ class ReferenceDiagrams:
             kind=kind or diagram.kind,
             recognition=RecognitionState.EDITED if edits else diagram.recognition,
         )
-        self._content.save(new)
+        self._content.save(college_id, new)
         self._audit(college_id, actor_id, diagram, new, action="edited", edits=len(edits))
         self._glossary.refresh_reference_labels(college_id, actor_id, diagram.question_id)
         return new
 
     def _read_labels(
-        self, image: bytes, question_id: QuestionId, shapes: Sequence[Box]
+        self, college_id: CollegeId, image: bytes, question_id: QuestionId, shapes: Sequence[Box]
     ) -> tuple[list[DiagramText], tuple[str, ...]]:
         if self._labels is None:
             return [], ()
         terms = frozenset(
-            t for g in self._content.for_question(Glossary, question_id) for t in g.teacher_terms
+            t
+            for g in self._content.for_question(college_id, Glossary, question_id)
+            for t in g.teacher_terms
         )
         text = self._labels.read(image, Lexicon(terms), cuts=shapes)
         return page_texts(text), text.engines
@@ -278,7 +281,7 @@ class BookletDiagrams:
     def _pending(self, college_id: CollegeId, booklet_id: BookletId) -> list["_Pending"]:
         booklet = self._booklets.get(college_id, booklet_id)
         blueprint = self._content.get(
-            ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
+            college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
         )
         done = {d.region_id for d in self._booklets.diagrams(college_id, booklet_id)}
         pages = {p.id: p for p in self._booklets.pages(college_id, booklet_id)}
@@ -321,9 +324,12 @@ class BookletDiagrams:
             _, question_id, _ = blueprint.leaf(slot_label)
         except (InvariantError, KeyError):
             return None
-        for criterion in self._content.for_question(RubricCriterion, question_id):
+        college_id = blueprint.meta.college_id
+        for criterion in self._content.for_question(college_id, RubricCriterion, question_id):
             if isinstance(criterion.params, DiagramParams):
-                ref = self._content.get(ReferenceDiagram, criterion.params.reference_diagram_id)
+                ref = self._content.get(
+                    college_id, ReferenceDiagram, criterion.params.reference_diagram_id
+                )
                 return ref.kind
         return None
 

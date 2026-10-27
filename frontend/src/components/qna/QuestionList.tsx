@@ -55,9 +55,7 @@ export function QuestionCard({ q, onOpen }: { q: Summary; onOpen: (id: string) =
         </div>
       </dl>
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-[11px] text-gray-400">
-          {q.owned ? 'Your college' : `Owned by ${q.owner_name ?? 'another college'}`}
-        </span>
+        <span className="truncate text-[11px] text-gray-400">Version {q.version}</span>
         <button
           type="button"
           aria-label={`Open ${q.code}`}
@@ -77,14 +75,14 @@ export function QuestionList({
   onNew,
 }: {
   onOpen: (id: string) => void
-  onNew: () => void
+  /** Absent for the admin account, which reads content but does not author it (D172). */
+  onNew?: () => void
 }) {
   const [keyword, setKeyword] = useState('')
   const [code, setCode] = useState('')
   const [subjectId, setSubjectId] = useState('')
   const [topic, setTopic] = useState('')
   const [difficulty, setDifficulty] = useState<Difficulty | ''>('')
-  const [mine, setMine] = useState(false)
   const [page, setPage] = useState(0)
   const typed = useDebounced(`${keyword}\u0000${code}`, 300)
   const [debouncedKeyword = '', debouncedCode = ''] = typed.split('\u0000')
@@ -104,16 +102,7 @@ export function QuestionList({
   })
 
   const questions = useQuery({
-    queryKey: [
-      'questions',
-      debouncedKeyword,
-      debouncedCode,
-      subjectId,
-      topic,
-      difficulty,
-      mine,
-      page,
-    ],
+    queryKey: ['questions', debouncedKeyword, debouncedCode, subjectId, topic, difficulty, page],
     queryFn: async () => {
       const { data } = await api.GET('/api/v1/questions', {
         params: {
@@ -123,7 +112,6 @@ export function QuestionList({
             subject_id: subjectId || undefined,
             topic,
             difficulty: difficulty || undefined,
-            mine,
             limit: PAGE,
             offset: page * PAGE,
           },
@@ -140,7 +128,7 @@ export function QuestionList({
     setPage(0)
   }
   const total = questions.data?.total ?? 0
-  const filtered = keyword || code || subjectId || topic || difficulty || mine
+  const filtered = keyword || code || subjectId || topic || difficulty
 
   return (
     <div className="space-y-4">
@@ -203,15 +191,6 @@ export function QuestionList({
               <option value="hard">Hard</option>
             </select>
           </label>
-          <label className="flex items-center gap-2 text-xs font-semibold text-gray-300">
-            <input
-              type="checkbox"
-              checked={mine}
-              onChange={(e) => reset(() => setMine(e.target.checked))}
-              className="h-4 w-4 accent-purple-500"
-            />
-            My college only
-          </label>
         </div>
         <div className="flex flex-col gap-3 md:flex-row">
           <div className="relative grow">
@@ -258,7 +237,7 @@ export function QuestionList({
           icon="fa-solid fa-database"
           title={filtered ? 'No question matches' : 'The question bank is empty'}
           action={
-            filtered ? undefined : (
+            filtered || !onNew ? undefined : (
               <SmallButton icon="fa-solid fa-plus" tone="purple" onClick={onNew}>
                 Add the first question
               </SmallButton>
@@ -267,7 +246,7 @@ export function QuestionList({
         >
           {filtered
             ? 'Change or clear the filters to see more.'
-            : 'Add a question with its benchmark answer and rubric, or copy another college’s.'}
+            : 'Add a question with its benchmark answer and rubric.'}
         </EmptyState>
       )}
 

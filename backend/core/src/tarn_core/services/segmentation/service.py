@@ -52,7 +52,7 @@ def question_texts(content: ContentRepository, blueprint: ExamBlueprint) -> dict
     for slot in blueprint.slots():
         for label, question_id, _ in leaves(slot):
             if question_id is not None:
-                texts[label] = content.get(Question, question_id).text
+                texts[label] = content.get(blueprint.meta.college_id, Question, question_id).text
     return texts
 
 
@@ -125,7 +125,7 @@ class BookletSegmenter:
         if booklet.status is not BookletStatus.TEXT_READY:
             return True
         blueprint = self._content.get(
-            ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
+            booklet.college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
         )
         segmenter = Segmenter(
             blueprint, question_texts(self._content, blueprint), self._embedder, self._policy

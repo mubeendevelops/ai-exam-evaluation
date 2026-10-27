@@ -32,7 +32,7 @@ from tarn_worker.booklets import BookletJobRunner
 
 pytestmark = pytest.mark.integration
 
-EXPECTED = {"college": {404}, "owner": {403}, "shared": {200, 201}}
+EXPECTED = {"college": {404}}
 
 
 @dataclass

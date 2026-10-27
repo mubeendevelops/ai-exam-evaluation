@@ -49,7 +49,7 @@ def test_score_records_question_criteria_blueprint_and_scorer(
     assert score is not None
     assert score.mark == Decimal("2.5")
     question_id = blueprint.leaf("8")[1]
-    criteria = mem.content.for_question(RubricCriterion, question_id)
+    criteria = mem.content.for_question(college.id, RubricCriterion, question_id)
     assert score.question.version == 1
     assert {c.ref for c in criteria} | {score.question, blueprint.ref} <= score.content_versions
     assert score.scorer_versions == {EngineRef(name="fixed-credit", version="1")}
@@ -78,8 +78,11 @@ def test_editing_a_question_leaves_old_scores_on_the_old_version(
     assert first is not None and second is not None
     assert first.question.version == 1
     assert second.question.version == 2
-    assert mem.content.get(Question, question_id, 1).text != "Reworded."
-    assert [q.meta.version for q in mem.content.versions(Question, question_id)] == [1, 2]
+    assert mem.content.get(college.id, Question, question_id, 1).text != "Reworded."
+    assert [q.meta.version for q in mem.content.versions(college.id, Question, question_id)] == [
+        1,
+        2,
+    ]
 
 
 def test_answer_score_must_name_every_content_version_it_used(
@@ -87,8 +90,8 @@ def test_answer_score_must_name_every_content_version_it_used(
 ) -> None:
     mem, college, blueprint = world
     question_id = blueprint.leaf("1")[1]
-    question = mem.content.get(Question, question_id)
-    criteria = mem.content.for_question(RubricCriterion, question_id)
+    question = mem.content.get(college.id, Question, question_id)
+    criteria = mem.content.for_question(college.id, RubricCriterion, question_id)
     engine = EngineRef(name="x", version="1")
     scores = tuple(
         CriterionScore(criterion=c.ref, weight=c.weight, credit=Decimal(1), scorer=engine)
@@ -143,16 +146,17 @@ def test_guidance_only_key_gets_a_mark_manually_score() -> None:
     mem = InMemory()
     college = add_college(mem, "A")
     subject = Subject(id=SubjectId(mem.ids.new()), meta=meta(college), code="S", name="S")
-    mem.content.save(subject)
+    mem.content.save(college.id, subject)
     question = add_question(mem.content, college, mem.ids.new(), subject.id, Decimal(5))
     mem.content.save(
+        college.id,
         ReferenceAnswer(
             id=ReferenceAnswerId(mem.ids.new()),
             meta=meta(college),
             question_id=question.id,
             text="Student has to explain with an example.",
             guidance_only=True,
-        )
+        ),
     )
     blueprint = ExamBlueprint(
         id=BlueprintId(mem.ids.new()),
@@ -167,7 +171,7 @@ def test_guidance_only_key_gets_a_mark_manually_score() -> None:
             ),
         ),
     )
-    mem.content.save(blueprint)
+    mem.content.save(college.id, blueprint)
     svc = make_services(mem)
     booklet = svc.booklets.register(
         college.id,

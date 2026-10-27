@@ -1,6 +1,7 @@
-"""Subjects and exam blueprints (global content with an owning college): ``/api/v1/subjects``,
-``/api/v1/blueprints``. Admins and teachers. Blueprints are never deleted: booklets pin a
-version and global rows are append-only."""
+"""Subjects and exam blueprints, the college's own content (D165): ``/api/v1/subjects``,
+``/api/v1/blueprints``. Admins and teachers read; teachers write (the admin cannot author
+papers). Another college's subject or blueprint is a 404. Blueprints are never deleted yet:
+booklets pin a version and content rows are append-only until P28."""
 
 from typing import Annotated, Any
 from uuid import UUID
@@ -11,7 +12,6 @@ from tarn_api.backends import Unit, unit_of_work
 from tarn_api.schemas import (
     BlueprintOut,
     BlueprintSummaryOut,
-    ContentRefOut,
     ErrorOut,
     IssueOut,
     SectionSummaryOut,
@@ -49,21 +49,12 @@ _INVALID: dict[int | str, dict[str, Any]] = {
 }
 
 
-def _subject_out(subject: Subject, college_id: CollegeId) -> SubjectOut:
-    return SubjectOut(
-        id=subject.id,
-        code=subject.code,
-        name=subject.name,
-        owning_college_id=subject.meta.owning_college_id,
-        owned=subject.meta.owning_college_id == college_id,
-    )
+def _subject_out(subject: Subject) -> SubjectOut:
+    return SubjectOut(id=subject.id, code=subject.code, name=subject.name)
 
 
-def _summary(
-    b: ExamBlueprint, college_id: CollegeId, subjects: dict[UUID, Subject]
-) -> dict[str, Any]:
+def _summary(b: ExamBlueprint, subjects: dict[UUID, Subject]) -> dict[str, Any]:
     subject = subjects.get(b.subject_id)
-    copied = b.meta.copied_from
     return {
         "id": b.id,
         "version": b.meta.version,
@@ -76,26 +67,16 @@ def _summary(
         "section_count": len(b.sections),
         "question_count": sum(1 for _ in b.slots()),
         "unlinked_count": len(b.unlinked_leaves()),
-        "owning_college_id": b.meta.owning_college_id,
-        "owned": b.meta.owning_college_id == college_id,
-        "copied_from": None
-        if copied is None
-        else ContentRefOut(kind=copied.kind.value, id=copied.id, version=copied.version),
     }
 
 
-def _subjects(unit: Unit) -> dict[UUID, Subject]:
-    return {s.id: s for s in unit.subjects.list()}
+def _subjects(unit: Unit, college_id: CollegeId) -> dict[UUID, Subject]:
+    return {s.id: s for s in unit.subjects.list(college_id)}
 
 
-def _summary_out(b: ExamBlueprint, college_id: CollegeId, unit: Unit) -> BlueprintSummaryOut:
-    return BlueprintSummaryOut(**_summary(b, college_id, _subjects(unit)))
-
-
-def _full_out(b: ExamBlueprint, college_id: CollegeId, unit: Unit) -> BlueprintOut:
-    return BlueprintOut(
-        **_summary(b, college_id, _subjects(unit)), document=blueprint_to_document(b)
-    )
+def _full_out(b: ExamBlueprint, unit: Unit) -> BlueprintOut:
+    subjects = _subjects(unit, b.meta.college_id)
+    return BlueprintOut(**_summary(b, subjects), document=blueprint_to_document(b))
 
 
 def _validation_out(report: DocumentReport) -> ValidationOut:
@@ -122,12 +103,12 @@ def _validation_out(report: DocumentReport) -> ValidationOut:
 # --- subjects ---------------------------------------------------------------------------------
 
 
-@router.get("/subjects", response_model=list[SubjectOut], summary="All subjects, by name")
+@router.get("/subjects", response_model=list[SubjectOut], summary="My college's subjects, by name")
 def list_subjects(who: PrincipalDep, backends: BackendsDep) -> list[SubjectOut]:
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        subjects = unit.subjects.list()
-    return [_subject_out(s, who.college_id) for s in subjects]
+        subjects = unit.subjects.list(who.college_id)
+    return [_subject_out(s) for s in subjects]
 
 
 @router.post(
@@ -135,13 +116,13 @@ def list_subjects(who: PrincipalDep, backends: BackendsDep) -> list[SubjectOut]:
     status_code=status.HTTP_201_CREATED,
     response_model=SubjectOut,
     responses={422: {"model": ErrorOut}},
-    summary="Create a subject owned by my college",
+    summary="Create a subject of my college",
 )
 def create_subject(body: SubjectIn, who: PrincipalDep, backends: BackendsDep) -> SubjectOut:
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
         subject = unit.subjects.create(who.college_id, who.user_id, code=body.code, name=body.name)
-    return _subject_out(subject, who.college_id)
+    return _subject_out(subject)
 
 
 # --- blueprints -------------------------------------------------------------------------------
@@ -166,28 +147,28 @@ def validate_blueprint(
 @router.get(
     "/blueprints",
     response_model=list[BlueprintSummaryOut],
-    summary="The newest version of every blueprint, from every college, by title",
+    summary="The newest version of every blueprint of my college, by title",
 )
 def list_blueprints(who: PrincipalDep, backends: BackendsDep) -> list[BlueprintSummaryOut]:
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        subjects = _subjects(unit)
-        found = unit.blueprints.list()
-    return [BlueprintSummaryOut(**_summary(b, who.college_id, subjects)) for b in found]
+        subjects = _subjects(unit, who.college_id)
+        found = unit.blueprints.list(who.college_id)
+    return [BlueprintSummaryOut(**_summary(b, subjects)) for b in found]
 
 
 @router.post(
     "/blueprints",
     status_code=status.HTTP_201_CREATED,
     response_model=BlueprintOut,
-    responses=_INVALID,
-    summary="Create a blueprint owned by my college",
+    responses={**_INVALID, 403: {"model": ErrorOut, "description": "Teachers only."}},
+    summary="Create a blueprint of my college",
 )
 def create_blueprint(document: Document, who: PrincipalDep, backends: BackendsDep) -> BlueprintOut:
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
         blueprint = unit.blueprints.create(who.college_id, who.user_id, document)
-        return _full_out(blueprint, who.college_id, unit)
+        return _full_out(blueprint, unit)
 
 
 @router.get(
@@ -204,8 +185,8 @@ def get_blueprint(
 ) -> BlueprintOut:
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        blueprint = unit.blueprints.get(BlueprintId(blueprint_id), version)
-        return _full_out(blueprint, who.college_id, unit)
+        blueprint = unit.blueprints.get(who.college_id, BlueprintId(blueprint_id), version)
+        return _full_out(blueprint, unit)
 
 
 @router.get(
@@ -219,20 +200,19 @@ def blueprint_versions(
 ) -> list[BlueprintSummaryOut]:
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        versions = unit.blueprints.versions(BlueprintId(blueprint_id))
-        subjects = _subjects(unit)
+        versions = unit.blueprints.versions(who.college_id, BlueprintId(blueprint_id))
+        subjects = _subjects(unit, who.college_id)
     if not versions:
         raise NotFoundError(f"blueprint {blueprint_id}")
-    return [BlueprintSummaryOut(**_summary(b, who.college_id, subjects)) for b in versions]
+    return [BlueprintSummaryOut(**_summary(b, subjects)) for b in versions]
 
 
 @router.put(
     "/blueprints/{blueprint_id}",
     response_model=BlueprintOut,
     responses={**_INVALID, 403: {"model": ErrorOut}, 404: {"model": ErrorOut}},
-    summary="Save the document as the next version (owning college only)",
-    description="Earlier versions stay valid for booklets pinned to them. Another college's "
-    "blueprint is copied first (POST .../copy).",
+    summary="Save the document as the next version (teachers only)",
+    description="Earlier versions stay valid for booklets pinned to them.",
 )
 def update_blueprint(
     blueprint_id: UUID, document: Document, who: PrincipalDep, backends: BackendsDep
@@ -242,18 +222,4 @@ def update_blueprint(
         blueprint = unit.blueprints.update(
             who.college_id, who.user_id, BlueprintId(blueprint_id), document
         )
-        return _full_out(blueprint, who.college_id, unit)
-
-
-@router.post(
-    "/blueprints/{blueprint_id}/copy",
-    status_code=status.HTTP_201_CREATED,
-    response_model=BlueprintOut,
-    responses={404: {"model": ErrorOut}},
-    summary="Copy a blueprint to my college",
-)
-def copy_blueprint(blueprint_id: UUID, who: PrincipalDep, backends: BackendsDep) -> BlueprintOut:
-    with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        blueprint = unit.blueprints.copy(who.college_id, who.user_id, BlueprintId(blueprint_id))
-        return _full_out(blueprint, who.college_id, unit)
+        return _full_out(blueprint, unit)

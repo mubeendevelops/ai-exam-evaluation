@@ -41,6 +41,7 @@ score.add_typer(score_models, name="models")
 diagram = typer.Typer(help="Diagram recognition (P14): data, detector training, benchmark, use.")
 diagram_data = typer.Typer(help="Detector training and test material (under var/diagrams).")
 diagram_models = typer.Typer(help="The detector's base weights.")
+content = typer.Typer(help="College content (questions, keys, papers): operator maintenance.")
 diagram.add_typer(diagram_data, name="data")
 diagram.add_typer(diagram_models, name="models")
 app.add_typer(db, name="db")
@@ -52,6 +53,7 @@ app.add_typer(score, name="score")
 app.add_typer(diagram, name="diagram")
 app.add_typer(identity, name="identity")
 app.add_typer(tenants, name="tenants")
+app.add_typer(content, name="content")
 
 
 app.command("evaluate")(evaluate_command)
@@ -1410,7 +1412,7 @@ def diagram_references(
 ) -> None:
     """Recognise the reference diagrams that are still pending (or failed): what the worker's
     `diagram.reference` job does, for diagrams uploaded before P14 (the seed's PNGs). Each one
-    is read in a session of its owning college and stored as the next version."""
+    is read in a session of its college and stored as the next version."""
     from tarn_adapters.blob.wiring import build_blob_store
     from tarn_adapters.diagram.wiring import build_recognizers
     from tarn_adapters.ocr.batch import page_ocr
@@ -1431,24 +1433,26 @@ def diagram_references(
     database = PostgresDatabase(settings.app_database_url, pool_size=1)
     ids, clock = UuidGenerator(), SystemClock()
     try:
-        with database.session(None, ids=ids, clock=clock, blobs=blobs) as s:
-            todo = [
-                d
-                for d in s.content.latest(ReferenceDiagram)
-                if every or d.recognition in (RecognitionState.PENDING, RecognitionState.FAILED)
-            ]
+        todo = []
+        for college_id in database.college_ids():
+            with database.session(college_id, ids=ids, clock=clock, blobs=blobs) as s:
+                todo += [
+                    d
+                    for d in s.content.latest(college_id, ReferenceDiagram)
+                    if every or d.recognition in (RecognitionState.PENDING, RecognitionState.FAILED)
+                ]
         for d in todo:
-            owner = d.meta.owning_college_id
+            owner = d.meta.college_id
             with database.session(owner, ids=ids, clock=clock, blobs=blobs) as s:
                 bank = QuestionBankService(
                     content=s.content,
                     users=s.users,
-                    colleges=s.colleges,
                     blobs=blobs,
                     runtime=s.runtime,
                 )
                 new = ReferenceDiagrams(
                     content=s.content,
+                    users=s.users,
                     blobs=blobs,
                     runtime=s.runtime,
                     recognizers=setup.recognizers,
@@ -1461,3 +1465,27 @@ def diagram_references(
             )
     finally:
         database.dispose()
+
+
+@content.command("relocate-blobs")
+def content_relocate_blobs(
+    quiet: Annotated[bool, typer.Option("--quiet", help="Print only the totals.")] = False,
+) -> None:
+    """Move content files (key files, reference diagrams) stored before P23 from global/... to
+    college/{id}/content/... and update their rows. Uses the owner role (TARN_DATABASE_URL).
+    Safe to run again: what has moved is left alone."""
+    from tarn_adapters.blob.wiring import build_blob_store
+    from tarn_adapters.postgres.relocate import relocate_content_blobs
+
+    settings = get_settings()
+    done = relocate_content_blobs(
+        settings.database_url,
+        build_blob_store(settings),
+        progress=(lambda _m: None) if quiet else typer.echo,
+    )
+    typer.echo(
+        f"{done.colleges} colleges: {done.copied} files copied, {done.rows} rows updated, "
+        f"{done.deleted} old files removed, {done.missing} missing"
+    )
+    if done.missing:
+        typer.echo("missing files: their rows now name the new place, but the file is gone")

@@ -1,7 +1,7 @@
-"""The question bank: ``/api/v1/questions``. Admins and teachers. Questions, reference answers,
-rubric criteria, glossaries, answer-key files and reference diagrams are global content with an
-owning college: the owner edits (a new version each time), everyone else copies. Nothing is
-deleted; removing a key or criterion retires it."""
+"""The question bank: ``/api/v1/questions``. Questions, reference answers, rubric criteria,
+glossaries, answer-key files and reference diagrams are the college's own content (D165):
+admins and teachers read them, teachers edit them (a new version each time), and another
+college's question is a 404. Nothing is deleted yet; removing a key or criterion retires it."""
 
 from decimal import Decimal
 from typing import Annotated
@@ -11,7 +11,6 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
 from tarn_api.backends import unit_of_work
 from tarn_api.schemas import (
-    ContentRefOut,
     CriterionBody,
     CriterionOut,
     DiagramCriterion,
@@ -58,7 +57,6 @@ from tarn_core.domain.content import (
 from tarn_core.domain.diagram import DiagramKind
 from tarn_core.domain.tenancy import Role
 from tarn_core.ids import (
-    CollegeId,
     CriterionId,
     KeyFileId,
     QuestionId,
@@ -85,9 +83,9 @@ _FAILED: dict[int | str, dict[str, object]] = {
     404: {"model": ErrorOut},
     422: {"model": ErrorOut, "description": "A rule is broken; the message says which."},
 }
-_OWNER_ONLY: dict[int | str, dict[str, object]] = {
+_TEACHERS: dict[int | str, dict[str, object]] = {
     **_FAILED,
-    403: {"model": ErrorOut, "description": "Another college owns it: copy it first."},
+    403: {"model": ErrorOut, "description": "Teachers only: the admin does not edit content."},
 }
 _UPLOAD_BODY = {
     "required": True,
@@ -194,8 +192,7 @@ def _criterion_body(c: RubricCriterion) -> CriterionBody:
             raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, detail="Unsupported criterion.")
 
 
-def _summary(q: Question, college_id: CollegeId) -> dict[str, object]:
-    copied = q.meta.copied_from
+def _summary(q: Question) -> dict[str, object]:
     return {
         "id": q.id,
         "version": q.meta.version,
@@ -205,20 +202,12 @@ def _summary(q: Question, college_id: CollegeId) -> dict[str, object]:
         "difficulty": q.difficulty.value,
         "category": q.category,
         "subject_id": q.subject_id,
-        "owning_college_id": q.meta.owning_college_id,
-        "owned": q.meta.owning_college_id == college_id,
-        "copied_from": None
-        if copied is None
-        else ContentRefOut(kind=copied.kind.value, id=copied.id, version=copied.version),
     }
 
 
-def _summary_out(s: QuestionSummary, college_id: CollegeId) -> QuestionSummaryOut:
+def _summary_out(s: QuestionSummary) -> QuestionSummaryOut:
     return QuestionSummaryOut(
-        **_summary(s.question, college_id),
-        subject_name=s.subject_name,
-        key_count=s.key_count,
-        owner_name=s.owner_name,
+        **_summary(s.question), subject_name=s.subject_name, key_count=s.key_count
     )
 
 
@@ -226,17 +215,16 @@ def _file_name(path: str) -> str:
     return path.rsplit("/", 1)[-1]
 
 
-def _detail_out(d: QuestionDetail, college_id: CollegeId) -> QuestionOut:
+def _detail_out(d: QuestionDetail) -> QuestionOut:
     q = d.question
     base = f"/api/v1/questions/{q.id}"
     glossary = d.glossary
     teacher_terms = list(glossary.teacher_terms) if glossary else []
     labels = list(glossary.reference_labels) if glossary else []
     return QuestionOut(
-        **_summary(q, college_id),
+        **_summary(q),
         subject_name=None if d.subject is None else d.subject.name,
         key_count=len(d.answers) + len(d.key_files),
-        owner_name=d.owner_name,
         reference_answers=[
             ReferenceAnswerOut(
                 id=a.id,
@@ -308,7 +296,7 @@ async def _upload_bytes(request: Request, limit: int) -> bytes:
 @router.get(
     "/questions",
     response_model=QuestionPageOut,
-    summary="Search the question bank (every college's questions)",
+    summary="Search my college's question bank",
     description="Every filter given must match; text filters ignore case. Ordered by code.",
 )
 def search_questions(
@@ -321,7 +309,6 @@ def search_questions(
     topic: Annotated[str, Query(max_length=200, description="The topic exactly.")] = "",
     subject_id: UUID | None = None,
     difficulty: Difficulty | None = None,
-    mine: Annotated[bool, Query(description="Only questions my college owns.")] = False,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> QuestionPageOut:
@@ -331,13 +318,12 @@ def search_questions(
         topic=topic.strip(),
         subject_id=None if subject_id is None else SubjectId(subject_id),
         difficulty=difficulty,
-        owner_id=who.college_id if mine else None,
     )
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        page = unit.bank.search(query, limit=limit, offset=offset)
+        page = unit.bank.search(who.college_id, query, limit=limit, offset=offset)
     return QuestionPageOut(
-        items=[_summary_out(s, who.college_id) for s in page.items],
+        items=[_summary_out(s) for s in page.items],
         total=page.total,
         limit=limit,
         offset=offset,
@@ -354,7 +340,8 @@ def list_topics(
 ) -> list[str]:
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        return list(unit.bank.topics(None if subject_id is None else SubjectId(subject_id)))
+        subject = None if subject_id is None else SubjectId(subject_id)
+        return list(unit.bank.topics(who.college_id, subject))
 
 
 # --- one question -----------------------------------------------------------------------------
@@ -364,8 +351,8 @@ def list_topics(
     "/questions",
     status_code=status.HTTP_201_CREATED,
     response_model=QuestionOut,
-    responses={**_FAILED, 409: {"model": ErrorOut, "description": "The code is taken."}},
-    summary="Create a question owned by my college, optionally with its key and rubric",
+    responses={**_TEACHERS, 409: {"model": ErrorOut, "description": "The code is taken."}},
+    summary="Create a question of my college, optionally with its key and rubric",
 )
 def create_question(
     body: QuestionCreateIn, who: PrincipalDep, backends: BackendsDep
@@ -384,7 +371,7 @@ def create_question(
             reference_answer=body.reference_answer,
             criteria=[_spec(c) for c in body.criteria],
         )
-        return _detail_out(unit.bank.detail(question.id), who.college_id)
+        return _detail_out(unit.bank.detail(who.college_id, question.id))
 
 
 @router.get(
@@ -396,14 +383,14 @@ def create_question(
 def get_question(question_id: UUID, who: PrincipalDep, backends: BackendsDep) -> QuestionOut:
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        return _detail_out(unit.bank.detail(QuestionId(question_id)), who.college_id)
+        return _detail_out(unit.bank.detail(who.college_id, QuestionId(question_id)))
 
 
 @router.put(
     "/questions/{question_id}",
     response_model=QuestionOut,
-    responses={**_OWNER_ONLY, 409: {"model": ErrorOut}},
-    summary="Save the next version of a question (owning college only)",
+    responses={**_TEACHERS, 409: {"model": ErrorOut}},
+    summary="Save the next version of a question",
     description="The subject never changes. If the marks change and a rubric exists, send the "
     "new `criteria` too: their weights must add up to the marks.",
 )
@@ -423,21 +410,7 @@ def update_question(
             category=body.category,
             criteria=None if body.criteria is None else [_spec(c) for c in body.criteria],
         )
-        return _detail_out(unit.bank.detail(QuestionId(question_id)), who.college_id)
-
-
-@router.post(
-    "/questions/{question_id}/copy",
-    status_code=status.HTTP_201_CREATED,
-    response_model=QuestionOut,
-    responses={404: {"model": ErrorOut}},
-    summary="Copy a question, with its keys, rubric, glossary and files, to my college",
-)
-def copy_question(question_id: UUID, who: PrincipalDep, backends: BackendsDep) -> QuestionOut:
-    with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        copy = unit.content.copy_question(who.college_id, who.user_id, QuestionId(question_id))
-        return _detail_out(unit.bank.detail(copy.id), who.college_id)
+        return _detail_out(unit.bank.detail(who.college_id, QuestionId(question_id)))
 
 
 # --- rubric, reference answers, glossary ------------------------------------------------------
@@ -446,8 +419,8 @@ def copy_question(question_id: UUID, who: PrincipalDep, backends: BackendsDep) -
 @router.put(
     "/questions/{question_id}/rubric",
     response_model=RubricOut,
-    responses=_OWNER_ONLY,
-    summary="Replace the rubric (owning college only)",
+    responses=_TEACHERS,
+    summary="Replace the rubric",
     description="Criteria with an `id` get a new version if changed; criteria left out are "
     "retired. The weights must add up to the question's marks (an empty list is allowed: a "
     "guidance-only key is marked by hand).",
@@ -463,7 +436,7 @@ def put_rubric(
             QuestionId(question_id),
             [_spec(c) for c in body.criteria],
         )
-        return _detail_out(unit.bank.detail(QuestionId(question_id)), who.college_id).rubric
+        return _detail_out(unit.bank.detail(who.college_id, QuestionId(question_id))).rubric
 
 
 def _answer_out(a: ReferenceAnswer) -> ReferenceAnswerOut:
@@ -480,8 +453,8 @@ def _answer_out(a: ReferenceAnswer) -> ReferenceAnswerOut:
     "/questions/{question_id}/reference-answers",
     status_code=status.HTTP_201_CREATED,
     response_model=ReferenceAnswerOut,
-    responses=_OWNER_ONLY,
-    summary="Add a reference answer (owning college only)",
+    responses=_TEACHERS,
+    summary="Add a reference answer",
 )
 def add_reference_answer(
     question_id: UUID, body: ReferenceAnswerIn, who: PrincipalDep, backends: BackendsDep
@@ -502,8 +475,8 @@ def add_reference_answer(
 @router.put(
     "/questions/{question_id}/reference-answers/{answer_id}",
     response_model=ReferenceAnswerOut,
-    responses=_OWNER_ONLY,
-    summary="Save the next version of a reference answer (owning college only)",
+    responses=_TEACHERS,
+    summary="Save the next version of a reference answer",
 )
 def edit_reference_answer(
     question_id: UUID,
@@ -529,8 +502,8 @@ def edit_reference_answer(
 @router.delete(
     "/questions/{question_id}/reference-answers/{answer_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=_OWNER_ONLY,
-    summary="Retire a reference answer (owning college only)",
+    responses=_TEACHERS,
+    summary="Retire a reference answer",
     description="Saves a retired version: it stops being listed, and scores that used it keep it.",
 )
 def retire_reference_answer(
@@ -547,8 +520,8 @@ def retire_reference_answer(
 @router.put(
     "/questions/{question_id}/glossary",
     response_model=GlossaryOut,
-    responses=_OWNER_ONLY,
-    summary="Set the glossary terms (owning college only)",
+    responses=_TEACHERS,
+    summary="Set the glossary terms",
     description="The glossary is the teacher's terms plus the labels of the reference "
     "diagrams, which are kept up to date automatically.",
 )
@@ -560,7 +533,7 @@ def put_glossary(
         unit.bank.set_glossary_terms(
             who.college_id, who.user_id, QuestionId(question_id), body.terms
         )
-        return _detail_out(unit.bank.detail(QuestionId(question_id)), who.college_id).glossary
+        return _detail_out(unit.bank.detail(who.college_id, QuestionId(question_id))).glossary
 
 
 # --- files ------------------------------------------------------------------------------------
@@ -570,9 +543,9 @@ def put_glossary(
     "/questions/{question_id}/key-files",
     status_code=status.HTTP_201_CREATED,
     response_model=KeyFileOut,
-    responses={**_OWNER_ONLY, 413: {"model": ErrorOut}},
+    responses={**_TEACHERS, 413: {"model": ErrorOut}},
     openapi_extra={"requestBody": _UPLOAD_BODY},
-    summary="Upload an answer key or sample (PDF or image; owning college only)",
+    summary="Upload an answer key or sample (PDF or image)",
     description="The request body is the file itself. The file type is read from its content. "
     "`confirm_no_student_data` must be true: keys are written by faculty and hold no student "
     "data (C9).",
@@ -613,7 +586,9 @@ def key_file_content(
 ) -> Response:
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        key_file, data = unit.bank.read_key_file(QuestionId(question_id), KeyFileId(file_id))
+        key_file, data = unit.bank.read_key_file(
+            who.college_id, QuestionId(question_id), KeyFileId(file_id)
+        )
     return _file_response(data, key_file.media_type, key_file.name)
 
 
@@ -621,9 +596,9 @@ def key_file_content(
     "/questions/{question_id}/diagrams",
     status_code=status.HTTP_201_CREATED,
     response_model=ReferenceDiagramOut,
-    responses={**_OWNER_ONLY, 413: {"model": ErrorOut}},
+    responses={**_TEACHERS, 413: {"model": ErrorOut}},
     openapi_extra={"requestBody": _PNG_BODY},
-    summary="Upload a reference diagram as PNG (owning college only)",
+    summary="Upload a reference diagram as PNG",
     description="The request body is the PNG. Its nodes, edges and labels are read from the "
     "picture by the worker (recognition `pending` until then); check and correct them through "
     "`/graph/edits`. `kind` says what it is (circuits, plots and labelled drawings are kept "
@@ -667,7 +642,7 @@ def diagram_content(
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
         diagram, data = unit.bank.read_reference_diagram(
-            QuestionId(question_id), ReferenceDiagramId(diagram_id)
+            who.college_id, QuestionId(question_id), ReferenceDiagramId(diagram_id)
         )
     return _file_response(data, "image/png", _file_name(diagram.png.value))
 

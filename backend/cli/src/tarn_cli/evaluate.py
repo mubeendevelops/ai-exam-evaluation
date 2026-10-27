@@ -96,7 +96,7 @@ def choose(
     if found is None:
         raise typer.BadParameter(f"unknown college {college!r}: {', '.join(codes)}")
     college_id = found.accounts.college_id
-    blueprints = sorted(mem.content.latest(ExamBlueprint), key=lambda b: b.title)
+    blueprints = sorted(mem.content.latest(college_id, ExamBlueprint), key=lambda b: b.title)
     if exam is None:
         raise typer.BadParameter("name the exam (--exam); `tarn exams` lists them")
     wanted = exam.casefold()
@@ -228,12 +228,12 @@ def evaluate_command(
 def exams_command() -> None:
     """List the exams and student USNs of the demo colleges that `tarn evaluate` can use."""
     mem, seeded = seeded_world()
-    names = {s.accounts.college_id: s.seed.institution_id for s in seeded}
     for s in seeded:
-        students = mem.students.list(s.accounts.college_id)
+        college_id = s.accounts.college_id
+        students = mem.students.list(college_id)
         typer.echo(f"{s.seed.institution_id}  {s.seed.name}")
         typer.echo(f"  USNs: {', '.join(st.usn for st in students)}")
-    typer.echo("exams:")
-    for b in sorted(mem.content.latest(ExamBlueprint), key=lambda b: b.title):
-        owner = names.get(b.meta.owning_college_id, "?")
-        typer.echo(f"  {b.title} [{b.course_code or '-'}] {b.total_marks} marks (owner {owner})")
+        exams = sorted(mem.content.latest(college_id, ExamBlueprint), key=lambda b: b.title)
+        typer.echo("  exams:" if exams else "  exams: none")
+        for b in exams:
+            typer.echo(f"    {b.title} [{b.course_code or '-'}] {b.total_marks} marks")

@@ -5,8 +5,9 @@ return another college's rows; writes of an item from another college raise
 ``TenantViolationError`` (PostgreSQL RLS enforces the same in P3). Missing rows raise
 ``NotFoundError``.
 
-The content repository is global: reads need no college, and every item records its
-owning college. Edit rights are checked by the content service, not here."""
+The content repository is a college repository too (D165): every method takes the college
+first, another college's item is ``NotFoundError`` and saving one is ``TenantViolationError``.
+Who may edit is checked by the services, not here."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -42,7 +43,7 @@ from tarn_core.ids import (
     UserId,
 )
 
-type GlobalItem = (
+type ContentItem = (
     Subject
     | Question
     | ReferenceAnswer
@@ -68,7 +69,6 @@ class QuestionQuery:
     topic: str = ""
     subject_id: SubjectId | None = None
     difficulty: Difficulty | None = None
-    owner_id: CollegeId | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -79,41 +79,51 @@ class QuestionPage:
 
 
 class ContentRepository(Protocol):
-    """Versioned global content. Saving never overwrites: (id, version) is written once."""
+    """A college's versioned content. Saving never overwrites: (id, version) is written once."""
 
-    def get[T: GlobalItem](self, kind: type[T], item_id: UUID, version: int | None = None) -> T:
+    def get[T: ContentItem](
+        self, college_id: CollegeId, kind: type[T], item_id: UUID, version: int | None = None
+    ) -> T:
         """The given version, or the latest when ``version`` is None."""
         ...
 
-    def versions[T: GlobalItem](self, kind: type[T], item_id: UUID) -> Sequence[T]:
-        """Every version, oldest first."""
+    def versions[T: ContentItem](
+        self, college_id: CollegeId, kind: type[T], item_id: UUID
+    ) -> Sequence[T]:
+        """Every version, oldest first (empty for another college's item)."""
         ...
 
-    def latest[T: GlobalItem](self, kind: type[T]) -> Sequence[T]:
-        """The newest version of every item of ``kind``, in no particular order."""
+    def latest[T: ContentItem](self, college_id: CollegeId, kind: type[T]) -> Sequence[T]:
+        """The newest version of every item of ``kind`` in the college, in no particular order."""
         ...
 
-    def for_question[T: QuestionPart](self, kind: type[T], question_id: QuestionId) -> Sequence[T]:
+    def for_question[T: QuestionPart](
+        self, college_id: CollegeId, kind: type[T], question_id: QuestionId
+    ) -> Sequence[T]:
         """Latest version of each item of ``kind`` that belongs to the question, leaving out
         items whose latest version is retired."""
         ...
 
     def search_questions(
-        self, query: QuestionQuery, *, limit: int, offset: int = 0
+        self, college_id: CollegeId, query: QuestionQuery, *, limit: int, offset: int = 0
     ) -> QuestionPage:
-        """Latest version of each matching question, ordered by code (then id)."""
+        """Latest version of each matching question of the college, ordered by code (then
+        id)."""
         ...
 
-    def topics(self, subject_id: SubjectId | None = None) -> Sequence[str]:
-        """Distinct non-empty topics of the latest question versions, sorted."""
+    def topics(self, college_id: CollegeId, subject_id: SubjectId | None = None) -> Sequence[str]:
+        """Distinct non-empty topics of the college's latest question versions, sorted."""
         ...
 
-    def key_counts(self, question_ids: Sequence[QuestionId]) -> Mapping[QuestionId, int]:
+    def key_counts(
+        self, college_id: CollegeId, question_ids: Sequence[QuestionId]
+    ) -> Mapping[QuestionId, int]:
         """Live reference answers plus key files, per question (0 when none)."""
         ...
 
-    def save(self, item: GlobalItem) -> None:
-        """Raises InvariantError if this (id, version) exists or skips a version."""
+    def save(self, college_id: CollegeId, item: ContentItem) -> None:
+        """Raises TenantViolationError if the item belongs to another college, InvariantError
+        if this (id, version) exists or skips a version."""
         ...
 
 
@@ -121,8 +131,8 @@ class CollegeRepository(Protocol):
     def get(self, college_id: CollegeId) -> College: ...
 
     def names(self, college_ids: Sequence[CollegeId]) -> Mapping[CollegeId, str]:
-        """Names of colleges, any college's: the owner of global content is public (R7).
-        Unknown ids are left out."""
+        """Names of colleges, any college's (the public college directory). Unknown ids are
+        left out."""
         ...
 
     def save(self, college: College) -> None: ...

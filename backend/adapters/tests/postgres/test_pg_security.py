@@ -31,6 +31,18 @@ def _refused(conn: psycopg.Connection[tuple[object, ...]], query: sql.SQL | sql.
     return False
 
 
+def _foreign_key_refused(
+    conn: psycopg.Connection[tuple[object, ...]], query: sql.SQL | sql.Composed
+) -> bool:
+    """True if the statement fails because a referenced row is not there (for this college)."""
+    try:
+        with conn.transaction():
+            conn.execute(query)
+    except errors.ForeignKeyViolation:
+        return True
+    return False
+
+
 def test_app_role_cannot_bypass_rls(test_database: TestDatabase) -> None:
     with test_database.owner() as conn:
         row = conn.execute(
@@ -154,48 +166,82 @@ def test_rls_cannot_be_switched_off(test_database: TestDatabase, world: World) -
         assert _refused(conn, sql.SQL("ALTER TABLE booklets DISABLE ROW LEVEL SECURITY"))
 
 
-def test_global_content_is_read_by_all_written_by_owner(
-    test_database: TestDatabase, world: World
-) -> None:
+def test_content_is_the_colleges_own(test_database: TestDatabase, world: World) -> None:
+    """D165: content tables are college tables. B can neither read A's paper or questions nor
+    version them, claim content for A, or attach its own content to A's question."""
     with test_database.owner() as owner:
         row = owner.execute(
-            "SELECT question_id FROM question_versions WHERE created_by = %s LIMIT 1",
-            (world.a.college.teacher.id,),
+            "SELECT question_id FROM question_versions WHERE college_id = %s LIMIT 1",
+            (world.a.id,),
         ).fetchone()
     assert row is not None
     qid = row[0]
+    b_teacher = str(world.b.college.teacher.id)
     with test_database.app(world.b.id) as conn:
-        # B reads A's questions and blueprint ...
-        count = conn.execute(
-            "SELECT count(*) FROM exam_blueprints WHERE id = %s", (world.blueprint.id,)
-        ).fetchone()
-        assert count == (1,)
-        # ... but cannot version, overwrite or delete them, nor claim content for A.
-        assert _refused(
-            conn,
-            sql.SQL(
-                "INSERT INTO question_versions (question_id, version, text, max_marks, "
-                "created_by) VALUES ({}, 2, 'hijacked', 2, {})"
-            ).format(sql.Literal(str(qid)), sql.Literal(str(world.b.college.teacher.id))),
+        for table, key in (("exam_blueprints", world.blueprint.id), ("questions", qid)):
+            count = conn.execute(
+                sql.SQL("SELECT count(*) FROM {} WHERE id = %s").format(sql.Identifier(table)),
+                (key,),
+            ).fetchone()
+            assert count == (0,), table
+        # A version of A's question written as A's: refused by row-level security; as B's:
+        # B sees no version 1 of it, so the version trigger refuses version 2.
+        version = sql.SQL(
+            "INSERT INTO question_versions (question_id, version, code, text, max_marks, "
+            "created_by, college_id) VALUES ({}, {}, 'X', 'hijacked', 2, {}, {})"
         )
+        q, teacher = sql.Literal(str(qid)), sql.Literal(b_teacher)
+        assert _refused(
+            conn, version.format(q, sql.Literal(2), teacher, sql.Literal(str(world.a.id)))
+        )
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            conn.execute(version.format(q, sql.Literal(2), teacher, sql.Literal(str(world.b.id))))
         assert _refused(
             conn,
             sql.SQL(
-                "INSERT INTO subjects (id, version, code, name, owning_college_id, created_by) "
+                "INSERT INTO subjects (id, version, code, name, college_id, created_by) "
                 "VALUES ({}, 1, 'X', 'X', {}, {})"
             ).format(
-                sql.Literal(str(uuid4())),
-                sql.Literal(str(world.a.id)),
-                sql.Literal(str(world.b.college.teacher.id)),
+                sql.Literal(str(uuid4())), sql.Literal(str(world.a.id)), sql.Literal(b_teacher)
             ),
         )
+        # B's own key on A's question: the composite foreign key says no.
+        assert _foreign_key_refused(
+            conn,
+            sql.SQL(
+                "INSERT INTO reference_answers (id, version, question_id, text, college_id, "
+                "created_by) VALUES ({}, 1, {}, 'hijacked', {}, {})"
+            ).format(
+                sql.Literal(str(uuid4())),
+                sql.Literal(str(qid)),
+                sql.Literal(str(world.b.id)),
+                sql.Literal(b_teacher),
+            ),
+        )
+        # B's booklet on A's paper: the same.
+        assert _foreign_key_refused(
+            conn,
+            sql.SQL(
+                "UPDATE booklets SET blueprint_id = {}, blueprint_version = 1 WHERE id = {}"
+            ).format(sql.Literal(str(world.blueprint.id)), sql.Literal(str(world.b.booklet.id))),
+        )
+        # Content rows are never updated or deleted by the application (append-only, D35).
+        for table in [t.name for t in m.CONTENT_TABLES]:
+            t = sql.Identifier(table)
+            assert _refused(conn, sql.SQL("UPDATE {} SET created_by = created_by").format(t))
+            assert _refused(conn, sql.SQL("DELETE FROM {}").format(t))
+
+
+def test_calibrations_are_read_by_all_written_by_the_operator(
+    test_database: TestDatabase, world: World
+) -> None:
+    with test_database.app(world.b.id) as conn:
         for table in GLOBAL_TABLES:
             t = sql.Identifier(table)
             column = sql.Identifier("version" if table == "scoring_calibrations" else "created_by")
+            conn.execute(sql.SQL("SELECT count(*) FROM {}").format(t))
             assert _refused(conn, sql.SQL("UPDATE {} SET {} = {}").format(t, column, column))
             assert _refused(conn, sql.SQL("DELETE FROM {}").format(t))
-        # Scoring calibrations are Tarn-operator content: colleges read them, never write.
-        conn.execute("SELECT count(*) FROM scoring_calibrations")
         assert _refused(
             conn,
             sql.SQL(

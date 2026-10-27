@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { components } from '../api/schema'
 import type { BlueprintDocument } from '../lib/blueprint'
-import { COLLEGE_ID, healthy, meOf, tokenOf } from '../test/fixtures'
+import { healthy, meOf, tokenOf } from '../test/fixtures'
 import { mockApi, type Call } from '../test/mockApi'
 import { renderApp } from '../test/render'
 
@@ -15,8 +15,6 @@ const physics: Subject = {
   id: SUBJECT_ID,
   code: 'PHY-501',
   name: 'Physics',
-  owning_college_id: COLLEGE_ID,
-  owned: true,
 }
 
 beforeEach(() => globalThis.sessionStorage.clear())
@@ -358,8 +356,6 @@ describe('subjects', () => {
           const made: Subject = {
             id: '55555555-5555-4555-8555-555555555555',
             ...body,
-            owning_college_id: COLLEGE_ID,
-            owned: true,
           }
           subjects.push(made)
           return { status: 201, json: made }

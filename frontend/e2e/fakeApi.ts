@@ -211,8 +211,6 @@ export class FakeApi {
             id: '33333333-3333-4333-8333-333333333333',
             code: 'PHY-501',
             name: 'Physics',
-            owning_college_id: '11111111-1111-4111-8111-111111111111',
-            owned: true,
           },
         ])
 
@@ -261,7 +259,6 @@ export class FakeApi {
   }
 }
 
-const COLLEGE = '11111111-1111-4111-8111-111111111111'
 const SUBJECT = '33333333-3333-4333-8333-333333333333'
 
 const QUESTIONS = [
@@ -278,10 +275,6 @@ const QUESTIONS = [
   subject_id: SUBJECT,
   subject_name: 'Physics',
   key_count: 1,
-  owning_college_id: COLLEGE,
-  owner_name: 'Synthetic College',
-  owned: true,
-  copied_from: null,
 }))
 
 function questionDetail(q: (typeof QUESTIONS)[number]) {

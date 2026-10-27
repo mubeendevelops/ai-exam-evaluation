@@ -88,11 +88,12 @@ def paper() -> Paper:
     subject = Subject(
         id=SubjectId(mem.ids.new()), meta=meta(college), code="SYN301", name="Synthetic LLM"
     )
-    mem.content.save(subject)
+    mem.content.save(college.id, subject)
     q1 = add_question(mem.content, college, mem.ids.new(), subject.id, Decimal(4))
     add_rubric(mem, college, q1)
     q2 = add_question(mem.content, college, mem.ids.new(), subject.id, Decimal(2))
     mem.content.save(
+        college.id,
         RubricCriterion(
             id=CriterionId(mem.ids.new()),
             meta=meta(college),
@@ -101,7 +102,7 @@ def paper() -> Paper:
             type=CriterionType.LLM,
             weight=Decimal(2),
             params=LlmParams(instructions="Give full credit when the answer argues the point."),
-        )
+        ),
     )
     blueprint = ExamBlueprint(
         id=BlueprintId(mem.ids.new()),
@@ -119,7 +120,7 @@ def paper() -> Paper:
             ),
         ),
     )
-    mem.content.save(blueprint)
+    mem.content.save(college.id, blueprint)
     booklet = (
         make_services(mem)
         .booklets.register(
@@ -207,7 +208,8 @@ def test_the_flag_follows_the_criterion_that_disagrees(paper: Paper) -> None:
     semantic = [
         c.criterion
         for c in score.criterion_scores
-        if paper.mem.content.get(RubricCriterion, c.criterion.id).type is CriterionType.SEMANTIC
+        if paper.mem.content.get(paper.booklet.college_id, RubricCriterion, c.criterion.id).type
+        is CriterionType.SEMANTIC
     ]
     assert flagged == semantic
 

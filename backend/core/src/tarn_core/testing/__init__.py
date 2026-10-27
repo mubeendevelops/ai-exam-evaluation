@@ -59,7 +59,7 @@ class InMemory:
     jobs: MemoryJobQueue = field(init=False)
     blobs: MemoryBlobStore = field(default_factory=MemoryBlobStore)
     page_source: MemoryPageSource = field(default_factory=MemoryPageSource)
-    content: MemoryContentRepository = field(default_factory=MemoryContentRepository)
+    content: MemoryContentRepository = field(init=False)
     calibrations: MemoryCalibrationStore = field(default_factory=MemoryCalibrationStore)
     scoring_calibrations: MemoryScoringCalibrationStore = field(
         default_factory=MemoryScoringCalibrationStore
@@ -75,6 +75,7 @@ class InMemory:
     def __post_init__(self) -> None:
         self.jobs = MemoryJobQueue(self.clock)
         self.identity = MemoryIdentityStore(self.log)
+        self.content = MemoryContentRepository(self.log)
         self.colleges = MemoryCollegeRepository(self.log)
         self.users = MemoryUserRepository(self.log)
         self.students = MemoryStudentRepository(self.log)

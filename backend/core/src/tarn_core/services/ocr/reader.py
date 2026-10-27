@@ -314,7 +314,9 @@ def booklet_lexicon(
 ) -> Lexicon:
     """Glossary terms and key vocabulary of every question in the booklet's pinned exam, plus
     the English word list. The line's own question is not known before segmentation (P12)."""
-    blueprint = content.get(ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version)
+    blueprint = content.get(
+        booklet.college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
+    )
     return exam_lexicon(content, blueprint, word_list)
 
 
@@ -326,10 +328,11 @@ def exam_lexicon(
     for slot in blueprint.slots():
         question_ids += [qid for _, qid, _ in leaves(slot) if qid is not None]
     terms: set[str] = set()
+    college_id = blueprint.meta.college_id
     for qid in dict.fromkeys(question_ids):
-        for glossary in content.for_question(Glossary, qid):
+        for glossary in content.for_question(college_id, Glossary, qid):
             terms.update(glossary.terms)
-        for answer in content.for_question(ReferenceAnswer, qid):
+        for answer in content.for_question(college_id, ReferenceAnswer, qid):
             if not answer.guidance_only:
                 terms.add(answer.text)
     return Lexicon(frozenset(terms), word_list)

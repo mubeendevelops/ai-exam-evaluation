@@ -1,4 +1,4 @@
-"""Exam blueprints: the structure of a question paper (C12). Global content.
+"""Exam blueprints: the structure of a question paper (C12). College content (D165).
 
 A section holds items; an item is one question slot or an OR group of slots. A section
 counts all its items, or the best N of them ("any N of M", C19). A slot either points at

@@ -144,11 +144,12 @@ def test_or_keeps_the_higher_scored_alternative() -> None:
 def mcq_paper(mem: InMemory, college: CollegeFixture) -> ExamBlueprint:
     """Section M: three 1-mark MCQs, a quarter mark off for a wrong attempted answer."""
     subject = Subject(id=SubjectId(mem.ids.new()), meta=meta(college), code="MCQ1", name="MCQ")
-    mem.content.save(subject)
+    mem.content.save(college.id, subject)
     slots = []
     for number, right in ((1, "3"), (2, "7"), (3, "12")):
         q = add_question(mem.content, college, mem.ids.new(), subject.id, Decimal(1))
         mem.content.save(
+            college.id,
             RubricCriterion(
                 id=CriterionId(mem.ids.new()),
                 meta=meta(college),
@@ -157,7 +158,7 @@ def mcq_paper(mem: InMemory, college: CollegeFixture) -> ExamBlueprint:
                 type=CriterionType.NUMERIC,
                 weight=Decimal(1),
                 params=NumericParams(expected=Decimal(right)),
-            )
+            ),
         )
         slots.append(
             QuestionSlot(
@@ -176,7 +177,7 @@ def mcq_paper(mem: InMemory, college: CollegeFixture) -> ExamBlueprint:
         mark_step=Decimal("0.25"),
         sections=(Section(label="M", rule=AnyN(3), items=tuple(slots)),),
     )
-    mem.content.save(blueprint)
+    mem.content.save(college.id, blueprint)
     return blueprint
 
 

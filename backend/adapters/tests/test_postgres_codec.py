@@ -24,7 +24,7 @@ from tarn_core.errors import (
     DomainError,
     InvariantError,
     NotFoundError,
-    NotOwnerError,
+    PermissionDeniedError,
     TenantViolationError,
 )
 from tarn_core.ids import ReferenceDiagramId
@@ -99,7 +99,7 @@ class _DriverError(Exception):
     ("sqlstate", "refused", "expected"),
     [
         ("42501", TenantViolationError, TenantViolationError),
-        ("42501", NotOwnerError, NotOwnerError),
+        ("42501", PermissionDeniedError, PermissionDeniedError),
         ("23503", TenantViolationError, NotFoundError),
         ("23505", TenantViolationError, InvariantError),
         ("23514", TenantViolationError, InvariantError),

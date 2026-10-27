@@ -1,5 +1,6 @@
-"""The question bank (P7): weights, edit vs copy, uploads, glossary, search filters."""
+"""The question bank (P7): weights, college privacy (D165), uploads, glossary, search filters."""
 
+from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any
@@ -7,7 +8,6 @@ from typing import Any
 import pytest
 
 from tarn_core.domain.audit import AuditAction
-from tarn_core.domain.common import global_blob_key
 from tarn_core.domain.content import (
     CriterionType,
     DiagramComponent,
@@ -21,9 +21,10 @@ from tarn_core.domain.content import (
     ReferenceAnswer,
     RubricCriterion,
     SemanticParams,
+    content_blob_key,
 )
 from tarn_core.domain.diagram import DiagramGraph, DiagramNode, NodeShape
-from tarn_core.errors import AlreadyExistsError, InvariantError, NotFoundError, NotOwnerError
+from tarn_core.errors import AlreadyExistsError, InvariantError, NotFoundError
 from tarn_core.ids import CriterionId
 from tarn_core.ports.repositories import QuestionQuery
 from tarn_core.services.question_bank import (
@@ -68,6 +69,9 @@ class World:
         self.maths = self.svc.subjects.create(
             self.a.id, self.a.teacher.id, code="MAT", name="Maths"
         )
+        self.b_subject = self.svc.subjects.create(
+            self.b.id, self.b.teacher.id, code="PHY", name="Physics"
+        )
 
     def question(self, code: str = "PHY-Q1", marks: str = "4", **kw: Any) -> Any:
         kw.setdefault("text", f"Explain {code}.")
@@ -100,10 +104,13 @@ def test_rubric_weights_must_add_up_to_the_max_marks(w: World) -> None:
     with pytest.raises(InvariantError, match=r"add up to 3\.5 marks, but the question carries 4"):
         w.question(criteria=[list_spec("2"), spec("Explains", "1.5")])
     # nothing was written, not even the question
-    assert w.mem.content.search_questions(QuestionQuery(), limit=10).total == 0
+    assert w.mem.content.search_questions(w.a.id, QuestionQuery(), limit=10).total == 0
 
     q = w.question(criteria=[list_spec("2"), spec("Explains", "2")])
-    assert sorted(c.weight for c in w.mem.content.for_question(RubricCriterion, q.id)) == [2, 2]
+    assert sorted(c.weight for c in w.mem.content.for_question(w.a.id, RubricCriterion, q.id)) == [
+        2,
+        2,
+    ]
 
 
 def test_all_four_criterion_types_with_their_parameters(w: World) -> None:
@@ -195,7 +202,7 @@ def test_bad_parameters_and_foreign_diagrams_are_refused(w: World) -> None:
 
 def test_editing_the_rubric_versions_changed_criteria_and_retires_removed_ones(w: World) -> None:
     q = w.question(criteria=[list_spec("2"), spec("Explains", "2")])
-    first = {c.label: c for c in w.mem.content.for_question(RubricCriterion, q.id)}
+    first = {c.label: c for c in w.mem.content.for_question(w.a.id, RubricCriterion, q.id)}
 
     w.svc.bank.set_rubric(
         w.a.id,
@@ -213,10 +220,10 @@ def test_editing_the_rubric_versions_changed_criteria_and_retires_removed_ones(w
             spec("Part two", "1"),
         ],
     )
-    live = {c.label: c for c in w.mem.content.for_question(RubricCriterion, q.id)}
+    live = {c.label: c for c in w.mem.content.for_question(w.a.id, RubricCriterion, q.id)}
     assert set(live) == {"Names the items", "Part one", "Part two"}
     assert live["Names the items"].meta.version == 1  # unchanged: no new version
-    history = w.mem.content.versions(RubricCriterion, first["Explains"].id)
+    history = w.mem.content.versions(w.a.id, RubricCriterion, first["Explains"].id)
     assert [(c.meta.version, c.retired) for c in history] == [(1, False), (2, True)]
 
     # Changing a weight makes a new version and keeps the old one.
@@ -235,7 +242,7 @@ def test_editing_the_rubric_versions_changed_criteria_and_retires_removed_ones(w
             spec("Part one", "1", id=live["Part one"].id),
         ],
     )
-    again = w.mem.content.versions(RubricCriterion, live["Names the items"].id)
+    again = w.mem.content.versions(w.a.id, RubricCriterion, live["Names the items"].id)
     assert [c.weight for c in again] == [2, 3]
 
 
@@ -249,7 +256,7 @@ def test_changing_the_marks_needs_the_rubric_with_it(w: World) -> None:
     }
     with pytest.raises(InvariantError, match="Change the rubric together with the marks"):
         w.svc.bank.update_question(w.a.id, w.a.teacher.id, q.id, max_marks=Decimal(6), **same)
-    live = w.mem.content.for_question(RubricCriterion, q.id)[0]
+    live = w.mem.content.for_question(w.a.id, RubricCriterion, q.id)[0]
     edited = w.svc.bank.update_question(
         w.a.id,
         w.a.teacher.id,
@@ -266,17 +273,18 @@ def test_changing_the_marks_needs_the_rubric_with_it(w: World) -> None:
     assert unchanged.meta.version == 2
 
 
-# --- edit vs copy -----------------------------------------------------------------------------
+# --- another college --------------------------------------------------------------------------
 
 
-def test_only_the_owner_edits_others_copy_with_everything_attached(w: World) -> None:
+def test_another_college_finds_nothing_to_read_or_edit(w: World) -> None:
     q = w.question(
         reference_answer="The model answer.",
         category="Optics",
         criteria=[list_spec("2"), spec("Explains", "2")],
     )
-    w.upload(q, keywords=["lens"])
+    kf = w.upload(q, keywords=["lens"])
     w.svc.bank.set_glossary_terms(w.a.id, w.a.teacher.id, q.id, ["focal length"])
+    answer = w.svc.bank.detail(w.a.id, q.id).answers[0]
     same: dict[str, Any] = {
         "code": q.code,
         "text": "Hijack",
@@ -285,16 +293,18 @@ def test_only_the_owner_edits_others_copy_with_everything_attached(w: World) -> 
         "category": "",
     }
     b, bank = w.b, w.svc.bank
-    with pytest.raises(NotOwnerError):
-        bank.update_question(b.id, b.teacher.id, q.id, **same)
-    with pytest.raises(NotOwnerError):
-        bank.add_reference_answer(b.id, b.teacher.id, q.id, text="mine")
-    with pytest.raises(NotOwnerError):
-        bank.set_rubric(b.id, b.teacher.id, q.id, [])
-    with pytest.raises(NotOwnerError):
-        bank.set_glossary_terms(b.id, b.teacher.id, q.id, ["x"])
-    with pytest.raises(NotOwnerError):
-        w.svc.bank.upload_key_file(
+    attempts: list[Callable[[], object]] = [
+        lambda: bank.detail(b.id, q.id),
+        lambda: bank.read_key_file(b.id, q.id, kf.id),
+        lambda: bank.update_question(b.id, b.teacher.id, q.id, **same),
+        lambda: bank.add_reference_answer(b.id, b.teacher.id, q.id, text="mine"),
+        lambda: bank.edit_reference_answer(
+            b.id, b.teacher.id, q.id, answer.id, text="mine", guidance_only=False
+        ),
+        lambda: bank.retire_reference_answer(b.id, b.teacher.id, q.id, answer.id),
+        lambda: bank.set_rubric(b.id, b.teacher.id, q.id, []),
+        lambda: bank.set_glossary_terms(b.id, b.teacher.id, q.id, ["x"]),
+        lambda: bank.upload_key_file(
             b.id,
             b.teacher.id,
             q.id,
@@ -302,27 +312,32 @@ def test_only_the_owner_edits_others_copy_with_everything_attached(w: World) -> 
             data=PDF,
             declared_type=None,
             no_student_data=True,
-        )
-
-    copy = w.svc.content.copy_question(b.id, b.teacher.id, q.id)
-    assert copy.meta.owning_college_id == b.id and copy.meta.copied_from == q.ref
-    assert copy.code == q.code  # B has no such code yet
-    detail = bank.detail(copy.id)
+        ),
+    ]
+    for attempt in attempts:
+        with pytest.raises(NotFoundError):
+            attempt()
+    assert bank.search(b.id, QuestionQuery(), limit=10).total == 0
+    detail = bank.detail(w.a.id, q.id)
     assert [a.text for a in detail.answers] == ["The model answer."]
-    assert len(detail.criteria) == 2 and detail.rubric_total == 4
-    assert [(f.name, f.keywords) for f in detail.key_files] == [("key.pdf", ("lens",))]
-    assert detail.key_files[0].blob == w.mem.content.for_question(KeyFile, q.id)[0].blob
     assert detail.glossary is not None and detail.glossary.teacher_terms == ("focal length",)
-    # ... and B now edits its own copy, not A's.
-    bank.add_reference_answer(b.id, b.teacher.id, copy.id, text="B's variant")
-    assert len(w.mem.content.for_question(ReferenceAnswer, q.id)) == 1
 
 
-def test_copy_gets_a_free_code_in_the_copying_college(w: World) -> None:
-    q = w.question("PHY-Q1")
-    mine = w.svc.content.copy_question(w.a.id, w.a.teacher.id, q.id)  # a copy in the same college
-    again = w.svc.content.copy_question(w.a.id, w.a.teacher.id, q.id)
-    assert (mine.code, again.code) == ("PHY-Q1-2", "PHY-Q1-3")
+def test_content_files_live_in_the_colleges_content_folder(w: World) -> None:
+    q = w.question()
+    kf = w.upload(q)
+    assert kf.blob.value.startswith(f"college/{w.a.id}/content/keys/{q.id}/")
+    d = w.svc.bank.upload_reference_diagram(
+        w.a.id,
+        w.a.teacher.id,
+        q.id,
+        file_name="flow.png",
+        data=PNG,
+        declared_type="image/png",
+        no_student_data=True,
+    )
+    assert d.png.value.startswith(f"college/{w.a.id}/content/diagrams/{q.id}/")
+    assert w.mem.blobs.get(kf.blob) == PDF and w.mem.blobs.get(d.png) == PNG
 
 
 def test_codes_are_unique_per_college_not_global(w: World) -> None:
@@ -332,12 +347,21 @@ def test_codes_are_unique_per_college_not_global(w: World) -> None:
     other = w.svc.bank.create_question(
         w.b.id,
         w.b.teacher.id,
-        subject_id=w.subject.id,
+        subject_id=w.b_subject.id,
         code="PHY-Q1",
         text="B's own",
         max_marks=Decimal(2),
     )
-    assert other.meta.owning_college_id == w.b.id
+    assert other.meta.college_id == w.b.id
+    with pytest.raises(InvariantError, match="no such subject"):
+        w.svc.bank.create_question(
+            w.b.id,
+            w.b.teacher.id,
+            subject_id=w.subject.id,  # A's subject
+            code="PHY-Q2",
+            text="B's own",
+            max_marks=Decimal(2),
+        )
     with pytest.raises(InvariantError):
         w.question(" ")
     with pytest.raises(InvariantError, match="no such subject"):
@@ -362,9 +386,12 @@ def test_reference_answers_edit_and_retire(w: World) -> None:
     )
     assert edited.meta.version == 2
     w.svc.bank.retire_reference_answer(w.a.id, w.a.teacher.id, q.id, a2.id)
-    live = w.svc.bank.detail(q.id).answers
+    live = w.svc.bank.detail(w.a.id, q.id).answers
     assert [(a.text, a.guidance_only) for a in live] == [("First, better", False)]
-    assert [a.retired for a in w.mem.content.versions(ReferenceAnswer, a2.id)] == [False, True]
+    assert [a.retired for a in w.mem.content.versions(w.a.id, ReferenceAnswer, a2.id)] == [
+        False,
+        True,
+    ]
     with pytest.raises(NotFoundError):
         w.svc.bank.retire_reference_answer(w.a.id, w.a.teacher.id, q.id, a2.id)
     assert w.mem.audit.events[-1].action is AuditAction.CONTENT_RETIRED
@@ -382,10 +409,12 @@ def test_pdf_and_image_keys_are_stored_and_read_back(w: World) -> None:
     ):
         kf = w.upload(q, file_name=name, data=data, declared_type=kind)
         assert kf.media_type == kind and kf.size_bytes == len(data)
-        stored = w.svc.bank.read_key_file(q.id, kf.id)
-        assert stored[1] == data and kf.blob.value.startswith(f"global/keys/{q.id}/")
+        stored = w.svc.bank.read_key_file(w.a.id, q.id, kf.id)
+        assert stored[1] == data and kf.blob.value.startswith(
+            f"college/{w.a.id}/content/keys/{q.id}/"
+        )
         assert w.mem.blobs.exists(kf.blob)
-    assert w.svc.bank.search(QuestionQuery(), limit=5).items[0].key_count == 3
+    assert w.svc.bank.search(w.a.id, QuestionQuery(), limit=5).items[0].key_count == 3
 
 
 def test_the_type_is_read_from_the_bytes(w: World) -> None:
@@ -421,8 +450,8 @@ def test_the_no_student_data_confirmation_is_required(w: World) -> None:
             no_student_data=False,
         )
     assert NO_STUDENT_DATA.startswith("Confirm that this file holds no student data")
-    assert w.mem.content.for_question(KeyFile, q.id) == []
-    assert not w.mem.blobs.exists(global_blob_key("keys", str(q.id)))
+    assert w.mem.content.for_question(w.a.id, KeyFile, q.id) == []
+    assert not w.mem.blobs.exists(content_blob_key(w.a.id, "keys", str(q.id)))
     # The record itself cannot exist without the confirmation.
     ok = w.upload(q)
     with pytest.raises(InvariantError):
@@ -475,8 +504,8 @@ def test_reference_diagrams_are_png_only(w: World) -> None:
         declared_type="image/png",
         no_student_data=True,
     )
-    assert d.png.value.endswith("/Flow_chart_v2_.PNG") and d.png.college_id is None
-    assert w.svc.bank.read_reference_diagram(q.id, d.id)[1] == PNG
+    assert d.png.value.endswith("/Flow_chart_v2_.PNG") and d.png.college_id == w.a.id
+    assert w.svc.bank.read_reference_diagram(w.a.id, q.id, d.id)[1] == PNG
 
 
 def test_file_names_cannot_escape_their_folder(w: World) -> None:
@@ -501,7 +530,7 @@ def test_a_failed_save_leaves_no_orphan_blob(w: World, monkeypatch: pytest.Monke
     q = w.question()
     boom = RuntimeError("database down")
 
-    def fail(_item: object) -> None:
+    def fail(_college: object, _item: object) -> None:
         raise boom
 
     monkeypatch.setattr(w.mem.content, "save", fail)
@@ -524,7 +553,9 @@ def test_glossary_is_teacher_terms_plus_reference_diagram_labels(w: World) -> No
         declared_type=None,
         no_student_data=True,
     )
-    assert w.svc.bank.detail(q.id).glossary is None  # no terms, and the graph has no labels yet
+    assert (
+        w.svc.bank.detail(w.a.id, q.id).glossary is None
+    )  # no terms, and the graph has no labels yet
 
     # The recognizer / the teacher fills the graph later (P14): a new diagram version.
     graph = DiagramGraph(
@@ -533,7 +564,7 @@ def test_glossary_is_teacher_terms_plus_reference_diagram_labels(w: World) -> No
             DiagramNode(id="n2", shape=NodeShape.PROCESS, label="read n"),
         )
     )
-    w.mem.content.save(replace(d, meta=replace(d.meta, version=2), graph=graph))
+    w.mem.content.save(w.a.id, replace(d, meta=replace(d.meta, version=2), graph=graph))
     g = w.svc.bank.set_glossary_terms(
         w.a.id, w.a.teacher.id, q.id, ["Read N", " flowchart ", "flowchart", ""]
     )
@@ -571,20 +602,20 @@ def test_filters_topic_keyword_code_subject_difficulty(w: World) -> None:
     w.svc.bank.create_question(
         w.b.id,
         w.b.teacher.id,
-        subject_id=w.subject.id,
+        subject_id=w.b_subject.id,
         code="PHY-B1",
         text="B's question.",
         max_marks=Decimal(1),
-        category="Optics",
+        category="Quantum",
     )
 
     def codes(**kw: Any) -> list[str]:
-        page = w.svc.bank.search(QuestionQuery(**kw), limit=20)
+        page = w.svc.bank.search(w.a.id, QuestionQuery(**kw), limit=20)
         assert page.total == len(page.items)
         return [i.question.code for i in page.items]
 
-    assert codes() == ["MAT-Q1", "PHY-B1", "PHY-Q1", "PHY-Q2"]  # ordered by code, all colleges
-    assert codes(subject_id=w.subject.id) == ["PHY-B1", "PHY-Q1", "PHY-Q2"]
+    assert codes() == ["MAT-Q1", "PHY-Q1", "PHY-Q2"]  # ordered by code, A's only
+    assert codes(subject_id=w.subject.id) == ["PHY-Q1", "PHY-Q2"]
     assert codes(difficulty=Difficulty.EASY) == ["MAT-Q1", "PHY-Q1"]
     assert codes(difficulty=Difficulty.EASY, subject_id=w.maths.id) == ["MAT-Q1"]
     assert codes(topic="ac circuits") == ["PHY-Q2"]  # exact topic, any case
@@ -594,38 +625,39 @@ def test_filters_topic_keyword_code_subject_difficulty(w: World) -> None:
     assert codes(keyword="lenz") == ["PHY-Q1"]  # question text
     assert codes(keyword="opposes") == ["PHY-Q1"]  # reference answer
     assert codes(keyword="electromag") == ["PHY-Q1"]  # topic
-    assert codes(keyword="PHY-B") == ["PHY-B1"]  # code
-    assert codes(owner_id=w.b.id) == ["PHY-B1"]
+    assert codes(keyword="PHY-Q2") == ["PHY-Q2"]  # code
+    assert codes(keyword="PHY-B") == []  # B's question is not in A's bank
     assert codes(keyword="lenz", difficulty=Difficulty.HARD) == []  # filters combine
-    assert list(w.svc.bank.topics()) == ["AC Circuits", "Calculus", "Electromagnetism", "Optics"]
-    assert list(w.svc.bank.topics(w.maths.id)) == ["Calculus"]
+    assert list(w.svc.bank.topics(w.a.id)) == ["AC Circuits", "Calculus", "Electromagnetism"]
+    assert list(w.svc.bank.topics(w.b.id)) == ["Quantum"]
+    assert list(w.svc.bank.topics(w.a.id, w.maths.id)) == ["Calculus"]
 
 
-def test_search_pages_names_owners_and_counts_keys(w: World) -> None:
+def test_search_pages_names_subjects_and_counts_keys(w: World) -> None:
     for i in range(5):
         w.question(f"Q-{i}")
     q = w.question("Q-9", reference_answer="Answer.")
     w.upload(q)
-    first = w.svc.bank.search(QuestionQuery(), limit=4)
-    rest = w.svc.bank.search(QuestionQuery(), limit=4, offset=4)
+    first = w.svc.bank.search(w.a.id, QuestionQuery(), limit=4)
+    rest = w.svc.bank.search(w.a.id, QuestionQuery(), limit=4, offset=4)
     assert (first.total, len(first.items), len(rest.items)) == (6, 4, 2)
     got = {i.question.code: i for i in [*first.items, *rest.items]}
     assert got["Q-9"].key_count == 2 and got["Q-0"].key_count == 0
-    assert got["Q-0"].owner_name == "Test College A" and got["Q-0"].subject_name == "Physics"
+    assert got["Q-0"].subject_name == "Physics"
 
 
 def test_retired_answers_stop_matching_and_counting(w: World) -> None:
     q = w.question(reference_answer="Unique phrase zebra.")
-    assert w.svc.bank.search(QuestionQuery(keyword="zebra"), limit=5).total == 1
-    answer = w.svc.bank.detail(q.id).answers[0]
+    assert w.svc.bank.search(w.a.id, QuestionQuery(keyword="zebra"), limit=5).total == 1
+    answer = w.svc.bank.detail(w.a.id, q.id).answers[0]
     w.svc.bank.retire_reference_answer(w.a.id, w.a.teacher.id, q.id, answer.id)
-    assert w.svc.bank.search(QuestionQuery(keyword="zebra"), limit=5).total == 0
-    assert w.svc.bank.search(QuestionQuery(), limit=5).items[0].key_count == 0
+    assert w.svc.bank.search(w.a.id, QuestionQuery(keyword="zebra"), limit=5).total == 0
+    assert w.svc.bank.search(w.a.id, QuestionQuery(), limit=5).items[0].key_count == 0
 
 
 def test_scoring_ignores_retired_criteria(w: World) -> None:
     q = w.question(criteria=[spec("A", "2"), spec("B", "2")])
-    live = {c.label: c for c in w.mem.content.for_question(RubricCriterion, q.id)}
+    live = {c.label: c for c in w.mem.content.for_question(w.a.id, RubricCriterion, q.id)}
     w.svc.bank.set_rubric(
         w.a.id,
         w.a.teacher.id,
@@ -634,5 +666,7 @@ def test_scoring_ignores_retired_criteria(w: World) -> None:
     )
     from tarn_core.domain.content import Rubric
 
-    rubric = Rubric(question=q, criteria=tuple(w.mem.content.for_question(RubricCriterion, q.id)))
+    rubric = Rubric(
+        question=q, criteria=tuple(w.mem.content.for_question(w.a.id, RubricCriterion, q.id))
+    )
     assert [c.label for c in rubric.criteria] == ["A"]

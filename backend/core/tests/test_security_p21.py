@@ -9,6 +9,7 @@ import pytest
 
 from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.common import BlobKey, college_blob_key, global_blob_key
+from tarn_core.domain.content import content_blob_key
 from tarn_core.domain.identity import TenantStatus
 from tarn_core.errors import (
     InvariantError,
@@ -105,13 +106,32 @@ def test_another_colleges_blob_is_refused_like_its_rows() -> None:
     assert inner.get(theirs) == b"B's page"
 
 
-def test_global_content_stays_shared_and_unbound_sessions_see_only_global() -> None:
+def test_content_files_are_the_colleges_and_tarn_files_are_read_only() -> None:
+    """Content lives under college/{id}/content/ since P23 (D165): another college's content
+    file is refused like its booklets. Tarn-wide global/ files are read by colleges, written
+    only outside a college (the operator)."""
     inner = MemoryBlobStore()
-    key = global_blob_key("keys", "q", "f", "key.pdf")
-    CollegeScopedBlobStore(inner, A).put(key, b"%PDF-", "application/pdf")
-    assert CollegeScopedBlobStore(inner, B).get(key) == b"%PDF-"
+    content = content_blob_key(A, "keys", "q", "f", "key.pdf")
+    CollegeScopedBlobStore(inner, A).put(content, b"%PDF-", "application/pdf")
+    for operation in (
+        lambda: CollegeScopedBlobStore(inner, B).get(content),
+        lambda: CollegeScopedBlobStore(inner, B).exists(content),
+        lambda: CollegeScopedBlobStore(inner, B).delete(content),
+    ):
+        with pytest.raises(TenantViolationError):
+            operation()
+    tarn = global_blob_key("keys", "q", "f", "legacy.pdf")
     unbound = CollegeScopedBlobStore(inner, None)
-    assert unbound.get(key) == b"%PDF-"
+    unbound.put(tarn, b"%PDF-", "application/pdf")
+    assert CollegeScopedBlobStore(inner, B).get(tarn) == b"%PDF-"
+    for write in (
+        lambda: CollegeScopedBlobStore(inner, A).put(tarn, b"x", "application/pdf"),
+        lambda: CollegeScopedBlobStore(inner, A).delete(tarn),
+        lambda: CollegeScopedBlobStore(inner, A).delete_prefix(global_blob_key("keys")),
+    ):
+        with pytest.raises(TenantViolationError):
+            write()
+    assert unbound.get(tarn) == b"%PDF-"
     with pytest.raises(TenantViolationError):
         unbound.get(college_blob_key(A, "booklet", "y", "p.jpg"))
 

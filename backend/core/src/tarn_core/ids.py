@@ -8,7 +8,7 @@ CollegeId = NewType("CollegeId", UUID)
 UserId = NewType("UserId", UUID)
 StudentId = NewType("StudentId", UUID)
 
-# Global content
+# Content: a college's own since P23 (D165); calibrations are Tarn-wide
 SubjectId = NewType("SubjectId", UUID)
 QuestionId = NewType("QuestionId", UUID)
 ReferenceAnswerId = NewType("ReferenceAnswerId", UUID)

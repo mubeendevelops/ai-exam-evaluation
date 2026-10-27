@@ -1,5 +1,5 @@
-"""The question bank over HTTP (P7): weights, edit vs copy, uploads, filters, downloads.
-In-memory backends; synthetic data."""
+"""The question bank over HTTP (P7): weights, college privacy (D165), uploads, filters,
+downloads. In-memory backends; synthetic data."""
 
 from typing import Any
 
@@ -32,14 +32,32 @@ def a(client: TestClient, world: AuthWorld) -> dict[str, str]:
 
 @pytest.fixture
 def b(client: TestClient, world: AuthWorld) -> dict[str, str]:
-    world.register("COLLEGE_B", "admin@b.example")
-    return _login(client, "COLLEGE_B", "admin@b.example", ADMIN_PASSWORD)
+    """College B's teacher."""
+    cid, admin = world.register("COLLEGE_B", "admin@b.example")
+    world.invite(cid, admin, "teacher@b.example")
+    return _login(client, "COLLEGE_B", "teacher@b.example", TEACHER_PASSWORD)
+
+
+@pytest.fixture
+def a_admin(client: TestClient, a: dict[str, str]) -> dict[str, str]:
+    return _login(client, "COLLEGE_A", "admin@a.example", ADMIN_PASSWORD)
+
+
+def _new_subject(client: TestClient, headers: dict[str, str]) -> str:
+    response = client.post(
+        f"{BASE}/subjects", json={"code": "PHY", "name": "Physics"}, headers=headers
+    )
+    return str(response.json()["id"])
 
 
 @pytest.fixture
 def subject(client: TestClient, a: dict[str, str]) -> str:
-    response = client.post(f"{BASE}/subjects", json={"code": "PHY", "name": "Physics"}, headers=a)
-    return str(response.json()["id"])
+    return _new_subject(client, a)
+
+
+@pytest.fixture
+def b_subject(client: TestClient, b: dict[str, str]) -> str:
+    return _new_subject(client, b)
 
 
 def semantic(label: str, weight: float, **extra: Any) -> dict[str, Any]:
@@ -109,7 +127,7 @@ def test_create_with_key_and_rubric_and_read_it_back(
         reference_answer="The model answer.",
         criteria=[listed(2.5), semantic("Explains", 1.5)],
     )
-    assert q["owned"] is True and q["owner_name"] and q["subject_name"] == "Physics"
+    assert q["subject_name"] == "Physics" and "owned" not in q and "owner_name" not in q
     assert q["key_count"] == 1 and q["version"] == 1
     assert q["rubric"]["complete"] is True and q["rubric"]["total"] == 4
     kinds = [c["criterion"]["type"] for c in q["rubric"]["criteria"]]
@@ -235,10 +253,10 @@ def test_bad_parameters_are_422(client: TestClient, a: dict[str, str], subject: 
         assert response.status_code == 422, criteria
 
 
-# --- edit vs copy -----------------------------------------------------------------------------
+# --- college privacy (D165) -------------------------------------------------------------------
 
 
-def test_the_owner_edits_everyone_else_copies(
+def test_another_college_finds_nothing_to_read_or_edit(
     client: TestClient, a: dict[str, str], b: dict[str, str], subject: str
 ) -> None:
     q = make(client, a, subject, reference_answer="Model.", criteria=[semantic("All", 4)])
@@ -252,9 +270,10 @@ def test_the_owner_edits_everyone_else_copies(
         "category": "",
     }
 
-    seen = client.get(f"{BASE}/questions/{qid}", headers=b).json()
-    assert seen["owned"] is False and seen["owner_name"]
+    key = client.get(f"{BASE}/questions/{qid}", headers=a).json()["key_files"][0]
     attempts: list[tuple[str, str, dict[str, Any]]] = [
+        ("get", f"/questions/{qid}", {}),
+        ("get", key["content_url"].removeprefix(BASE), {}),
         ("put", f"/questions/{qid}", {"json": edit}),
         ("put", f"/questions/{qid}/rubric", {"json": {"criteria": []}}),
         ("post", f"/questions/{qid}/reference-answers", {"json": {"text": "mine"}}),
@@ -273,34 +292,33 @@ def test_the_owner_edits_everyone_else_copies(
     for method, path, kw in attempts:
         kw.setdefault("headers", b)
         response = client.request(method, BASE + path, **kw)
-        assert response.status_code == 403, (path, response.text)
-        assert "copy it first" in response.json()["detail"]
+        assert response.status_code == 404, (path, response.text)
+        assert response.json() == {"detail": "Not found."}
+    assert client.post(f"{BASE}/questions/{qid}/copy", headers=b).status_code in (404, 405)
+    assert client.get(f"{BASE}/questions", headers=b).json()["total"] == 0
     assert client.get(f"{BASE}/questions/{qid}", headers=a).json()["text"] == q["text"]
 
-    copied = client.post(f"{BASE}/questions/{qid}/copy", headers=b)
-    assert copied.status_code == 201, copied.text
-    mine = copied.json()
-    assert mine["id"] != qid and mine["owned"] is True and mine["version"] == 1
-    assert mine["copied_from"]["id"] == qid and mine["code"] == q["code"]
-    assert [x["text"] for x in mine["reference_answers"]] == ["Model."]
-    assert mine["rubric"]["complete"] is True
-    assert [(f["name"], f["keywords"]) for f in mine["key_files"]] == [("key.pdf", ["lens"])]
-    # B edits its own copy; A's stays as it was.
-    own = client.put(
-        f"{BASE}/questions/{mine['id']}", json={**edit, "text": "B's wording"}, headers=b
+
+def test_teachers_edit_the_admin_reads(
+    client: TestClient, a: dict[str, str], a_admin: dict[str, str], subject: str
+) -> None:
+    q = make(client, a, subject, reference_answer="Model.")
+    assert client.get(f"{BASE}/questions/{q['id']}", headers=a_admin).status_code == 200
+    refused = client.post(
+        f"{BASE}/questions/{q['id']}/reference-answers", json={"text": "x"}, headers=a_admin
     )
-    assert own.status_code == 200 and own.json()["text"] == "B's wording"
-    assert client.get(f"{BASE}/questions/{qid}", headers=a).json()["text"] == q["text"]
-    assert client.put(f"{BASE}/questions/{mine['id']}", json=edit, headers=a).status_code == 403
+    assert refused.status_code == 403 and "teachers" in refused.json()["detail"]
+    created = client.post(f"{BASE}/questions", json=body(subject, code="ADM-1"), headers=a_admin)
+    assert created.status_code == 403
 
 
 def test_codes_are_unique_per_college(
-    client: TestClient, a: dict[str, str], b: dict[str, str], subject: str
+    client: TestClient, a: dict[str, str], b: dict[str, str], subject: str, b_subject: str
 ) -> None:
     make(client, a, subject, code="PHY-Q1")
     dup = client.post(f"{BASE}/questions", json=body(subject, code="phy-q1"), headers=a)
     assert dup.status_code == 409 and "already has a question with code" in dup.json()["detail"]
-    other = client.post(f"{BASE}/questions", json=body(subject, code="PHY-Q1"), headers=b)
+    other = client.post(f"{BASE}/questions", json=body(b_subject, code="PHY-Q1"), headers=b)
     assert other.status_code == 201  # another college may use the same code
     renamed = client.put(
         f"{BASE}/questions/{other.json()['id']}",
@@ -381,12 +399,13 @@ def test_pdf_and_image_keys_upload_and_download(
         out = response.json()
         assert (out["name"], out["media_type"], out["size_bytes"]) == (name, ctype, len(data))
         assert out["keywords"] == ["a", "b"]
-        for who in (a, b):  # global content: every college may read it
-            got = client.get(out["content_url"], headers=who)
-            assert got.status_code == 200 and got.content == data
-            assert got.headers["content-type"].startswith(ctype)
-            assert got.headers["x-content-type-options"] == "nosniff"
-            assert name in got.headers["content-disposition"]
+        got = client.get(out["content_url"], headers=a)
+        assert got.status_code == 200 and got.content == data
+        assert got.headers["content-type"].startswith(ctype)
+        assert got.headers["x-content-type-options"] == "nosniff"
+        assert name in got.headers["content-disposition"]
+        # Another college's file is not found (D165).
+        assert client.get(out["content_url"], headers=b).status_code == 404
     detail = client.get(f"{BASE}/questions/{q['id']}", headers=a).json()
     assert [f["name"] for f in detail["key_files"]] == ["k.pdf", "k.png", "k.jpg"]
     assert detail["key_count"] == 3
@@ -509,7 +528,8 @@ def test_filters_pagination_and_topics(
         category="Calculus",
         difficulty="easy",
     )
-    make(client, b, subject, code="PHY-B1", text="B's question.", category="Optics")
+    b_subject = _new_subject(client, b)
+    make(client, b, b_subject, code="PHY-B1", text="B's question.", category="Optics")
 
     def codes(**params: Any) -> list[str]:
         response = client.get(f"{BASE}/questions", params=params, headers=a)
@@ -518,23 +538,24 @@ def test_filters_pagination_and_topics(
         assert page["total"] == len(page["items"])
         return [i["code"] for i in page["items"]]
 
-    assert codes() == ["MAT-Q1", "PHY-B1", "PHY-Q1", "PHY-Q2"]
-    assert codes(subject_id=subject) == ["PHY-B1", "PHY-Q1", "PHY-Q2"]
+    assert codes() == ["MAT-Q1", "PHY-Q1", "PHY-Q2"]  # A's only (D165)
+    assert codes(subject_id=subject) == ["PHY-Q1", "PHY-Q2"]
     assert codes(difficulty="easy") == ["MAT-Q1", "PHY-Q1"]
     assert codes(topic="ac circuits") == ["PHY-Q2"]
     assert codes(code="q1") == ["MAT-Q1", "PHY-Q1"]
     assert codes(keyword="lenz") == ["PHY-Q1"]
     assert codes(keyword="opposes") == ["PHY-Q1"]
-    assert codes(mine="true") == ["MAT-Q1", "PHY-Q1", "PHY-Q2"]
+    assert codes(code="PHY-B") == []
     assert codes(keyword="lenz", difficulty="hard") == []
     assert (
         client.get(f"{BASE}/questions", params={"difficulty": "extreme"}, headers=a).status_code
         == 422
     )
     page = client.get(f"{BASE}/questions", params={"limit": 2, "offset": 1}, headers=a).json()
-    assert (page["total"], len(page["items"]), page["limit"], page["offset"]) == (4, 2, 2, 1)
+    assert (page["total"], len(page["items"]), page["limit"], page["offset"]) == (3, 2, 2, 1)
     first = page["items"][0]
-    assert first["owner_name"] and first["subject_name"] == "Physics" and first["key_count"] == 0
+    assert first["code"] == "PHY-Q1" and first["subject_name"] == "Physics"
+    assert first["key_count"] == 1
     assert any(
         i["key_count"] == 1 for i in client.get(f"{BASE}/questions", headers=a).json()["items"]
     )
@@ -542,8 +563,8 @@ def test_filters_pagination_and_topics(
         "AC Circuits",
         "Calculus",
         "Electromagnetism",
-        "Optics",
     ]
+    assert client.get(f"{BASE}/question-topics", headers=b).json() == ["Optics"]
     assert client.get(
         f"{BASE}/question-topics", params={"subject_id": maths["id"]}, headers=a
     ).json() == ["Calculus"]
@@ -558,5 +579,4 @@ def test_sign_in_is_required_and_unknown_ids_are_404(client: TestClient, a: dict
         assert client.request(method, BASE + path).status_code == 401
     missing = "00000000-0000-4000-8000-0000000000aa"
     assert client.get(f"{BASE}/questions/{missing}", headers=a).status_code == 404
-    assert client.post(f"{BASE}/questions/{missing}/copy", headers=a).status_code == 404
     assert client.get(f"{BASE}/questions/not-a-uuid", headers=a).status_code == 422

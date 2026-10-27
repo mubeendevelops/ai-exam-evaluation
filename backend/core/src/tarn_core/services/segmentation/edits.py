@@ -224,7 +224,7 @@ class SegmentEditor:
     ) -> EditResult:
         college_id = booklet.college_id
         blueprint = self._content.get(
-            ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
+            booklet.college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
         )
         known = {label for slot in blueprint.slots() for label, _, _ in leaves(slot)}
         pages = self._pages(booklet)

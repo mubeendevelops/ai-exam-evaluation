@@ -668,7 +668,9 @@ class ReviewService:
         )
 
     def _blueprint(self, booklet: Booklet) -> ExamBlueprint:
-        return self._content.get(ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version)
+        return self._content.get(
+            booklet.college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
+        )
 
 
 def _check_mark(mark: Decimal, max_marks: Decimal, step: Decimal) -> None:

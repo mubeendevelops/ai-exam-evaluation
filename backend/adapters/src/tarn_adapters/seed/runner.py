@@ -117,7 +117,6 @@ def _content(
         bank=QuestionBankService(
             content=scope.content,
             users=scope.users,
-            colleges=scope.colleges,
             blobs=scope.blobs,
             runtime=scope.runtime,
         ),

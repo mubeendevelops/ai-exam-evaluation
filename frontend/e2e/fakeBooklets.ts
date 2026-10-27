@@ -17,7 +17,6 @@ const STUDENT = {
   usn: 'TST001',
   class_section: 'A',
 }
-const COLLEGE = '11111111-1111-4111-8111-111111111111'
 
 // A 1 x 1 PNG: the page images are only stretched boxes in these tests.
 const PNG = Buffer.from(
@@ -385,9 +384,6 @@ export class FakeBooklets {
           section_count: 1,
           question_count: 2,
           unlinked_count: 0,
-          owning_college_id: COLLEGE,
-          owned: true,
-          copied_from: null,
         },
       ])
     }
@@ -404,9 +400,6 @@ export class FakeBooklets {
         section_count: 1,
         question_count: 2,
         unlinked_count: 0,
-        owning_college_id: COLLEGE,
-        owned: true,
-        copied_from: null,
         document: {
           sections: [
             {

@@ -236,12 +236,12 @@ class Stages:
         bank = QuestionBankService(
             content=session.content,
             users=session.users,
-            colleges=session.colleges,
             blobs=self.blobs,
             runtime=session.runtime,
         )
         return ReferenceDiagrams(
             content=session.content,
+            users=session.users,
             blobs=self.blobs,
             runtime=session.runtime,
             recognizers=self.recognizers,

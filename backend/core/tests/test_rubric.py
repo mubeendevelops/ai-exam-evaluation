@@ -20,7 +20,7 @@ from tarn_core.domain.content import (
 from tarn_core.errors import InvariantError
 from tarn_core.ids import CollegeId, CriterionId, GlossaryId, QuestionId, SubjectId, UserId
 
-META = ContentMeta(owning_college_id=CollegeId(UUID(int=1)), created_by=UserId(UUID(int=2)))
+META = ContentMeta(college_id=CollegeId(UUID(int=1)), created_by=UserId(UUID(int=2)))
 QUESTION = Question(
     id=QuestionId(UUID(int=10)),
     meta=META,

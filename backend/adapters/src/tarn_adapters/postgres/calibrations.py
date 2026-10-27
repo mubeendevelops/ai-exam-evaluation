@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import distinct_on
 from tarn_adapters.postgres import metadata as m
 from tarn_adapters.postgres.repositories import writing
 from tarn_core.domain.ocr import ContentClass, EngineCalibration
-from tarn_core.errors import NotOwnerError
+from tarn_core.errors import PermissionDeniedError
 
 _T = m.ocr_calibrations
 
@@ -66,7 +66,7 @@ class PgCalibrationStore:
         return None if row is None else _calibration(row)
 
     def save(self, calibration: EngineCalibration) -> None:
-        with writing(self._conn, f"calibration {calibration.engine}", NotOwnerError):
+        with writing(self._conn, f"calibration {calibration.engine}", PermissionDeniedError):
             self._conn.execute(
                 insert(_T).values(
                     id=calibration.id,

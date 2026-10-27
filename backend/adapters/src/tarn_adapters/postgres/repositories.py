@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any, NoReturn
 from uuid import UUID, uuid4
 
-from sqlalchemy import Connection, Row, Table, and_, delete, exists, func, or_, select
+from sqlalchemy import Connection, Row, Select, Table, and_, delete, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import distinct_on, insert
 from sqlalchemy.exc import DBAPIError
 
@@ -72,7 +72,6 @@ from tarn_core.errors import (
     DomainError,
     InvariantError,
     NotFoundError,
-    NotOwnerError,
     TenantViolationError,
 )
 from tarn_core.ids import (
@@ -99,7 +98,7 @@ from tarn_core.ids import (
     SubjectId,
     UserId,
 )
-from tarn_core.ports.repositories import GlobalItem, QuestionPage, QuestionPart, QuestionQuery
+from tarn_core.ports.repositories import ContentItem, QuestionPage, QuestionPart, QuestionQuery
 
 # SQLSTATEs translated into domain errors.
 INSUFFICIENT_PRIVILEGE = "42501"  # RLS refusal or missing grant
@@ -155,35 +154,18 @@ def _one(row: Row[Any] | None, what: str) -> Row[Any]:
     return row
 
 
-# --- global content ---------------------------------------------------------------------------
+# --- college content (D165) -------------------------------------------------------------------
 
 
-def _meta_values(meta: ContentMeta, *, owner: bool = True) -> dict[str, object]:
-    values: dict[str, object] = {
-        "version": meta.version,
-        "created_by": meta.created_by,
-        "copied_from_kind": None if meta.copied_from is None else meta.copied_from.kind.value,
-        "copied_from_id": None if meta.copied_from is None else meta.copied_from.id,
-        "copied_from_version": None if meta.copied_from is None else meta.copied_from.version,
-    }
-    if owner:
-        values["owning_college_id"] = meta.owning_college_id
-    return values
+def _meta_values(meta: ContentMeta) -> dict[str, object]:
+    return {"version": meta.version, "created_by": meta.created_by, "college_id": meta.college_id}
 
 
 def _meta(row: Row[Any]) -> ContentMeta:
-    copied = None
-    if row.copied_from_kind is not None:
-        copied = ContentRef(
-            kind=ContentKind(row.copied_from_kind),
-            id=row.copied_from_id,
-            version=row.copied_from_version,
-        )
     return ContentMeta(
         version=row.version,
-        owning_college_id=CollegeId(row.owning_college_id),
+        college_id=CollegeId(row.college_id),
         created_by=UserId(row.created_by),
-        copied_from=copied,
     )
 
 
@@ -193,7 +175,7 @@ class _Kind:
 
     table: Table
     encode: Callable[[Any], dict[str, object]]
-    decode: Callable[[Row[Any]], GlobalItem]
+    decode: Callable[[Row[Any]], ContentItem]
 
 
 def _subject_values(s: Subject) -> dict[str, object]:
@@ -368,7 +350,6 @@ _QUESTION_FROM = m.question_versions.join(
 )
 _QUESTION_COLUMNS = (
     m.question_versions,
-    m.questions.c.owning_college_id,
     m.questions.c.subject_id,
 )
 
@@ -387,27 +368,32 @@ def _question(r: Row[Any]) -> Question:
 
 
 class PgContentRepository:
-    """Global, versioned content. Reads see every college's items; a save is accepted only
-    for the college the session is bound to, and only if that college owns the item
-    (row-level security). Refusals raise ``NotOwnerError``."""
+    """A college's versioned content (D165). Every query names the college as well as
+    row-level security filtering on it, so another college's item is never found
+    (``NotFoundError``) and never written (``TenantViolationError``)."""
 
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
 
-    def get[T: GlobalItem](self, kind: type[T], item_id: UUID, version: int | None = None) -> T:
+    def _query(self, college_id: CollegeId, kind: type) -> tuple[Select[Any], Any, Any]:
+        """Rows of ``kind`` in the college, its version column and its decoder."""
         if kind is Question:
-            stmt = (
-                select(*_QUESTION_COLUMNS)
-                .select_from(_QUESTION_FROM)
-                .where(m.question_versions.c.question_id == item_id)
-            )
-            vcol = m.question_versions.c.version
-            decode: Callable[[Row[Any]], GlobalItem] = _question
-        else:
-            spec = _KINDS[kind]
-            stmt = select(spec.table).where(spec.table.c.id == item_id)
-            vcol = spec.table.c.version
-            decode = spec.decode
+            qv = m.question_versions
+            stmt = select(*_QUESTION_COLUMNS).select_from(_QUESTION_FROM)
+            return stmt.where(qv.c.college_id == college_id), qv.c.version, _question
+        spec = _KINDS[kind]
+        stmt = select(spec.table).where(spec.table.c.college_id == college_id)
+        return stmt, spec.table.c.version, spec.decode
+
+    @staticmethod
+    def _key(kind: type) -> Any:
+        return m.question_versions.c.question_id if kind is Question else _KINDS[kind].table.c.id
+
+    def get[T: ContentItem](
+        self, college_id: CollegeId, kind: type[T], item_id: UUID, version: int | None = None
+    ) -> T:
+        stmt, vcol, decode = self._query(college_id, kind)
+        stmt = stmt.where(self._key(kind) == item_id)
         stmt = stmt.where(vcol == version) if version is not None else stmt
         row = self._conn.execute(stmt.order_by(vcol.desc()).limit(1)).first()
         item = decode(_one(row, f"{kind.__name__} {item_id} v{version}"))
@@ -415,49 +401,26 @@ class PgContentRepository:
             raise NotFoundError(f"{kind.__name__} {item_id}")
         return item
 
-    def versions[T: GlobalItem](self, kind: type[T], item_id: UUID) -> Sequence[T]:
-        if kind is Question:
-            stmt = (
-                select(*_QUESTION_COLUMNS)
-                .select_from(_QUESTION_FROM)
-                .where(m.question_versions.c.question_id == item_id)
-                .order_by(m.question_versions.c.version)
-            )
-            decode: Callable[[Row[Any]], GlobalItem] = _question
-        else:
-            spec = _KINDS[kind]
-            stmt = (
-                select(spec.table).where(spec.table.c.id == item_id).order_by(spec.table.c.version)
-            )
-            decode = spec.decode
-        items = [decode(r) for r in self._conn.execute(stmt)]
-        return [i for i in items if isinstance(i, kind)]
+    def versions[T: ContentItem](
+        self, college_id: CollegeId, kind: type[T], item_id: UUID
+    ) -> Sequence[T]:
+        stmt, vcol, decode = self._query(college_id, kind)
+        rows = self._conn.execute(stmt.where(self._key(kind) == item_id).order_by(vcol))
+        return [i for i in (decode(r) for r in rows) if isinstance(i, kind)]
 
-    def latest[T: GlobalItem](self, kind: type[T]) -> Sequence[T]:
-        if kind is Question:
-            stmt = (
-                select(*_QUESTION_COLUMNS)
-                .select_from(_QUESTION_FROM)
-                .ext(distinct_on(m.question_versions.c.question_id))
-                .order_by(m.question_versions.c.question_id, m.question_versions.c.version.desc())
-            )
-            decode: Callable[[Row[Any]], GlobalItem] = _question
-        else:
-            spec = _KINDS[kind]
-            stmt = (
-                select(spec.table)
-                .ext(distinct_on(spec.table.c.id))
-                .order_by(spec.table.c.id, spec.table.c.version.desc())
-            )
-            decode = spec.decode
-        items = [decode(r) for r in self._conn.execute(stmt)]
-        return [i for i in items if isinstance(i, kind)]
+    def latest[T: ContentItem](self, college_id: CollegeId, kind: type[T]) -> Sequence[T]:
+        stmt, vcol, decode = self._query(college_id, kind)
+        key = self._key(kind)
+        rows = self._conn.execute(stmt.ext(distinct_on(key)).order_by(key, vcol.desc()))
+        return [i for i in (decode(r) for r in rows) if isinstance(i, kind)]
 
-    def for_question[T: QuestionPart](self, kind: type[T], question_id: QuestionId) -> Sequence[T]:
+    def for_question[T: QuestionPart](
+        self, college_id: CollegeId, kind: type[T], question_id: QuestionId
+    ) -> Sequence[T]:
         spec = _KINDS[kind]
         rows = self._conn.execute(
             select(spec.table)
-            .where(spec.table.c.question_id == question_id)
+            .where(spec.table.c.college_id == college_id, spec.table.c.question_id == question_id)
             .order_by(spec.table.c.seq)
         )
         latest: dict[UUID, Row[Any]] = {}
@@ -466,22 +429,27 @@ class PgContentRepository:
         items = [spec.decode(r) for r in latest.values()]
         return [i for i in items if isinstance(i, kind) and not getattr(i, "retired", False)]
 
-    def search_questions(
-        self, query: QuestionQuery, *, limit: int, offset: int = 0
-    ) -> QuestionPage:
-        qv, q = m.question_versions, m.questions
-        newest = select(qv.c.question_id, func.max(qv.c.version).label("v")).group_by(
-            qv.c.question_id
+    @staticmethod
+    def _newest_questions(college_id: CollegeId) -> Any:
+        qv = m.question_versions
+        newest_q = (
+            select(qv.c.question_id, func.max(qv.c.version).label("v"))
+            .where(qv.c.college_id == college_id)
+            .group_by(qv.c.question_id)
+            .subquery()
         )
-        newest_q = newest.subquery()
-        source = _QUESTION_FROM.join(
+        return _QUESTION_FROM.join(
             newest_q, and_(qv.c.question_id == newest_q.c.question_id, qv.c.version == newest_q.c.v)
         )
-        conditions = []
+
+    def search_questions(
+        self, college_id: CollegeId, query: QuestionQuery, *, limit: int, offset: int = 0
+    ) -> QuestionPage:
+        qv, q = m.question_versions, m.questions
+        source = self._newest_questions(college_id)
+        conditions = [qv.c.college_id == college_id]
         if query.subject_id is not None:
             conditions.append(q.c.subject_id == query.subject_id)
-        if query.owner_id is not None:
-            conditions.append(q.c.owning_college_id == query.owner_id)
         if query.difficulty is not None:
             conditions.append(qv.c.difficulty == query.difficulty.value)
         if query.topic:
@@ -495,6 +463,7 @@ class PgContentRepository:
         if query.keyword:
             ra, ra2 = m.reference_answers, m.reference_answers.alias("newer")
             live_answer = exists().where(
+                ra.c.college_id == college_id,
                 ra.c.question_id == q.c.id,
                 ra.c.text.icontains(query.keyword, autoescape=True),
                 ~ra.c.retired,
@@ -521,17 +490,13 @@ class PgContentRepository:
         )
         return QuestionPage(items=tuple(_question(r) for r in rows), total=total)
 
-    def topics(self, subject_id: SubjectId | None = None) -> Sequence[str]:
+    def topics(self, college_id: CollegeId, subject_id: SubjectId | None = None) -> Sequence[str]:
         qv, q = m.question_versions, m.questions
-        newest_q = (
-            select(qv.c.question_id, func.max(qv.c.version).label("v"))
-            .group_by(qv.c.question_id)
-            .subquery()
+        stmt = (
+            select(qv.c.category)
+            .select_from(self._newest_questions(college_id))
+            .where(qv.c.college_id == college_id, func.btrim(qv.c.category) != "")
         )
-        source = _QUESTION_FROM.join(
-            newest_q, and_(qv.c.question_id == newest_q.c.question_id, qv.c.version == newest_q.c.v)
-        )
-        stmt = select(qv.c.category).select_from(source).where(func.btrim(qv.c.category) != "")
         if subject_id is not None:
             stmt = stmt.where(q.c.subject_id == subject_id)
         found: dict[str, str] = {}
@@ -539,14 +504,16 @@ class PgContentRepository:
             found.setdefault(category.casefold(), category)
         return sorted(found.values(), key=str.casefold)
 
-    def key_counts(self, question_ids: Sequence[QuestionId]) -> Mapping[QuestionId, int]:
+    def key_counts(
+        self, college_id: CollegeId, question_ids: Sequence[QuestionId]
+    ) -> Mapping[QuestionId, int]:
         counts: dict[QuestionId, int] = dict.fromkeys(question_ids, 0)
         if not question_ids:
             return counts
         for table in (m.reference_answers, m.key_files):
             newest = (
                 select(table.c.id, func.max(table.c.version).label("v"))
-                .where(table.c.question_id.in_(question_ids))
+                .where(table.c.college_id == college_id, table.c.question_id.in_(question_ids))
                 .group_by(table.c.id)
                 .subquery()
             )
@@ -560,9 +527,10 @@ class PgContentRepository:
                 counts[QuestionId(question_id)] += n
         return counts
 
-    def save(self, item: GlobalItem) -> None:
+    def save(self, college_id: CollegeId, item: ContentItem) -> None:
         what = f"{type(item).__name__} {item.id} v{item.meta.version}"
-        with writing(self._conn, what, NotOwnerError):
+        _check_tenant(college_id, item.meta.college_id, what)
+        with writing(self._conn, what):
             if isinstance(item, Question):
                 if item.meta.version == 1:  # the identity row others reference by id (D30)
                     identity = _meta_values(item.meta)
@@ -580,7 +548,7 @@ class PgContentRepository:
                         max_marks=item.max_marks,
                         category=item.category,
                         difficulty=item.difficulty.value,
-                        **_meta_values(item.meta, owner=False),
+                        **_meta_values(item.meta),
                     )
                 )
                 return

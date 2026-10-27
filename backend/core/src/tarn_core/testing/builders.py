@@ -146,7 +146,7 @@ def add_college(mem: Backend, code: str, college_id: CollegeId | None = None) ->
 
 
 def meta(owner: CollegeFixture, version: int = 1) -> ContentMeta:
-    return ContentMeta(version=version, owning_college_id=owner.id, created_by=owner.teacher.id)
+    return ContentMeta(version=version, college_id=owner.id, created_by=owner.teacher.id)
 
 
 def add_question(
@@ -165,7 +165,7 @@ def add_question(
         text=text,
         max_marks=marks,
     )
-    content.save(question)
+    content.save(owner.id, question)
     return question
 
 
@@ -173,6 +173,7 @@ def add_rubric(mem: Backend, owner: CollegeFixture, question: Question) -> None:
     """Two criteria splitting the marks: a list criterion and a semantic one."""
     half = question.max_marks / 2
     mem.content.save(
+        owner.id,
         RubricCriterion(
             id=CriterionId(mem.ids.new()),
             meta=meta(owner),
@@ -184,9 +185,10 @@ def add_rubric(mem: Backend, owner: CollegeFixture, question: Question) -> None:
                 items=(ListItem(term="alpha"), ListItem(term="beta", synonyms=("b",))),
                 required_count=2,
             ),
-        )
+        ),
     )
     mem.content.save(
+        owner.id,
         RubricCriterion(
             id=CriterionId(mem.ids.new()),
             meta=meta(owner),
@@ -195,7 +197,7 @@ def add_rubric(mem: Backend, owner: CollegeFixture, question: Question) -> None:
             type=CriterionType.SEMANTIC,
             weight=question.max_marks - half,
             params=SemanticParams(reference_statement="The idea follows from alpha and beta."),
-        )
+        ),
     )
 
 
@@ -204,7 +206,7 @@ def ci_shaped_blueprint(mem: Backend, owner: CollegeFixture) -> ExamBlueprint:
     subject = Subject(
         id=SubjectId(mem.ids.new()), meta=meta(owner), code="SYN101", name="Synthetic Civics"
     )
-    mem.content.save(subject)
+    mem.content.save(owner.id, subject)
     sections = []
     number = 1
     for label, n, m, marks in (("A", 5, 7, "2"), ("B", 4, 7, "5"), ("C", 2, 3, "10")):
@@ -223,7 +225,7 @@ def ci_shaped_blueprint(mem: Backend, owner: CollegeFixture) -> ExamBlueprint:
         total_marks=Decimal(50),
         sections=tuple(sections),
     )
-    mem.content.save(blueprint)
+    mem.content.save(owner.id, blueprint)
     return blueprint
 
 
@@ -232,7 +234,7 @@ def ipr_shaped_blueprint(mem: Backend, owner: CollegeFixture) -> ExamBlueprint:
     subject = Subject(
         id=SubjectId(mem.ids.new()), meta=meta(owner), code="SYN201", name="Synthetic IP Law"
     )
-    mem.content.save(subject)
+    mem.content.save(owner.id, subject)
 
     def plain(number: int, marks: str) -> QuestionSlot:
         q = add_question(mem.content, owner, mem.ids.new(), subject.id, Decimal(marks))
@@ -259,7 +261,7 @@ def ipr_shaped_blueprint(mem: Backend, owner: CollegeFixture) -> ExamBlueprint:
             Section(label="C", items=(OrGroup(alternatives=(split(12), split(13))),)),
         ),
     )
-    mem.content.save(blueprint)
+    mem.content.save(owner.id, blueprint)
     return blueprint
 
 
@@ -281,7 +283,6 @@ def make_services(mem: Backend, scorers: Sequence[Scorer] | None = None) -> Serv
         bank=QuestionBankService(
             content=mem.content,
             users=mem.users,
-            colleges=mem.colleges,
             blobs=mem.blobs,
             runtime=rt,
         ),

@@ -91,7 +91,7 @@ def test_marks_outside_a_slot_are_rejected(ci: ExamBlueprint) -> None:
 
 
 def test_negative_marking() -> None:
-    meta = ContentMeta(owning_college_id=CollegeId(UUID(int=1)), created_by=UserId(UUID(int=2)))
+    meta = ContentMeta(college_id=CollegeId(UUID(int=1)), created_by=UserId(UUID(int=2)))
     q = QuestionId(UUID(int=3))
     slots = tuple(
         QuestionSlot(label=str(n), marks=Decimal(1), question_id=q, negative_marks=Decimal("0.25"))

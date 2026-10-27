@@ -1,10 +1,10 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { COLLEGE_ID, healthy, meOf, tokenOf } from '../test/fixtures'
+import { healthy, meOf, tokenOf } from '../test/fixtures'
 import { graph } from '../test/evaluateFixtures'
 import { mockApi, type Call } from '../test/mockApi'
-import { detail, OTHER_COLLEGE, SUBJECT_ID, summary, type Detail } from '../test/qnaFixtures'
+import { detail, SUBJECT_ID, summary, type Detail } from '../test/qnaFixtures'
 import { renderApp } from '../test/render'
 
 beforeEach(() => globalThis.sessionStorage.clear())
@@ -14,8 +14,6 @@ const physics = {
   id: SUBJECT_ID,
   code: 'PHY',
   name: 'Physics',
-  owning_college_id: COLLEGE_ID,
-  owned: true,
 }
 const maths = { ...physics, id: '44444444-4444-4444-8444-444444444444', code: 'MAT', name: 'Maths' }
 
@@ -33,6 +31,12 @@ function bank(extra: Parameters<typeof mockApi>[0] = {}, questions = [summary()]
   })
 }
 
+/** The college's shared admin account: it reads content, teachers author it (D165). */
+const AS_ADMIN = {
+  'POST /api/v1/auth/refresh': { json: tokenOf({ role: 'admin' }) },
+  'GET /api/v1/auth/me': { json: meOf({ role: 'admin' }) },
+}
+
 function opened(question: Detail = detail(), extra: Parameters<typeof mockApi>[0] = {}) {
   return bank({ [`GET /api/v1/questions/${question.id}`]: { json: question }, ...extra }, [
     summary({ id: question.id }),
@@ -48,7 +52,7 @@ async function openFirst() {
 }
 
 describe('repository browser', () => {
-  it('shows question cards with code, difficulty, marks, subject, keys and owner', async () => {
+  it('shows question cards with code, difficulty, marks, subject, keys and version', async () => {
     bank({}, [
       summary(),
       summary({
@@ -60,9 +64,6 @@ describe('repository browser', () => {
         subject_name: 'Maths',
         category: '',
         key_count: 0,
-        owned: false,
-        owner_name: 'Other College',
-        owning_college_id: OTHER_COLLEGE,
       }),
     ])
     renderApp('/qna')
@@ -72,13 +73,12 @@ describe('repository browser', () => {
     expect(within(first).getByText('Physics')).toBeVisible()
     expect(within(first).getByText('Electromagnetism')).toBeVisible()
     expect(within(first).getByText('2 reference keys')).toBeVisible()
-    expect(within(first).getByText('Your college')).toBeVisible()
+    expect(within(first).getByText('Version 1')).toBeVisible()
 
     const second = screen.getByRole('article', { name: 'Question MAT-Q1' })
     expect(within(second).getByText('Hard')).toBeVisible()
     expect(within(second).getByText('1 Mark')).toBeVisible()
     expect(within(second).getByText('0 reference keys')).toBeVisible()
-    expect(within(second).getByText('Owned by Other College')).toBeVisible()
     expect(screen.getByText(/Showing/)).toHaveTextContent('Showing 2 of 2 Questions')
   })
 
@@ -95,8 +95,7 @@ describe('repository browser', () => {
     await waitFor(() => expect(last().get('topic')).toBe('AC Circuits'))
     await user.selectOptions(screen.getByRole('combobox', { name: /Difficulty/ }), 'hard')
     await waitFor(() => expect(last().get('difficulty')).toBe('hard'))
-    await user.click(screen.getByRole('checkbox', { name: 'My college only' }))
-    await waitFor(() => expect(last().get('mine')).toBe('true'))
+    expect(screen.queryByRole('checkbox', { name: 'My college only' })).toBeNull()
     await user.type(screen.getByRole('searchbox', { name: 'Search questions' }), 'lenz')
     await waitFor(() => expect(last().get('keyword')).toBe('lenz'))
     await user.type(screen.getByRole('searchbox', { name: 'Code' }), 'phy-q')
@@ -105,7 +104,6 @@ describe('repository browser', () => {
       subject_id: SUBJECT_ID,
       topic: 'AC Circuits',
       difficulty: 'hard',
-      mine: 'true',
       keyword: 'lenz',
       code: 'phy-q',
       limit: '12',
@@ -203,7 +201,7 @@ describe('question detail', () => {
     expect(faculty).not.toHaveTextContent('SYNTHETIC')
   })
 
-  it('offers Edit and the upload actions to the owner, not Copy', async () => {
+  it('offers Edit and the upload actions to a teacher, and no Copy', async () => {
     opened()
     await openFirst()
     expect(screen.getByRole('button', { name: 'Edit question' })).toBeVisible()
@@ -214,11 +212,11 @@ describe('question detail', () => {
     expect(screen.queryByRole('note')).toBeNull()
   })
 
-  it('offers only Copy for another college’s question, naming the owner', async () => {
-    opened(detail({ owned: false, owner_name: 'Other College', owning_college_id: OTHER_COLLEGE }))
+  it('is read-only for the admin account (teachers author content)', async () => {
+    opened(detail(), AS_ADMIN)
     await openFirst()
-    expect(screen.getByRole('note')).toHaveTextContent('Owned by Other College')
-    expect(screen.getByRole('button', { name: 'Copy to my college' })).toBeVisible()
+    expect(screen.getByRole('note')).toHaveTextContent('the admin account reads them')
+    expect(screen.queryByRole('button', { name: 'Copy to my college' })).toBeNull()
     for (const name of [
       'Edit question',
       'Upload Answer Key',
@@ -232,23 +230,7 @@ describe('question detail', () => {
     }
     // reading stays possible: the files can be downloaded
     expect(screen.getByRole('button', { name: 'Download key.pdf' })).toBeVisible()
-  })
-
-  it('copies to my college and opens the copy', async () => {
-    const copy = detail({ id: 'q-9', code: 'PHY-Q1-2', owned: true })
-    const mock = opened(
-      detail({ owned: false, owner_name: 'Other College', owning_college_id: OTHER_COLLEGE }),
-      {
-        'POST /api/v1/questions/q-1/copy': { status: 201, json: copy },
-        'GET /api/v1/questions/q-9': { json: copy },
-      },
-    )
-    const user = await openFirst()
-    await user.click(screen.getByRole('button', { name: 'Copy to my college' }))
-    expect(await screen.findByText('Copied to your college as PHY-Q1-2.')).toBeVisible()
-    expect(mock.callsTo('POST /api/v1/questions/q-1/copy')).toHaveLength(1)
-    expect(await screen.findByRole('button', { name: 'Edit question' })).toBeVisible()
-    expect(screen.getByText('PHY-Q1-2')).toBeVisible()
+    expect(screen.queryByRole('button', { name: /New Question/ })).toBeNull()
   })
 
   it('flags weights that do not add up', async () => {
@@ -692,9 +674,10 @@ describe('reference diagram graph editor', () => {
     ...over,
   })
 
-  function withGraph(owned = true, extra: Parameters<typeof mockApi>[0] = {}) {
+  function withGraph(teacher = true, extra: Parameters<typeof mockApi>[0] = {}) {
     Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() })
-    return opened(detail({ owned }), {
+    return opened(detail(), {
+      ...(teacher ? {} : AS_ADMIN),
       [`GET ${REF}/graph`]: { json: referenceGraph() },
       [`GET ${REF}/content`]: { body: new Blob(['x'], { type: 'image/png' }) },
       ...extra,
@@ -757,12 +740,12 @@ describe('reference diagram graph editor', () => {
     expect(mock.callsTo(`POST ${REF}/recognize`)).toHaveLength(1)
   })
 
-  it('is view-only for a question another college owns', async () => {
+  it('is view-only for the admin account', async () => {
     withGraph(false)
     const user = await openFirst()
     await user.click(screen.getByRole('button', { name: 'View graph of coil.png' }))
     const dialog = await screen.findByRole('dialog', { name: 'coil.png' })
-    expect(await within(dialog).findByText(/belongs to another college/)).toBeVisible()
+    expect(await within(dialog).findByText(/the admin account reads them/)).toBeVisible()
     expect(within(dialog).queryByRole('button', { name: 'Read the picture again' })).toBeNull()
     expect(within(dialog).getByRole('button', { name: 'Add at centre' })).toBeDisabled()
   })

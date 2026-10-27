@@ -254,7 +254,7 @@ class BookletEvaluation:
         """What the booklet's stored scores say now, and its draft sheet when it is scored."""
         booklet = self._booklets.get(college_id, booklet_id)
         blueprint = self._content.get(
-            ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
+            booklet.college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
         )
         base = EvaluationResult(
             booklet_id=booklet_id,
@@ -345,7 +345,9 @@ class BookletEvaluation:
         criteria = []
         for c in score.criterion_scores:
             try:
-                name = self._content.get(RubricCriterion, c.criterion.id, c.criterion.version).label
+                name = self._content.get(
+                    score.college_id, RubricCriterion, c.criterion.id, c.criterion.version
+                ).label
             except NotFoundError:
                 name = "Criterion"
             criteria.append(

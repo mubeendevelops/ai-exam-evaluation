@@ -32,7 +32,7 @@ from tarn_core.services.scoring.text import (
 )
 from tarn_core.services.segmentation.similarity import TrigramEmbedder
 
-META = ContentMeta(owning_college_id=CollegeId(uuid4()), created_by=UserId(uuid4()))
+META = ContentMeta(college_id=CollegeId(uuid4()), created_by=UserId(uuid4()))
 
 
 def criterion(kind: CriterionType, params: CriterionParams, weight: str = "2") -> RubricCriterion:

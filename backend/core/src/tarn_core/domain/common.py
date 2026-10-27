@@ -54,7 +54,8 @@ class Box:
 
 
 class ContentKind(StrEnum):
-    """Kinds of versioned global content a score can depend on."""
+    """Kinds of versioned content a score can depend on (college content and the Tarn
+    operator's calibrations)."""
 
     SUBJECT = "subject"
     QUESTION = "question"
@@ -70,7 +71,7 @@ class ContentKind(StrEnum):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ContentRef:
-    """Points at one exact version of a global content item (CLAUDE.md rule 11)."""
+    """Points at one exact version of a content item (CLAUDE.md rule 11)."""
 
     kind: ContentKind
     id: UUID
@@ -95,7 +96,8 @@ class EngineRef:
 
 @dataclass(frozen=True, slots=True)
 class BlobKey:
-    """Object-store key: ``college/{id}/...`` for college data, ``global/...`` for content."""
+    """Object-store key: ``college/{id}/...`` for a college's data and content (content under
+    ``college/{id}/content/``), ``global/...`` for Tarn-wide files."""
 
     value: str
 

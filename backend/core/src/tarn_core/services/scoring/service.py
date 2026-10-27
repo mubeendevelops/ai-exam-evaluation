@@ -174,7 +174,7 @@ class ScoringService:
         None = the pipeline."""
         answer = self._booklets.get_answer(college_id, answer_id)
         booklet = self._booklets.get(college_id, answer.booklet_id)
-        content = self._load(booklet.blueprint, answer.slot_label)
+        content = self._load(college_id, booklet.blueprint, answer.slot_label)
         if answer_text is not None:
             texts = [AnswerText.from_text(answer_text)]
         else:
@@ -349,13 +349,17 @@ class ScoringService:
             colleges=colleges,
         )
 
-    def content_for(self, blueprint_ref: ContentRef, slot_label: str) -> ScoringContent:
-        return self._load(blueprint_ref, slot_label)
+    def content_for(
+        self, college_id: CollegeId, blueprint_ref: ContentRef, slot_label: str
+    ) -> ScoringContent:
+        return self._load(college_id, blueprint_ref, slot_label)
 
     # --- internals ------------------------------------------------------------------------
 
-    def _load(self, blueprint_ref: ContentRef, slot_label: str) -> ScoringContent:
-        return scoring_content(self._content, blueprint_ref, slot_label)
+    def _load(
+        self, college_id: CollegeId, blueprint_ref: ContentRef, slot_label: str
+    ) -> ScoringContent:
+        return scoring_content(self._content, college_id, blueprint_ref, slot_label)
 
     def _texts(
         self, college_id: CollegeId, booklet_id: BookletId, segment_ids: Sequence[SegmentId]
@@ -565,17 +569,18 @@ class ScoringService:
         """Lower-case words of every question, key, criterion and glossary on the paper."""
         if blueprint.ref not in self._vocabulary:
             words: set[str] = set()
+            cid = blueprint.meta.college_id
             for slot in blueprint.slots():
                 for _, question_id, _ in leaves(slot):
                     if question_id is None:
                         continue
-                    words.update(tokens(self._content.get(Question, question_id).text))
-                    for key in self._content.for_question(ReferenceAnswer, question_id):
+                    words.update(tokens(self._content.get(cid, Question, question_id).text))
+                    for key in self._content.for_question(cid, ReferenceAnswer, question_id):
                         words.update(tokens(key.text))
-                    for g in self._content.for_question(Glossary, question_id):
+                    for g in self._content.for_question(cid, Glossary, question_id):
                         for term in (*g.terms, *g.off_target_terms):
                             words.update(tokens(term))
-                    for cr in self._content.for_question(RubricCriterion, question_id):
+                    for cr in self._content.for_question(cid, RubricCriterion, question_id):
                         words.update(tokens(cr.label))
                         words.update(_criterion_words(cr))
             self._vocabulary[blueprint.ref] = frozenset(words)
@@ -583,19 +588,20 @@ class ScoringService:
 
 
 def scoring_content(
-    content: ContentRepository, blueprint_ref: ContentRef, slot_label: str
+    content: ContentRepository, college_id: CollegeId, blueprint_ref: ContentRef, slot_label: str
 ) -> ScoringContent:
     """What an answer to ``slot_label`` of this blueprint is scored against now: the latest
-    live key, rubric, glossaries and reference diagrams of the question."""
-    blueprint = content.get(ExamBlueprint, blueprint_ref.id, blueprint_ref.version)
+    live key, rubric, glossaries and reference diagrams of the question (all of the college's
+    own content)."""
+    blueprint = content.get(college_id, ExamBlueprint, blueprint_ref.id, blueprint_ref.version)
     _, question_id, _ = blueprint.leaf(slot_label)
-    question = content.get(Question, question_id)
-    keys = tuple(content.for_question(ReferenceAnswer, question_id))
-    criteria = tuple(content.for_question(RubricCriterion, question_id))
-    glossaries = tuple(content.for_question(Glossary, question_id))
+    question = content.get(college_id, Question, question_id)
+    keys = tuple(content.for_question(college_id, ReferenceAnswer, question_id))
+    criteria = tuple(content.for_question(college_id, RubricCriterion, question_id))
+    glossaries = tuple(content.for_question(college_id, Glossary, question_id))
     reference_diagrams = {
         cr.params.reference_diagram_id: content.get(
-            ReferenceDiagram, cr.params.reference_diagram_id
+            college_id, ReferenceDiagram, cr.params.reference_diagram_id
         )
         for cr in criteria
         if isinstance(cr.params, DiagramParams)

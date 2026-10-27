@@ -299,16 +299,17 @@ def test_the_exams_glossary_steers_the_choice(w: World) -> None:
     first = w.regions(no_glossary)[0]
     assert first.scores[0].lexicon == 0.0
     # A glossary on one of the exam's questions: the term is now known.
-    blueprint = w.mem.content.get(ExamBlueprint, w.blueprint_id)  # type: ignore[arg-type]
+    blueprint = w.mem.content.get(w.college.id, ExamBlueprint, w.blueprint_id)  # type: ignore[arg-type]
     question_id = next(blueprint.slots()).question_id
     assert question_id is not None
     w.mem.content.save(
+        w.college.id,
         Glossary(
             id=GlossaryId(w.mem.ids.new()),
-            meta=ContentMeta(owning_college_id=w.college.id, created_by=w.college.teacher.id),
+            meta=ContentMeta(college_id=w.college.id, created_by=w.college.teacher.id),
             question_id=question_id,
             teacher_terms=("Mitochondria",),
-        )
+        ),
     )
     again = w.ready(fake_pdf(1, "again"))
     read = w.read_all(w.reader(engines, regions=TWO_LINES[:1]), again)

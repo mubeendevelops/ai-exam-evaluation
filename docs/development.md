@@ -11,6 +11,9 @@
 make setup        # uv sync, npm ci, copy .env.example to .env
 make up           # build and start postgres+pgvector, minio, api, worker, frontend
 make migrate      # application database (tarn_app) and identity database (tarn_auth)
+# once, after migrating a database from before P23 (0012): move content files from global/ to
+# college/{id}/content/ and update their rows (owner role; safe to run again)
+# cd backend && uv run tarn content relocate-blobs
 make lint typecheck test
 ```
 
@@ -43,7 +46,7 @@ Credentials live in their own database, `tarn_identity`, reached only by the rol
 | `DEMO_ENG` | Demo Engineering College (synthetic) | AI & ML keys K-AI1, K-AI2, K-AI3 (28 questions) | `admin@demo-eng.example.test`, `ravi.menon@demo-eng.example.test`, `kavya.shetty@demo-eng.example.test` |
 | `DEMO_COM` | Demo Commerce College (synthetic) | QP-CI and QP-IPR questions and blueprints, Assignment 1 and 2 (35 questions, 4 blueprints) | `admin@demo-com.example.test`, `suresh.naik@demo-com.example.test`, `anita.desai@demo-com.example.test` |
 
-Development password: `Tarn-Demo-Seed-2026!` (printed by `make seed`). Each college has twelve fictitious students (USN `DEMOE0001` ... and `DEMOC0001` ...). Global content is visible to both colleges; the other college uses "Copy to my college" to edit it.
+Development password: `Tarn-Demo-Seed-2026!` (printed by `make seed`). Each college has twelve fictitious students (USN `DEMOE0001` ... and `DEMOC0001` ...). Each college sees only its own questions, keys and papers (D165, P23): DEMO_COM has the four papers, DEMO_ENG the AIML keys.
 
 Keys without a faculty source (QP-CI, QP-IPR, Assignment 1 and 2) are written for development and show the badge **SYNTHETIC – dev only, needs teacher validation** in the Q&A DB. The reference diagram PNGs come from the faculty keys K-AI1 and K-AI3 (`scripts/extract_seed_diagrams.sh`, needs `samples/` and poppler-utils); the cut PNGs are committed under `backend/adapters/src/tarn_adapters/seed/data/`, so a fresh clone does not need `samples/` to seed. Nothing in the seed comes from a student booklet.
 

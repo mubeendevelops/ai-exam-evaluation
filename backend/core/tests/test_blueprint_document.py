@@ -1,5 +1,5 @@
 """The blueprint document: validation with the real papers' shapes, clear messages, choice
-rules in the totals, the way back, and the service (create, edit by the owner, copy)."""
+rules in the totals, the way back, and the service (create, edit, college privacy)."""
 
 import copy
 import json
@@ -13,7 +13,7 @@ import pytest
 from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.blueprint import AnyN, EvaluationMethod, OrGroup
 from tarn_core.domain.content import ContentMeta
-from tarn_core.errors import InvariantError, NotOwnerError
+from tarn_core.errors import InvariantError, NotFoundError, PermissionDeniedError
 from tarn_core.ids import BlueprintId, CollegeId, UserId
 from tarn_core.services.blueprint_document import (
     DocumentReport,
@@ -281,36 +281,35 @@ def _document(subject_id: object) -> dict[str, Any]:
     return document
 
 
-def test_create_edit_copy_and_listing() -> None:
+def test_create_edit_and_listing_stay_in_the_college() -> None:
     mem, a, b, svc = _world()
     subject = svc.subjects.create(a.id, a.teacher.id, code=" SYN1 ", name=" Synthetic Civics ")
     assert (subject.code, subject.name) == ("SYN1", "Synthetic Civics")
 
     created = svc.blueprints.create(a.id, a.teacher.id, _document(subject.id))
-    assert created.meta.owning_college_id == a.id and created.meta.version == 1
+    assert created.meta.college_id == a.id and created.meta.version == 1
     assert created.total_marks == 50 and created.course_code == "SYN-CI"
     assert _last_action(mem) is AuditAction.CONTENT_CREATED
 
-    # Another college sees it (global) but cannot edit it.
-    assert [x.id for x in svc.blueprints.list()] == [created.id]
+    # Another college neither sees nor edits it (D165).
+    assert [x.id for x in svc.blueprints.list(a.id)] == [created.id]
+    assert svc.blueprints.list(b.id) == []
     edited_doc = _document(subject.id)
     edited_doc["title"] = "Renamed"
-    with pytest.raises(NotOwnerError):
+    with pytest.raises(NotFoundError):
         svc.blueprints.update(b.id, b.teacher.id, created.id, edited_doc)
+    with pytest.raises(NotFoundError):
+        svc.blueprints.get(b.id, created.id)
+    # The admin reads papers but does not author them.
+    with pytest.raises(PermissionDeniedError):
+        svc.blueprints.update(a.id, a.admin.id, created.id, edited_doc)
 
     edited = svc.blueprints.update(a.id, a.teacher.id, created.id, edited_doc)
     assert edited.meta.version == 2 and edited.title == "Renamed"
-    assert svc.blueprints.get(created.id, 1).title == "Synthetic paper, CI shape"
-    assert [x.title for x in svc.blueprints.list()] == ["Renamed"]
+    assert svc.blueprints.get(a.id, created.id, 1).title == "Synthetic paper, CI shape"
+    assert [x.title for x in svc.blueprints.list(a.id)] == ["Renamed"]
+    assert [x.meta.version for x in svc.blueprints.versions(a.id, created.id)] == [1, 2]
     assert _last_action(mem) is AuditAction.CONTENT_EDITED
-
-    mine = svc.blueprints.copy(b.id, b.teacher.id, created.id)
-    assert mine.id != created.id and mine.meta.owning_college_id == b.id
-    assert mine.meta.version == 1 and mine.meta.copied_from == edited.ref
-    assert mine.sections == edited.sections
-    assert _last_action(mem) is AuditAction.CONTENT_COPIED
-    svc.blueprints.update(b.id, b.teacher.id, mine.id, edited_doc)  # now b may edit its copy
-    assert len(svc.blueprints.list()) == 2
 
 
 def test_create_refuses_an_invalid_document_and_an_unknown_subject() -> None:
@@ -322,7 +321,7 @@ def test_create_refuses_an_invalid_document_and_an_unknown_subject() -> None:
         svc.blueprints.create(a.id, a.teacher.id, bad)
     with pytest.raises(InvariantError, match="no such subject"):
         svc.blueprints.create(a.id, a.teacher.id, _document("00000000-0000-4000-8000-0000000000ff"))
-    assert svc.blueprints.list() == []
+    assert svc.blueprints.list(a.id) == []
 
 
 def test_a_blueprint_with_unlinked_questions_cannot_register_booklets() -> None:
@@ -351,4 +350,4 @@ def _bid() -> BlueprintId:
 
 
 def _meta() -> ContentMeta:
-    return ContentMeta(owning_college_id=CollegeId(UUID(int=1)), created_by=UserId(UUID(int=2)))
+    return ContentMeta(college_id=CollegeId(UUID(int=1)), created_by=UserId(UUID(int=2)))

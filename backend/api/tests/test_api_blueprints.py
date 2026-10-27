@@ -1,7 +1,6 @@
-"""Subjects and exam blueprints over HTTP (P6): validate, create, edit as the owner, copy,
-listing, roles and cross-college behaviour. In-memory backends; synthetic data."""
+"""Subjects and exam blueprints over HTTP (P6): validate, create, edit, listing, roles and
+college privacy (D165). In-memory backends; synthetic data."""
 
-import copy
 import json
 from pathlib import Path
 from typing import Any
@@ -40,8 +39,15 @@ def a(client: TestClient, world: AuthWorld) -> dict[str, str]:
 
 @pytest.fixture
 def b(client: TestClient, world: AuthWorld) -> dict[str, str]:
-    world.register("COLLEGE_B", "admin@b.example")
-    return _login(client, "COLLEGE_B", "admin@b.example", ADMIN_PASSWORD)
+    """College B's teacher."""
+    cid, admin = world.register("COLLEGE_B", "admin@b.example")
+    world.invite(cid, admin, "teacher@b.example")
+    return _login(client, "COLLEGE_B", "teacher@b.example", TEACHER_PASSWORD)
+
+
+@pytest.fixture
+def a_admin(client: TestClient, a: dict[str, str]) -> dict[str, str]:
+    return _login(client, "COLLEGE_A", "admin@a.example", ADMIN_PASSWORD)
 
 
 def _subject(client: TestClient, headers: dict[str, str]) -> str:
@@ -52,14 +58,16 @@ def _subject(client: TestClient, headers: dict[str, str]) -> str:
     return str(response.json()["id"])
 
 
-def test_subjects_are_global_and_marked_owned(
+def test_subjects_belong_to_the_college(
     client: TestClient, a: dict[str, str], b: dict[str, str]
 ) -> None:
     subject_id = _subject(client, a)
     mine = client.get(f"{BASE}/subjects", headers=a).json()
     theirs = client.get(f"{BASE}/subjects", headers=b).json()
-    assert [(s["id"], s["owned"]) for s in mine] == [(subject_id, True)]
-    assert [(s["id"], s["owned"]) for s in theirs] == [(subject_id, False)]
+    assert [s["id"] for s in mine] == [subject_id] and "owned" not in mine[0]
+    assert theirs == []
+    other = _subject(client, b)  # the same code in another college is its own subject
+    assert other != subject_id
     blank = client.post(f"{BASE}/subjects", json={"code": " ", "name": "x"}, headers=a)
     assert blank.status_code == 422
 
@@ -102,7 +110,8 @@ def test_create_read_edit_versions(client: TestClient, a: dict[str, str]) -> Non
     created = client.post(f"{BASE}/blueprints", json=_example("ci", subject_id), headers=a)
     assert created.status_code == 201, created.text
     body = created.json()
-    assert (body["version"], body["owned"], body["total_marks"]) == (1, True, 50)
+    assert (body["version"], body["total_marks"]) == (1, 50)
+    assert "owned" not in body and "copied_from" not in body
     assert body["subject_name"] == "Physics" and body["unlinked_count"] == 17
     assert body["document"] == _example("ci", subject_id)  # the document comes back unchanged
 
@@ -142,33 +151,34 @@ def test_an_invalid_blueprint_is_refused_with_all_reasons(
     assert unknown.status_code == 422 and "no such subject" in unknown.json()["detail"]
 
 
-def test_other_colleges_see_it_but_copy_instead_of_editing(
+def test_another_college_finds_nothing_and_there_is_no_copy(
     client: TestClient, a: dict[str, str], b: dict[str, str]
 ) -> None:
     subject_id = _subject(client, a)
     original = client.post(f"{BASE}/blueprints", json=_example("ipr", subject_id), headers=a).json()
+    path = f"{BASE}/blueprints/{original['id']}"
 
-    seen = client.get(f"{BASE}/blueprints/{original['id']}", headers=b)
-    assert seen.status_code == 200 and seen.json()["owned"] is False
-    refused = client.put(
-        f"{BASE}/blueprints/{original['id']}", json=original["document"], headers=b
-    )
-    assert refused.status_code == 403 and "copy it first" in refused.json()["detail"]
+    assert client.get(path, headers=b).status_code == 404
+    assert client.get(f"{path}/versions", headers=b).status_code == 404
+    assert client.put(path, json=original["document"], headers=b).status_code == 404
+    assert client.post(f"{path}/copy", headers=b).status_code in (404, 405)
+    assert client.get(f"{BASE}/blueprints", headers=b).json() == []
+    # B's paper on A's subject: the subject is not found in B.
+    refused = client.post(f"{BASE}/blueprints", json=original["document"], headers=b)
+    assert refused.status_code == 422 and "no such subject" in refused.json()["detail"]
+    assert client.get(path, headers=a).json()["version"] == 1
 
-    copied = client.post(f"{BASE}/blueprints/{original['id']}/copy", headers=b)
-    assert copied.status_code == 201
-    mine = copied.json()
-    assert mine["id"] != original["id"] and mine["owned"] is True and mine["version"] == 1
-    assert mine["copied_from"]["id"] == original["id"]
-    assert mine["document"] == original["document"]
-    again = copy.deepcopy(mine["document"])
-    again["title"] = "B's own wording"
-    assert client.put(f"{BASE}/blueprints/{mine['id']}", json=again, headers=b).status_code == 200
-    assert client.put(f"{BASE}/blueprints/{mine['id']}", json=again, headers=a).status_code == 403
-    assert {x["id"] for x in client.get(f"{BASE}/blueprints", headers=a).json()} == {
-        original["id"],
-        mine["id"],
-    }
+
+def test_teachers_author_papers_the_admin_reads_them(
+    client: TestClient, a: dict[str, str], a_admin: dict[str, str]
+) -> None:
+    subject_id = _subject(client, a)
+    made = client.post(f"{BASE}/blueprints", json=_example("ci", subject_id), headers=a).json()
+    assert client.get(f"{BASE}/blueprints/{made['id']}", headers=a_admin).status_code == 200
+    edit = client.put(f"{BASE}/blueprints/{made['id']}", json=made["document"], headers=a_admin)
+    assert edit.status_code == 403 and "teachers" in edit.json()["detail"]
+    create = client.post(f"{BASE}/blueprints", json=made["document"], headers=a_admin)
+    assert create.status_code == 403
 
 
 def test_no_delete_endpoint_and_sign_in_required(client: TestClient, a: dict[str, str]) -> None:

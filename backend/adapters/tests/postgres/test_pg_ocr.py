@@ -18,7 +18,7 @@ from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.booklet import BookletStatus, LineReading, Page, Region, RegionKind
 from tarn_core.domain.common import Box, EngineRef
 from tarn_core.domain.ocr import ContentClass, EngineCalibration, ReadingScore, SelectorSettings
-from tarn_core.errors import EngineFailedError, NotOwnerError
+from tarn_core.errors import EngineFailedError, PermissionDeniedError
 from tarn_core.ids import RegionId
 from tarn_core.ports.engines import DetectedRegion, TableCell
 from tarn_core.ports.jobs import (
@@ -177,7 +177,7 @@ def _calibration(version: int) -> EngineCalibration:
 def test_the_application_role_reads_but_cannot_write_calibrations(
     test_database: TestDatabase, session: Opener, world: World
 ) -> None:
-    with pytest.raises(NotOwnerError), session(world.a.id) as s:
+    with pytest.raises(PermissionDeniedError), session(world.a.id) as s:
         s.calibrations.save(_calibration(1))
     owner = PostgresDatabase(test_database.owner_url, pool_size=1)
     try:

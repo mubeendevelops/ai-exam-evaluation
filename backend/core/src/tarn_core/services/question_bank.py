@@ -1,7 +1,7 @@
 """The question bank (P7): questions with their reference answers, rubric criteria, glossary,
-uploaded answer-key files and reference diagrams. All of it is global content (design decision
-3): any teacher creates for their college, only the owning college edits (each edit is a new
-version), everyone else copies (``ContentService.copy_question``).
+uploaded answer-key files and reference diagrams. All of it is the college's own content
+(D165): the college's teachers create and edit it (each edit is a new version); other colleges
+never see it. Files are stored under ``college/{id}/content/``.
 
 Nothing is deleted. Removing a reference answer or a criterion saves a *retired* version, so
 scores that used it keep its exact version (rule 11)."""
@@ -13,7 +13,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from tarn_core.domain.audit import AuditAction
-from tarn_core.domain.common import ContentRef, JsonValue, global_blob_key
+from tarn_core.domain.common import ContentRef, JsonValue
 from tarn_core.domain.content import (
     ContentMeta,
     CriterionParams,
@@ -28,6 +28,7 @@ from tarn_core.domain.content import (
     RubricCriterion,
     Subject,
     check_code,
+    content_blob_key,
 )
 from tarn_core.domain.diagram import DiagramKind
 from tarn_core.errors import AlreadyExistsError, InvariantError, NotFoundError
@@ -43,14 +44,13 @@ from tarn_core.ids import (
     UserId,
 )
 from tarn_core.ports.repositories import (
-    CollegeRepository,
     ContentRepository,
     QuestionQuery,
     UserRepository,
 )
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime, ref_json
-from tarn_core.services.content import ensure_can_edit
+from tarn_core.services.content import ensure_author
 from tarn_core.services.uploads import check_upload_image
 
 KEY_FILE_MAX_BYTES = 10 * 1024 * 1024
@@ -97,7 +97,6 @@ class CriterionSpec:
 class QuestionSummary:
     question: Question
     key_count: int
-    owner_name: str | None
     subject_name: str | None
 
 
@@ -110,7 +109,6 @@ class QuestionList:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class QuestionDetail:
     question: Question
-    owner_name: str | None
     subject: Subject | None
     answers: tuple[ReferenceAnswer, ...]
     criteria: tuple[RubricCriterion, ...]
@@ -150,34 +148,30 @@ class QuestionBankService:
         *,
         content: ContentRepository,
         users: UserRepository,
-        colleges: CollegeRepository,
         blobs: BlobStore,
         runtime: Runtime,
     ):
         self._content = content
         self._users = users
-        self._colleges = colleges
         self._blobs = blobs
         self._rt = runtime
 
     # ---- reading --------------------------------------------------------------------------
 
-    def topics(self, subject_id: SubjectId | None = None) -> Sequence[str]:
-        return self._content.topics(subject_id)
+    def topics(self, college_id: CollegeId, subject_id: SubjectId | None = None) -> Sequence[str]:
+        return self._content.topics(college_id, subject_id)
 
-    def search(self, query: QuestionQuery, *, limit: int, offset: int = 0) -> QuestionList:
-        page = self._content.search_questions(query, limit=limit, offset=offset)
-        counts = self._content.key_counts([q.id for q in page.items])
-        owners = self._colleges.names(
-            sorted({q.meta.owning_college_id for q in page.items}, key=str)
-        )
-        subjects = {s.id: s for s in self._content.latest(Subject)}
+    def search(
+        self, college_id: CollegeId, query: QuestionQuery, *, limit: int, offset: int = 0
+    ) -> QuestionList:
+        page = self._content.search_questions(college_id, query, limit=limit, offset=offset)
+        counts = self._content.key_counts(college_id, [q.id for q in page.items])
+        subjects = {s.id: s for s in self._content.latest(college_id, Subject)}
         return QuestionList(
             items=tuple(
                 QuestionSummary(
                     question=q,
                     key_count=counts.get(q.id, 0),
-                    owner_name=owners.get(q.meta.owning_college_id),
                     subject_name=subject.name if (subject := subjects.get(q.subject_id)) else None,
                 )
                 for q in page.items
@@ -185,23 +179,22 @@ class QuestionBankService:
             total=page.total,
         )
 
-    def detail(self, question_id: QuestionId) -> QuestionDetail:
-        question = self._content.get(Question, question_id)
+    def detail(self, college_id: CollegeId, question_id: QuestionId) -> QuestionDetail:
+        question = self._content.get(college_id, Question, question_id)
         try:
-            subject: Subject | None = self._content.get(Subject, question.subject_id)
+            subject: Subject | None = self._content.get(college_id, Subject, question.subject_id)
         except NotFoundError:
             subject = None
-        glossaries = self._content.for_question(Glossary, question_id)
-        owner = self._colleges.names([question.meta.owning_college_id])
+        part = self._content.for_question
+        glossaries = part(college_id, Glossary, question_id)
         return QuestionDetail(
             question=question,
-            owner_name=owner.get(question.meta.owning_college_id),
             subject=subject,
-            answers=tuple(self._content.for_question(ReferenceAnswer, question_id)),
-            criteria=tuple(self._content.for_question(RubricCriterion, question_id)),
+            answers=tuple(part(college_id, ReferenceAnswer, question_id)),
+            criteria=tuple(part(college_id, RubricCriterion, question_id)),
             glossary=glossaries[0] if glossaries else None,
-            key_files=tuple(self._content.for_question(KeyFile, question_id)),
-            diagrams=tuple(self._content.for_question(ReferenceDiagram, question_id)),
+            key_files=tuple(part(college_id, KeyFile, question_id)),
+            diagrams=tuple(part(college_id, ReferenceDiagram, question_id)),
         )
 
     # ---- questions ------------------------------------------------------------------------
@@ -222,14 +215,14 @@ class QuestionBankService:
     ) -> Question:
         """The question with, optionally, its first reference answer and rubric, in one step:
         everything is checked before anything is written."""
-        self._users.get(college_id, actor_id)
-        self._require_subject(subject_id)
+        ensure_author(self._users, college_id, actor_id)
+        self._require_subject(college_id, subject_id)
         code = code.strip()
         check_code(code)
         self._require_free_code(college_id, code)
         question = Question(
             id=self._rt.new_id(QuestionId),
-            meta=ContentMeta(owning_college_id=college_id, created_by=actor_id),
+            meta=self._meta(college_id, actor_id),
             subject_id=subject_id,
             code=code,
             text=text.strip(),
@@ -249,12 +242,12 @@ class QuestionBankService:
         )
         planned = self._plan_rubric(question, criteria, {}, college_id, actor_id)
 
-        self._content.save(question)
+        self._content.save(college_id, question)
         self._rt.record(
             college_id, actor_id, AuditAction.CONTENT_CREATED, after=ref_json(question.ref)
         )
         if answer is not None:
-            self._content.save(answer)
+            self._content.save(college_id, answer)
         self._save_rubric(college_id, actor_id, planned)
         return question
 
@@ -271,12 +264,10 @@ class QuestionBankService:
         category: str,
         criteria: Sequence[CriterionSpec] | None = None,
     ) -> Question:
-        """The next version of the question (the subject never changes: copy to move it).
+        """The next version of the question (the subject never changes).
         Changing the marks needs the rubric along with it, because its weights must add up to
         them; pass ``criteria`` to replace it."""
-        self._users.get(college_id, actor_id)
-        current = self._content.get(Question, question_id)
-        ensure_can_edit(college_id, current)
+        current = self._editable(college_id, actor_id, question_id)
         code = code.strip()
         check_code(code)
         if code.casefold() != current.code.casefold():
@@ -290,7 +281,7 @@ class QuestionBankService:
             difficulty=difficulty,
             category=" ".join(category.split()),
         )
-        live = self._live_criteria(question_id)
+        live = self._live_criteria(college_id, question_id)
         if criteria is None and max_marks != current.max_marks and live:
             total = sum((c.weight for c in live.values()), Decimal(0))
             raise InvariantError(
@@ -305,7 +296,7 @@ class QuestionBankService:
 
         changed = replace(edited, meta=current.meta) != current
         if changed:
-            self._content.save(edited)
+            self._content.save(college_id, edited)
             self._rt.record(
                 college_id,
                 actor_id,
@@ -328,17 +319,19 @@ class QuestionBankService:
     ) -> tuple[RubricCriterion, ...]:
         """Replace the question's criteria. Their weights must add up to the question's max
         marks (no criteria at all is allowed: a guidance-only key is marked by hand)."""
-        self._users.get(college_id, actor_id)
-        question = self._content.get(Question, question_id)
-        ensure_can_edit(college_id, question)
+        question = self._editable(college_id, actor_id, question_id)
         planned = self._plan_rubric(
-            question, criteria, self._live_criteria(question_id), college_id, actor_id
+            question, criteria, self._live_criteria(college_id, question_id), college_id, actor_id
         )
         self._save_rubric(college_id, actor_id, planned)
-        return tuple(self._content.for_question(RubricCriterion, question_id))
+        return tuple(self._content.for_question(college_id, RubricCriterion, question_id))
 
-    def _live_criteria(self, question_id: QuestionId) -> dict[CriterionId, RubricCriterion]:
-        return {c.id: c for c in self._content.for_question(RubricCriterion, question_id)}
+    def _live_criteria(
+        self, college_id: CollegeId, question_id: QuestionId
+    ) -> dict[CriterionId, RubricCriterion]:
+        return {
+            c.id: c for c in self._content.for_question(college_id, RubricCriterion, question_id)
+        }
 
     def _plan_rubric(
         self,
@@ -355,7 +348,9 @@ class QuestionBankService:
                 f"The rubric weights add up to {total} marks, but the question carries "
                 f"{question.max_marks}. Change the weights so that they add up."
             )
-        diagrams = {d.id for d in self._content.for_question(ReferenceDiagram, question.id)}
+        diagrams = {
+            d.id for d in self._content.for_question(college_id, ReferenceDiagram, question.id)
+        }
         seen: set[CriterionId] = set()
         save: list[RubricCriterion] = []
         for spec in specs:
@@ -414,7 +409,7 @@ class QuestionBankService:
 
     def _save_rubric(self, college_id: CollegeId, actor_id: UserId, plan: "_RubricPlan") -> None:
         for criterion in (*plan.save, *plan.retire):
-            self._content.save(criterion)
+            self._content.save(college_id, criterion)
         if plan.save or plan.retire:
             self._rt.record(
                 college_id,
@@ -441,8 +436,7 @@ class QuestionBankService:
         """``synthetic`` marks a key written for development (D18): it is shown as
         "SYNTHETIC - dev only, needs teacher validation". The web app does not set it; the
         development seed does."""
-        self._users.get(college_id, actor_id)
-        ensure_can_edit(college_id, self._content.get(Question, question_id))
+        self._editable(college_id, actor_id, question_id)
         answer = ReferenceAnswer(
             id=self._rt.new_id(ReferenceAnswerId),
             meta=self._meta(college_id, actor_id),
@@ -451,7 +445,7 @@ class QuestionBankService:
             guidance_only=guidance_only,
             synthetic=synthetic,
         )
-        self._content.save(answer)
+        self._content.save(college_id, answer)
         self._rt.record(
             college_id, actor_id, AuditAction.CONTENT_CREATED, after=ref_json(answer.ref)
         )
@@ -476,7 +470,7 @@ class QuestionBankService:
         )
         if replace(edited, meta=current.meta) == current:
             return current
-        self._content.save(edited)
+        self._content.save(college_id, edited)
         self._rt.record(
             college_id,
             actor_id,
@@ -499,7 +493,7 @@ class QuestionBankService:
             retired=True,
             meta=replace(current.meta, version=current.meta.version + 1, created_by=actor_id),
         )
-        self._content.save(retired)
+        self._content.save(college_id, retired)
         self._rt.record(
             college_id,
             actor_id,
@@ -515,9 +509,10 @@ class QuestionBankService:
         question_id: QuestionId,
         answer_id: ReferenceAnswerId,
     ) -> ReferenceAnswer:
-        self._users.get(college_id, actor_id)
-        ensure_can_edit(college_id, self._content.get(Question, question_id))
-        live = {a.id: a for a in self._content.for_question(ReferenceAnswer, question_id)}
+        self._editable(college_id, actor_id, question_id)
+        live = {
+            a.id: a for a in self._content.for_question(college_id, ReferenceAnswer, question_id)
+        }
         if answer_id not in live:
             raise NotFoundError(f"reference answer {answer_id}")
         return live[answer_id]
@@ -532,8 +527,7 @@ class QuestionBankService:
         terms: Sequence[str],
     ) -> Glossary | None:
         """The teacher's terms; the reference diagram labels are kept up to date beside them."""
-        self._users.get(college_id, actor_id)
-        ensure_can_edit(college_id, self._content.get(Question, question_id))
+        self._editable(college_id, actor_id, question_id)
         cleaned = _clean_list(terms, what="term", limit=MAX_TERMS, longest=MAX_TERM_LENGTH)
         return self._sync_glossary(college_id, actor_id, question_id, terms=cleaned)
 
@@ -553,8 +547,7 @@ class QuestionBankService:
     ) -> Glossary | None:
         """Names that contradict the key (the off-target guard, C13), e.g. "Congress" for a
         question on the Indian President."""
-        self._users.get(college_id, actor_id)
-        ensure_can_edit(college_id, self._content.get(Question, question_id))
+        self._editable(college_id, actor_id, question_id)
         cleaned = _clean_list(terms, what="term", limit=MAX_TERMS, longest=MAX_TERM_LENGTH)
         return self._sync_glossary(college_id, actor_id, question_id, off_target=cleaned)
 
@@ -567,11 +560,11 @@ class QuestionBankService:
         terms: tuple[str, ...] | None = None,
         off_target: tuple[str, ...] | None = None,
     ) -> Glossary | None:
-        existing = next(iter(self._content.for_question(Glossary, question_id)), None)
+        existing = next(iter(self._content.for_question(college_id, Glossary, question_id)), None)
         labels = _clean_list(
             [
                 node.label
-                for d in self._content.for_question(ReferenceDiagram, question_id)
+                for d in self._content.for_question(college_id, ReferenceDiagram, question_id)
                 for node in d.graph.nodes
                 if len(" ".join(node.label.split())) <= MAX_TERM_LENGTH
             ][:MAX_TERMS],
@@ -608,7 +601,7 @@ class QuestionBankService:
                 reference_labels=labels,
                 off_target_terms=wanted_off,
             )
-        self._content.save(glossary)
+        self._content.save(college_id, glossary)
         self._rt.record(
             college_id,
             actor_id,
@@ -634,8 +627,7 @@ class QuestionBankService:
     ) -> KeyFile:
         """An answer key or sample as PDF or image. The uploader must confirm it holds no
         student data (C9); the type is read from the bytes, not trusted from the name."""
-        self._users.get(college_id, actor_id)
-        ensure_can_edit(college_id, self._content.get(Question, question_id))
+        self._editable(college_id, actor_id, question_id)
         media_type = self._checked_upload(
             data,
             declared_type,
@@ -654,13 +646,13 @@ class QuestionBankService:
             media_type=media_type,
             size_bytes=len(data),
             sha256=hashlib.sha256(data).hexdigest(),
-            blob=global_blob_key("keys", str(question_id), str(file_id), name),
+            blob=content_blob_key(college_id, "keys", str(question_id), str(file_id), name),
             keywords=_clean_list(
                 keywords, what="keyword", limit=MAX_KEYWORDS, longest=MAX_KEYWORD_LENGTH
             ),
             no_student_data_confirmed=True,
         )
-        self._store(data, media_type, key_file)
+        self._store(college_id, data, media_type, key_file)
         self._rt.record(
             college_id,
             actor_id,
@@ -684,8 +676,7 @@ class QuestionBankService:
         """A reference diagram as PNG (U5 Q14). Its nodes and edges are read from the picture
         by the recognizer (the ``diagram.reference`` job, P14) and the teacher edits them;
         until then the graph is empty (``pending``)."""
-        self._users.get(college_id, actor_id)
-        ensure_can_edit(college_id, self._content.get(Question, question_id))
+        self._editable(college_id, actor_id, question_id)
         self._checked_upload(
             data,
             declared_type,
@@ -699,12 +690,16 @@ class QuestionBankService:
             id=diagram_id,
             meta=self._meta(college_id, actor_id),
             question_id=question_id,
-            png=global_blob_key(
-                "diagrams", str(question_id), str(diagram_id), safe_file_name(file_name)
+            png=content_blob_key(
+                college_id,
+                "diagrams",
+                str(question_id),
+                str(diagram_id),
+                safe_file_name(file_name),
             ),
             kind=kind,
         )
-        self._store(data, "image/png", diagram)
+        self._store(college_id, data, "image/png", diagram)
         self._rt.record(
             college_id,
             actor_id,
@@ -714,21 +709,28 @@ class QuestionBankService:
         self._sync_glossary(college_id, actor_id, question_id)
         return diagram
 
-    def read_key_file(self, question_id: QuestionId, file_id: KeyFileId) -> tuple[KeyFile, bytes]:
+    def read_key_file(
+        self, college_id: CollegeId, question_id: QuestionId, file_id: KeyFileId
+    ) -> tuple[KeyFile, bytes]:
         found = next(
-            (f for f in self._content.for_question(KeyFile, question_id) if f.id == file_id), None
+            (
+                f
+                for f in self._content.for_question(college_id, KeyFile, question_id)
+                if f.id == file_id
+            ),
+            None,
         )
         if found is None:
             raise NotFoundError(f"key file {file_id}")
         return found, self._blobs.get(found.blob)
 
     def read_reference_diagram(
-        self, question_id: QuestionId, diagram_id: ReferenceDiagramId
+        self, college_id: CollegeId, question_id: QuestionId, diagram_id: ReferenceDiagramId
     ) -> tuple[ReferenceDiagram, bytes]:
         found = next(
             (
                 d
-                for d in self._content.for_question(ReferenceDiagram, question_id)
+                for d in self._content.for_question(college_id, ReferenceDiagram, question_id)
                 if d.id == diagram_id
             ),
             None,
@@ -765,12 +767,18 @@ class QuestionBankService:
             )
         return found
 
-    def _store(self, data: bytes, media_type: str, record: KeyFile | ReferenceDiagram) -> None:
+    def _store(
+        self,
+        college_id: CollegeId,
+        data: bytes,
+        media_type: str,
+        record: KeyFile | ReferenceDiagram,
+    ) -> None:
         """Blob first, then the record; a failed record leaves no orphan behind."""
         blob = record.blob if isinstance(record, KeyFile) else record.png
         self._blobs.put(blob, data, media_type)
         try:
-            self._content.save(record)
+            self._content.save(college_id, record)
         except Exception:
             self._blobs.delete(blob)
             raise
@@ -778,19 +786,28 @@ class QuestionBankService:
     # ---- helpers --------------------------------------------------------------------------
 
     def _meta(self, college_id: CollegeId, actor_id: UserId) -> ContentMeta:
-        return ContentMeta(owning_college_id=college_id, created_by=actor_id)
+        return ContentMeta(college_id=college_id, created_by=actor_id)
 
-    def _require_subject(self, subject_id: SubjectId) -> None:
+    def _editable(
+        self, college_id: CollegeId, actor_id: UserId, question_id: QuestionId
+    ) -> Question:
+        """The question, if the actor may edit the college's content. Looked up first, so
+        another college's id is "not found" whoever asks (D174)."""
+        question = self._content.get(college_id, Question, question_id)
+        ensure_author(self._users, college_id, actor_id)
+        return question
+
+    def _require_subject(self, college_id: CollegeId, subject_id: SubjectId) -> None:
         try:
-            self._content.get(Subject, subject_id)
+            self._content.get(college_id, Subject, subject_id)
         except NotFoundError:
             raise InvariantError(
                 "subject: no such subject; pick one from the list or create it first"
             ) from None
 
     def _require_free_code(self, college_id: CollegeId, code: str) -> None:
-        query = QuestionQuery(code=code, exact_code=True, owner_id=college_id)
-        if self._content.search_questions(query, limit=1).total:
+        query = QuestionQuery(code=code, exact_code=True)
+        if self._content.search_questions(college_id, query, limit=1).total:
             raise AlreadyExistsError(f"Your college already has a question with code {code!r}.")
 
 

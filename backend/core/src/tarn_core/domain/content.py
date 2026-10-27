@@ -1,5 +1,5 @@
-"""Global content (R7, design decision 3): visible to every college, versioned, and editable
-only by teachers of the owning college. Others copy it to their own college.
+"""Question content (D165): private to one college, versioned, and editable by the college's
+teachers. Nothing is shared between colleges (this replaced R7's global content in P23).
 
 Items that belong to a question point at it by id, not by version, so fixing a question's
 wording does not force new versions of its key and rubric. The exact versions used are
@@ -15,6 +15,7 @@ from tarn_core.domain.common import (
     ContentRef,
     check_marks,
     check_text,
+    college_blob_key,
 )
 from tarn_core.domain.diagram import DiagramGraph, DiagramKind, RecognitionState
 from tarn_core.errors import InvariantError
@@ -33,16 +34,35 @@ from tarn_core.ids import (
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ContentMeta:
-    """Fields every global content version carries."""
+    """Fields every content version carries. ``college_id`` is the college the item belongs
+    to; it never changes between versions."""
 
     version: int = 1
-    owning_college_id: CollegeId
+    college_id: CollegeId
     created_by: UserId
-    copied_from: ContentRef | None = None
 
     def __post_init__(self) -> None:
         if self.version < 1:
             raise InvariantError(f"content version starts at 1, got {self.version}")
+
+
+CONTENT_FOLDER = "content"
+
+
+def content_blob_key(college_id: CollegeId, *parts: str) -> BlobKey:
+    """Where a college's content files live: ``college/{id}/content/...``."""
+    return college_blob_key(college_id, CONTENT_FOLDER, *parts)
+
+
+def check_content_blob(what: str, key: BlobKey, college_id: CollegeId) -> None:
+    """A content file is stored under its own college's ``content/`` folder. Keys under
+    ``global/`` are the legacy place (before P23) and stay readable until
+    ``tarn content relocate-blobs`` has moved them."""
+    if key.college_id is None:
+        return
+    parts = key.value.split("/")
+    if key.college_id != college_id or len(parts) < 4 or parts[2] != CONTENT_FOLDER:
+        raise InvariantError(f"{what} must be stored under college/{college_id}/content/")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -84,7 +104,7 @@ def check_code(code: str) -> None:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Question:
     """``category`` is the topic (the prototype's Category). ``code`` is unique within the
-    owning college (checked by the question bank service)."""
+    college (checked by the question bank service)."""
 
     id: QuestionId
     meta: ContentMeta
@@ -312,8 +332,7 @@ class ReferenceDiagram:
     recognition: RecognitionState = RecognitionState.PENDING
 
     def __post_init__(self) -> None:
-        if self.png.college_id is not None:
-            raise InvariantError("reference diagrams are global content: key must be under global/")
+        check_content_blob("a reference diagram", self.png, self.meta.college_id)
 
     @property
     def ref(self) -> ContentRef:
@@ -347,8 +366,7 @@ class KeyFile:
             raise InvariantError("a key file cannot be empty")
         if len(self.sha256) != 64:
             raise InvariantError("sha256 must be 64 hex characters")
-        if self.blob.college_id is not None:
-            raise InvariantError("key files are global content: key must be under global/")
+        check_content_blob("a key file", self.blob, self.meta.college_id)
         if not self.no_student_data_confirmed:
             raise InvariantError(
                 "confirm that the key holds no student data (names, USNs, handwriting)"

@@ -121,9 +121,11 @@ def test_repositories_refuse_cross_college_writes(session: Opener, world: World)
         assert s.colleges.get(b.id) == b.college.college
 
 
-def test_a_session_without_college_reads_only_global_content(session: Opener, world: World) -> None:
+def test_a_session_without_college_sees_no_college_data(session: Opener, world: World) -> None:
+    """Not even content, which belongs to a college since P23 (D165)."""
     with session(None) as s:
-        assert s.content.get(type(world.blueprint), world.blueprint.id) == world.blueprint
+        with pytest.raises(NotFoundError):
+            s.content.get(world.a.id, type(world.blueprint), world.blueprint.id)
         with pytest.raises(NotFoundError):
             s.colleges.get(world.a.id)
         assert s.booklets.list(world.a.id) == []

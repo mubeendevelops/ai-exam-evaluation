@@ -144,6 +144,9 @@ class World:
     a: Seeded
     b: Seeded
     blueprint: ExamBlueprint
+    """A's paper."""
+    blueprint_b: ExamBlueprint
+    """B's paper of the same shape: content is private to each college (D165)."""
 
 
 def _seed(open_: Opener, college: CollegeFixture, blueprint_id: BlueprintId) -> Seeded:
@@ -337,12 +340,47 @@ def new_college(open_: Opener, code: str) -> CollegeFixture:
         return add_college(s, code, college_id)
 
 
+SYNTHETIC_PDF = b"%PDF-1.7\nsynthetic key"
+SYNTHETIC_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+
+
+def seed_content(open_: Opener, college: CollegeFixture) -> ExamBlueprint:
+    """The college's own paper, with a row in every content table: subject, questions and their
+    versions, rubric criteria, a reference answer, a glossary, a key file and a diagram."""
+    cid, teacher = college.id, college.teacher.id
+    with open_(cid) as s:
+        blueprint = ci_shaped_blueprint(s, college)
+        bank = make_services(s).bank
+        question_id = blueprint.leaf("1")[1]
+        bank.add_reference_answer(cid, teacher, question_id, text="A synthetic model answer.")
+        bank.set_glossary_terms(cid, teacher, question_id, ["alpha"])
+        bank.upload_key_file(
+            cid,
+            teacher,
+            question_id,
+            file_name="key.pdf",
+            data=SYNTHETIC_PDF,
+            declared_type="application/pdf",
+            no_student_data=True,
+        )
+        bank.upload_reference_diagram(
+            cid,
+            teacher,
+            question_id,
+            file_name="flow.png",
+            data=SYNTHETIC_PNG,
+            declared_type="image/png",
+            no_student_data=True,
+        )
+    return blueprint
+
+
 def seed_world(open_: Opener) -> World:
-    """Colleges A and B seeded identically; B uses A's (global) paper."""
+    """Colleges A and B seeded identically, each with its own paper and content."""
     a = new_college(open_, "A")
     b = new_college(open_, "B")
-    with open_(a.id) as s:
-        blueprint = ci_shaped_blueprint(s, a)
-    seeded_b = _seed(open_, b, blueprint.id)
-    seeded_a = _seed(open_, a, blueprint.id)
-    return World(a=seeded_a, b=seeded_b, blueprint=blueprint)
+    blueprint_a = seed_content(open_, a)
+    blueprint_b = seed_content(open_, b)
+    seeded_b = _seed(open_, b, blueprint_b.id)
+    seeded_a = _seed(open_, a, blueprint_a.id)
+    return World(a=seeded_a, b=seeded_b, blueprint=blueprint_a, blueprint_b=blueprint_b)

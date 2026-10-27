@@ -5,10 +5,10 @@ Two steps per college, each idempotent (a second run finds what is there and cha
 
 1. ``seed_accounts``: register the college and its admin the way a person would (verify the
    email, operator approval), invite two teachers who accept, import the fictitious roster.
-2. ``seed_content``: subjects, the questions the college owns (reference answers, rubric,
+2. ``seed_content``: subjects, the questions of the college (reference answers, rubric,
    glossary, reference diagrams) and the exam blueprints linked to them.
 
-A question is found by its code within the owning college and a blueprint by its title; what
+A question is found by its code within the college and a blueprint by its title; what
 exists is left alone, even if the seed data changed since (edit it in the app instead)."""
 
 import csv
@@ -234,7 +234,7 @@ def seed_content(
     assets: AssetReader,
     report: SeedReport,
 ) -> SeededContent:
-    by_code = {s.code: s for s in subjects.list()}
+    by_code = {s.code: s for s in subjects.list(college_id)}
     for subject in college.subjects:
         if subject.code in by_code:
             report.found("subjects")
@@ -280,9 +280,7 @@ def _seed_question(
     assets: AssetReader,
     report: SeedReport,
 ) -> QuestionId:
-    existing = bank.search(
-        QuestionQuery(code=seed.code, exact_code=True, owner_id=college_id), limit=1
-    )
+    existing = bank.search(college_id, QuestionQuery(code=seed.code, exact_code=True), limit=1)
     if existing.items:
         report.found("questions")
         found = existing.items[0].question.id
@@ -402,9 +400,7 @@ def _seed_paper(
     blueprints: BlueprintService,
     report: SeedReport,
 ) -> None:
-    if any(
-        b.title == paper.title and b.meta.owning_college_id == college_id for b in blueprints.list()
-    ):
+    if any(b.title == paper.title for b in blueprints.list(college_id)):
         report.found("blueprints")
         return
     document = resolve_document(paper, SubjectId(subject.id), question_ids)
@@ -418,7 +414,9 @@ def check_blueprints_marks(blueprint: ExamBlueprint, content: ContentRepository)
     linked: dict[QuestionId, Question] = {}
     for slot in blueprint.slots():
         for leaf_question_id in _linked(slot):
-            linked[leaf_question_id] = content.get(Question, leaf_question_id)
+            linked[leaf_question_id] = content.get(
+                blueprint.meta.college_id, Question, leaf_question_id
+            )
     if not linked:
         raise InvariantError(f"{blueprint.title}: no question is linked")
     check_blueprint_questions(blueprint, linked)

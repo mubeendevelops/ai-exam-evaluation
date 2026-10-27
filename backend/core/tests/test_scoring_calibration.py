@@ -37,7 +37,7 @@ from tarn_core.services.scoring.calibration import (
 )
 from tarn_core.services.scoring.policy import ScoringPolicy
 
-META = ContentMeta(owning_college_id=CollegeId(uuid4()), created_by=UserId(uuid4()))
+META = ContentMeta(college_id=CollegeId(uuid4()), created_by=UserId(uuid4()))
 STATEMENT = "reference statement"
 
 

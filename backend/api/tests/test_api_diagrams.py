@@ -55,6 +55,7 @@ class Setup:
         """What the worker does for ``diagram.reference``."""
         ReferenceDiagrams(
             content=self.mem.content,
+            users=self.mem.users,
             blobs=self.mem.blobs,
             runtime=self.mem.runtime,
             recognizers={DiagramKind.FLOWCHART: ScriptedDiagramRecognizer(flowchart_detection())},
@@ -168,17 +169,14 @@ def test_reference_graph_read_edit_and_conflict(s: Setup) -> None:
     assert s.client.post(f"{s.graph_url}/edits", json=unknown, headers=s.teacher).status_code == 422
 
 
-def test_another_college_reads_but_cannot_edit_or_rerun(s: Setup) -> None:
+def test_another_college_finds_nothing_to_read_edit_or_rerun(s: Setup) -> None:
     s.recognise_reference()
-    current = s.client.get(s.graph_url, headers=s.other)
-    assert current.status_code == 200  # global content: readable, copy to edit
-    edit = {
-        "expected_version": current.json()["version"],
-        "edits": [{"op": "remove_node", "id": "n1"}],
-    }
-    assert s.client.post(f"{s.graph_url}/edits", json=edit, headers=s.other).status_code == 403
+    assert s.client.get(s.graph_url, headers=s.other).status_code == 404  # private (D165)
+    current = s.client.get(s.graph_url, headers=s.teacher).json()
+    edit = {"expected_version": current["version"], "edits": [{"op": "remove_node", "id": "n1"}]}
+    assert s.client.post(f"{s.graph_url}/edits", json=edit, headers=s.other).status_code == 404
     rerun = s.graph_url.replace("/graph", "/recognize")
-    assert s.client.post(rerun, headers=s.other).status_code == 403
+    assert s.client.post(rerun, headers=s.other).status_code == 404
     assert s.client.post(rerun, headers=s.teacher).status_code == 202
 
 

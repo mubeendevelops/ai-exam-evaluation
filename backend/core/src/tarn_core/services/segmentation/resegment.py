@@ -57,7 +57,7 @@ class BookletResegmenter:
         if booklet.version != expected_version or booklet.status not in RESEGMENTABLE:
             return None
         blueprint = self._content.get(
-            ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
+            booklet.college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
         )
         segmenter = Segmenter(
             blueprint, question_texts(self._content, blueprint), self._embedder, self._policy

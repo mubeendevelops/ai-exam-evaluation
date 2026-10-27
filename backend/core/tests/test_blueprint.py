@@ -21,7 +21,7 @@ from tarn_core.services.marking import check_blueprint_questions
 from tarn_core.testing import InMemory
 from tarn_core.testing.builders import add_college, ci_shaped_blueprint, ipr_shaped_blueprint
 
-META = ContentMeta(owning_college_id=CollegeId(UUID(int=1)), created_by=UserId(UUID(int=2)))
+META = ContentMeta(college_id=CollegeId(UUID(int=1)), created_by=UserId(UUID(int=2)))
 Q = QuestionId(UUID(int=3))
 
 

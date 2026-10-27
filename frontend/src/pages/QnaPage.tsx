@@ -4,6 +4,7 @@ import { PageBanner } from '../components/app/PageBanner'
 import { QuestionDetailView } from '../components/qna/QuestionDetailView'
 import { QuestionList } from '../components/qna/QuestionList'
 import { QuestionModal } from '../components/qna/QuestionModal'
+import { useMe } from '../auth/AuthProvider'
 import { useToast } from '../components/ui'
 
 /**
@@ -12,6 +13,8 @@ import { useToast } from '../components/ui'
  */
 export default function QnaPage() {
   const toast = useToast()
+  // Teachers author the college's content; the admin account reads it (D165, D172).
+  const author = useMe().user.role !== 'admin'
   const [params, setParams] = useSearchParams()
   const [creating, setCreating] = useState(false)
   const openId = params.get('question')
@@ -27,19 +30,21 @@ export default function QnaPage() {
         title="Questions & Answers Repository"
         description="Manage institutional question banks, benchmark answers, rubrics and reference diagrams."
       >
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-purple-900/30 transition hover:from-purple-500 hover:to-indigo-500"
-        >
-          <i className="fa-solid fa-plus" aria-hidden="true" /> New Question
-        </button>
+        {author && (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-purple-900/30 transition hover:from-purple-500 hover:to-indigo-500"
+          >
+            <i className="fa-solid fa-plus" aria-hidden="true" /> New Question
+          </button>
+        )}
       </PageBanner>
 
       {openId ? (
-        <QuestionDetailView key={openId} id={openId} onBack={back} onOpen={open} />
+        <QuestionDetailView key={openId} id={openId} onBack={back} />
       ) : (
-        <QuestionList onOpen={open} onNew={() => setCreating(true)} />
+        <QuestionList onOpen={open} onNew={author ? () => setCreating(true) : undefined} />
       )}
 
       <QuestionModal

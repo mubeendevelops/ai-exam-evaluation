@@ -282,7 +282,7 @@ def test_another_colleges_upload_is_not_a_duplicate(w: World) -> None:
         w.other.id,
         w.other.teacher.id,
         student_id=w.other.students[0].id,
-        blueprint_id=w.blueprint_id,  # type: ignore[arg-type]
+        blueprint_id=ci_shaped_blueprint(w.mem, w.other).id,  # its own paper (D165)
         files=[fake_pdf(1)],
     )
     assert registration.duplicates == ()

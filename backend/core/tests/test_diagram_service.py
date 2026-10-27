@@ -22,7 +22,7 @@ from tarn_core.domain.diagram import (
     RecognitionState,
 )
 from tarn_core.domain.scoring import CHECK
-from tarn_core.errors import InvariantError, NotOwnerError
+from tarn_core.errors import InvariantError, NotFoundError
 from tarn_core.ids import AnswerId
 from tarn_core.ports.jobs import JOB_DIAGRAMS_BOOKLET, JOB_RECOGNIZE_REFERENCE, JOB_SCORE_BOOKLET
 from tarn_core.services.diagrams.build import GraphBuilder
@@ -95,6 +95,7 @@ def references(world: World, **kw: object) -> ReferenceDiagrams:
     mem = world.mem
     return ReferenceDiagrams(
         content=mem.content,
+        users=mem.users,
         blobs=mem.blobs,
         runtime=mem.runtime,
         recognizers=kw.get(  # type: ignore[arg-type]
@@ -170,7 +171,7 @@ def test_recognising_the_reference_builds_its_graph_and_glossary(world: World) -
     assert [n.label for n in ref.graph.nodes] == ["start", "read n", "stop"]
     assert [(e.source, e.target) for e in ref.graph.edges] == [("n1", "n2"), ("n2", "n3")]
     assert ref.graph.label_engines == ("scripted",)
-    glossary = world.mem.content.for_question(Glossary, world.question.id)[0]
+    glossary = world.mem.content.for_question(world.college.id, Glossary, world.question.id)[0]
     assert set(glossary.reference_labels) == {"start", "read n", "stop"}
     assert labels.lexicons, "labels were read through the OCR framework"
 
@@ -208,7 +209,7 @@ def test_teacher_edits_the_reference_as_a_new_version(world: World) -> None:
     assert edited.recognition is RecognitionState.EDITED and edited.kind is DiagramKind.BLOCK
     assert edited.graph.edited_by_teacher
     assert [(e.source, e.target) for e in edited.graph.edges] == [("n1", "n2"), ("n3", "n2")]
-    glossary = world.mem.content.for_question(Glossary, world.question.id)[0]
+    glossary = world.mem.content.for_question(world.college.id, Glossary, world.question.id)[0]
     assert "input n" in glossary.reference_labels
     with pytest.raises(StaleGraphError):
         references(world).edit(
@@ -222,10 +223,10 @@ def test_teacher_edits_the_reference_as_a_new_version(world: World) -> None:
     assert "input n" not in str(event.after)
 
 
-def test_only_the_owning_college_edits_the_reference(world: World) -> None:
+def test_another_college_cannot_find_the_reference(world: World) -> None:
     ref = recognised(world)
     other = add_college(world.mem, "OTHER")
-    with pytest.raises(NotOwnerError):
+    with pytest.raises(NotFoundError):
         references(world).edit(
             other.id,
             other.teacher.id,

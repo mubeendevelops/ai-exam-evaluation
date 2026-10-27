@@ -12,7 +12,6 @@ import pytest
 from tarn_adapters.config import Settings
 from tarn_adapters.embed.sentence import SentenceTransformerEmbedder
 from tarn_adapters.embed.wiring import build_scoring_embedder, model_cached
-from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import BookletStatus
 from tarn_core.domain.scoring import AnswerFlag
 from tarn_core.seed.data.papers import QP_CI_TITLE
@@ -20,7 +19,7 @@ from tarn_core.services.scoring import BookletScorer, ScoringService
 from tarn_core.testing import InMemory
 from tarn_core.testing.builders import make_services
 from tarn_core.testing.scoring import written_answer
-from tarn_core.testing.seed_world import seed_in_memory
+from tarn_core.testing.seed_world import seed_in_memory, seeded_blueprints
 
 pytestmark = [
     pytest.mark.models,
@@ -77,8 +76,8 @@ def test_the_scoring_model_scores_a_booklet_without_the_network(
 
     mem = InMemory()
     colleges = seed_in_memory(mem)
-    blueprint = next(b for b in mem.content.latest(ExamBlueprint) if b.title == QP_CI_TITLE)
-    college = next(c for c in colleges if c.accounts.college_id == blueprint.meta.owning_college_id)
+    blueprint = next(b for b in seeded_blueprints(mem) if b.title == QP_CI_TITLE)
+    college = next(c for c in colleges if c.accounts.college_id == blueprint.meta.college_id)
     college_id = college.accounts.college_id
     booklet = (
         make_services(mem)

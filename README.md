@@ -2,7 +2,7 @@
 
 A multi-tenant web service that helps college teachers evaluate handwritten exam answer booklets. A teacher photographs a booklet with a phone; the system cleans the pages, reads the handwriting with several OCR engines (best of N per line), splits the booklet into answers and suggests marks per rubric criterion.
 
-**AI suggests; the teacher decides every mark.** Nothing is final until the teacher approves it, and every change is audited. Each college is a tenant: student data is isolated per college; questions, keys, rubrics and exam blueprints are global content with an owning college.
+**AI suggests; the teacher decides every mark.** Nothing is final until the teacher approves it, and every change is audited. Each college is a tenant: student data is isolated per college; questions, keys, rubrics and exam blueprints are the college's own content too, never shared between colleges (D165).
 
 Built as a pure Python core behind ports and adapters, with a FastAPI API, a queue worker, a CLI and a React web app. Production target: Google Cloud `asia-south1` (not yet deployed).
 

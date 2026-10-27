@@ -48,7 +48,8 @@ def libpq_url(url: str) -> str:
 
 @dataclass
 class PostgresSession:
-    """The adapters of one transaction bound to one college (or to none: global reads)."""
+    """The adapters of one transaction bound to one college (or to none: Tarn-wide reads such as
+    the calibrations; a college's content needs its college)."""
 
     conn: Connection
     college_id: CollegeId | None
@@ -119,6 +120,13 @@ class PostgresDatabase:
                 blobs=scoped_blobs(blobs, college_id),
                 job_settings=self.job_settings,
             )
+
+    def college_ids(self) -> list[CollegeId]:
+        """Every college, from the public college directory (operator tools that go college
+        by college, such as ``tarn diagram references``)."""
+        with self.engine.connect() as conn:
+            rows = conn.execute(text("SELECT id FROM college_directory ORDER BY id"))
+            return [CollegeId(r[0]) for r in rows]
 
     @contextmanager
     def scheduler(self) -> Iterator[PgJobQueue]:

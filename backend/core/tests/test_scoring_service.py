@@ -22,7 +22,7 @@ from tarn_core.services.segmentation.similarity import TrigramEmbedder
 from tarn_core.testing import FixedCreditScorer, InMemory
 from tarn_core.testing.builders import make_services
 from tarn_core.testing.scoring import Line, Written, written_answer
-from tarn_core.testing.seed_world import SeededCollege, seed_in_memory
+from tarn_core.testing.seed_world import SeededCollege, seed_in_memory, seeded_blueprints
 
 # The trigram embedder's cosines run lower than a sentence model's: test thresholds to match.
 TRIGRAM_POLICY = ScoringPolicy(half=0.25, full=0.45, relevance_min=0.25, relevance_soft=0.4)
@@ -83,7 +83,7 @@ class Paper:
     def question(self, slot: str) -> Question:
         _, question_id, _ = self.blueprint.leaf(slot)
         assert question_id is not None
-        return self.mem.content.get(Question, question_id)
+        return self.mem.content.get(self.booklet.college_id, Question, question_id)
 
 
 @pytest.fixture(scope="module")
@@ -95,8 +95,8 @@ def seeded() -> tuple[InMemory, list[SeededCollege]]:
 @pytest.fixture
 def paper(seeded: tuple[InMemory, list[SeededCollege]]) -> Paper:
     mem, colleges = seeded
-    blueprint = next(b for b in mem.content.latest(ExamBlueprint) if b.title == QP_CI_TITLE)
-    college = next(c for c in colleges if c.accounts.college_id == blueprint.meta.owning_college_id)
+    blueprint = next(b for b in seeded_blueprints(mem) if b.title == QP_CI_TITLE)
+    college = next(c for c in colleges if c.accounts.college_id == blueprint.meta.college_id)
     college_id = college.accounts.college_id
     student = mem.students.list(college_id)[0]
     booklet = (
@@ -134,7 +134,9 @@ def test_b_ci2_q12_pattern_is_flagged_off_target_despite_keyword_credit(paper: P
 
 
 def test_the_flag_comes_from_the_teachers_terms_not_from_the_mark(paper: Paper) -> None:
-    glossary = paper.mem.content.for_question(Glossary, paper.question("12").id)[0]
+    glossary = paper.mem.content.for_question(
+        paper.booklet.college_id, Glossary, paper.question("12").id
+    )[0]
     assert "Congress" in glossary.off_target_terms
     assert glossary.ref in paper.score("12", OFF_TARGET).content_versions
 
@@ -237,7 +239,7 @@ def test_every_score_records_content_scorer_and_embedder_versions(paper: Paper) 
         ContentKind.REFERENCE_ANSWER,
         ContentKind.GLOSSARY,
     } <= kinds
-    key = paper.mem.content.for_question(ReferenceAnswer, question.id)[0]
+    key = paper.mem.content.for_question(paper.booklet.college_id, ReferenceAnswer, question.id)[0]
     assert key.ref in score.content_versions and question.ref == score.question
     assert score.scorer_versions == {EngineRef(name="list", version="1")}
     assert score.embedder == paper.embedder.ref
@@ -270,7 +272,9 @@ def _semantic_slot(paper: Paper) -> str:
     for slot in paper.blueprint.slots():
         for label, question_id, _ in leaves(slot):
             assert question_id is not None
-            criteria = paper.mem.content.for_question(RubricCriterion, question_id)
+            criteria = paper.mem.content.for_question(
+                paper.booklet.college_id, RubricCriterion, question_id
+            )
             if any(c.type is CriterionType.SEMANTIC for c in criteria):
                 return label
     raise AssertionError("no semantic criterion on QP-CI")

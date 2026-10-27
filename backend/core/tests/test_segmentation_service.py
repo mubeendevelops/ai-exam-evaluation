@@ -37,7 +37,7 @@ from tarn_core.services.segmentation.service import (
 from tarn_core.services.segmentation.similarity import TrigramEmbedder
 from tarn_core.testing import InMemory
 from tarn_core.testing.builders import make_services
-from tarn_core.testing.seed_world import seed_in_memory
+from tarn_core.testing.seed_world import seed_in_memory, seeded_blueprints
 from tarn_core.testing.segmentation import sheet
 
 SHA = "a" * 64
@@ -130,7 +130,7 @@ class World:
 def world() -> World:
     mem = InMemory()
     seeded = seed_in_memory(mem)
-    blueprint = next(b for b in mem.content.latest(ExamBlueprint) if b.title.startswith("QP-CI"))
+    blueprint = next(b for b in seeded_blueprints(mem) if b.title.startswith("QP-CI"))
     commerce = next(s for s in seeded if s.seed.institution_id == "DEMO_COM")
     engineering = next(s for s in seeded if s.seed.institution_id == "DEMO_ENG")
     return World(

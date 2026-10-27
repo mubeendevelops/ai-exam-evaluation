@@ -122,10 +122,11 @@ def test_clock_ids_and_queue() -> None:
 
 def test_content_repository_versions_are_append_only() -> None:
     mem = InMemory()
-    question_id = ci_shaped_blueprint(mem, add_college(mem, "A")).leaf("1")[1]
-    question = mem.content.get(Question, question_id)
+    college = add_college(mem, "A")
+    question_id = ci_shaped_blueprint(mem, college).leaf("1")[1]
+    question = mem.content.get(college.id, Question, question_id)
     with pytest.raises(InvariantError, match="expected version 2"):
-        mem.content.save(question)  # same (id, version) again
+        mem.content.save(college.id, question)  # same (id, version) again
     with pytest.raises(NotFoundError):
-        mem.content.get(Question, question_id, version=2)
+        mem.content.get(college.id, Question, question_id, version=2)
     assert question.max_marks == Decimal(2)

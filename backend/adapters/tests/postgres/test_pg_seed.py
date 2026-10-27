@@ -15,8 +15,9 @@ from tarn_adapters.runtime import SystemClock, UuidGenerator
 from tarn_adapters.seed import asset_reader, run_seed
 from tarn_api.app import create_app
 from tarn_api.backends import PostgresBackends
-from tarn_core.domain.content import Question, ReferenceAnswer
+from tarn_core.domain.content import Question, ReferenceAnswer, ReferenceDiagram
 from tarn_core.seed import COMMERCE, DEV_PASSWORD, ENGINEERING, SeedError
+from tarn_core.seed.data.papers import QP_CI_TITLE
 from tarn_core.testing import InMemory
 
 pytestmark = pytest.mark.integration
@@ -75,21 +76,31 @@ def test_seed_twice_then_use_it(settings: Settings) -> None:
         with app.session(eng.college_id, ids=ids, clock=clock, blobs=blobs) as scope:
             assert len(scope.users.list(eng.college_id)) == 3
             assert {s.usn[:5] for s in scope.students.list(eng.college_id)} == {"DEMOE"}
-            owned = [
-                q
-                for q in scope.content.latest(Question)
-                if q.meta.owning_college_id == eng.college_id
+            own = scope.content.latest(eng.college_id, Question)
+            assert len(own) == 28 and all(q.meta.college_id == eng.college_id for q in own)
+            # Content is private (D165): asking for commerce's content here finds nothing.
+            assert scope.content.latest(com.college_id, Question) == []
+            diagrams = [
+                d
+                for q in own
+                for d in scope.content.for_question(eng.college_id, ReferenceDiagram, q.id)
             ]
-            assert len(owned) == 28
-            synthetic = [
-                a
-                for q in scope.content.latest(Question)
-                for a in scope.content.for_question(ReferenceAnswer, q.id)
-                if a.synthetic
-            ]
-            assert synthetic  # the commerce keys are visible to every college, labelled
+            assert len(diagrams) == 7
+            assert all(
+                d.png.value.startswith(f"college/{eng.college_id}/content/diagrams/")
+                for d in diagrams
+            )
         with app.session(com.college_id, ids=ids, clock=clock, blobs=blobs) as scope:
             assert {s.usn[:5] for s in scope.students.list(com.college_id)} == {"DEMOC"}
+            own = scope.content.latest(com.college_id, Question)
+            assert len(own) == 35
+            synthetic = [
+                a
+                for q in own
+                for a in scope.content.for_question(com.college_id, ReferenceAnswer, q.id)
+                if a.synthetic
+            ]
+            assert synthetic  # the commerce keys are labelled (D60)
     finally:
         app.dispose()
 
@@ -109,9 +120,9 @@ def client(settings: Settings) -> Iterator[TestClient]:
 
 def test_seeded_teachers_sign_in_and_see_their_bank(settings: Settings, client: TestClient) -> None:
     run_seed(settings, blobs=InMemory().blobs)
-    for college, teacher, owned in (
-        (ENGINEERING, ENGINEERING.teachers[0], 28),
-        (COMMERCE, COMMERCE.teachers[1], 35),
+    for college, teacher, owned, papers in (
+        (ENGINEERING, ENGINEERING.teachers[0], 28, set()),
+        (COMMERCE, COMMERCE.teachers[1], 35, {QP_CI_TITLE}),
     ):
         login = client.post(
             "/api/v1/auth/login",
@@ -123,14 +134,14 @@ def test_seeded_teachers_sign_in_and_see_their_bank(settings: Settings, client: 
         )
         assert login.status_code == 200, login.text
         headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-        mine = client.get("/api/v1/questions?mine=true&limit=100", headers=headers).json()
-        assert mine["total"] == owned
+        mine = client.get("/api/v1/questions?limit=100", headers=headers).json()
+        assert mine["total"] == owned  # only the college's own questions (D165)
         blueprints = client.get("/api/v1/blueprints", headers=headers).json()
         titles = {
             b["title"]
             for b in (blueprints if isinstance(blueprints, list) else blueprints["items"])
         }
-        assert "QP-CI Constitution of India and Human Rights, June 2021" in titles
+        assert papers <= titles and (college is COMMERCE or not titles)
     # a question's synthetic key is flagged in the API answer
     qs = client.get("/api/v1/questions?code=QP-CI-Q8&limit=1", headers=headers).json()["items"]
     detail = client.get(f"/api/v1/questions/{qs[0]['id']}", headers=headers).json()

@@ -189,9 +189,7 @@ def test_a_long_reason_is_cut() -> None:
 def criterion(params: Any, kind: CriterionType, label: str = "Names the items") -> RubricCriterion:
     return RubricCriterion(
         id=CriterionId(uuid4()),
-        meta=ContentMeta(
-            version=1, owning_college_id=CollegeId(uuid4()), created_by=UserId(uuid4())
-        ),
+        meta=ContentMeta(version=1, college_id=CollegeId(uuid4()), created_by=UserId(uuid4())),
         question_id=QuestionId(uuid4()),
         label=label,
         type=kind,

@@ -70,7 +70,7 @@ class BookletService:
         the blueprint's current version."""
         self._users.get(college_id, actor_id)
         self._students.get(college_id, student_id)
-        blueprint = self._content.get(ExamBlueprint, blueprint_id)
+        blueprint = self._content.get(college_id, ExamBlueprint, blueprint_id)
         unlinked = blueprint.unlinked_leaves()
         if unlinked:
             raise InvariantError(

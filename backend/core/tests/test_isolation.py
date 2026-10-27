@@ -46,10 +46,12 @@ def two_colleges() -> tuple[InMemory, Services, CollegeFixture, CollegeFixture, 
     mem = InMemory()
     a = add_college(mem, "A")
     b = add_college(mem, "B")
-    blueprint = ci_shaped_blueprint(mem, a)  # global: B uses A's paper too
+    # Each college has its own paper of the same shape (content is private, D165).
+    blueprint_a = ci_shaped_blueprint(mem, a)
+    blueprint_b = ci_shaped_blueprint(mem, b)
     svc = make_services(mem)
-    booklet_b = seed(mem, svc, b, blueprint.id)
-    booklet_a = seed(mem, svc, a, blueprint.id)
+    booklet_b = seed(mem, svc, b, blueprint_b.id)
+    booklet_a = seed(mem, svc, a, blueprint_a.id)
     return mem, svc, a, b, booklet_a, booklet_b
 
 

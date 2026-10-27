@@ -36,7 +36,7 @@ from tarn_core.services.segmentation.lines import PageInput
 from tarn_core.services.segmentation.segmenter import SegmentationPolicy, Segmenter
 from tarn_core.services.segmentation.service import question_texts
 from tarn_core.testing import InMemory
-from tarn_core.testing.seed_world import seed_in_memory
+from tarn_core.testing.seed_world import seed_in_memory, seeded_college_ids
 
 _COLLEGE = CollegeId(uuid.UUID(int=1))
 
@@ -68,7 +68,11 @@ class Papers:
 def seeded_papers() -> Papers:
     memory = InMemory()
     seed_in_memory(memory)
-    blueprints = {b.title: b for b in memory.content.latest(ExamBlueprint)}
+    blueprints = {
+        b.title: b
+        for college_id in seeded_college_ids(memory)
+        for b in memory.content.latest(college_id, ExamBlueprint)
+    }
     texts = {t: question_texts(memory.content, b) for t, b in blueprints.items()}
     return Papers(blueprints, texts, memory)
 

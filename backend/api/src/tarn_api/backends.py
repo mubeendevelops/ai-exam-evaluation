@@ -42,7 +42,6 @@ from tarn_core.services._support import Runtime
 from tarn_core.services.auth import AccountService, AuthKit, AuthService
 from tarn_core.services.blueprints import BlueprintService
 from tarn_core.services.booklets import BookletService
-from tarn_core.services.content import ContentService
 from tarn_core.services.diagrams.jobs import QueuedRescore
 from tarn_core.services.diagrams.service import ReferenceDiagrams
 from tarn_core.services.evaluated import EvaluatedBooklets
@@ -165,15 +164,8 @@ class Unit:
         return QuestionBankService(
             content=self.scope.content,
             users=self.scope.users,
-            colleges=self.scope.colleges,
             blobs=self.scope.blobs,
             runtime=self.scope.runtime,
-        )
-
-    @property
-    def content(self) -> ContentService:
-        return ContentService(
-            content=self.scope.content, users=self.scope.users, runtime=self.scope.runtime
         )
 
     @property
@@ -211,6 +203,7 @@ class Unit:
         """Edits only: the API loads no recognizer (recognition is the worker's job)."""
         return ReferenceDiagrams(
             content=self.scope.content,
+            users=self.scope.users,
             blobs=self.scope.blobs,
             runtime=self.scope.runtime,
             recognizers={},

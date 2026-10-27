@@ -252,17 +252,18 @@ def test_a_changed_rubric_rescores_unapproved_answers_with_a_notice() -> None:
     mem, college, booklet, blueprint, wf = setup()
     approve(mem, college, booklet, wf, "1")
     wf.review.close(college.id, college.teacher.id, booklet.id)
-    # The owning college edits the rubric of questions 1 and 2 (a new version of a criterion).
+    # The college edits the rubric of questions 1 and 2 (a new version of a criterion).
     for label in ("1", "2"):
         _, question_id, _ = blueprint.leaf(label)
         assert question_id is not None
-        criterion = mem.content.for_question(RubricCriterion, question_id)[0]
+        criterion = mem.content.for_question(college.id, RubricCriterion, question_id)[0]
         mem.content.save(
+            college.id,
             replace(
                 criterion,
                 meta=replace(criterion.meta, version=2),
                 label="Names the key items (reworded)",
-            )
+            ),
         )
 
     opened = wf.review.open(college.id, college.teacher.id, booklet.id)

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { api } from '../../api/client'
+import { useMe } from '../../auth/AuthProvider'
 import { NETWORK_PROBLEM, problemOf } from '../../api/errors'
 import { fetchBlob, saveBlob } from '../../api/files'
 import type { components } from '../../api/schema'
@@ -63,16 +64,9 @@ function SectionTitle({
   )
 }
 
-/** One question: benchmark keys, rubric, glossary and attached files, with Edit or Copy. */
-export function QuestionDetailView({
-  id,
-  onBack,
-  onOpen,
-}: {
-  id: string
-  onBack: () => void
-  onOpen: (id: string) => void
-}) {
+/** One question of the college: benchmark keys, rubric, glossary and attached files. */
+export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => void }) {
+  const me = useMe()
   const toast = useToast()
   const queryClient = useQueryClient()
   const [dialog, setDialog] = useState<Dialog>(null)
@@ -91,22 +85,6 @@ export function QuestionDetailView({
     retry: false,
   })
   const q = query.data
-
-  const copy = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await api.POST('/api/v1/questions/{question_id}/copy', {
-        params: { path: { question_id: id } },
-      })
-      if (!data) throw new Error(problemOf(error, 'Could not copy the question.').message)
-      return data
-    },
-    onSuccess: async (copied) => {
-      await queryClient.invalidateQueries({ queryKey: ['questions'] })
-      toast.show(`Copied to your college as ${copied.code}.`)
-      onOpen(copied.id)
-    },
-    onError: (e) => toast.show(e instanceof Error ? e.message : NETWORK_PROBLEM, 'red'),
-  })
 
   const retire = useMutation({
     mutationFn: async (answerId: string) => {
@@ -151,7 +129,8 @@ export function QuestionDetailView({
   }
 
   const rubric = q.rubric
-  const own = q.owned
+  // Content is the college's own (D165): its teachers edit it, the admin only reads it.
+  const own = me.user.role !== 'admin'
   const close = () => {
     setDialog(null)
     setAnswer(undefined)
@@ -169,7 +148,7 @@ export function QuestionDetailView({
             <i className="fa-solid fa-flask-vial text-purple-400" aria-hidden="true" />
             Test in AI Evaluator
           </Link>
-          {own ? (
+          {own && (
             <>
               <SmallButton icon="fa-solid fa-pen" tone="purple" onClick={() => setDialog('edit')}>
                 Edit question
@@ -178,15 +157,6 @@ export function QuestionDetailView({
                 Upload Answer Key
               </SmallButton>
             </>
-          ) : (
-            <SmallButton
-              icon="fa-solid fa-copy"
-              tone="purple"
-              disabled={copy.isPending}
-              onClick={() => copy.mutate()}
-            >
-              Copy to my college
-            </SmallButton>
           )}
         </div>
       </GlassPanel>
@@ -196,8 +166,7 @@ export function QuestionDetailView({
           role="note"
           className="rounded-xl border border-purple-500/30 bg-purple-950/30 px-4 py-3 text-xs text-purple-100"
         >
-          Owned by <strong>{q.owner_name ?? 'another college'}</strong>. Only its teachers edit it.
-          Copy it to your college to change the wording, keys or rubric.
+          Teachers edit questions, keys and rubrics; the admin account reads them.
         </p>
       )}
 
@@ -222,11 +191,7 @@ export function QuestionDetailView({
           <DifficultyPill level={q.difficulty} />
         </div>
         <h2 className="text-xl leading-snug font-bold whitespace-pre-line text-white">{q.text}</h2>
-        <p className="text-[11px] text-gray-400">
-          {own ? 'Owned by your college' : `Owned by ${q.owner_name ?? 'another college'}`} ·
-          version {q.version}
-          {q.copied_from && ' · copied from another question'}
-        </p>
+        <p className="text-[11px] text-gray-400">Version {q.version}</p>
       </GlassPanel>
 
       <GlassPanel as="section" aria-label="Benchmark answers" className="space-y-4 p-6">

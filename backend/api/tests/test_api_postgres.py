@@ -84,6 +84,25 @@ def _register(client: TestClient, mailer: CapturingMailer, institution: str, ema
     return str(login.json()["access_token"])
 
 
+def _teacher(
+    client: TestClient, mailer: CapturingMailer, admin: dict[str, str], institution: str, email: str
+) -> dict[str, str]:
+    """Invite a teacher, accept the invitation and sign in (teachers author content, D165)."""
+    invited = client.post(
+        "/api/v1/accounts", json={"display_name": "Teacher", "email": email}, headers=admin
+    )
+    assert invited.status_code == 201, invited.text
+    token = mailer.links[-1].split("token=")[1]
+    accept = {"token": token, "password": PASSWORD}
+    assert client.post("/api/v1/auth/invitations/accept", json=accept).status_code == 204
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"institution_id": institution, "email": email, "password": PASSWORD},
+    )
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
 def test_two_colleges_over_http_on_postgres(setup: tuple[TestClient, CapturingMailer]) -> None:
     client, mailer = setup
     a = {"Authorization": f"Bearer {_register(client, mailer, 'PG_A', 'admin@pg-a.example')}"}
@@ -112,11 +131,17 @@ def test_two_colleges_over_http_on_postgres(setup: tuple[TestClient, CapturingMa
 def test_question_bank_with_real_database_and_minio(
     setup: tuple[TestClient, CapturingMailer],
 ) -> None:
-    """Two colleges: A creates a question with key, rubric and files; B reads it (global),
-    cannot edit it, copies it. Files really go to MinIO under global/keys/."""
+    """Two colleges: A's teacher creates a question with key, rubric and files; B finds none of
+    it (D165). Files really go to MinIO under college/{id}/content/keys/."""
     client, mailer = setup
-    a = {"Authorization": f"Bearer {_register(client, mailer, 'PG_QA', 'admin@pg-qa.example')}"}
-    b = {"Authorization": f"Bearer {_register(client, mailer, 'PG_QB', 'admin@pg-qb.example')}"}
+    a_admin = {
+        "Authorization": f"Bearer {_register(client, mailer, 'PG_QA', 'admin@pg-qa.example')}"
+    }
+    b_admin = {
+        "Authorization": f"Bearer {_register(client, mailer, 'PG_QB', 'admin@pg-qb.example')}"
+    }
+    a = _teacher(client, mailer, a_admin, "PG_QA", "teacher@pg-qa.example")
+    b = _teacher(client, mailer, b_admin, "PG_QB", "teacher@pg-qb.example")
     subject = client.post(
         "/api/v1/subjects", json={"code": "PHY", "name": "Physics"}, headers=a
     ).json()["id"]
@@ -160,21 +185,22 @@ def test_question_bank_with_real_database_and_minio(
         headers=a | {"Content-Type": "application/pdf"},
     )
     assert up.status_code == 201, up.text
-    assert client.get(up.json()["content_url"], headers=b).content == pdf  # from MinIO
-
-    seen = client.get(f"/api/v1/questions/{qid}", headers=b).json()
-    assert seen["owned"] is False and seen["owner_name"] == "PG_QA"
+    assert client.get(up.json()["content_url"], headers=a).content == pdf  # from MinIO
+    assert client.get(up.json()["content_url"], headers=a_admin).content == pdf  # admin reads
+    seen = client.get(f"/api/v1/questions/{qid}", headers=a).json()
     assert seen["rubric"]["complete"] is True and seen["key_count"] == 2
-    edit = {"code": "PG-Q1", "text": "x", "max_marks": 4, "difficulty": "easy", "category": ""}
-    assert client.put(f"/api/v1/questions/{qid}", json=edit, headers=b).status_code == 403
 
+    # B finds nothing: not the question, its file, its listing, nor a way to edit it.
+    assert client.get(up.json()["content_url"], headers=b).status_code == 404
+    assert client.get(f"/api/v1/questions/{qid}", headers=b).status_code == 404
+    edit = {"code": "PG-Q1", "text": "x", "max_marks": 4, "difficulty": "easy", "category": ""}
+    assert client.put(f"/api/v1/questions/{qid}", json=edit, headers=b).status_code == 404
     page = client.get("/api/v1/questions", params={"keyword": "rayleigh"}, headers=b).json()
-    assert [i["code"] for i in page["items"]] == ["PG-Q1"] and page["items"][0]["key_count"] == 2
-    copy = client.post(f"/api/v1/questions/{qid}/copy", headers=b)
-    assert copy.status_code == 201, copy.text
-    assert copy.json()["owned"] is True and copy.json()["key_files"][0]["name"] == "key.pdf"
-    mine = client.get("/api/v1/questions", params={"mine": "true"}, headers=b).json()
-    assert [i["id"] for i in mine["items"]] == [copy.json()["id"]]
+    assert page["total"] == 0
+    mine = client.get("/api/v1/questions", params={"keyword": "rayleigh"}, headers=a).json()
+    assert [i["code"] for i in mine["items"]] == ["PG-Q1"] and mine["items"][0]["key_count"] == 2
+    # The admin reads but does not edit.
+    assert client.put(f"/api/v1/questions/{qid}", json=edit, headers=a_admin).status_code == 403
 
 
 def test_booklet_upload_worker_and_status_with_real_database_and_minio(

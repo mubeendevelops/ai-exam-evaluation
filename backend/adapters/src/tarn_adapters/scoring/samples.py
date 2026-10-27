@@ -48,7 +48,7 @@ def build_samples(
                 by_slot.setdefault(proposed.slot_label, []).append(proposed)
         for slot, proposals in by_slot.items():
             _, question_id, _ = blueprint.leaf(slot)
-            code = papers.memory.content.get(Question, question_id).code
+            code = papers.memory.content.get(blueprint.meta.college_id, Question, question_id).code
             text = segment_text(proposals, regions)
             rows.append(
                 {

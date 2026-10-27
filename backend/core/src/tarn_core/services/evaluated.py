@@ -88,7 +88,7 @@ class EvaluatedBooklets:
             blueprint = blueprints.get((ref.id, ref.version))
             if blueprint is None:
                 blueprint = blueprints[(ref.id, ref.version)] = self._content.get(
-                    ExamBlueprint, ref.id, ref.version
+                    college_id, ExamBlueprint, ref.id, ref.version
                 )
             if exam_q and exam_q not in f"{blueprint.title} {blueprint.course_code}".lower():
                 continue

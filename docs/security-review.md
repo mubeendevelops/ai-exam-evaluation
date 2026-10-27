@@ -59,11 +59,11 @@ published OpenAPI document. A test fails when a new operation is not classified.
 
 - College B calls each of the 29 college-data operations with college A's ids (booklet, page,
   region, segment, answer, sheet version, account).
-- B tries the 11 global-content writes on content A owns.
-- B uses the 8 shared reads and copies.
+- B tries every read and write of A's content (questions, keys, files, diagrams, papers).
+  Since P23 (D165) content is the college's own, so these are college operations too.
 
-Expected and found: 404 with `{"detail": "Not found."}` for college data; 403 for writes to
-another college's content; 200/201 for reads and "copy to my college". After every call, A's
+Expected and found: 404 with `{"detail": "Not found."}` for college data and, since P23, for
+another college's content (there is no "copy to my college" any more). After every call, A's
 audit log and A's review of the booklet are unchanged. B cannot register a booklet for A's
 student (404). B's lists (booklets, evaluated, student search by A's names, accounts) never
 show A's ids. The sweep runs on the in-memory adapters (default suite) and on PostgreSQL +
@@ -83,9 +83,15 @@ MinIO as `tarn_app` (integration).
 The P3/P4 integration tests keep covering every table this way, and the new journey test adds
 UPDATE, DELETE and TRUNCATE attempts on `audit_events` and `deletion_records`.
 
-**Global content.** Only the owning college writes it (`ensure_can_edit` in the services, plus
-RLS policies at the database). Other colleges read it and copy it. The sweep checks all 11 write
-operations, and a mutation that disabled the owner check failed 11 sweep tests.
+**College content (P23, D165; was "global content" until then).** Questions, keys, rubrics,
+glossaries, reference diagrams, key files and papers carry `college_id` with the college RLS
+policy, composite foreign keys (a key cannot point at another college's question, a booklet
+at another college's paper) and a version trigger that refuses another college's row. The
+content repository takes the college first; content files live under `college/{id}/content/`
+and the college-bound blob store refuses another college's, while `global/` is read-only inside
+a college. The sweep checks every content operation for 404, and a mutation that added a
+`USING (true)` read policy on `questions` failed three RLS tests. Only the OCR and scoring
+calibrations stay global (Tarn-operator content, D72).
 
 ## 2. Authentication
 

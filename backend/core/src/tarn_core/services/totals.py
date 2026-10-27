@@ -36,7 +36,7 @@ class TotalsService:
     def preview(self, college_id: CollegeId, booklet_id: BookletId) -> TotalsPreview:
         booklet = self._booklets.get(college_id, booklet_id)
         blueprint = self._content.get(
-            ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
+            booklet.college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
         )
 
         leaf_marks: dict[str, Decimal] = {}

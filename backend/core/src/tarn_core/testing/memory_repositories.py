@@ -24,7 +24,7 @@ from tarn_core.ids import (
     SubjectId,
     UserId,
 )
-from tarn_core.ports.repositories import GlobalItem, QuestionPage, QuestionPart, QuestionQuery
+from tarn_core.ports.repositories import ContentItem, QuestionPage, QuestionPart, QuestionQuery
 
 
 class TenantLog:
@@ -81,12 +81,21 @@ class _Table[K, V: _CollegeRow]:
 
 
 class MemoryContentRepository:
-    def __init__(self) -> None:
-        # keyed by (type name, id); each list holds versions 1..n in order
-        self._items: dict[tuple[str, UUID], list[GlobalItem]] = {}
+    """A college's content, partitioned by college like the other college repositories."""
 
-    def get[T: GlobalItem](self, kind: type[T], item_id: UUID, version: int | None = None) -> T:
-        history = self._items.get((kind.__name__, item_id), [])
+    def __init__(self, log: TenantLog | None = None) -> None:
+        # per college, keyed by (type name, id); each list holds versions 1..n in order
+        self._items: dict[CollegeId, dict[tuple[str, UUID], list[ContentItem]]] = {}
+        self._log = log if log is not None else TenantLog()
+
+    def _college(self, college_id: CollegeId) -> dict[tuple[str, UUID], list[ContentItem]]:
+        self._log.touch(college_id)
+        return self._items.setdefault(college_id, {})
+
+    def get[T: ContentItem](
+        self, college_id: CollegeId, kind: type[T], item_id: UUID, version: int | None = None
+    ) -> T:
+        history = self._college(college_id).get((kind.__name__, item_id), [])
         if not history or (version is not None and not 1 <= version <= len(history)):
             raise NotFoundError(f"{kind.__name__} {item_id} v{version}")
         item = history[-1] if version is None else history[version - 1]
@@ -94,18 +103,25 @@ class MemoryContentRepository:
             raise NotFoundError(f"{kind.__name__} {item_id}")
         return item
 
-    def versions[T: GlobalItem](self, kind: type[T], item_id: UUID) -> Sequence[T]:
-        return [i for i in self._items.get((kind.__name__, item_id), []) if isinstance(i, kind)]
+    def versions[T: ContentItem](
+        self, college_id: CollegeId, kind: type[T], item_id: UUID
+    ) -> Sequence[T]:
+        history = self._college(college_id).get((kind.__name__, item_id), [])
+        return [i for i in history if isinstance(i, kind)]
 
-    def latest[T: GlobalItem](self, kind: type[T]) -> Sequence[T]:
+    def latest[T: ContentItem](self, college_id: CollegeId, kind: type[T]) -> Sequence[T]:
         newest = (
-            history[-1] for (name, _), history in self._items.items() if name == kind.__name__
+            history[-1]
+            for (name, _), history in self._college(college_id).items()
+            if name == kind.__name__
         )
         return [item for item in newest if isinstance(item, kind)]
 
-    def for_question[T: QuestionPart](self, kind: type[T], question_id: QuestionId) -> Sequence[T]:
+    def for_question[T: QuestionPart](
+        self, college_id: CollegeId, kind: type[T], question_id: QuestionId
+    ) -> Sequence[T]:
         found: list[T] = []
-        for (kind_name, _), history in self._items.items():
+        for (kind_name, _), history in self._college(college_id).items():
             latest = history[-1]
             if (
                 kind_name == kind.__name__
@@ -117,18 +133,16 @@ class MemoryContentRepository:
         return found
 
     def search_questions(
-        self, query: QuestionQuery, *, limit: int, offset: int = 0
+        self, college_id: CollegeId, query: QuestionQuery, *, limit: int, offset: int = 0
     ) -> QuestionPage:
-        hits = [q for q in self.latest(Question) if self._matches(query, q)]
+        hits = [q for q in self.latest(college_id, Question) if self._matches(college_id, query, q)]
         hits.sort(key=lambda q: (q.code.casefold(), str(q.id)))
         return QuestionPage(items=tuple(hits[offset : offset + limit]), total=len(hits))
 
-    def _matches(self, query: QuestionQuery, q: Question) -> bool:
+    def _matches(self, college_id: CollegeId, query: QuestionQuery, q: Question) -> bool:
         if query.subject_id is not None and q.subject_id != query.subject_id:
             return False
         if query.difficulty is not None and q.difficulty != query.difficulty:
-            return False
-        if query.owner_id is not None and q.meta.owning_college_id != query.owner_id:
             return False
         if query.topic and q.category.casefold() != query.topic.casefold():
             return False
@@ -139,26 +153,40 @@ class MemoryContentRepository:
         if query.keyword:
             word = query.keyword.casefold()
             texts = [q.text, q.code, q.category]
-            texts += [a.text for a in self.for_question(ReferenceAnswer, q.id)]
+            texts += [a.text for a in self.for_question(college_id, ReferenceAnswer, q.id)]
             if not any(word in t.casefold() for t in texts):
                 return False
         return True
 
-    def topics(self, subject_id: SubjectId | None = None) -> Sequence[str]:
+    def topics(self, college_id: CollegeId, subject_id: SubjectId | None = None) -> Sequence[str]:
         found: dict[str, str] = {}
-        for q in self.latest(Question):
+        for q in self.latest(college_id, Question):
             if q.category.strip() and (subject_id is None or q.subject_id == subject_id):
                 found.setdefault(q.category.casefold(), q.category)
         return sorted(found.values(), key=str.casefold)
 
-    def key_counts(self, question_ids: Sequence[QuestionId]) -> Mapping[QuestionId, int]:
+    def key_counts(
+        self, college_id: CollegeId, question_ids: Sequence[QuestionId]
+    ) -> Mapping[QuestionId, int]:
         return {
-            qid: len(self.for_question(ReferenceAnswer, qid)) + len(self.for_question(KeyFile, qid))
+            qid: len(self.for_question(college_id, ReferenceAnswer, qid))
+            + len(self.for_question(college_id, KeyFile, qid))
             for qid in question_ids
         }
 
-    def save(self, item: GlobalItem) -> None:
-        history = self._items.setdefault((type(item).__name__, item.id), [])
+    def save(self, college_id: CollegeId, item: ContentItem) -> None:
+        if item.meta.college_id != college_id:
+            raise TenantViolationError(
+                f"{type(item).__name__} of another college written through {college_id}"
+            )
+        if any(
+            (type(item).__name__, item.id) in items
+            for other, items in self._items.items()
+            if other != college_id
+        ):
+            # PostgreSQL refuses it too: ids are unique across colleges.
+            raise InvariantError(f"{type(item).__name__} {item.id}: id already in use")
+        history = self._college(college_id).setdefault((type(item).__name__, item.id), [])
         if item.meta.version != len(history) + 1:
             raise InvariantError(
                 f"{type(item).__name__} {item.id}: expected version {len(history) + 1}, "
@@ -180,7 +208,7 @@ class MemoryCollegeRepository:
             raise NotFoundError(f"college {college_id}") from None
 
     def names(self, college_ids: Sequence[CollegeId]) -> Mapping[CollegeId, str]:
-        # Not logged: naming the owner of global content is not college data access.
+        # Not logged: the college directory (names only) is public.
         return {i: self._colleges[i].name for i in college_ids if i in self._colleges}
 
     def save(self, college: College) -> None:

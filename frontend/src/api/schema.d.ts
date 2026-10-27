@@ -389,10 +389,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** All subjects, by name */
+        /** My college's subjects, by name */
         get: operations["list_subjects_api_v1_subjects_get"];
         put?: never;
-        /** Create a subject owned by my college */
+        /** Create a subject of my college */
         post: operations["create_subject_api_v1_subjects_post"];
         delete?: never;
         options?: never;
@@ -427,10 +427,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The newest version of every blueprint, from every college, by title */
+        /** The newest version of every blueprint of my college, by title */
         get: operations["list_blueprints_api_v1_blueprints_get"];
         put?: never;
-        /** Create a blueprint owned by my college */
+        /** Create a blueprint of my college */
         post: operations["create_blueprint_api_v1_blueprints_post"];
         delete?: never;
         options?: never;
@@ -448,8 +448,8 @@ export interface paths {
         /** One blueprint: the newest version, or ?version= */
         get: operations["get_blueprint_api_v1_blueprints__blueprint_id__get"];
         /**
-         * Save the document as the next version (owning college only)
-         * @description Earlier versions stay valid for booklets pinned to them. Another college's blueprint is copied first (POST .../copy).
+         * Save the document as the next version (teachers only)
+         * @description Earlier versions stay valid for booklets pinned to them.
          */
         put: operations["update_blueprint_api_v1_blueprints__blueprint_id__put"];
         post?: never;
@@ -476,23 +476,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/blueprints/{blueprint_id}/copy": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Copy a blueprint to my college */
-        post: operations["copy_blueprint_api_v1_blueprints__blueprint_id__copy_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/questions": {
         parameters: {
             query?: never;
@@ -501,12 +484,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Search the question bank (every college's questions)
+         * Search my college's question bank
          * @description Every filter given must match; text filters ignore case. Ordered by code.
          */
         get: operations["search_questions_api_v1_questions_get"];
         put?: never;
-        /** Create a question owned by my college, optionally with its key and rubric */
+        /** Create a question of my college, optionally with its key and rubric */
         post: operations["create_question_api_v1_questions_post"];
         delete?: never;
         options?: never;
@@ -541,28 +524,11 @@ export interface paths {
         /** One question with its keys, rubric, glossary and files */
         get: operations["get_question_api_v1_questions__question_id__get"];
         /**
-         * Save the next version of a question (owning college only)
+         * Save the next version of a question
          * @description The subject never changes. If the marks change and a rubric exists, send the new `criteria` too: their weights must add up to the marks.
          */
         put: operations["update_question_api_v1_questions__question_id__put"];
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/questions/{question_id}/copy": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Copy a question, with its keys, rubric, glossary and files, to my college */
-        post: operations["copy_question_api_v1_questions__question_id__copy_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -578,7 +544,7 @@ export interface paths {
         };
         get?: never;
         /**
-         * Replace the rubric (owning college only)
+         * Replace the rubric
          * @description Criteria with an `id` get a new version if changed; criteria left out are retired. The weights must add up to the question's marks (an empty list is allowed: a guidance-only key is marked by hand).
          */
         put: operations["put_rubric_api_v1_questions__question_id__rubric_put"];
@@ -598,7 +564,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Add a reference answer (owning college only) */
+        /** Add a reference answer */
         post: operations["add_reference_answer_api_v1_questions__question_id__reference_answers_post"];
         delete?: never;
         options?: never;
@@ -614,11 +580,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Save the next version of a reference answer (owning college only) */
+        /** Save the next version of a reference answer */
         put: operations["edit_reference_answer_api_v1_questions__question_id__reference_answers__answer_id__put"];
         post?: never;
         /**
-         * Retire a reference answer (owning college only)
+         * Retire a reference answer
          * @description Saves a retired version: it stops being listed, and scores that used it keep it.
          */
         delete: operations["retire_reference_answer_api_v1_questions__question_id__reference_answers__answer_id__delete"];
@@ -636,7 +602,7 @@ export interface paths {
         };
         get?: never;
         /**
-         * Set the glossary terms (owning college only)
+         * Set the glossary terms
          * @description The glossary is the teacher's terms plus the labels of the reference diagrams, which are kept up to date automatically.
          */
         put: operations["put_glossary_api_v1_questions__question_id__glossary_put"];
@@ -657,7 +623,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Upload an answer key or sample (PDF or image; owning college only)
+         * Upload an answer key or sample (PDF or image)
          * @description The request body is the file itself. The file type is read from its content. `confirm_no_student_data` must be true: keys are written by faculty and hold no student data (C9).
          */
         post: operations["upload_key_file_api_v1_questions__question_id__key_files_post"];
@@ -694,7 +660,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Upload a reference diagram as PNG (owning college only)
+         * Upload a reference diagram as PNG
          * @description The request body is the PNG. Its nodes, edges and labels are read from the picture by the worker (recognition `pending` until then); check and correct them through `/graph/edits`. `kind` says what it is (circuits, plots and labelled drawings are kept but not compared yet). `confirm_no_student_data` must be true (C9).
          */
         post: operations["upload_reference_diagram_api_v1_questions__question_id__diagrams_post"];
@@ -844,7 +810,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Correct the reference graph or change its kind (owning college only)
+         * Correct the reference graph or change its kind (teachers)
          * @description Applies the edits in order and stores the next version. Add, remove, relabel or reshape nodes; add, remove or relabel edges; reverse an arrow; re-attach an arrow's ends. Removing a node removes its edges. Scores already made keep the version they used.
          */
         post: operations["edit_reference_graph_api_v1_questions__question_id__diagrams__diagram_id__graph_edits_post"];
@@ -864,7 +830,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Read the reference PNG again (owning college only)
+         * Read the reference PNG again (teachers)
          * @description Queues recognition; the worker stores the result as the next version, replacing any edits in that version (earlier versions are kept).
          */
         post: operations["recognize_reference_api_v1_questions__question_id__diagrams__diagram_id__recognize_post"];
@@ -1349,17 +1315,6 @@ export interface components {
             /** Unlinked Count */
             unlinked_count: number;
             /**
-             * Owning College Id
-             * Format: uuid
-             */
-            owning_college_id: string;
-            /**
-             * Owned
-             * @description True if my college owns it and so may edit it.
-             */
-            owned: boolean;
-            copied_from: components["schemas"]["ContentRefOut"] | null;
-            /**
              * Document
              * @description The blueprint in the public form, see docs/api/blueprint.schema.json.
              */
@@ -1397,17 +1352,6 @@ export interface components {
             question_count: number;
             /** Unlinked Count */
             unlinked_count: number;
-            /**
-             * Owning College Id
-             * Format: uuid
-             */
-            owning_college_id: string;
-            /**
-             * Owned
-             * @description True if my college owns it and so may edit it.
-             */
-            owned: boolean;
-            copied_from: components["schemas"]["ContentRefOut"] | null;
         };
         /** Body_upload_booklet_api_v1_booklets_post */
         Body_upload_booklet_api_v1_booklets_post: {
@@ -1613,18 +1557,6 @@ export interface components {
             current_password: string;
             /** New Password */
             new_password: string;
-        };
-        /** ContentRefOut */
-        ContentRefOut: {
-            /** Kind */
-            kind: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Version */
-            version: number;
         };
         /**
          * CriterionOut
@@ -2406,19 +2338,6 @@ export interface components {
              * @description Reference answers plus attached key files.
              */
             key_count: number;
-            /**
-             * Owning College Id
-             * Format: uuid
-             */
-            owning_college_id: string;
-            /** Owner Name */
-            owner_name: string | null;
-            /**
-             * Owned
-             * @description True if my college owns it and so may edit it.
-             */
-            owned: boolean;
-            copied_from: components["schemas"]["ContentRefOut"] | null;
             /** Reference Answers */
             reference_answers: components["schemas"]["ReferenceAnswerOut"][];
             rubric: components["schemas"]["RubricOut"];
@@ -2473,19 +2392,6 @@ export interface components {
              * @description Reference answers plus attached key files.
              */
             key_count: number;
-            /**
-             * Owning College Id
-             * Format: uuid
-             */
-            owning_college_id: string;
-            /** Owner Name */
-            owner_name: string | null;
-            /**
-             * Owned
-             * @description True if my college owns it and so may edit it.
-             */
-            owned: boolean;
-            copied_from: components["schemas"]["ContentRefOut"] | null;
         };
         /** QuestionUpdateIn */
         QuestionUpdateIn: {
@@ -3277,16 +3183,6 @@ export interface components {
             code: string;
             /** Name */
             name: string;
-            /**
-             * Owning College Id
-             * Format: uuid
-             */
-            owning_college_id: string;
-            /**
-             * Owned
-             * @description True if my college owns it.
-             */
-            owned: boolean;
         };
         /** SuggestionOut */
         SuggestionOut: {
@@ -4678,7 +4574,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Forbidden */
+            /** @description Teachers only. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4880,64 +4776,6 @@ export interface operations {
             };
         };
     };
-    copy_blueprint_api_v1_blueprints__blueprint_id__copy_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                blueprint_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BlueprintOut"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorOut"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorOut"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     search_questions_api_v1_questions_get: {
         parameters: {
             query?: {
@@ -4949,8 +4787,6 @@ export interface operations {
                 topic?: string;
                 subject_id?: string | null;
                 difficulty?: components["schemas"]["Difficulty"] | null;
-                /** @description Only questions my college owns. */
-                mine?: boolean;
                 limit?: number;
                 offset?: number;
             };
@@ -5029,7 +4865,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Forbidden */
+            /** @description Teachers only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5207,7 +5043,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Another college owns it: copy it first. */
+            /** @description Teachers only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5245,64 +5081,6 @@ export interface operations {
             };
         };
     };
-    copy_question_api_v1_questions__question_id__copy_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                question_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QuestionOut"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorOut"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorOut"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     put_rubric_api_v1_questions__question_id__rubric_put: {
         parameters: {
             query?: never;
@@ -5336,7 +5114,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Another college owns it: copy it first. */
+            /** @description Teachers only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5398,7 +5176,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Another college owns it: copy it first. */
+            /** @description Teachers only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5461,7 +5239,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Another college owns it: copy it first. */
+            /** @description Teachers only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5518,7 +5296,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Another college owns it: copy it first. */
+            /** @description Teachers only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5580,7 +5358,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Another college owns it: copy it first. */
+            /** @description Teachers only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5648,7 +5426,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Another college owns it: copy it first. */
+            /** @description Teachers only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5782,7 +5560,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Another college owns it: copy it first. */
+            /** @description Teachers only: the admin does not edit content. */
             403: {
                 headers: {
                     [name: string]: unknown;

@@ -35,6 +35,7 @@ from tarn_core.domain.content import (
 from tarn_core.ids import CollegeId, CriterionId, QuestionId, UserId
 from tarn_core.services.scoring.calibration import CalibrationQuestion, MarkedAnswer
 from tarn_core.testing import InMemory
+from tarn_core.testing.seed_world import seeded_college_ids
 
 _NOBODY = UserId(uuid5(NAMESPACE_URL, "tarn:calibration:nobody"))
 _NO_COLLEGE = CollegeId(uuid5(NAMESPACE_URL, "tarn:calibration:college"))
@@ -100,7 +101,7 @@ def load_set(folder: Path, seeded: InMemory | None = None) -> CalibrationSet:
 
 
 def dataset_questions(data: Mapping[str, Mapping[str, object]]) -> list[CalibrationQuestion]:
-    meta = ContentMeta(owning_college_id=_NO_COLLEGE, created_by=_NOBODY)
+    meta = ContentMeta(college_id=_NO_COLLEGE, created_by=_NOBODY)
     questions = []
     for code, q in data.items():
         max_marks = Decimal(str(q["max_marks"]))
@@ -143,25 +144,29 @@ def _split(total: Decimal, n: int) -> list[Decimal]:
 def seeded_questions(seeded: InMemory, codes: set[str]) -> list[CalibrationQuestion]:
     """The seeded questions with these codes that have AI-scored criteria (guidance-only keys
     are marked manually and have nothing to calibrate)."""
+    colleges = seeded_college_ids(seeded)
     steps: dict[QuestionId, Decimal] = {}
-    for blueprint in seeded.content.latest(ExamBlueprint):
-        for slot in blueprint.slots():
-            for _, question_id, _ in leaves(slot):
-                if question_id is not None:
-                    steps[question_id] = blueprint.mark_step
+    for college_id in colleges:
+        for blueprint in seeded.content.latest(college_id, ExamBlueprint):
+            for slot in blueprint.slots():
+                for _, question_id, _ in leaves(slot):
+                    if question_id is not None:
+                        steps[question_id] = blueprint.mark_step
     out = []
-    for question in seeded.content.latest(Question):
+    content = seeded.content
+    for question in (q for c in colleges for q in content.latest(c, Question)):
         if question.code not in codes:
             continue
-        criteria = tuple(seeded.content.for_question(RubricCriterion, question.id))
+        cid = question.meta.college_id
+        criteria = tuple(content.for_question(cid, RubricCriterion, question.id))
         if not criteria:
             continue
         keys = [
             k.text
-            for k in seeded.content.for_question(ReferenceAnswer, question.id)
+            for k in content.for_question(cid, ReferenceAnswer, question.id)
             if not k.guidance_only
         ]
-        glossaries = seeded.content.for_question(Glossary, question.id)
+        glossaries = content.for_question(cid, Glossary, question.id)
         off = [t for g in glossaries for t in g.off_target_terms]
         out.append(
             CalibrationQuestion(

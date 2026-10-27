@@ -213,8 +213,6 @@ class SubjectOut(BaseModel):
     id: UUID
     code: str
     name: str
-    owning_college_id: UUID
-    owned: bool = Field(description="True if my college owns it.")
 
 
 class IssueOut(BaseModel):
@@ -247,12 +245,6 @@ class ValidationOut(BaseModel):
     )
 
 
-class ContentRefOut(BaseModel):
-    kind: str
-    id: UUID
-    version: int
-
-
 class BlueprintSummaryOut(BaseModel):
     id: UUID
     version: int
@@ -265,9 +257,6 @@ class BlueprintSummaryOut(BaseModel):
     section_count: int
     question_count: int
     unlinked_count: int
-    owning_college_id: UUID
-    owned: bool = Field(description="True if my college owns it and so may edit it.")
-    copied_from: ContentRefOut | None
 
 
 class BlueprintOut(BlueprintSummaryOut):
@@ -390,10 +379,6 @@ class QuestionSummaryOut(BaseModel):
     subject_id: UUID
     subject_name: str | None
     key_count: int = Field(description="Reference answers plus attached key files.")
-    owning_college_id: UUID
-    owner_name: str | None
-    owned: bool = Field(description="True if my college owns it and so may edit it.")
-    copied_from: ContentRefOut | None
 
 
 class QuestionPageOut(BaseModel):

@@ -10,7 +10,7 @@ from sqlalchemy import Connection, Row, func, insert, select
 from tarn_adapters.postgres import metadata as m
 from tarn_adapters.postgres.repositories import writing
 from tarn_core.domain.scoring import ScoringCalibration
-from tarn_core.errors import InvariantError, NotOwnerError
+from tarn_core.errors import InvariantError, PermissionDeniedError
 
 _T = m.scoring_calibrations
 
@@ -64,7 +64,8 @@ class PgScoringCalibrationStore:
             raise InvariantError(
                 f"calibration version {calibration.version} is not the next ({current + 1})"
             )
-        with writing(self._conn, f"scoring calibration {calibration.embedder}", NotOwnerError):
+        what = f"scoring calibration {calibration.embedder}"
+        with writing(self._conn, what, PermissionDeniedError):
             self._conn.execute(
                 insert(_T).values(
                     id=calibration.id,

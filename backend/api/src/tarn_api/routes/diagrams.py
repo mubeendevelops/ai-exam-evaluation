@@ -1,5 +1,5 @@
-"""Diagram graphs (R6, U6 Q20): the reference diagram's graph (global content, edited by the
-owning college as a new version) and the drawings recognised in a booklet (college data,
+"""Diagram graphs (R6, U6 Q20): the reference diagram's graph (the college's own content,
+edited by its teachers as a new version) and the drawings recognised in a booklet (college data,
 edited by the teacher, after which the answer is re-scored by the worker), and the R6
 comparison documents of an answer's latest score. Recognition itself runs in the worker."""
 
@@ -25,7 +25,7 @@ from tarn_core.domain.diagram import DiagramGraph, DiagramKind, NodeShape, Stude
 from tarn_core.domain.tenancy import Role
 from tarn_core.errors import NotFoundError
 from tarn_core.ids import AnswerId, BookletId, QuestionId, ReferenceDiagramId, StudentDiagramId
-from tarn_core.services.content import ensure_can_edit
+from tarn_core.services.content import ensure_author
 from tarn_core.services.diagrams.editor import EditOp, GraphEdit
 from tarn_core.services.diagrams.graph_json import graph_to_json
 from tarn_core.services.diagrams.jobs import queue_reference_recognition
@@ -104,7 +104,7 @@ def reference_graph(
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
         diagram, _ = unit.bank.read_reference_diagram(
-            QuestionId(question_id), ReferenceDiagramId(diagram_id)
+            who.college_id, QuestionId(question_id), ReferenceDiagramId(diagram_id)
         )
     return _reference_out(question_id, diagram)
 
@@ -113,7 +113,7 @@ def reference_graph(
     "/questions/{question_id}/diagrams/{diagram_id}/graph/edits",
     response_model=ReferenceGraphOut,
     responses=_EDIT_ERRORS,
-    summary="Correct the reference graph or change its kind (owning college only)",
+    summary="Correct the reference graph or change its kind (teachers)",
     description="Applies the edits in order and stores the next version. Add, remove, relabel or "
     "reshape nodes; add, remove or relabel edges; reverse an arrow; re-attach an arrow's ends. "
     "Removing a node removes its edges. Scores already made keep the version they used.",
@@ -127,7 +127,9 @@ def edit_reference_graph(
 ) -> ReferenceGraphOut:
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
-        unit.bank.read_reference_diagram(QuestionId(question_id), ReferenceDiagramId(diagram_id))
+        unit.bank.read_reference_diagram(
+            who.college_id, QuestionId(question_id), ReferenceDiagramId(diagram_id)
+        )
         diagram = unit.reference_diagrams.edit(
             who.college_id,
             who.user_id,
@@ -143,7 +145,7 @@ def edit_reference_graph(
     "/questions/{question_id}/diagrams/{diagram_id}/recognize",
     status_code=status.HTTP_202_ACCEPTED,
     response_class=Response,
-    summary="Read the reference PNG again (owning college only)",
+    summary="Read the reference PNG again (teachers)",
     description="Queues recognition; the worker stores the result as the next version, "
     "replacing any edits in that version (earlier versions are kept).",
 )
@@ -153,9 +155,9 @@ def recognize_reference(
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Role.ADMIN, Role.TEACHER)
         diagram, _ = unit.bank.read_reference_diagram(
-            QuestionId(question_id), ReferenceDiagramId(diagram_id)
+            who.college_id, QuestionId(question_id), ReferenceDiagramId(diagram_id)
         )
-        ensure_can_edit(who.college_id, diagram)
+        ensure_author(unit.scope.users, who.college_id, who.user_id)
         queue_reference_recognition(unit.scope.jobs, who.college_id, who.user_id, diagram)
     return Response(status_code=status.HTTP_202_ACCEPTED)
 

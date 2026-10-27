@@ -87,7 +87,7 @@ def _booklet_out(
     pages = list(unit.scope.booklets.pages(college_id, booklet.id))
     student = unit.scope.students.get(college_id, booklet.student_id)
     blueprint = unit.scope.content.get(
-        ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
+        college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
     )
     out = BookletOut(
         id=booklet.id,

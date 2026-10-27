@@ -1280,7 +1280,7 @@
         "tags": [
           "blueprints"
         ],
-        "summary": "All subjects, by name",
+        "summary": "My college's subjects, by name",
         "operationId": "list_subjects_api_v1_subjects_get",
         "responses": {
           "200": {
@@ -1328,7 +1328,7 @@
         "tags": [
           "blueprints"
         ],
-        "summary": "Create a subject owned by my college",
+        "summary": "Create a subject of my college",
         "operationId": "create_subject_api_v1_subjects_post",
         "requestBody": {
           "content": {
@@ -1464,7 +1464,7 @@
         "tags": [
           "blueprints"
         ],
-        "summary": "The newest version of every blueprint, from every college, by title",
+        "summary": "The newest version of every blueprint of my college, by title",
         "operationId": "list_blueprints_api_v1_blueprints_get",
         "responses": {
           "200": {
@@ -1512,7 +1512,7 @@
         "tags": [
           "blueprints"
         ],
-        "summary": "Create a blueprint owned by my college",
+        "summary": "Create a blueprint of my college",
         "operationId": "create_blueprint_api_v1_blueprints_post",
         "requestBody": {
           "content": {
@@ -1549,7 +1549,7 @@
             }
           },
           "403": {
-            "description": "Forbidden",
+            "description": "Teachers only.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1674,8 +1674,8 @@
         "tags": [
           "blueprints"
         ],
-        "summary": "Save the document as the next version (owning college only)",
-        "description": "Earlier versions stay valid for booklets pinned to them. Another college's blueprint is copied first (POST .../copy).",
+        "summary": "Save the document as the next version (teachers only)",
+        "description": "Earlier versions stay valid for booklets pinned to them.",
         "operationId": "update_blueprint_api_v1_blueprints__blueprint_id__put",
         "security": [
           {
@@ -1843,90 +1843,12 @@
         }
       }
     },
-    "/api/v1/blueprints/{blueprint_id}/copy": {
-      "post": {
-        "tags": [
-          "blueprints"
-        ],
-        "summary": "Copy a blueprint to my college",
-        "operationId": "copy_blueprint_api_v1_blueprints__blueprint_id__copy_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "blueprint_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Blueprint Id"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BlueprintOut"
-                }
-              }
-            }
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/questions": {
       "get": {
         "tags": [
           "question bank"
         ],
-        "summary": "Search the question bank (every college's questions)",
+        "summary": "Search my college's question bank",
         "description": "Every filter given must match; text filters ignore case. Ordered by code.",
         "operationId": "search_questions_api_v1_questions_get",
         "security": [
@@ -2008,18 +1930,6 @@
             }
           },
           {
-            "name": "mine",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "description": "Only questions my college owns.",
-              "default": false,
-              "title": "Mine"
-            },
-            "description": "Only questions my college owns."
-          },
-          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -2090,7 +2000,7 @@
         "tags": [
           "question bank"
         ],
-        "summary": "Create a question owned by my college, optionally with its key and rubric",
+        "summary": "Create a question of my college, optionally with its key and rubric",
         "operationId": "create_question_api_v1_questions_post",
         "security": [
           {
@@ -2129,14 +2039,14 @@
             "description": "Unauthorized"
           },
           "403": {
+            "description": "Teachers only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorOut"
                 }
               }
-            },
-            "description": "Forbidden"
+            }
           },
           "404": {
             "content": {
@@ -2331,7 +2241,7 @@
         "tags": [
           "question bank"
         ],
-        "summary": "Save the next version of a question (owning college only)",
+        "summary": "Save the next version of a question",
         "description": "The subject never changes. If the marks change and a rubric exists, send the new `criteria` too: their weights must add up to the marks.",
         "operationId": "update_question_api_v1_questions__question_id__put",
         "security": [
@@ -2383,7 +2293,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Another college owns it: copy it first.",
+            "description": "Teachers only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2425,90 +2335,12 @@
         }
       }
     },
-    "/api/v1/questions/{question_id}/copy": {
-      "post": {
-        "tags": [
-          "question bank"
-        ],
-        "summary": "Copy a question, with its keys, rubric, glossary and files, to my college",
-        "operationId": "copy_question_api_v1_questions__question_id__copy_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "question_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Question Id"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/QuestionOut"
-                }
-              }
-            }
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/questions/{question_id}/rubric": {
       "put": {
         "tags": [
           "question bank"
         ],
-        "summary": "Replace the rubric (owning college only)",
+        "summary": "Replace the rubric",
         "description": "Criteria with an `id` get a new version if changed; criteria left out are retired. The weights must add up to the question's marks (an empty list is allowed: a guidance-only key is marked by hand).",
         "operationId": "put_rubric_api_v1_questions__question_id__rubric_put",
         "security": [
@@ -2560,7 +2392,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Another college owns it: copy it first.",
+            "description": "Teachers only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2597,7 +2429,7 @@
         "tags": [
           "question bank"
         ],
-        "summary": "Add a reference answer (owning college only)",
+        "summary": "Add a reference answer",
         "operationId": "add_reference_answer_api_v1_questions__question_id__reference_answers_post",
         "security": [
           {
@@ -2648,7 +2480,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Another college owns it: copy it first.",
+            "description": "Teachers only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2685,7 +2517,7 @@
         "tags": [
           "question bank"
         ],
-        "summary": "Save the next version of a reference answer (owning college only)",
+        "summary": "Save the next version of a reference answer",
         "operationId": "edit_reference_answer_api_v1_questions__question_id__reference_answers__answer_id__put",
         "security": [
           {
@@ -2746,7 +2578,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Another college owns it: copy it first.",
+            "description": "Teachers only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2781,7 +2613,7 @@
         "tags": [
           "question bank"
         ],
-        "summary": "Retire a reference answer (owning college only)",
+        "summary": "Retire a reference answer",
         "description": "Saves a retired version: it stops being listed, and scores that used it keep it.",
         "operationId": "retire_reference_answer_api_v1_questions__question_id__reference_answers__answer_id__delete",
         "security": [
@@ -2826,7 +2658,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Another college owns it: copy it first.",
+            "description": "Teachers only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2863,7 +2695,7 @@
         "tags": [
           "question bank"
         ],
-        "summary": "Set the glossary terms (owning college only)",
+        "summary": "Set the glossary terms",
         "description": "The glossary is the teacher's terms plus the labels of the reference diagrams, which are kept up to date automatically.",
         "operationId": "put_glossary_api_v1_questions__question_id__glossary_put",
         "security": [
@@ -2915,7 +2747,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Another college owns it: copy it first.",
+            "description": "Teachers only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2952,7 +2784,7 @@
         "tags": [
           "question bank"
         ],
-        "summary": "Upload an answer key or sample (PDF or image; owning college only)",
+        "summary": "Upload an answer key or sample (PDF or image)",
         "description": "The request body is the file itself. The file type is read from its content. `confirm_no_student_data` must be true: keys are written by faculty and hold no student data (C9).",
         "operationId": "upload_key_file_api_v1_questions__question_id__key_files_post",
         "security": [
@@ -3029,7 +2861,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Another college owns it: copy it first.",
+            "description": "Teachers only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3183,7 +3015,7 @@
         "tags": [
           "question bank"
         ],
-        "summary": "Upload a reference diagram as PNG (owning college only)",
+        "summary": "Upload a reference diagram as PNG",
         "description": "The request body is the PNG. Its nodes, edges and labels are read from the picture by the worker (recognition `pending` until then); check and correct them through `/graph/edits`. `kind` says what it is (circuits, plots and labelled drawings are kept but not compared yet). `confirm_no_student_data` must be true (C9).",
         "operationId": "upload_reference_diagram_api_v1_questions__question_id__diagrams_post",
         "security": [
@@ -3265,7 +3097,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Another college owns it: copy it first.",
+            "description": "Teachers only: the admin does not edit content.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4141,7 +3973,7 @@
         "tags": [
           "diagrams"
         ],
-        "summary": "Correct the reference graph or change its kind (owning college only)",
+        "summary": "Correct the reference graph or change its kind (teachers)",
         "description": "Applies the edits in order and stores the next version. Add, remove, relabel or reshape nodes; add, remove or relabel edges; reverse an arrow; re-attach an arrow's ends. Removing a node removes its edges. Scores already made keep the version they used.",
         "operationId": "edit_reference_graph_api_v1_questions__question_id__diagrams__diagram_id__graph_edits_post",
         "security": [
@@ -4250,7 +4082,7 @@
         "tags": [
           "diagrams"
         ],
-        "summary": "Read the reference PNG again (owning college only)",
+        "summary": "Read the reference PNG again (teachers)",
         "description": "Queues recognition; the worker stores the result as the next version, replacing any edits in that version (earlier versions are kept).",
         "operationId": "recognize_reference_api_v1_questions__question_id__diagrams__diagram_id__recognize_post",
         "security": [
@@ -6727,26 +6559,6 @@
             "type": "integer",
             "title": "Unlinked Count"
           },
-          "owning_college_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Owning College Id"
-          },
-          "owned": {
-            "type": "boolean",
-            "title": "Owned",
-            "description": "True if my college owns it and so may edit it."
-          },
-          "copied_from": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ContentRefOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "document": {
             "additionalProperties": true,
             "type": "object",
@@ -6767,9 +6579,6 @@
           "section_count",
           "question_count",
           "unlinked_count",
-          "owning_college_id",
-          "owned",
-          "copied_from",
           "document"
         ],
         "title": "BlueprintOut"
@@ -6835,26 +6644,6 @@
           "unlinked_count": {
             "type": "integer",
             "title": "Unlinked Count"
-          },
-          "owning_college_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Owning College Id"
-          },
-          "owned": {
-            "type": "boolean",
-            "title": "Owned",
-            "description": "True if my college owns it and so may edit it."
-          },
-          "copied_from": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ContentRefOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "type": "object",
@@ -6869,10 +6658,7 @@
           "duration_minutes",
           "section_count",
           "question_count",
-          "unlinked_count",
-          "owning_college_id",
-          "owned",
-          "copied_from"
+          "unlinked_count"
         ],
         "title": "BlueprintSummaryOut"
       },
@@ -7328,30 +7114,6 @@
           "new_password"
         ],
         "title": "ChangePasswordIn"
-      },
-      "ContentRefOut": {
-        "properties": {
-          "kind": {
-            "type": "string",
-            "title": "Kind"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "version": {
-            "type": "integer",
-            "title": "Version"
-          }
-        },
-        "type": "object",
-        "required": [
-          "kind",
-          "id",
-          "version"
-        ],
-        "title": "ContentRefOut"
       },
       "CriterionOut": {
         "properties": {
@@ -9286,37 +9048,6 @@
             "title": "Key Count",
             "description": "Reference answers plus attached key files."
           },
-          "owning_college_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Owning College Id"
-          },
-          "owner_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner Name"
-          },
-          "owned": {
-            "type": "boolean",
-            "title": "Owned",
-            "description": "True if my college owns it and so may edit it."
-          },
-          "copied_from": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ContentRefOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "reference_answers": {
             "items": {
               "$ref": "#/components/schemas/ReferenceAnswerOut"
@@ -9357,10 +9088,6 @@
           "subject_id",
           "subject_name",
           "key_count",
-          "owning_college_id",
-          "owner_name",
-          "owned",
-          "copied_from",
           "reference_answers",
           "rubric",
           "glossary",
@@ -9456,37 +9183,6 @@
             "type": "integer",
             "title": "Key Count",
             "description": "Reference answers plus attached key files."
-          },
-          "owning_college_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Owning College Id"
-          },
-          "owner_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner Name"
-          },
-          "owned": {
-            "type": "boolean",
-            "title": "Owned",
-            "description": "True if my college owns it and so may edit it."
-          },
-          "copied_from": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ContentRefOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "type": "object",
@@ -9500,11 +9196,7 @@
           "category",
           "subject_id",
           "subject_name",
-          "key_count",
-          "owning_college_id",
-          "owner_name",
-          "owned",
-          "copied_from"
+          "key_count"
         ],
         "title": "QuestionSummaryOut"
       },
@@ -11382,25 +11074,13 @@
           "name": {
             "type": "string",
             "title": "Name"
-          },
-          "owning_college_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Owning College Id"
-          },
-          "owned": {
-            "type": "boolean",
-            "title": "Owned",
-            "description": "True if my college owns it."
           }
         },
         "type": "object",
         "required": [
           "id",
           "code",
-          "name",
-          "owning_college_id",
-          "owned"
+          "name"
         ],
         "title": "SubjectOut"
       },

@@ -51,10 +51,10 @@ def test_content_roundtrip(session: Opener) -> None:
     college = new_college(session, "R")
     with session(college.id) as s:
         ipr = ipr_shaped_blueprint(s, college)  # OR group, sub-parts, any-N
-        assert s.content.get(ExamBlueprint, ipr.id) == ipr
+        assert s.content.get(college.id, ExamBlueprint, ipr.id) == ipr
 
         subject = Subject(id=SubjectId(s.ids.new()), meta=meta(college), code="RT1", name="Round")
-        s.content.save(subject)
+        s.content.save(college.id, subject)
         q = add_question(s.content, college, s.ids.new(), subject.id, Decimal("2.5"))
         stepped = ExamBlueprint(
             id=BlueprintId(s.ids.new()),
@@ -83,9 +83,9 @@ def test_content_roundtrip(session: Opener) -> None:
                 ),
             ),
         )
-        s.content.save(stepped)
-        assert s.content.get(ExamBlueprint, stepped.id) == stepped
-        assert s.content.get(Subject, subject.id) == subject
+        s.content.save(college.id, stepped)
+        assert s.content.get(college.id, ExamBlueprint, stepped.id) == stepped
+        assert s.content.get(college.id, Subject, subject.id) == subject
 
         params = (
             (
@@ -112,14 +112,14 @@ def test_content_roundtrip(session: Opener) -> None:
                 weight=Decimal("0.625"),
                 params=p,
             )
-            s.content.save(c)
-            assert s.content.get(RubricCriterion, c.id) == c
+            s.content.save(college.id, c)
+            assert s.content.get(college.id, RubricCriterion, c.id) == c
         q2 = replace(q, meta=replace(q.meta, version=2), text="Edited", category="theory")
-        s.content.save(q2)
-        assert s.content.versions(Question, q.id) == [q, q2]
+        s.content.save(college.id, q2)
+        assert s.content.versions(college.id, Question, q.id) == [q, q2]
         missing = QuestionId(s.ids.new())
         with pytest.raises(LookupError):
-            s.content.get(Question, missing)
+            s.content.get(college.id, Question, missing)
 
 
 def test_college_data_roundtrip(session: Opener, world: World) -> None:

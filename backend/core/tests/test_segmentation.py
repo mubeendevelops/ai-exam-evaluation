@@ -15,7 +15,7 @@ from tarn_core.services.segmentation.segmenter import SegmentationResult, Segmen
 from tarn_core.services.segmentation.service import question_texts
 from tarn_core.services.segmentation.similarity import TrigramEmbedder
 from tarn_core.testing import InMemory
-from tarn_core.testing.seed_world import seed_in_memory
+from tarn_core.testing.seed_world import seed_in_memory, seeded_blueprints
 from tarn_core.testing.segmentation import booklet_pages
 
 COLLEGE = CollegeId(__import__("uuid").UUID(int=3))
@@ -32,7 +32,7 @@ def papers() -> dict[str, Paper]:
     mem = InMemory()
     seed_in_memory(mem)
     found = {}
-    for blueprint in mem.content.latest(ExamBlueprint):
+    for blueprint in seeded_blueprints(mem):
         key = (
             blueprint.title.split(" ", 1)[0]
             if blueprint.title.startswith("QP")

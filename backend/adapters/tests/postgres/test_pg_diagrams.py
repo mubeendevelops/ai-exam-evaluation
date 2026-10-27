@@ -56,10 +56,11 @@ def test_diagrams_from_reference_to_score_and_edit(
     with session(cid) as s:
         dw = diagram_world(s, college=world.a.college)
         bank = QuestionBankService(
-            content=s.content, users=s.users, colleges=s.colleges, blobs=s.blobs, runtime=s.runtime
+            content=s.content, users=s.users, blobs=s.blobs, runtime=s.runtime
         )
         ref = ReferenceDiagrams(
             content=s.content,
+            users=s.users,
             blobs=s.blobs,
             runtime=s.runtime,
             recognizers={DiagramKind.FLOWCHART: ScriptedDiagramRecognizer(flowchart_detection())},
@@ -73,11 +74,11 @@ def test_diagrams_from_reference_to_score_and_edit(
         )
     # the reference's kind and state survive the round trip
     with session(cid) as s:
-        stored = s.content.get(ReferenceDiagram, ref.id)
+        stored = s.content.get(cid, ReferenceDiagram, ref.id)
         assert stored.recognition is RecognitionState.RECOGNISED
         assert stored.kind is DiagramKind.FLOWCHART
         assert stored.graph == ref.graph
-        assert [d.recognition for d in s.content.versions(ReferenceDiagram, ref.id)] == [
+        assert [d.recognition for d in s.content.versions(cid, ReferenceDiagram, ref.id)] == [
             RecognitionState.PENDING,
             RecognitionState.RECOGNISED,
         ]

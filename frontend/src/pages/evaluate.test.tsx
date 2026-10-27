@@ -46,9 +46,6 @@ const exam = {
   section_count: 1,
   question_count: 3,
   unlinked_count: 0,
-  owning_college_id: 'c-1',
-  owned: true,
-  copied_from: null,
 }
 
 const listOf = (items = [booklet()], extra: Record<string, unknown> = {}) => ({

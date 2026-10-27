@@ -18,9 +18,10 @@ from tarn_core.domain.content import (
     RubricCriterion,
     SemanticParams,
     Subject,
+    content_blob_key,
 )
-from tarn_core.errors import InvariantError, NotOwnerError
-from tarn_core.ids import CriterionId
+from tarn_core.errors import InvariantError, NotFoundError, TenantViolationError
+from tarn_core.ids import CollegeId, CriterionId, KeyFileId
 from tarn_core.ports.repositories import QuestionQuery
 from tarn_core.services.question_bank import CriterionSpec
 from tarn_core.testing.builders import make_services
@@ -69,16 +70,17 @@ def test_a_question_with_its_key_and_rubric_round_trips(session: Opener) -> None
             no_student_data=True,
         )
     with session(a.id) as s:
-        got = s.content.get(type(q), q.id)
+        got = s.content.get(a.id, type(q), q.id)
         assert got == q and got.code == "Q-1" and got.difficulty is Difficulty.HARD
-        assert [c.weight for c in s.content.for_question(RubricCriterion, q.id)] == [
+        assert [c.weight for c in s.content.for_question(a.id, RubricCriterion, q.id)] == [
             Decimal("2.5"),
             Decimal(2),
         ]
-        stored = s.content.for_question(KeyFile, q.id)
+        stored = s.content.for_question(a.id, KeyFile, q.id)
         assert stored == [key]
-        detail = make_services(s).bank.detail(q.id)
-        assert detail.owner_name == "Test College QA" and detail.subject is not None
+        detail = make_services(s).bank.detail(a.id, q.id)
+        assert detail.subject is not None
+        assert key.blob.value.startswith(f"college/{a.id}/content/keys/")
         assert detail.rubric_total == Decimal("4.5")
 
 
@@ -97,21 +99,21 @@ def test_retired_items_leave_the_listing_but_keep_their_history(session: Opener)
             reference_answer="zebra answer",
             criteria=[_spec("A", "1"), _spec("B", "1")],
         )
-        answer = svc.bank.detail(q.id).answers[0]
-        crit = {c.label: c for c in s.content.for_question(RubricCriterion, q.id)}
+        answer = svc.bank.detail(a.id, q.id).answers[0]
+        crit = {c.label: c for c in s.content.for_question(a.id, RubricCriterion, q.id)}
         svc.bank.set_rubric(a.id, a.teacher.id, q.id, [_spec("A", "2", crit["A"].id)])
-        assert svc.bank.search(QuestionQuery(keyword="zebra", owner_id=a.id), limit=5).total == 1
+        assert svc.bank.search(a.id, QuestionQuery(keyword="zebra"), limit=5).total == 1
         svc.bank.retire_reference_answer(a.id, a.teacher.id, q.id, answer.id)
     with session(a.id) as s:
-        assert [c.label for c in s.content.for_question(RubricCriterion, q.id)] == ["A"]
-        assert s.content.for_question(ReferenceAnswer, q.id) == []
-        assert [c.retired for c in s.content.versions(RubricCriterion, crit["B"].id)] == [
+        assert [c.label for c in s.content.for_question(a.id, RubricCriterion, q.id)] == ["A"]
+        assert s.content.for_question(a.id, ReferenceAnswer, q.id) == []
+        assert [c.retired for c in s.content.versions(a.id, RubricCriterion, crit["B"].id)] == [
             False,
             True,
         ]
         svc = make_services(s)
-        assert svc.bank.search(QuestionQuery(keyword="zebra", owner_id=a.id), limit=5).total == 0
-        assert svc.bank.search(QuestionQuery(owner_id=a.id), limit=5).items[0].key_count == 0
+        assert svc.bank.search(a.id, QuestionQuery(keyword="zebra"), limit=5).total == 0
+        assert svc.bank.search(a.id, QuestionQuery(), limit=5).items[0].key_count == 0
 
 
 def test_filters_match_the_in_memory_behaviour(session: Opener) -> None:
@@ -149,27 +151,26 @@ def test_filters_match_the_in_memory_behaviour(session: Opener) -> None:
         add("P%", "Percent sign 100% literal", "Edge", Difficulty.MEDIUM)
     with session(b.id) as s:
         svc = make_services(s)
+        b_phy = svc.subjects.create(b.id, b.teacher.id, code="P", name="Physics")
         svc.bank.create_question(
             b.id,
             b.teacher.id,
-            subject_id=phy.id,
+            subject_id=b_phy.id,
             code=f"{tag}-B1",
             text="B's.",
             max_marks=Decimal(1),
             category="Optics",
         )
 
-    def codes(**kw: Any) -> list[str]:
-        with session(b.id) as s:  # another college reads: global visibility
-            page = make_services(s).bank.search(
-                QuestionQuery(code=tag, **kw),
-                limit=20,
-            )
+    def codes(college: CollegeId = a.id, **kw: Any) -> list[str]:
+        with session(college) as s:
+            page = make_services(s).bank.search(college, QuestionQuery(code=tag, **kw), limit=20)
         assert page.total == len(page.items)
         return [i.question.code.removeprefix(f"{tag}-") for i in page.items]
 
-    assert codes() == ["B1", "M1", "P%", "Q1", "Q2"]
-    assert codes(subject_id=phy.id) == ["B1", "P%", "Q1", "Q2"]
+    assert codes() == ["M1", "P%", "Q1", "Q2"]  # A's only (D165)
+    assert codes(b.id) == ["B1"]
+    assert codes(subject_id=phy.id) == ["P%", "Q1", "Q2"]
     assert codes(difficulty=Difficulty.EASY) == ["M1", "Q1"]
     assert codes(topic="ac circuits") == ["Q2"]
     assert codes(topic="circuit") == []
@@ -178,20 +179,18 @@ def test_filters_match_the_in_memory_behaviour(session: Opener) -> None:
     assert codes(keyword="electromag") == ["Q1"]  # topic
     assert codes(keyword="%") == ["P%"]  # literal, not a wildcard
     assert codes(keyword="_") == []
-    assert codes(owner_id=b.id) == ["B1"]
+    assert codes(b.id, keyword="lenz") == []
     assert codes(keyword="lenz", difficulty=Difficulty.HARD) == []
     with session(a.id) as s:
         svc = make_services(s)
-        assert {"Calculus", "AC Circuits"} <= set(svc.bank.topics())
-        assert list(svc.bank.topics(mat.id)) == ["Calculus"]
-        first = svc.bank.search(QuestionQuery(code=tag), limit=2)
-        rest = svc.bank.search(QuestionQuery(code=tag), limit=2, offset=2)
-        assert (first.total, len(first.items), len(rest.items)) == (5, 2, 2)
-        assert first.items[1].owner_name is not None
-        assert (
-            svc.bank.search(QuestionQuery(code=f"{tag}-q1".lower(), exact_code=True), limit=3).total
-            == 1
-        )
+        assert set(svc.bank.topics(a.id)) == {"Calculus", "AC Circuits", "Electromagnetism", "Edge"}
+        assert list(svc.bank.topics(a.id, mat.id)) == ["Calculus"]
+        first = svc.bank.search(a.id, QuestionQuery(code=tag), limit=2)
+        rest = svc.bank.search(a.id, QuestionQuery(code=tag), limit=2, offset=2)
+        assert (first.total, len(first.items), len(rest.items)) == (4, 2, 2)
+        assert first.items[1].subject_name is not None
+        exact = QuestionQuery(code=f"{tag}-q1".lower(), exact_code=True)
+        assert svc.bank.search(a.id, exact, limit=3).total == 1
 
 
 def test_database_refuses_what_the_service_forbids(session: Opener) -> None:
@@ -215,7 +214,8 @@ def test_database_refuses_what_the_service_forbids(session: Opener) -> None:
         # Even a record built around the service cannot say "student data may be inside".
         with pytest.raises(InvariantError):
             s.content.save(
-                replace(ok, meta=replace(ok.meta, version=2), no_student_data_confirmed=False)
+                a.id,
+                replace(ok, meta=replace(ok.meta, version=2), no_student_data_confirmed=False),
             )
         with (
             pytest.raises(Exception, match=r"no_student_data_confirmed|check"),
@@ -225,7 +225,7 @@ def test_database_refuses_what_the_service_forbids(session: Opener) -> None:
                 text(
                     "INSERT INTO key_files (id, version, question_id, name, media_type, "
                     "size_bytes, sha256, blob_key, keywords, no_student_data_confirmed, "
-                    "owning_college_id, "
+                    "college_id, "
                     "created_by) VALUES (gen_random_uuid(), 1, :q, 'k', 'application/pdf', 1, "
                     "repeat('a', 64), 'global/x', '{}', false, :c, :u)"
                 ),
@@ -234,7 +234,7 @@ def test_database_refuses_what_the_service_forbids(session: Opener) -> None:
     with session(b.id) as s:
         svc = make_services(s)
         # B cannot attach a key to A's question, in the service or in the database.
-        with pytest.raises(NotOwnerError):
+        with pytest.raises(NotFoundError):
             svc.bank.upload_key_file(
                 b.id,
                 b.teacher.id,
@@ -244,11 +244,22 @@ def test_database_refuses_what_the_service_forbids(session: Opener) -> None:
                 declared_type=None,
                 no_student_data=True,
             )
-        with pytest.raises(NotOwnerError):
-            s.content.save(replace(ok, meta=replace(ok.meta, version=2)))
+        with pytest.raises(TenantViolationError):
+            s.content.save(b.id, replace(ok, meta=replace(ok.meta, version=2)))
+        # B's own key file pointing at A's question: the composite foreign key refuses it.
+        with pytest.raises(NotFoundError):
+            s.content.save(
+                b.id,
+                replace(
+                    ok,
+                    id=KeyFileId(uuid4()),
+                    meta=replace(ok.meta, college_id=b.id, created_by=b.teacher.id),
+                    blob=content_blob_key(b.id, "keys", "x.pdf"),
+                ),
+            )
 
 
-def test_the_college_directory_names_owners_for_everyone(session: Opener) -> None:
+def test_the_college_directory_names_colleges_for_everyone(session: Opener) -> None:
     a = new_college(session, "QN")
     b = new_college(session, "QM")
     with session(b.id) as s:

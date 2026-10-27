@@ -85,7 +85,7 @@ class SheetBuilder:
         college_id = sheet.college_id
         booklet = self._booklets.get(college_id, sheet.booklet_id)
         blueprint = self._content.get(
-            ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
+            booklet.college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
         )
         student = self._students.get(college_id, booklet.student_id)
         slot_of = {label: s.label for s in blueprint.slots() for label, _, _ in leaves(s)}
@@ -119,7 +119,7 @@ class SheetBuilder:
                 SheetAnswer(
                     label=answer.slot_label,
                     section_label=line.section_label if line else "",
-                    question=self._question_text(score or suggestion, question_id),
+                    question=self._question_text(college_id, score or suggestion, question_id),
                     max_marks=max_marks,
                     ai_mark=(
                         (None if suggestion is None else suggestion.mark)
@@ -164,18 +164,22 @@ class SheetBuilder:
 
     def _course(self, blueprint: ExamBlueprint) -> str:
         try:
-            subject = self._content.get(Subject, blueprint.subject_id)
+            subject = self._content.get(blueprint.meta.college_id, Subject, blueprint.subject_id)
         except NotFoundError:
             return blueprint.course_code
         code = blueprint.course_code or subject.code
         return f"{code} · {subject.name}"
 
-    def _question_text(self, score: AnswerScore | None, fallback: QuestionId | None) -> str:
+    def _question_text(
+        self, college_id: CollegeId, score: AnswerScore | None, fallback: QuestionId | None
+    ) -> str:
         try:
             if score is not None:
-                question = self._content.get(Question, score.question.id, score.question.version)
+                question = self._content.get(
+                    college_id, Question, score.question.id, score.question.version
+                )
             elif fallback is not None:
-                question = self._content.get(Question, fallback)
+                question = self._content.get(college_id, Question, fallback)
             else:
                 return ""
         except NotFoundError:
@@ -189,7 +193,7 @@ class SheetBuilder:
         for c in score.criterion_scores:
             try:
                 label = self._content.get(
-                    RubricCriterion, c.criterion.id, c.criterion.version
+                    score.college_id, RubricCriterion, c.criterion.id, c.criterion.version
                 ).label
             except NotFoundError:
                 label = "Criterion"

@@ -2,10 +2,10 @@
 by college B with college A's ids.
 
 College data (booklets, pages, text, segments, answers, drawings, sheets, accounts, students)
-must look missing (404) to another college. Global content is visible to every college but
-editable by its owning college only (403; "copy to my college" instead). ``CASES`` names what
-each published operation is; ``unclassified`` lists any operation the table does not know, so a
-new route cannot slip past the sweep."""
+and, since P23 (D165), the college's content (subjects, questions, keys, rubrics, glossaries,
+key files, reference diagrams, papers) must look missing (404) to another college. ``CASES``
+names what each published operation is; ``unclassified`` lists any operation the table does
+not know, so a new route cannot slip past the sweep."""
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -29,10 +29,9 @@ PNG_1PX = bytes.fromhex(
     "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082"
 )
 
-Kind = Literal["college", "owner", "shared", "own"]
-"""college: another college's row, 404 · owner: global content, only its owner writes, 403 ·
-shared: global content any college reads or copies, 2xx · own: acts on the caller's own college
-or account only (no foreign id to try)."""
+Kind = Literal["college", "own"]
+"""college: another college's row or content, 404 · own: acts on the caller's own college or
+account only (no foreign id to try)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,12 +106,7 @@ def build_world(client: "TestClient", process: Callable[[], None]) -> World:
 
     me = c.get(f"{BASE}/auth/me", headers=a).json()
     a_college = me["user"]["college_id"]
-    question = next(
-        q
-        for q in c.get(f"{BASE}/questions", params={"mine": True, "limit": 5}, headers=a).json()[
-            "items"
-        ]
-    )
+    question = c.get(f"{BASE}/questions", params={"limit": 5}, headers=a).json()["items"][0]
     qid = question["id"]
     key = c.post(
         f"{BASE}/questions/{qid}/key-files",
@@ -136,7 +130,6 @@ def build_world(client: "TestClient", process: Callable[[], None]) -> World:
         if x["user"]["email"] == A_SECOND
     )
     own_blueprint = c.get(f"{BASE}/blueprints/{blueprint['id']}", headers=a).json()
-    assert own_blueprint["owning_college_id"] == a_college, "QP-CI belongs to DEMO_COM"
     return World(
         client=c,
         a=a,
@@ -213,39 +206,37 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("POST", "/api/v1/accounts/{user_id}/enable"): Case("college", as_admin=True),
     ("POST", "/api/v1/accounts/{user_id}/force-reset"): Case("college", as_admin=True),
     ("POST", "/api/v1/accounts/{user_id}/unlock"): Case("college", as_admin=True),
-    # --- global content: everyone reads and copies, only the owner writes --------------------
-    ("GET", "/api/v1/blueprints/{blueprint_id}"): Case("shared"),
-    ("GET", "/api/v1/blueprints/{blueprint_id}/versions"): Case("shared"),
-    ("POST", "/api/v1/blueprints/{blueprint_id}/copy"): Case("shared"),
+    # --- another college's content (D165) ---------------------------------------------------
+    ("GET", "/api/v1/blueprints/{blueprint_id}"): Case("college"),
+    ("GET", "/api/v1/blueprints/{blueprint_id}/versions"): Case("college"),
     ("PUT", "/api/v1/blueprints/{blueprint_id}"): Case(
-        "owner", _json(lambda w: w.blueprint_document)
+        "college", _json(lambda w: w.blueprint_document)
     ),
-    ("GET", "/api/v1/questions/{question_id}"): Case("shared"),
-    ("POST", "/api/v1/questions/{question_id}/copy"): Case("shared"),
-    ("GET", "/api/v1/questions/{question_id}/key-files/{file_id}/content"): Case("shared"),
-    ("GET", "/api/v1/questions/{question_id}/diagrams/{diagram_id}/content"): Case("shared"),
-    ("GET", "/api/v1/questions/{question_id}/diagrams/{diagram_id}/graph"): Case("shared"),
+    ("GET", "/api/v1/questions/{question_id}"): Case("college"),
+    ("GET", "/api/v1/questions/{question_id}/key-files/{file_id}/content"): Case("college"),
+    ("GET", "/api/v1/questions/{question_id}/diagrams/{diagram_id}/content"): Case("college"),
+    ("GET", "/api/v1/questions/{question_id}/diagrams/{diagram_id}/graph"): Case("college"),
     ("PUT", "/api/v1/questions/{question_id}"): Case(
-        "owner",
+        "college",
         _json(
             lambda w: {"code": "X-1", "text": "Taken over", "max_marks": 5, "difficulty": "easy"}
         ),
     ),
     ("PUT", "/api/v1/questions/{question_id}/rubric"): Case(
-        "owner", _json(lambda w: {"criteria": []})
+        "college", _json(lambda w: {"criteria": []})
     ),
     ("POST", "/api/v1/questions/{question_id}/reference-answers"): Case(
-        "owner", _json(lambda w: {"text": "Another college's key"})
+        "college", _json(lambda w: {"text": "Another college's key"})
     ),
     ("PUT", "/api/v1/questions/{question_id}/reference-answers/{answer_id}"): Case(
-        "owner", _json(lambda w: {"text": "Another college's key"})
+        "college", _json(lambda w: {"text": "Another college's key"})
     ),
-    ("DELETE", "/api/v1/questions/{question_id}/reference-answers/{answer_id}"): Case("owner"),
+    ("DELETE", "/api/v1/questions/{question_id}/reference-answers/{answer_id}"): Case("college"),
     ("PUT", "/api/v1/questions/{question_id}/glossary"): Case(
-        "owner", _json(lambda w: {"terms": []})
+        "college", _json(lambda w: {"terms": []})
     ),
     ("POST", "/api/v1/questions/{question_id}/key-files"): Case(
-        "owner",
+        "college",
         lambda w: {
             "params": {"filename": "k.pdf", "confirm_no_student_data": True},
             "content": b"%PDF-1.4 other",
@@ -253,7 +244,7 @@ CASES: Mapping[tuple[str, str], Case] = {
         },
     ),
     ("POST", "/api/v1/questions/{question_id}/diagrams"): Case(
-        "owner",
+        "college",
         lambda w: {
             "params": {"filename": "r.png", "confirm_no_student_data": True},
             "content": PNG_1PX,
@@ -261,9 +252,9 @@ CASES: Mapping[tuple[str, str], Case] = {
         },
     ),
     ("POST", "/api/v1/questions/{question_id}/diagrams/{diagram_id}/graph/edits"): Case(
-        "owner", _json(lambda w: {"expected_version": 1, "edits": []})
+        "college", _json(lambda w: {"expected_version": 1, "edits": []})
     ),
-    ("POST", "/api/v1/questions/{question_id}/diagrams/{diagram_id}/recognize"): Case("owner"),
+    ("POST", "/api/v1/questions/{question_id}/diagrams/{diagram_id}/recognize"): Case("college"),
     # --- another college's booklet, by id in the path ---------------------------------------
     ("GET", "/api/v1/booklets/{booklet_id}"): Case("college"),
     ("DELETE", "/api/v1/booklets/{booklet_id}"): Case("college"),

@@ -120,7 +120,7 @@ def stale_answers(
         if answer.slot_label not in loaded:
             try:
                 loaded[answer.slot_label] = scoring_content(
-                    content, booklet.blueprint, answer.slot_label
+                    content, college_id, booklet.blueprint, answer.slot_label
                 )
             except DomainError:
                 loaded[answer.slot_label] = None  # the scorer would fail the same way

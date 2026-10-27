@@ -26,7 +26,7 @@ from tarn_core.testing import (
     InMemory,
     fake_pdf,
 )
-from tarn_core.testing.seed_world import SeededCollege, seed_in_memory
+from tarn_core.testing.seed_world import SeededCollege, seed_in_memory, seeded_blueprints
 
 BASE = "/api/v1"
 TEACHER = "suresh.naik@demo-com.example.test"
@@ -37,7 +37,7 @@ def commerce(mem: InMemory, seeded: list[SeededCollege]) -> SeededCollege:
 
 
 def qp_ci(mem: InMemory) -> ExamBlueprint:
-    return next(b for b in mem.content.latest(ExamBlueprint) if b.title.startswith("QP-CI"))
+    return next(b for b in seeded_blueprints(mem) if b.title.startswith("QP-CI"))
 
 
 def cli_result(tmp_path: Path) -> tuple[dict[str, Any], bytes]:

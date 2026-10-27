@@ -178,7 +178,7 @@ def diagram_world[B: Backend](
         code=f"SYN3{mem.ids.new().hex[:5]}",
         name="Synthetic Logic",
     )
-    mem.content.save(subject)
+    mem.content.save(college.id, subject)
     marks = Decimal(2 + 2 * len(components))
     question = services.bank.create_question(
         college.id,
@@ -229,7 +229,7 @@ def diagram_world[B: Backend](
             ),
         ),
     )
-    mem.content.save(blueprint)
+    mem.content.save(college.id, blueprint)
     booklet = services.booklets.register(
         college.id,
         college.teacher.id,

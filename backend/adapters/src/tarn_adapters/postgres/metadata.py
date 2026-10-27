@@ -54,19 +54,14 @@ def _box(name: str = "box") -> Column[Any]:
     return Column(name, ARRAY(Integer()), nullable=False)
 
 
-def _meta_columns(*, owner: bool = True) -> list[Column[Any]]:
-    cols: list[Column[Any]] = []
-    if owner:
-        cols.append(_uuid("owning_college_id"))
-    cols += [
+def _meta_columns() -> list[Column[Any]]:
+    # Content belongs to one college (0012, D165); ``college_id`` was ``owning_college_id``.
+    return [
         _uuid("created_by"),
         Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-        _text("copied_from_kind", nullable=True),
-        _uuid("copied_from_id", nullable=True),
-        _int("copied_from_version", nullable=True),
         _seq(),
+        _uuid("college_id"),
     ]
-    return cols
 
 
 def _versioned(name: str, *columns: Column[Any]) -> Table:
@@ -80,7 +75,7 @@ def _versioned(name: str, *columns: Column[Any]) -> Table:
     )
 
 
-# --- global content ---------------------------------------------------------------------------
+# --- colleges and their content (college content since 0012, D165) --------------------------
 
 colleges = Table(
     "colleges",
@@ -92,7 +87,7 @@ colleges = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
-# Id and name of every college, readable by all: who owns a piece of global content is public.
+# Id and name of every college, readable by all (the public college directory).
 college_directory = Table(
     "college_directory", metadata, _uuid("id", primary_key=True), _text("name")
 )
@@ -115,7 +110,7 @@ question_versions = Table(
     _num("max_marks"),
     _text("category"),
     _text("difficulty"),
-    *_meta_columns(owner=False),
+    *_meta_columns(),
 )
 
 subjects = _versioned("subjects", _text("code"), _text("name"))
@@ -540,6 +535,18 @@ jobs = Table(
     _seq(),
 )
 
+CONTENT_TABLES: tuple[Table, ...] = (
+    subjects,
+    questions,
+    question_versions,
+    reference_answers,
+    rubric_criteria,
+    glossaries,
+    reference_diagrams,
+    key_files,
+    exam_blueprints,
+)
+"""A college's content: college RLS since 0012 (D165)."""
 COLLEGE_TABLES: tuple[Table, ...] = (
     colleges,
     users,
@@ -562,17 +569,10 @@ COLLEGE_TABLES: tuple[Table, ...] = (
     booklet_locks,
     amendments,
     region_edits,
+    *CONTENT_TABLES,
 )
 GLOBAL_TABLES: tuple[Table, ...] = (
-    subjects,
-    questions,
-    question_versions,
-    reference_answers,
-    rubric_criteria,
-    glossaries,
-    reference_diagrams,
-    key_files,
-    exam_blueprints,
     ocr_calibrations,
     scoring_calibrations,
 )
+"""Tarn-operator content: every college reads, only the migration owner writes (D72)."""

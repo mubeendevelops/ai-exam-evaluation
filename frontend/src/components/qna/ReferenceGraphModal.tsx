@@ -168,7 +168,7 @@ export function ReferenceGraphModal({
             readOnlyReason={
               editable
                 ? undefined
-                : 'This diagram belongs to another college: copy the question to edit it.'
+                : 'Teachers edit reference diagrams; the admin account reads them.'
             }
             onEdit={(edits) => save(edits)}
           />

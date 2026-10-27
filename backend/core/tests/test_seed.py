@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import pytest
 
-from tarn_core.domain.blueprint import AllOf, AnyN, ExamBlueprint, OrGroup
+from tarn_core.domain.blueprint import AllOf, AnyN, OrGroup
 from tarn_core.domain.content import CriterionType, Question, ReferenceAnswer, RubricCriterion
 from tarn_core.domain.tenancy import Role
 from tarn_core.seed import COLLEGES, COMMERCE, ENGINEERING, SeedReport
@@ -22,8 +22,12 @@ from tarn_core.seed.model import QuestionSeed
 from tarn_core.seed.seeder import check_blueprints_marks
 from tarn_core.services.blueprint_document import check_document
 from tarn_core.testing import InMemory
-from tarn_core.testing.builders import make_services
-from tarn_core.testing.seed_world import SeededCollege, seed_in_memory
+from tarn_core.testing.seed_world import (
+    SeededCollege,
+    seed_in_memory,
+    seeded_blueprints,
+    seeded_college_ids,
+)
 
 
 @pytest.fixture
@@ -31,6 +35,11 @@ def seeded() -> tuple[InMemory, list[SeededCollege], SeedReport]:
     mem = InMemory()
     report = SeedReport()
     return mem, seed_in_memory(mem, report), report
+
+
+def questions(mem: InMemory) -> list[Question]:
+    """Every seeded question, college by college (content is private to each, D165)."""
+    return [q for c in seeded_college_ids(mem) for q in mem.content.latest(c, Question)]
 
 
 def all_questions() -> Iterator[QuestionSeed]:
@@ -45,7 +54,7 @@ def test_seed_is_idempotent(seeded: tuple[InMemory, list[SeededCollege], SeedRep
     assert report.created["questions"] == 28 + 35
     events = len(mem.audit.events)
     users = {c.accounts.college_id: len(mem.users.list(c.accounts.college_id)) for c in first}
-    questions = len(mem.content.latest(Question))
+    count = len(questions(mem))
 
     again = SeedReport()
     second = seed_in_memory(mem, again)
@@ -55,7 +64,7 @@ def test_seed_is_idempotent(seeded: tuple[InMemory, list[SeededCollege], SeedRep
     assert again.kept["questions"] == 28 + 35
     assert again.kept["blueprints"] == 4
     assert len(mem.audit.events) == events
-    assert len(mem.content.latest(Question)) == questions
+    assert len(questions(mem)) == count
     assert {c.accounts.college_id for c in second} == {c.accounts.college_id for c in first}
     assert users == {
         c.accounts.college_id: len(mem.users.list(c.accounts.college_id)) for c in second
@@ -99,24 +108,31 @@ def test_teachers_can_sign_in_with_the_dev_password(
             assert isinstance(outcome, SignedIn), person.email
 
 
-def test_content_is_owned_by_the_college_that_seeded_it(
+def test_each_college_owns_the_content_it_uses(
     seeded: tuple[InMemory, list[SeededCollege], SeedReport],
 ) -> None:
     mem, colleges, _ = seeded
     engineering, commerce = colleges
-    owners = {q.code: q.meta.owning_college_id for q in mem.content.latest(Question)}
-    assert {owners[q.code] for q in aiml.QUESTIONS} == {engineering.accounts.college_id}
-    for q in (*constitution.QUESTIONS, *ipr.QUESTIONS, *assignments.QUESTIONS_EL):
-        assert owners[q.code] == commerce.accounts.college_id
-    # global content is visible to the other college, which copies it with its key and rubric
-    services = make_services(mem)
+    eng, com = engineering.accounts.college_id, commerce.accounts.college_id
+    assert {q.code for q in mem.content.latest(eng, Question)} == {q.code for q in aiml.QUESTIONS}
+    assert {q.code for q in mem.content.latest(com, Question)} == {
+        q.code
+        for q in (
+            *constitution.QUESTIONS,
+            *ipr.QUESTIONS,
+            *assignments.QUESTIONS_EL,
+            *assignments.QUESTIONS_SU,
+        )
+    }
+    # Every paper links only questions of its own college (D165), and no college sees
+    # another's content.
+    for blueprint in seeded_blueprints(mem):
+        own = {q.id for q in mem.content.latest(blueprint.meta.college_id, Question)}
+        linked = {leaf for s in blueprint.slots() for leaf in _leaf_ids(s)}
+        assert linked <= own, blueprint.title
     source = engineering.content.questions["K-AI1-Q1"]
-    copy = services.content.copy_question(
-        commerce.accounts.college_id, commerce.accounts.teacher_ids[0], source
-    )
-    assert copy.meta.owning_college_id == commerce.accounts.college_id
-    assert mem.content.for_question(RubricCriterion, copy.id)
-    assert mem.content.for_question(ReferenceAnswer, copy.id)
+    assert not mem.content.versions(com, Question, source)
+    assert not mem.content.for_question(com, RubricCriterion, source)
 
 
 @pytest.mark.parametrize(
@@ -130,7 +146,7 @@ def test_blueprint_totals_validate_and_every_slot_is_linked(
     questions: int,
 ) -> None:
     mem, _, _ = seeded
-    blueprint = next(b for b in mem.content.latest(ExamBlueprint) if b.title == title)
+    blueprint = next(b for b in seeded_blueprints(mem) if b.title == title)
     assert blueprint.total_marks == Decimal(total)
     assert sum((s.max_marks for s in blueprint.sections), Decimal(0)) == Decimal(total)
     assert list(blueprint.unlinked_leaves()) == []  # booklets can be registered on it
@@ -150,7 +166,7 @@ def test_papers_keep_their_choice_rules(
     seeded: tuple[InMemory, list[SeededCollege], SeedReport],
 ) -> None:
     mem, _, _ = seeded
-    by_title = {b.title: b for b in mem.content.latest(ExamBlueprint)}
+    by_title = {b.title: b for b in seeded_blueprints(mem)}
     ci = by_title[QP_CI_TITLE]  # any 5 of 7 x 2, any 4 of 7 x 5, any 2 of 3 x 10
     assert [(s.rule, len(s.items), s.max_marks) for s in ci.sections] == [
         (AnyN(5), 7, Decimal(10)),
@@ -197,21 +213,31 @@ def test_every_unkeyed_question_has_a_synthetic_key(
         *assignments.QUESTIONS_EL,
         *assignments.QUESTIONS_SU,
     ]
-    by_code = {q.code: q for q in mem.content.latest(Question)}
+    by_code = {q.code: q for q in questions(mem)}
     for seed in unkeyed:
-        answers = mem.content.for_question(ReferenceAnswer, by_code[seed.code].id)
+        answers = mem.content.for_question(
+            by_code[seed.code].meta.college_id, ReferenceAnswer, by_code[seed.code].id
+        )
         assert answers, seed.code
         assert all(a.synthetic for a in answers), seed.code
         assert not any(a.guidance_only for a in answers), seed.code
-        criteria = mem.content.for_question(RubricCriterion, by_code[seed.code].id)
+        criteria = mem.content.for_question(
+            by_code[seed.code].meta.college_id, RubricCriterion, by_code[seed.code].id
+        )
         assert sum((c.weight for c in criteria), Decimal(0)) == by_code[seed.code].max_marks
     # faculty keys are not labelled, and a key that only gives guidance is marked by hand
     for seed in aiml.QUESTIONS:
-        answers = mem.content.for_question(ReferenceAnswer, by_code[seed.code].id)
+        answers = mem.content.for_question(
+            by_code[seed.code].meta.college_id, ReferenceAnswer, by_code[seed.code].id
+        )
         assert [a.synthetic for a in answers].count(True) <= 1
-    q4 = mem.content.for_question(ReferenceAnswer, by_code["K-AI2-Q4"].id)
+    q4 = mem.content.for_question(
+        by_code["K-AI2-Q4"].meta.college_id, ReferenceAnswer, by_code["K-AI2-Q4"].id
+    )
     assert [a.guidance_only for a in q4] == [True]
-    assert not mem.content.for_question(RubricCriterion, by_code["K-AI2-Q4"].id)
+    assert not mem.content.for_question(
+        by_code["K-AI2-Q4"].meta.college_id, RubricCriterion, by_code["K-AI2-Q4"].id
+    )
 
 
 def test_assignment_1_question_2_names_four_countries() -> None:

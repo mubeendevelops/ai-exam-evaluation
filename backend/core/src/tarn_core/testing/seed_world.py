@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.ids import CollegeId
 from tarn_core.seed import (
     COLLEGES,
@@ -68,3 +69,15 @@ def seed_in_memory(
         )
         seeded.append(SeededCollege(college, accounts, content))
     return seeded
+
+
+def seeded_college_ids(mem: InMemory) -> list[CollegeId]:
+    """The demo colleges already seeded on ``mem``, in seed order. Content is private to each
+    college (D165), so tools that look at every seeded paper go college by college."""
+    found = (mem.identity.find_tenant(c.institution_id) for c in COLLEGES)
+    return [t.college_id for t in found if t is not None]
+
+
+def seeded_blueprints(mem: InMemory) -> list[ExamBlueprint]:
+    """The newest version of every seeded paper, college by college."""
+    return [b for c in seeded_college_ids(mem) for b in mem.content.latest(c, ExamBlueprint)]

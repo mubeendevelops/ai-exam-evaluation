@@ -24,7 +24,7 @@ from tarn_api.testing import MemoryBackends
 from tarn_core.ids import BookletId, CollegeId
 from tarn_core.testing.seed_world import seed_in_memory
 
-EXPECTED = {"college": {404}, "owner": {403}, "shared": {200, 201}}
+EXPECTED = {"college": {404}}
 
 
 @pytest.fixture(scope="module")
@@ -53,7 +53,7 @@ def test_every_published_operation_is_classified(sweep: tuple[World, MemoryBacke
     openapi = world.client.get("/openapi.json").json()
     assert unclassified(openapi) == []
     kinds = [case.kind for case in CASES.values()]
-    assert kinds.count("college") >= 25 and kinds.count("owner") >= 10
+    assert kinds.count("college") >= 45
 
 
 @pytest.mark.parametrize(
@@ -106,3 +106,37 @@ def test_lists_show_only_the_callers_college(sweep: tuple[World, MemoryBackends]
         assert all(s["id"] != a_student for s in found)
     accounts = c.get("/api/v1/accounts", headers=world.b_admin).json()
     assert world.ids["user_id"] not in {x["user"]["id"] for x in accounts}
+
+
+def test_content_lists_show_only_the_callers_college(sweep: tuple[World, MemoryBackends]) -> None:
+    """Content is private to the college (D165): B's lists never name A's content."""
+    world, _ = sweep
+    c, a, b = world.client, world.a, world.b
+    a_questions = c.get("/api/v1/questions", params={"limit": 100}, headers=a).json()["items"]
+    b_questions = c.get("/api/v1/questions", params={"limit": 100}, headers=b).json()["items"]
+    assert a_questions and b_questions
+    assert not {q["id"] for q in a_questions} & {q["id"] for q in b_questions}
+    for q in a_questions[:5]:
+        found = c.get("/api/v1/questions", params={"code": q["code"]}, headers=b).json()
+        assert all(x["id"] != q["id"] for x in found["items"])
+    a_papers = {x["id"] for x in c.get("/api/v1/blueprints", headers=a).json()}
+    b_papers = {x["id"] for x in c.get("/api/v1/blueprints", headers=b).json()}
+    assert world.ids["blueprint_id"] in a_papers and not a_papers & b_papers
+    a_subjects = {x["id"] for x in c.get("/api/v1/subjects", headers=a).json()}
+    b_subjects = {x["id"] for x in c.get("/api/v1/subjects", headers=b).json()}
+    assert a_subjects and b_subjects and not a_subjects & b_subjects
+    a_topics = set(c.get("/api/v1/question-topics", headers=a).json())
+    b_topics = set(c.get("/api/v1/question-topics", headers=b).json())
+    assert a_topics != b_topics
+
+
+def test_b_cannot_link_a_question_in_its_own_paper(sweep: tuple[World, MemoryBackends]) -> None:
+    """A paper of B that names A's question id is refused like an unknown question."""
+    world, _ = sweep
+    c, b = world.client, world.b
+    document = dict(world.blueprint_document)
+    b_subject = c.get("/api/v1/subjects", headers=b).json()[0]["id"]
+    document["subject_id"] = b_subject
+    response = c.post("/api/v1/blueprints", json=document, headers=b)
+    assert response.status_code == 422, response.text
+    assert "not in your college" in response.json()["detail"]
