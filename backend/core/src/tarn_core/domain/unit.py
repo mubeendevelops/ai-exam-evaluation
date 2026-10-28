@@ -8,10 +8,20 @@ from datetime import date, datetime
 from enum import StrEnum
 
 from tarn_core.errors import InvariantError
-from tarn_core.ids import BlueprintId, CollegeId, SubjectId, UnitId, UserId
+from tarn_core.ids import (
+    BlueprintId,
+    CollegeId,
+    DelegationRequestId,
+    SubjectId,
+    UnitId,
+    UnitTransferId,
+    UserId,
+)
 
 UNIT_CODE = re.compile(r"U-\d{4,}")
 YEAR_MAX = 20
+REASON_MAX = 500
+"""Reasons and notes of transfers and delegation requests (P27)."""
 
 
 class UnitState(StrEnum):
@@ -64,3 +74,88 @@ class Unit:
             raise InvariantError("created_at must be timezone-aware")
         if self.version < 1:
             raise InvariantError("unit version starts at 1")
+
+
+def normalise_reason(raw: str) -> str:
+    """A reason or note as typed, trimmed (inner line breaks kept)."""
+    return raw.strip()
+
+
+def _check_reason(what: str, value: str) -> None:
+    if not value or value != value.strip():
+        raise InvariantError(f"the {what} must not be blank or padded")
+    if len(value) > REASON_MAX:
+        raise InvariantError(f"the {what} has at most {REASON_MAX} characters")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UnitTransfer:
+    """The admin moved a unit to another SME (P27, D163): history, insert only. Booklets,
+    answers and reviews stay as they were; the reviews keep the SME who marked them."""
+
+    id: UnitTransferId
+    college_id: CollegeId
+    unit_id: UnitId
+    from_owner: UserId
+    to_owner: UserId
+    reason: str
+    by: UserId
+    at: datetime
+    request_id: DelegationRequestId | None = None
+    """The SME's delegation request the transfer answered, if one was pending."""
+
+    def __post_init__(self) -> None:
+        _check_reason("reason", self.reason)
+        if self.from_owner == self.to_owner:
+            raise InvariantError("a transfer moves the unit to another SME")
+        if self.at.tzinfo is None:
+            raise InvariantError("at must be timezone-aware")
+
+
+class RequestState(StrEnum):
+    PENDING = "pending"
+    DONE = "done"
+    """The admin transferred the unit."""
+    DECLINED = "declined"
+    """The admin kept the unit with the SME, with a note."""
+    WITHDRAWN = "withdrawn"
+    """The SME took the request back."""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DelegationRequest:
+    """An SME asks the admin to move one of their units to someone else (the delegation inbox,
+    D163). One pending request per unit; the admin picks the new SME."""
+
+    id: DelegationRequestId
+    college_id: CollegeId
+    unit_id: UnitId
+    requested_by: UserId
+    reason: str
+    requested_at: datetime
+    state: RequestState = RequestState.PENDING
+    closed_by: UserId | None = None
+    closed_at: datetime | None = None
+    note: str = ""
+    """The admin's note when declining."""
+
+    def __post_init__(self) -> None:
+        _check_reason("reason", self.reason)
+        if self.requested_at.tzinfo is None:
+            raise InvariantError("requested_at must be timezone-aware")
+        closed = (self.closed_by, self.closed_at)
+        if self.state is RequestState.PENDING:
+            if any(v is not None for v in closed) or self.note:
+                raise InvariantError("a pending request is not closed")
+        elif any(v is None for v in closed):
+            raise InvariantError("a closed request names who closed it and when")
+        if self.state is RequestState.DECLINED:
+            _check_reason("note", self.note)
+        elif self.note:
+            raise InvariantError("only a declined request carries a note")
+        if self.closed_at is not None and self.closed_at.tzinfo is None:
+            raise InvariantError("closed_at must be timezone-aware")
+
+    @property
+    def pending(self) -> bool:
+        return self.state is RequestState.PENDING

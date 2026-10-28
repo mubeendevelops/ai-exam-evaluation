@@ -32,6 +32,7 @@ class AuthWorld:
             entitlements=m.entitlements,
             kit=m.auth_kit,
             runtime=m.runtime,
+            units=m.units,
         )
 
     @property

@@ -16,7 +16,7 @@ import {
   region,
   review,
 } from '../test/evaluateFixtures'
-import { unitOf } from '../test/adminFixtures'
+import { requestOf, unitOf } from '../test/adminFixtures'
 import { mockApi } from '../test/mockApi'
 import { detail as qnaDetail } from '../test/qnaFixtures'
 import { renderApp } from '../test/render'
@@ -72,6 +72,7 @@ function signedIn(extra: Parameters<typeof mockApi>[0] = {}, me = meOf()) {
     'GET /api/v1/blueprints': { json: [exam] },
     'GET /api/v1/units': { json: UNITS },
     'GET /api/v1/booklets': listOf(),
+    'GET /api/v1/delegation-requests': { json: [] },
     ...extra,
   })
 }
@@ -211,6 +212,46 @@ describe('step 1: the booklets of my units', () => {
     renderApp('/evaluate')
     expect(await screen.findByText('No units assigned to you')).toBeVisible()
     expect(mock.callsTo('GET /api/v1/booklets')).toHaveLength(0)
+  })
+
+  it('asks the admin to move my unit, with a reason, and lists my requests', async () => {
+    let asked = false
+    const mine = requestOf({ id: 'req-9', reason: 'Exams clash' })
+    const mock = signedIn({
+      'GET /api/v1/units': () => ({
+        json: asked
+          ? [{ ...UNITS[0]!, pending_request: { id: 'req-9', requested_at: mine.requested_at } }]
+          : UNITS,
+      }),
+      'GET /api/v1/delegation-requests': () => ({ json: asked ? [mine] : [] }),
+      [`POST /api/v1/units/${UNIT}/delegation-requests`]: () => {
+        asked = true
+        return { status: 201, json: mine }
+      },
+      'POST /api/v1/delegation-requests/req-9/withdraw': () => {
+        asked = false
+        return { json: { ...mine, state: 'withdrawn' } }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp('/evaluate')
+    await user.click(await screen.findByRole('button', { name: 'Request reassignment' }))
+    const dialog = await screen.findByRole('dialog')
+    const send = within(dialog).getByRole('button', { name: 'Send request' })
+    expect(send).toBeDisabled()
+    await user.type(within(dialog).getByLabelText('Reason'), 'Exams clash')
+    await user.click(send)
+    expect(await screen.findByText(/your admin decides who takes U-0001/)).toBeVisible()
+    expect(mock.callsTo(`POST /api/v1/units/${UNIT}/delegation-requests`)[0]?.body).toEqual({
+      reason: 'Exams clash',
+    })
+    expect(await screen.findByText('Reassignment requested')).toBeVisible()
+    const list = await screen.findByRole('region', { name: 'My reassignment requests' })
+    expect(within(list).getByText('Pending')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Withdraw request' }))
+    expect(await screen.findByText('Request for U-0001 withdrawn.')).toBeVisible()
+    expect(await screen.findByRole('button', { name: 'Request reassignment' })).toBeVisible()
   })
 })
 

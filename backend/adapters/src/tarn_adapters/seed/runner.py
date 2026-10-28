@@ -137,6 +137,7 @@ def _content(
             entitlements=scope.entitlements,
             users=scope.users,
             content=scope.content,
+            units=scope.units,
             runtime=scope.runtime,
         ),
         blueprints=BlueprintService(

@@ -87,6 +87,8 @@ CapabilityName = Literal[
     "manage_students",
     "assign_units",
     "upload_booklets",
+    "redistribute_units",
+    "request_reassignment",
     "view_progress",
     "author_content",
     "evaluate",
@@ -700,6 +702,11 @@ class UnitCountsOut(BaseModel):
     completed: int = Field(description="Approved (result sheet issued), amendments included.")
 
 
+class UnitRequestRefOut(BaseModel):
+    id: UUID
+    requested_at: datetime
+
+
 class UnitOut(BaseModel):
     id: UUID
     code: str = Field(description="Short readable code, U-0001, unique in the college.")
@@ -712,6 +719,9 @@ class UnitOut(BaseModel):
     created_at: datetime
     version: int
     counts: UnitCountsOut
+    pending_request: UnitRequestRefOut | None = Field(
+        default=None, description="The SME's request to move this unit, while it waits (P27)."
+    )
 
 
 class UnitDetailOut(UnitOut):
@@ -728,6 +738,74 @@ class UnitIn(BaseModel):
     year: str = Field(min_length=1, max_length=40)
     owner_id: UUID = Field(description="An active SME entitled to the paper's subject.")
     due_date: date
+
+
+Reason = Field(min_length=1, max_length=500)
+
+
+class TransferIn(_In):
+    owner_id: UUID = Field(description="Another active SME entitled to the unit's subject.")
+    reason: str = Reason
+    expected_version: int | None = Field(
+        default=None, description="The unit's version as loaded (409 when it changed)."
+    )
+
+
+class TransferOut(BaseModel):
+    id: UUID
+    from_owner: UnitOwnerOut
+    to_owner: UnitOwnerOut
+    reason: str
+    at: datetime
+    request_id: UUID | None = Field(description="The SME's request this transfer answered.")
+
+
+class RevokeTransferIn(_In):
+    unit_id: UUID
+    owner_id: UUID = Field(description="The SME who receives the unit.")
+
+
+class RevokeIn(_In):
+    transfers: list[RevokeTransferIn] = Field(
+        default_factory=list,
+        max_length=500,
+        description="One per open unit the SME has in the subject: all of them, or nothing "
+        "changes (409).",
+    )
+    reason: str = Field(default="", max_length=500, description="Needed with transfers.")
+
+
+DelegationStateName = Literal["pending", "done", "declined", "withdrawn"]
+
+
+class DelegationRequestIn(_In):
+    reason: str = Reason
+
+
+class DeclineIn(_In):
+    note: str = Reason
+
+
+class DelegationUnitOut(BaseModel):
+    id: UUID
+    code: str
+    paper_title: str
+    subject: UnitSubjectOut
+    year: str
+    due_date: date
+    owner: UnitOwnerOut = Field(description="Who has the unit now.")
+    counts: UnitCountsOut
+
+
+class DelegationRequestOut(BaseModel):
+    id: UUID
+    unit: DelegationUnitOut
+    requested_by: UnitOwnerOut
+    reason: str
+    requested_at: datetime
+    state: DelegationStateName
+    closed_at: datetime | None
+    note: str = Field(description="The admin's note when declining.")
 
 
 class UnitChoicePaperOut(UnitPaperOut):

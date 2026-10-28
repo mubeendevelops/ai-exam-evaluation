@@ -21,6 +21,11 @@ class Capability(StrEnum):
     UPLOAD_BOOKLETS = "upload_booklets"
     """Upload scanned booklets into a unit, use a flagged page anyway, replace a booklet for a
     retake (D162: the admin's job; P26)."""
+    REDISTRIBUTE_UNITS = "redistribute_units"
+    """Move an open unit to another entitled SME, and answer the SMEs' delegation requests
+    (P27, D163)."""
+    REQUEST_REASSIGNMENT = "request_reassignment"
+    """Ask the admin to move one of the SME's own units to someone else (P27)."""
     VIEW_PROGRESS = "view_progress"
     """Booklets and their processing status, without marks, page images or text (D167)."""
     AUTHOR_CONTENT = "author_content"
@@ -39,11 +44,17 @@ CAPABILITIES: Mapping[Role, frozenset[Capability]] = MappingProxyType(
                 Capability.MANAGE_STUDENTS,
                 Capability.ASSIGN_UNITS,
                 Capability.UPLOAD_BOOKLETS,
+                Capability.REDISTRIBUTE_UNITS,
                 Capability.VIEW_PROGRESS,
             }
         ),
         Role.SME: frozenset(
-            {Capability.VIEW_PROGRESS, Capability.AUTHOR_CONTENT, Capability.EVALUATE}
+            {
+                Capability.VIEW_PROGRESS,
+                Capability.AUTHOR_CONTENT,
+                Capability.EVALUATE,
+                Capability.REQUEST_REASSIGNMENT,
+            }
         ),
         # The Governor only signs in until its portal is built (D159).
         Role.GOVERNOR: frozenset(),

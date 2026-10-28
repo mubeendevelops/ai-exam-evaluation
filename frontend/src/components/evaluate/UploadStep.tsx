@@ -1,9 +1,19 @@
-import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState, type FormEvent } from 'react'
 import { api } from '../../api/client'
-import { unitLabel, useUnits } from '../../pages/admin/data'
-import { SelectInput } from '../schema/controls'
-import { EmptyState, GlassPanel } from '../ui'
+import { NETWORK_PROBLEM, problemOf } from '../../api/errors'
+import { CancelButton, RowButton, SubmitInDialog } from '../../pages/admin/controls'
+import {
+  REQUEST_STATE,
+  unitLabel,
+  useDelegationRequests,
+  useUnits,
+  type WorkUnit,
+} from '../../pages/admin/data'
+import { REASON_MAX } from '../../pages/admin/TransferDialog'
+import { FormError } from '../public/fields'
+import { SelectInput, TextArea } from '../schema/controls'
+import { Badge, EmptyState, GlassPanel, Modal, useToast } from '../ui'
 import { STATUS } from './model'
 import { SubmissionCard } from './SubmissionCard'
 
@@ -16,6 +26,7 @@ export function UploadStep({ onOpen }: { onOpen: (bookletId: string) => void }) 
   const [picked, setPicked] = useState('')
   const unitId = picked || units.data?.[0]?.id || ''
   const unit = units.data?.find((u) => u.id === unitId)
+  const [asking, setAsking] = useState(false)
 
   const booklets = useQuery({
     queryKey: ['booklets', unitId],
@@ -73,8 +84,10 @@ export function UploadStep({ onOpen }: { onOpen: (bookletId: string) => void }) 
               </option>
             ))}
           </SelectInput>
+          {unit && <Reassignment unit={unit} onAsk={() => setAsking(true)} />}
         </GlassPanel>
       )}
+      {asking && unit && <RequestDialog unit={unit} onClose={() => setAsking(false)} />}
 
       {unit && (
         <section aria-label="Student answer submissions">
@@ -99,6 +112,152 @@ export function UploadStep({ onOpen }: { onOpen: (bookletId: string) => void }) 
           </div>
         </section>
       )}
+      <MyRequests />
     </div>
+  )
+}
+
+/**
+ * Ask the admin to move the unit to someone else (the delegation inbox, P27). The admin picks
+ * the new SME; while the request waits the SME may withdraw it. (The full SME portal's
+ * "Delegate" comes in Stage G.)
+ */
+function Reassignment({ unit, onAsk }: { unit: WorkUnit; onAsk: () => void }) {
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const [busy, setBusy] = useState(false)
+  const pending = unit.pending_request
+
+  async function withdraw() {
+    if (!pending) return
+    setBusy(true)
+    try {
+      const { error, response } = await api.POST(
+        '/api/v1/delegation-requests/{request_id}/withdraw',
+        { params: { path: { request_id: pending.id } } },
+      )
+      if (response.ok) toast.show(`Request for ${unit.code} withdrawn.`)
+      else toast.show(problemOf(error, 'Could not withdraw the request.').message, 'red')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['units'] }),
+        queryClient.invalidateQueries({ queryKey: ['delegation-requests'] }),
+      ])
+    } catch {
+      toast.show(NETWORK_PROBLEM, 'red')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      {pending ? (
+        <>
+          <Badge tone="amber">Reassignment requested</Badge>
+          <RowButton disabled={busy} onClick={() => void withdraw()}>
+            Withdraw request
+          </RowButton>
+        </>
+      ) : (
+        <RowButton onClick={onAsk}>Request reassignment</RowButton>
+      )}
+    </div>
+  )
+}
+
+function RequestDialog({ unit, onClose }: { unit: WorkUnit; onClose: () => void }) {
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const { data, error: err } = await api.POST('/api/v1/units/{unit_id}/delegation-requests', {
+        params: { path: { unit_id: unit.id } },
+        body: { reason: reason.trim() },
+      })
+      if (data) {
+        toast.show(`Request sent: your admin decides who takes ${unit.code}.`)
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['units'] }),
+          queryClient.invalidateQueries({ queryKey: ['delegation-requests'] }),
+        ])
+        onClose()
+      } else setError(problemOf(err, 'Could not send the request.').message)
+    } catch {
+      setError(NETWORK_PROBLEM)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      eyebrow="Request reassignment"
+      title={`Ask to move ${unitLabel(unit)}`}
+      description="Your admin chooses another SME who has this subject. Until then the unit stays yours; what you save stays with the unit."
+      footer={
+        <div className="flex justify-end gap-2">
+          <CancelButton onClick={onClose}>Cancel</CancelButton>
+          <SubmitInDialog form="reassign-form" busy={busy} disabled={!reason.trim()}>
+            Send request
+          </SubmitInDialog>
+        </div>
+      }
+    >
+      <form id="reassign-form" onSubmit={submit} className="space-y-4">
+        <TextArea
+          label="Reason"
+          value={reason}
+          required
+          rows={3}
+          maxLength={REASON_MAX}
+          placeholder="e.g. on leave from next week"
+          onChange={(e) => setReason(e.target.value)}
+        />
+        <FormError message={error} />
+      </form>
+    </Modal>
+  )
+}
+
+/** The SME's own requests and what became of them. */
+function MyRequests() {
+  const requests = useDelegationRequests()
+  if (!requests.data || requests.data.length === 0) return null
+  return (
+    <section aria-label="My reassignment requests" className="space-y-3">
+      <h3 className="flex items-center gap-2 text-sm font-semibold tracking-wider text-gray-400 uppercase">
+        <i className="fa-solid fa-inbox text-cyan-400" aria-hidden="true" />
+        My reassignment requests
+      </h3>
+      <ul className="space-y-2">
+        {requests.data.map((r) => {
+          const state = REQUEST_STATE[r.state]
+          return (
+            <li
+              key={r.id}
+              className="glass-panel space-y-1 rounded-xl border border-gray-800 p-3 text-xs"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold text-white">
+                  {r.unit.code} · {r.unit.paper_title}
+                </span>
+                <Badge tone={state.tone}>{state.label}</Badge>
+              </div>
+              <p className="text-gray-300">{r.reason}</p>
+              {r.note && <p className="text-red-300">Admin's note: {r.note}</p>}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }

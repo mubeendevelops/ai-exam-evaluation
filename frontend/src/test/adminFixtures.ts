@@ -8,6 +8,7 @@ type Student = components['schemas']['StudentOut']
 type WorkUnit = components['schemas']['UnitOut']
 type WorkUnitDetail = components['schemas']['UnitDetailOut']
 type Booklet = components['schemas']['BookletOut']
+type DelegationRequest = components['schemas']['DelegationRequestOut']
 
 export const physics: Subject = {
   id: 'sub-1',
@@ -160,6 +161,39 @@ export function adminSession(
     'GET /api/v1/subjects': { json: subjects },
     'GET /api/v1/students': { json: students },
     'GET /api/v1/units': { json: [] },
+    'GET /api/v1/delegation-requests': { json: [] },
     ...extra,
   })
+}
+
+export const kiran = userOf({
+  id: 't-3',
+  display_name: 'Kiran Shah',
+  email: 'kiran@college.test',
+  role: 'sme',
+})
+
+/** A delegation request (P27) for unit-1, Asha's, pending unless changed. */
+export function requestOf(over: Partial<DelegationRequest> = {}): DelegationRequest {
+  const unit = unitOf()
+  return {
+    id: 'req-1',
+    unit: {
+      id: unit.id,
+      code: unit.code,
+      paper_title: unit.paper.title,
+      subject: unit.subject,
+      year: unit.year,
+      due_date: unit.due_date,
+      owner: unit.owner,
+      counts: unit.counts,
+    },
+    requested_by: { id: asha.id, name: asha.display_name },
+    reason: 'On leave next week',
+    requested_at: '2026-10-28T10:00:00Z',
+    state: 'pending',
+    closed_at: null,
+    note: '',
+    ...over,
+  }
 }

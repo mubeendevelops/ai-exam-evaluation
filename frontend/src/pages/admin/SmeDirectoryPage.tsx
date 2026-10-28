@@ -4,6 +4,7 @@ import { api } from '../../api/client'
 import { NETWORK_PROBLEM, problemOf } from '../../api/errors'
 import { PageBanner } from '../../components/app/PageBanner'
 import { FormError, TextField } from '../../components/public/fields'
+import { SelectInput, TextArea } from '../../components/schema/controls'
 import { Badge, GlassPanel, Modal, useToast, type Tone } from '../../components/ui'
 import {
   CancelButton,
@@ -13,7 +14,17 @@ import {
   SubmitInDialog,
   sectionTitle,
 } from './controls'
-import { grantsOf, isLocked, useAccounts, useSubjects, type Account, type Subject } from './data'
+import {
+  grantsOf,
+  isLocked,
+  useAccounts,
+  useEntitledSmes,
+  useSubjects,
+  type Account,
+  type Subject,
+  type WorkUnit,
+} from './data'
+import { REASON_MAX } from './TransferDialog'
 import { SubjectChecklist } from './SubjectChecklist'
 import { SubjectsPanel } from './SubjectsPanel'
 
@@ -24,10 +35,32 @@ const STATUS: Record<Account['status'], { label: string; tone: Tone }> = {
   PENDING: { label: 'Invited', tone: 'amber' },
 }
 
+const CONFIRM: Record<
+  'suspend' | 'force-reset' | 'remove',
+  { title: string; label: string; text: (name: string) => string }
+> = {
+  suspend: {
+    title: 'Suspend this account?',
+    label: 'Suspend account',
+    text: (name) => `${name} will be signed out and cannot sign in until you resume the account.`,
+  },
+  'force-reset': {
+    title: 'Require a new password?',
+    label: 'Force reset',
+    text: (name) => `${name} will have to choose a new password at the next sign-in.`,
+  },
+  remove: {
+    title: 'Remove this SME?',
+    label: 'Remove SME',
+    text: (name) =>
+      `${name} leaves the directory and can no longer sign in; the audit history stays. An SME who owns open units cannot be removed: transfer them first in Redistribute Workload.`,
+  },
+}
+
 type Dialog =
   | { kind: 'add' }
   | { kind: 'subjects'; account: Account }
-  | { kind: 'confirm'; action: 'suspend' | 'force-reset'; account: Account }
+  | { kind: 'confirm'; action: 'suspend' | 'force-reset' | 'remove'; account: Account }
   | null
 
 // ---- add an SME ----------------------------------------------------------------------------
@@ -115,6 +148,63 @@ function AddSmeDialog({
 
 // ---- edit an SME's subjects ------------------------------------------------------------------
 
+/** A removed subject in which the SME owns open units: each must move to an entitled SME. */
+interface Removal {
+  subject: Subject
+  units: WorkUnit[]
+}
+
+async function openUnitsOf(userId: string, subjectId: string): Promise<WorkUnit[]> {
+  const { data } = await api.GET('/api/v1/units', {
+    params: { query: { owner_id: userId, subject_id: subjectId, state: 'open' } },
+  })
+  if (!data) throw new Error('units unavailable')
+  return data
+}
+
+/** The new SME for one unit of a subject being removed: entitled SMEs other than this one. */
+function UnitTarget({
+  unit,
+  leaving,
+  value,
+  onChange,
+}: {
+  unit: WorkUnit
+  leaving: string
+  value: string
+  onChange: (ownerId: string) => void
+}) {
+  const smes = useEntitledSmes(unit.subject.id)
+  const targets = (smes.data ?? []).filter((s) => s.id !== leaving)
+  const none = smes.data !== undefined && targets.length === 0
+  return (
+    <SelectInput
+      label={`New SME for ${unit.code}`}
+      value={value}
+      required
+      disabled={none}
+      hint={
+        none
+          ? 'No other active SME has this subject: grant it to someone first, or cancel.'
+          : `${unit.paper.exam_code} · ${unit.year} · ${unit.counts.completed} of ${unit.counts.total} completed`
+      }
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">Choose an SME…</option>
+      {targets.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.name} ({s.email})
+        </option>
+      ))}
+    </SelectInput>
+  )
+}
+
+/**
+ * The SME's subjects as a checklist. Removing a subject in which the SME owns open units adds a
+ * step (P27, D163): the admin picks a new SME for each of those units, and the subject goes
+ * with the transfers in one call (all or nothing), or the admin cancels.
+ */
 function EditSubjectsDialog({
   account,
   subjects,
@@ -128,32 +218,77 @@ function EditSubjectsDialog({
   const queryClient = useQueryClient()
   const before = new Set(grantsOf(account))
   const [chosen, setChosen] = useState<Set<string>>(new Set(before))
+  const [removals, setRemovals] = useState<Removal[] | null>(null)
+  const [targets, setTargets] = useState<Record<string, string>>({})
+  const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const choices = subjects.filter((s) => !s.retired || before.has(s.id))
+  const userId = account.user.id
+
+  async function refresh() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['accounts'] }),
+      queryClient.invalidateQueries({ queryKey: ['units'] }),
+    ])
+  }
+
+  async function apply(withUnits: readonly Removal[]): Promise<boolean> {
+    const moving = new Map(withUnits.map((r) => [r.subject.id, r.units]))
+    for (const subject of subjects) {
+      const had = before.has(subject.id)
+      const wants = chosen.has(subject.id)
+      if (had === wants) continue
+      const params = { path: { user_id: userId, subject_id: subject.id } }
+      const units = moving.get(subject.id)
+      const { error: err, response } = wants
+        ? await api.POST('/api/v1/accounts/{user_id}/subjects/{subject_id}', { params })
+        : units
+          ? await api.POST('/api/v1/accounts/{user_id}/subjects/{subject_id}/revoke', {
+              params,
+              body: {
+                transfers: units.map((u) => ({ unit_id: u.id, owner_id: targets[u.id] ?? '' })),
+                reason: reason.trim(),
+              },
+            })
+          : await api.DELETE('/api/v1/accounts/{user_id}/subjects/{subject_id}', { params })
+      if (!response.ok) {
+        setError(problemOf(err, 'Could not change the subjects.').message)
+        await refresh()
+        return false
+      }
+    }
+    return true
+  }
 
   async function save(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      for (const subject of subjects) {
-        const had = before.has(subject.id)
-        const wants = chosen.has(subject.id)
-        if (had === wants) continue
-        const params = { path: { user_id: account.user.id, subject_id: subject.id } }
-        const { error: err, response } = wants
-          ? await api.POST('/api/v1/accounts/{user_id}/subjects/{subject_id}', { params })
-          : await api.DELETE('/api/v1/accounts/{user_id}/subjects/{subject_id}', { params })
-        if (!response.ok) {
-          setError(problemOf(err, 'Could not change the subjects.').message)
-          await queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      let found = removals
+      if (found === null) {
+        const removed = subjects.filter((s) => before.has(s.id) && !chosen.has(s.id))
+        found = []
+        for (const subject of removed) {
+          const units = await openUnitsOf(userId, subject.id)
+          if (units.length > 0) found.push({ subject, units })
+        }
+        if (found.length > 0) {
+          setRemovals(found)
           return
         }
       }
-      toast.show(`Subjects of ${account.user.display_name} saved.`)
-      await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      onClose()
+      if (await apply(found)) {
+        const moved = found.reduce((n, r) => n + r.units.length, 0)
+        toast.show(
+          moved > 0
+            ? `Subjects of ${account.user.display_name} saved; ${moved} unit${moved === 1 ? '' : 's'} transferred.`
+            : `Subjects of ${account.user.display_name} saved.`,
+        )
+        await refresh()
+        onClose()
+      }
     } catch {
       setError(NETWORK_PROBLEM)
     } finally {
@@ -161,24 +296,61 @@ function EditSubjectsDialog({
     }
   }
 
+  const step = removals !== null && removals.length > 0
+  const ready =
+    !step || (reason.trim() !== '' && removals.every((r) => r.units.every((u) => targets[u.id])))
   return (
     <Modal
       open
       onClose={onClose}
       eyebrow="Edit subjects"
       title={account.user.display_name}
-      description="Everything this SME sees is limited to the ticked subjects."
+      description={
+        step
+          ? `${account.user.display_name} has open units in the subjects you are removing. Choose who takes each one; every booklet moves as it stands. Cancel to keep everything as it is.`
+          : 'Everything this SME sees is limited to the ticked subjects.'
+      }
       footer={
         <div className="flex justify-end gap-2">
           <CancelButton onClick={onClose}>Cancel</CancelButton>
-          <SubmitInDialog form="edit-subjects-form" busy={busy}>
-            Save subjects
+          <SubmitInDialog form="edit-subjects-form" busy={busy} disabled={!ready}>
+            {step ? 'Remove and transfer' : 'Save subjects'}
           </SubmitInDialog>
         </div>
       }
     >
       <form id="edit-subjects-form" onSubmit={save} className="space-y-4">
-        <SubjectChecklist subjects={choices} selected={chosen} onChange={setChosen} />
+        {step ? (
+          <>
+            {removals.map((r) => (
+              <fieldset key={r.subject.id} className="space-y-3">
+                <legend className="mb-1 text-xs font-semibold text-white">
+                  Open units in {r.subject.name}
+                </legend>
+                {r.units.map((u) => (
+                  <UnitTarget
+                    key={u.id}
+                    unit={u}
+                    leaving={userId}
+                    value={targets[u.id] ?? ''}
+                    onChange={(owner) => setTargets((t) => ({ ...t, [u.id]: owner }))}
+                  />
+                ))}
+              </fieldset>
+            ))}
+            <TextArea
+              label="Reason for the transfers"
+              value={reason}
+              required
+              rows={2}
+              maxLength={REASON_MAX}
+              hint="Kept in the audit log; not sent in the emails."
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </>
+        ) : (
+          <SubjectChecklist subjects={choices} selected={chosen} onChange={setChosen} />
+        )}
         <FormError message={error} />
       </form>
     </Modal>
@@ -197,18 +369,20 @@ function Directory() {
 
   const act = useMutation({
     mutationFn: async (input: {
-      action: 'suspend' | 'resume' | 'force-reset' | 'unlock'
+      action: 'suspend' | 'resume' | 'force-reset' | 'unlock' | 'remove'
       id: string
     }) => {
       const params = { path: { user_id: input.id } }
       const result =
-        input.action === 'suspend'
-          ? await api.POST('/api/v1/accounts/{user_id}/disable', { params })
-          : input.action === 'resume'
-            ? await api.POST('/api/v1/accounts/{user_id}/enable', { params })
-            : input.action === 'force-reset'
-              ? await api.POST('/api/v1/accounts/{user_id}/force-reset', { params })
-              : await api.POST('/api/v1/accounts/{user_id}/unlock', { params })
+        input.action === 'remove'
+          ? await api.DELETE('/api/v1/accounts/{user_id}', { params })
+          : input.action === 'suspend'
+            ? await api.POST('/api/v1/accounts/{user_id}/disable', { params })
+            : input.action === 'resume'
+              ? await api.POST('/api/v1/accounts/{user_id}/enable', { params })
+              : input.action === 'force-reset'
+                ? await api.POST('/api/v1/accounts/{user_id}/force-reset', { params })
+                : await api.POST('/api/v1/accounts/{user_id}/unlock', { params })
       if (!result.response.ok)
         throw new Error(problemOf(result.error, 'That did not work.').message)
     },
@@ -219,6 +393,7 @@ function Directory() {
           resume: 'Account resumed.',
           'force-reset': 'Password reset required at the next sign-in.',
           unlock: 'Account unlocked.',
+          remove: 'SME removed from the directory.',
         }[input.action],
       )
       await queryClient.invalidateQueries({ queryKey: ['accounts'] })
@@ -365,6 +540,13 @@ function Directory() {
                               Unlock
                             </RowButton>
                           )}
+                          <RowButton
+                            onClick={() =>
+                              setDialog({ kind: 'confirm', action: 'remove', account })
+                            }
+                          >
+                            Remove
+                          </RowButton>
                         </div>
                       </td>
                     </tr>
@@ -389,18 +571,14 @@ function Directory() {
       <ConfirmDialog
         open={confirming !== null}
         onClose={() => setDialog(null)}
-        title={
-          confirming?.action === 'suspend' ? 'Suspend this account?' : 'Require a new password?'
-        }
-        confirmLabel={confirming?.action === 'suspend' ? 'Suspend account' : 'Force reset'}
+        title={CONFIRM[confirming?.action ?? 'suspend'].title}
+        confirmLabel={CONFIRM[confirming?.action ?? 'suspend'].label}
         onConfirm={() => {
           if (confirming) act.mutate({ action: confirming.action, id: confirming.account.user.id })
           setDialog(null)
         }}
       >
-        {confirming?.action === 'suspend'
-          ? `${confirming.account.user.display_name} will be signed out and cannot sign in until you resume the account.`
-          : `${confirming?.account.user.display_name ?? 'This SME'} will have to choose a new password at the next sign-in.`}
+        {confirming ? CONFIRM[confirming.action].text(confirming.account.user.display_name) : ''}
       </ConfirmDialog>
     </>
   )

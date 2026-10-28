@@ -46,6 +46,7 @@ from tarn_core.services.access import AccessService, Reach, reach_of
 from tarn_core.services.auth import AccountService, AuthKit, AuthService
 from tarn_core.services.blueprints import BlueprintService
 from tarn_core.services.booklets import BookletService
+from tarn_core.services.delegation import DelegationService
 from tarn_core.services.diagrams.jobs import QueuedRescore
 from tarn_core.services.diagrams.service import ReferenceDiagrams
 from tarn_core.services.entitlements import EntitlementService
@@ -55,6 +56,7 @@ from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.registration import RegistrationService
 from tarn_core.services.roster import RosterService
 from tarn_core.services.subjects import SubjectService
+from tarn_core.services.transfers import TransferService
 from tarn_core.services.unit_upload import UnitUploadService
 from tarn_core.services.units import UnitService
 from tarn_core.services.uploads import UploadLimits, UploadService
@@ -152,6 +154,7 @@ class Unit:
             entitlements=self.scope.entitlements,
             kit=self.kit,
             runtime=self.scope.runtime,
+            units=self.scope.units,
         )
 
     @property
@@ -160,7 +163,27 @@ class Unit:
             entitlements=self.scope.entitlements,
             users=self.scope.users,
             content=self.scope.content,
+            units=self.scope.units,
             runtime=self.scope.runtime,
+        )
+
+    @property
+    def transfers(self) -> TransferService:
+        return TransferService(
+            units=self.scope.units,
+            users=self.scope.users,
+            entitlements=self.scope.entitlements,
+            entitlement_service=self.entitlements,
+            content=self.scope.content,
+            booklets=self.scope.booklets,
+            mailer=self.kit.mailer,
+            runtime=self.scope.runtime,
+        )
+
+    @property
+    def delegation(self) -> DelegationService:
+        return DelegationService(
+            units=self.scope.units, users=self.scope.users, runtime=self.scope.runtime
         )
 
     @property

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { components } from '../../api/schema'
+import type { Tone } from '../../components/ui'
 
 export type Account = components['schemas']['AccountOut']
 export type Subject = components['schemas']['SubjectOut']
@@ -66,4 +67,44 @@ export function useUnits(filter: UnitFilter = {}) {
 /** "U-0001 · Exam code · 2024" */
 export function unitLabel(unit: WorkUnit): string {
   return `${unit.code} · ${unit.paper.exam_code || unit.paper.title} · ${unit.year}`
+}
+
+export type DelegationRequest = components['schemas']['DelegationRequestOut']
+export type DelegationState = DelegationRequest['state']
+export type UnitTransfer = components['schemas']['TransferOut']
+
+/** The delegation inbox (P27): every request for the admin, the SME's own for an SME. */
+export function useDelegationRequests(state?: DelegationState) {
+  return useQuery({
+    queryKey: ['delegation-requests', state ?? 'all'],
+    queryFn: async () => {
+      const { data } = await api.GET('/api/v1/delegation-requests', {
+        params: { query: state ? { state } : {} },
+      })
+      if (!data) throw new Error('requests unavailable')
+      return data
+    },
+  })
+}
+
+/** Active SMEs entitled to a subject: who may own (or receive) its units (D160). */
+export function useEntitledSmes(subjectId: string) {
+  return useQuery({
+    queryKey: ['unit-smes', subjectId],
+    enabled: subjectId !== '',
+    queryFn: async () => {
+      const { data } = await api.GET('/api/v1/units/smes', {
+        params: { query: { subject_id: subjectId } },
+      })
+      if (!data) throw new Error('SMEs unavailable')
+      return data
+    },
+  })
+}
+
+export const REQUEST_STATE: Record<DelegationState, { label: string; tone: Tone }> = {
+  pending: { label: 'Pending', tone: 'amber' },
+  done: { label: 'Transferred', tone: 'emerald' },
+  declined: { label: 'Declined', tone: 'red' },
+  withdrawn: { label: 'Withdrawn', tone: 'gray' },
 }

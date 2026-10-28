@@ -34,6 +34,8 @@ _STUDENTS = _needs(C.MANAGE_STUDENTS)
 _UPLOAD = _needs(C.UPLOAD_BOOKLETS)
 _ASSIGN = _needs(C.ASSIGN_UNITS)
 _PROGRESS = _needs(C.VIEW_PROGRESS)
+_REDISTRIBUTE = _needs(C.REDISTRIBUTE_UNITS)
+_REQUEST = _needs(C.REQUEST_REASSIGNMENT)
 _AUTHOR = _needs(C.AUTHOR_CONTENT)
 _EVALUATE = _needs(C.EVALUATE)
 
@@ -78,6 +80,15 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("POST", "/api/v1/units/{unit_id}/booklets"): _UPLOAD,
     ("POST", "/api/v1/booklets/{booklet_id}/replace"): _UPLOAD,
     ("POST", "/api/v1/booklets/{booklet_id}/pages/{number}/use-anyway"): _UPLOAD,
+    ("DELETE", "/api/v1/accounts/{user_id}"): _SMES,
+    ("POST", "/api/v1/accounts/{user_id}/subjects/{subject_id}/revoke"): _SMES,
+    # --- moving work between SMEs (P27, D163) -------------------------------------------------
+    ("POST", "/api/v1/units/{unit_id}/transfer"): _REDISTRIBUTE,
+    ("GET", "/api/v1/units/{unit_id}/transfers"): _REDISTRIBUTE,
+    ("POST", "/api/v1/delegation-requests/{request_id}/decline"): _REDISTRIBUTE,
+    ("POST", "/api/v1/units/{unit_id}/delegation-requests"): _REQUEST,
+    ("POST", "/api/v1/delegation-requests/{request_id}/withdraw"): _REQUEST,
+    ("GET", "/api/v1/delegation-requests"): _needs(C.REDISTRIBUTE_UNITS, C.REQUEST_REASSIGNMENT),
     # --- progress: admin and SME, no marks for the admin (D167) -------------------------------
     ("GET", "/api/v1/booklets"): _PROGRESS,
     ("GET", "/api/v1/booklets/{booklet_id}"): _PROGRESS,
@@ -191,6 +202,7 @@ LAST = (
     ("POST", "/api/v1/subjects/{subject_id}/retire"),
     ("POST", "/api/v1/accounts/{user_id}/disable"),
     ("DELETE", "/api/v1/booklets/{booklet_id}"),
+    ("DELETE", "/api/v1/accounts/{user_id}"),
 )
 
 

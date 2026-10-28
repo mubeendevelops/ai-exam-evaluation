@@ -68,7 +68,7 @@ from tarn_core.domain.review import (
 )
 from tarn_core.domain.scoring import AnswerFlag, AnswerScore, CriterionScore, SentenceVector
 from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
-from tarn_core.domain.unit import Unit, UnitState
+from tarn_core.domain.unit import DelegationRequest, RequestState, Unit, UnitState, UnitTransfer
 from tarn_core.errors import (
     AlreadyExistsError,
     DomainError,
@@ -85,6 +85,7 @@ from tarn_core.ids import (
     BookletId,
     CollegeId,
     CriterionId,
+    DelegationRequestId,
     GlossaryId,
     KeyFileId,
     PageId,
@@ -100,6 +101,7 @@ from tarn_core.ids import (
     StudentId,
     SubjectId,
     UnitId,
+    UnitTransferId,
     UserId,
 )
 from tarn_core.ports.repositories import ContentItem, QuestionPage, QuestionPart, QuestionQuery
@@ -621,6 +623,7 @@ def _user(r: Row[Any]) -> User:
         email=r.email,
         role=Role(r.role),
         active=r.active,
+        removed_at=r.removed_at,
     )
 
 
@@ -653,6 +656,7 @@ class PgUserRepository:
                     "email": user.email,
                     "role": user.role.value,
                     "active": user.active,
+                    "removed_at": user.removed_at,
                 },
             )
 
@@ -881,6 +885,136 @@ class PgUnitRepository:
                     "a unit with this code, or for this paper and year, exists already"
                 ) from exc
             translate(exc, f"unit {unit.id}", TenantViolationError)
+
+    # --- transfers and the delegation inbox (P27, 0015) -------------------------------------
+
+    def save_transfer(self, college_id: CollegeId, transfer: UnitTransfer) -> None:
+        _check_tenant(college_id, transfer.college_id, "unit transfer")
+        with writing(self._conn, f"unit transfer {transfer.id}"):
+            self._conn.execute(
+                insert(m.unit_transfers).values(
+                    college_id=transfer.college_id,
+                    id=transfer.id,
+                    unit_id=transfer.unit_id,
+                    from_owner=transfer.from_owner,
+                    to_owner=transfer.to_owner,
+                    reason=transfer.reason,
+                    by_user=transfer.by,
+                    at=transfer.at,
+                    request_id=transfer.request_id,
+                )
+            )
+
+    def transfers(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[UnitTransfer]:
+        t = m.unit_transfers
+        rows = self._conn.execute(
+            select(t).where(t.c.college_id == college_id, t.c.unit_id == unit_id).order_by(t.c.seq)
+        )
+        return [
+            UnitTransfer(
+                id=UnitTransferId(r.id),
+                college_id=CollegeId(r.college_id),
+                unit_id=UnitId(r.unit_id),
+                from_owner=UserId(r.from_owner),
+                to_owner=UserId(r.to_owner),
+                reason=r.reason,
+                by=UserId(r.by_user),
+                at=r.at,
+                request_id=None if r.request_id is None else DelegationRequestId(r.request_id),
+            )
+            for r in rows
+        ]
+
+    def get_request(
+        self, college_id: CollegeId, request_id: DelegationRequestId
+    ) -> DelegationRequest:
+        t = m.delegation_requests
+        row = self._conn.execute(
+            select(t).where(t.c.college_id == college_id, t.c.id == request_id)
+        ).first()
+        return _request(_one(row, f"delegation request {request_id}"))
+
+    def requests(
+        self,
+        college_id: CollegeId,
+        *,
+        requested_by: UserId | None = None,
+        state: RequestState | None = None,
+    ) -> Sequence[DelegationRequest]:
+        t = m.delegation_requests
+        stmt = select(t).where(t.c.college_id == college_id)
+        if requested_by is not None:
+            stmt = stmt.where(t.c.requested_by == requested_by)
+        if state is not None:
+            stmt = stmt.where(t.c.state == state.value)
+        return [_request(r) for r in self._conn.execute(stmt.order_by(t.c.seq))]
+
+    def pending_request(self, college_id: CollegeId, unit_id: UnitId) -> DelegationRequest | None:
+        t = m.delegation_requests
+        row = self._conn.execute(
+            select(t).where(
+                t.c.college_id == college_id,
+                t.c.unit_id == unit_id,
+                t.c.state == RequestState.PENDING.value,
+            )
+        ).first()
+        return None if row is None else _request(row)
+
+    def save_request(self, college_id: CollegeId, request: DelegationRequest) -> None:
+        _check_tenant(college_id, request.college_id, "delegation request")
+        t = m.delegation_requests
+        closing = {
+            "state": request.state.value,
+            "closed_by": request.closed_by,
+            "closed_at": request.closed_at,
+            "note": request.note,
+        }
+        try:
+            with self._conn.begin_nested():
+                stored = self._conn.execute(
+                    select(t.c.state)
+                    .where(t.c.college_id == college_id, t.c.id == request.id)
+                    .with_for_update()
+                ).first()
+                if stored is None:
+                    self._conn.execute(
+                        insert(t).values(
+                            college_id=request.college_id,
+                            id=request.id,
+                            unit_id=request.unit_id,
+                            requested_by=request.requested_by,
+                            reason=request.reason,
+                            requested_at=request.requested_at,
+                            **closing,
+                        )
+                    )
+                elif stored.state != RequestState.PENDING.value:
+                    raise StaleWriteError("the request is closed already")
+                else:
+                    self._conn.execute(
+                        t.update()
+                        .where(t.c.college_id == college_id, t.c.id == request.id)
+                        .values(**closing)
+                    )
+        except DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) == "23505":
+                raise AlreadyExistsError("a request for this unit is waiting already") from exc
+            translate(exc, f"delegation request {request.id}", TenantViolationError)
+
+
+def _request(r: Row[Any]) -> DelegationRequest:
+    return DelegationRequest(
+        id=DelegationRequestId(r.id),
+        college_id=CollegeId(r.college_id),
+        unit_id=UnitId(r.unit_id),
+        requested_by=UserId(r.requested_by),
+        reason=r.reason,
+        requested_at=r.requested_at,
+        state=RequestState(r.state),
+        closed_by=None if r.closed_by is None else UserId(r.closed_by),
+        closed_at=r.closed_at,
+        note=r.note,
+    )
 
 
 # --- booklets ---------------------------------------------------------------------------------

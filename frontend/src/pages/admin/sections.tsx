@@ -26,19 +26,6 @@ export function ProgressPage() {
   )
 }
 
-export function RedistributePage() {
-  return (
-    <ComingSoonPage
-      icon="fa-solid fa-arrow-right-arrow-left"
-      iconTone="text-amber-400"
-      title="Redistribute Workload"
-      description="Move papers from one SME to another entitled to the subject."
-      emptyTitle="Nothing to redistribute yet"
-      emptyText="Once papers are assigned you can move them between SMEs here."
-    />
-  )
-}
-
 export function ReportsPage() {
   return (
     <ComingSoonPage

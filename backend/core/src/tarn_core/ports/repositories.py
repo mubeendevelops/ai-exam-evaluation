@@ -31,12 +31,13 @@ from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
 from tarn_core.domain.tenancy import College, Student, SubjectGrant, User
-from tarn_core.domain.unit import Unit, UnitState
+from tarn_core.domain.unit import DelegationRequest, RequestState, Unit, UnitState, UnitTransfer
 from tarn_core.ids import (
     AnswerId,
     BlueprintId,
     BookletId,
     CollegeId,
+    DelegationRequestId,
     PageId,
     QuestionId,
     SegmentId,
@@ -205,6 +206,39 @@ class UnitRepository(Protocol):
         """Insert, or update the stored unit when ``unit.version`` is one more than its
         version (``StaleWriteError`` otherwise). A code or (paper, year) already taken is
         ``AlreadyExistsError``."""
+        ...
+
+    # --- transfers and the delegation inbox (P27) ------------------------------------------
+
+    def save_transfer(self, college_id: CollegeId, transfer: UnitTransfer) -> None:
+        """Insert only."""
+        ...
+
+    def transfers(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[UnitTransfer]:
+        """Oldest first."""
+        ...
+
+    def get_request(
+        self, college_id: CollegeId, request_id: DelegationRequestId
+    ) -> DelegationRequest: ...
+
+    def requests(
+        self,
+        college_id: CollegeId,
+        *,
+        requested_by: UserId | None = None,
+        state: RequestState | None = None,
+    ) -> Sequence[DelegationRequest]:
+        """Oldest first."""
+        ...
+
+    def pending_request(
+        self, college_id: CollegeId, unit_id: UnitId
+    ) -> DelegationRequest | None: ...
+
+    def save_request(self, college_id: CollegeId, request: DelegationRequest) -> None:
+        """Insert, or record how a pending request was closed. A second pending request for
+        the unit is ``AlreadyExistsError``."""
         ...
 
 

@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
 from tarn_core.domain.audit import AuditAction
+from tarn_core.domain.common import JsonValue
 from tarn_core.domain.identity import (
     ActionToken,
     AuthSession,
@@ -27,8 +28,10 @@ from tarn_core.domain.identity import (
 )
 from tarn_core.domain.personas import Capability
 from tarn_core.domain.tenancy import Role, User, canonical_email, check_email
+from tarn_core.domain.unit import UnitState
 from tarn_core.errors import (
     AlreadyExistsError,
+    IllegalTransitionError,
     NotFoundError,
     PermissionDeniedError,
     TokenError,
@@ -44,7 +47,7 @@ from tarn_core.ports.identity import (
     PasswordHasher,
     RandomSource,
 )
-from tarn_core.ports.repositories import EntitlementRepository, UserRepository
+from tarn_core.ports.repositories import EntitlementRepository, UnitRepository, UserRepository
 from tarn_core.services._support import Runtime
 from tarn_core.services.access import require
 from tarn_core.services.passwords import (
@@ -541,9 +544,12 @@ class AccountService(_Base):
         entitlements: EntitlementRepository,
         kit: AuthKit,
         runtime: Runtime,
+        units: UnitRepository | None = None,
     ) -> None:
+        """``units`` is needed by ``remove`` only (an SME with open units stays, D163)."""
         super().__init__(identity=identity, users=users, kit=kit, runtime=runtime)
         self._entitlements = entitlements
+        self._units = units
 
     def _admin(self, college_id: CollegeId, actor_id: UserId) -> User:
         try:
@@ -555,6 +561,9 @@ class AccountService(_Base):
         user = self._users.get(college_id, user_id)
         if user.role is not Role.SME:
             raise PermissionDeniedError("the admin manages SME accounts only")
+        if user.removed:
+            # A removed SME has left the directory: nothing more to manage (P27).
+            raise NotFoundError(f"user {user_id}")
         return user
 
     def list_accounts(self, college_id: CollegeId, actor_id: UserId) -> Sequence[AccountView]:
@@ -564,6 +573,8 @@ class AccountService(_Base):
             grants.setdefault(g.user_id, set()).add(g.subject_id)
         views = []
         for user in self._users.list(college_id):
+            if user.removed:
+                continue
             identity = self._identity.get_identity(college_id, user.id)
             counters = self._identity.counters(college_id, user.id)
             views.append(
@@ -693,6 +704,43 @@ class AccountService(_Base):
             after={"user_id": str(user_id), "active": active},
         )
         return updated
+
+    def remove(self, college_id: CollegeId, actor_id: UserId, user_id: UserId) -> User:
+        """Takes the SME out of the directory (P27, D163): refused while they own an open unit
+        (``IllegalTransitionError``). The account is disabled for good, its sessions end and
+        its subjects go; the user row and the audit history stay, and the email stays taken
+        (user, 2026-10-28)."""
+        self._admin(college_id, actor_id)
+        user = self._sme(college_id, user_id)
+        if self._units is None:
+            raise RuntimeError("AccountService.remove needs the unit repository")
+        owned = self._units.list(college_id, owner_id=user_id, state=UnitState.OPEN)
+        if owned:
+            codes = ", ".join(sorted(u.code for u in owned))
+            raise IllegalTransitionError(
+                f"This SME owns open units ({codes}): transfer them before removing the SME."
+            )
+        now = self._now
+        identity = self._identity.get_identity(college_id, user_id)
+        self._identity.save_identity(
+            college_id, replace(identity, status=IdentityStatus.DISABLED, updated_at=now)
+        )
+        self._identity.revoke_user_sessions(college_id, user_id, now)
+        subjects: list[JsonValue] = [
+            str(s) for s in sorted(self._entitlements.subjects_of(college_id, user_id), key=str)
+        ]
+        for subject in self._entitlements.subjects_of(college_id, user_id):
+            self._entitlements.revoke(college_id, user_id, subject)
+        removed = replace(user, active=False, removed_at=now)
+        self._users.save(college_id, removed)
+        self._rt.record(
+            college_id,
+            actor_id,
+            AuditAction.ACCOUNT_REMOVED,
+            before={"user_id": str(user_id), "active": user.active, "subject_ids": subjects},
+            after={"user_id": str(user_id), "removed": True},
+        )
+        return removed
 
     def force_reset(self, college_id: CollegeId, actor_id: UserId, user_id: UserId) -> None:
         """The user must choose a new password at the next sign-in; open sessions end and a

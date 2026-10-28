@@ -42,16 +42,19 @@ from tarn_core.domain.review import (
     Review,
 )
 from tarn_core.domain.scoring import SentenceVector
+from tarn_core.domain.unit import DelegationRequest, UnitTransfer
 from tarn_core.ids import (
     AmendmentId,
     BlueprintId,
     BookletId,
     CollegeId,
+    DelegationRequestId,
     RegionEditId,
     RegionId,
     ResultSheetId,
     ReviewId,
     StudentDiagramId,
+    UnitTransferId,
 )
 from tarn_core.testing import FixedClock, MemoryBlobStore
 from tarn_core.testing.builders import (
@@ -333,6 +336,29 @@ def _seed(open_: Opener, college: CollegeFixture, blueprint_id: BlueprintId) -> 
             file_sha256="e" * 64,
         ).booklet
         svc.booklets.delete(cid, teacher, doomed.id)
+        # The inbox and the transfer history (P27): a pending request and one past move.
+        request = DelegationRequest(
+            id=DelegationRequestId(s.ids.new()),
+            college_id=cid,
+            unit_id=unit_id,
+            requested_by=teacher,
+            reason="synthetic reason",
+            requested_at=s.clock.now(),
+        )
+        s.units.save_request(cid, request)
+        s.units.save_transfer(
+            cid,
+            UnitTransfer(
+                id=UnitTransferId(s.ids.new()),
+                college_id=cid,
+                unit_id=unit_id,
+                from_owner=college.admin.id,  # a builder row: no service checks
+                to_owner=teacher,
+                reason="synthetic reason",
+                by=college.admin.id,
+                at=s.clock.now(),
+            ),
+        )
     return Seeded(college=college, booklet=booklet, answers=answers, deleted_booklet_id=doomed.id)
 
 

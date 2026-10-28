@@ -311,6 +311,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/accounts/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove an SME from the directory (admin)
+         * @description Refused (409) while the SME owns an open unit: transfer it first. The account is disabled for good, its sessions end and its subjects go; the audit history stays and the email stays taken. Audited.
+         */
+        delete: operations["remove_sme_api_v1_accounts__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/accounts/{user_id}/force-reset": {
         parameters: {
             query?: never;
@@ -378,9 +398,29 @@ export interface paths {
         post: operations["grant_subject_api_v1_accounts__user_id__subjects__subject_id__post"];
         /**
          * Take a subject away from an SME (admin)
-         * @description An SME keeps at least one subject (409 for the last one). Audited.
+         * @description An SME keeps at least one subject (409 for the last one). Refused (409) while the SME owns an open unit in the subject: use `…/revoke` with transfers. Audited.
          */
         delete: operations["revoke_subject_api_v1_accounts__user_id__subjects__subject_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/accounts/{user_id}/subjects/{subject_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take a subject away from an SME, moving their open units in it (admin)
+         * @description `transfers` names a new SME for each open unit the SME has in the subject (`GET /units?owner_id=…&subject_id=…&state=open`), with one reason. All or nothing: a unit left out (409) or a target who is not an active SME entitled to the subject (422) changes nothing. Each transfer is emailed and audited, then the revoke.
+         */
+        post: operations["revoke_with_transfers_api_v1_accounts__user_id__subjects__subject_id__revoke_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -875,6 +915,114 @@ export interface paths {
          * @description Each file is named by the student's roll number (USN), for example `1XX21CS001.pdf`, matched without regard to case. Every file is checked first; a file that fails is listed with its reason and nothing is stored for it. Valid files are queued while you have free queue slots; the rest are listed as not queued (upload them again later). Only the last part of a file name counts.
          */
         post: operations["upload_to_unit_api_v1_units__unit_id__booklets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units/{unit_id}/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move an open unit to another SME entitled to its subject (admin)
+         * @description The whole unit moves with every booklet's state; the old SME loses access at once and their locks on its booklets are released. A pending delegation request for the unit closes as done. Both SMEs are emailed (no reason, no student data). Audited with the reason.
+         */
+        post: operations["transfer_unit_api_v1_units__unit_id__transfer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units/{unit_id}/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The unit's transfers, oldest first (admin) */
+        get: operations["unit_transfers_api_v1_units__unit_id__transfers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units/{unit_id}/delegation-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask your admin to move one of your units to another SME (SME)
+         * @description One pending request per unit (409 while one waits). The admin picks the new SME. Audited.
+         */
+        post: operations["request_reassignment_api_v1_units__unit_id__delegation_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delegation-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Delegation requests, newest first: every one for the admin, your own for an SME */
+        get: operations["list_requests_api_v1_delegation_requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delegation-requests/{request_id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Keep the unit with its SME and say why (admin) */
+        post: operations["decline_api_v1_delegation_requests__request_id__decline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delegation-requests/{request_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take back your own pending request (SME) */
+        post: operations["withdraw_api_v1_delegation_requests__request_id__withdraw_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1855,6 +2003,68 @@ export interface components {
             /** Current Password */
             current_password: string;
         };
+        /** DeclineIn */
+        DeclineIn: {
+            /** Note */
+            note: string;
+        };
+        /** DelegationRequestIn */
+        DelegationRequestIn: {
+            /** Reason */
+            reason: string;
+        };
+        /** DelegationRequestOut */
+        DelegationRequestOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            unit: components["schemas"]["DelegationUnitOut"];
+            requested_by: components["schemas"]["UnitOwnerOut"];
+            /** Reason */
+            reason: string;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "done" | "declined" | "withdrawn";
+            /** Closed At */
+            closed_at: string | null;
+            /**
+             * Note
+             * @description The admin's note when declining.
+             */
+            note: string;
+        };
+        /** DelegationUnitOut */
+        DelegationUnitOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Code */
+            code: string;
+            /** Paper Title */
+            paper_title: string;
+            subject: components["schemas"]["UnitSubjectOut"];
+            /** Year */
+            year: string;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /** @description Who has the unit now. */
+            owner: components["schemas"]["UnitOwnerOut"];
+            counts: components["schemas"]["UnitCountsOut"];
+        };
         /** DeviceOut */
         DeviceOut: {
             /** Kind */
@@ -2346,7 +2556,7 @@ export interface components {
              * Capabilities
              * @description What this persona may do (D177); the screens show what these allow.
              */
-            capabilities: ("manage_smes" | "manage_subjects" | "manage_students" | "assign_units" | "upload_booklets" | "view_progress" | "author_content" | "evaluate")[];
+            capabilities: ("manage_smes" | "manage_subjects" | "manage_students" | "assign_units" | "upload_booklets" | "redistribute_units" | "request_reassignment" | "view_progress" | "author_content" | "evaluate")[];
         };
         /** MergeIn */
         MergeIn: {
@@ -3133,6 +3343,34 @@ export interface components {
             /** Notices */
             notices?: string[];
         };
+        /** RevokeIn */
+        RevokeIn: {
+            /**
+             * Transfers
+             * @description One per open unit the SME has in the subject: all of them, or nothing changes (409).
+             */
+            transfers?: components["schemas"]["RevokeTransferIn"][];
+            /**
+             * Reason
+             * @description Needed with transfers.
+             * @default
+             */
+            reason: string;
+        };
+        /** RevokeTransferIn */
+        RevokeTransferIn: {
+            /**
+             * Unit Id
+             * Format: uuid
+             */
+            unit_id: string;
+            /**
+             * Owner Id
+             * Format: uuid
+             * @description The SME who receives the unit.
+             */
+            owner_id: string;
+        };
         /** RosterReportOut */
         RosterReportOut: {
             /**
@@ -3537,6 +3775,44 @@ export interface components {
             /** Slots */
             slots: components["schemas"]["SlotResultOut"][];
         };
+        /** TransferIn */
+        TransferIn: {
+            /**
+             * Owner Id
+             * Format: uuid
+             * @description Another active SME entitled to the unit's subject.
+             */
+            owner_id: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Expected Version
+             * @description The unit's version as loaded (409 when it changed).
+             */
+            expected_version?: number | null;
+        };
+        /** TransferOut */
+        TransferOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            from_owner: components["schemas"]["UnitOwnerOut"];
+            to_owner: components["schemas"]["UnitOwnerOut"];
+            /** Reason */
+            reason: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Request Id
+             * @description The SME's request this transfer answered.
+             */
+            request_id: string | null;
+        };
         /** UnitChoicePaperOut */
         UnitChoicePaperOut: {
             /**
@@ -3629,6 +3905,8 @@ export interface components {
             /** Version */
             version: number;
             counts: components["schemas"]["UnitCountsOut"];
+            /** @description The SME's request to move this unit, while it waits (P27). */
+            pending_request?: components["schemas"]["UnitRequestRefOut"] | null;
             /**
              * Booklets
              * @description Oldest first. Processing status only: no marks, page images or text (D167).
@@ -3709,6 +3987,8 @@ export interface components {
             /** Version */
             version: number;
             counts: components["schemas"]["UnitCountsOut"];
+            /** @description The SME's request to move this unit, while it waits (P27). */
+            pending_request?: components["schemas"]["UnitRequestRefOut"] | null;
         };
         /** UnitOwnerOut */
         UnitOwnerOut: {
@@ -3740,6 +4020,19 @@ export interface components {
             course_code: string;
             /** Total Marks */
             total_marks: number;
+        };
+        /** UnitRequestRefOut */
+        UnitRequestRefOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
         };
         /** UnitSmeOut */
         UnitSmeOut: {
@@ -4711,6 +5004,71 @@ export interface operations {
             };
         };
     };
+    remove_sme_api_v1_accounts__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     force_reset_api_v1_accounts__user_id__force_reset_post: {
         parameters: {
             query?: never;
@@ -4986,6 +5344,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_with_transfers_api_v1_accounts__user_id__subjects__subject_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                subject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountSubjectsOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
                 };
             };
         };
@@ -7013,6 +7443,393 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    transfer_unit_api_v1_units__unit_id__transfer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    unit_transfers_api_v1_units__unit_id__transfers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferOut"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_reassignment_api_v1_units__unit_id__delegation_requests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DelegationRequestIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DelegationRequestOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    list_requests_api_v1_delegation_requests_get: {
+        parameters: {
+            query?: {
+                state?: ("pending" | "done" | "declined" | "withdrawn") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DelegationRequestOut"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decline_api_v1_delegation_requests__request_id__decline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeclineIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DelegationRequestOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    withdraw_api_v1_delegation_requests__request_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DelegationRequestOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

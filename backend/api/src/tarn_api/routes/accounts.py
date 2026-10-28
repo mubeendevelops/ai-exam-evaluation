@@ -7,11 +7,18 @@ from uuid import UUID
 from fastapi import APIRouter, status
 
 from tarn_api.backends import unit_of_work
-from tarn_api.schemas import AccountOut, AccountSubjectsOut, ErrorOut, InviteIn, UserOut
+from tarn_api.schemas import (
+    AccountOut,
+    AccountSubjectsOut,
+    ErrorOut,
+    InviteIn,
+    RevokeIn,
+    UserOut,
+)
 from tarn_api.security import BackendsDep, PrincipalDep, current_user
 from tarn_core.domain.identity import IdentityStatus
 from tarn_core.domain.personas import Capability
-from tarn_core.ids import SubjectId, UserId
+from tarn_core.ids import SubjectId, UnitId, UserId
 from tarn_core.services.auth import AccountView
 
 MANAGE = Capability.MANAGE_SMES
@@ -85,6 +92,21 @@ def enable(user_id: UUID, who: PrincipalDep, backends: BackendsDep) -> UserOut:
     return _set_active(who, backends, user_id, True)
 
 
+@router.delete(
+    "/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={404: {"model": ErrorOut}, 409: {"model": ErrorOut}},
+    summary="Remove an SME from the directory (admin)",
+    description="Refused (409) while the SME owns an open unit: transfer it first. The account "
+    "is disabled for good, its sessions end and its subjects go; the audit history stays and "
+    "the email stays taken. Audited.",
+)
+def remove_sme(user_id: UUID, who: PrincipalDep, backends: BackendsDep) -> None:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, MANAGE)
+        unit.accounts.remove(who.college_id, who.user_id, UserId(user_id))
+
+
 @router.post(
     "/{user_id}/force-reset",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -151,7 +173,8 @@ def grant_subject(
     response_model=AccountSubjectsOut,
     responses={404: {"model": ErrorOut}, 409: {"model": ErrorOut}},
     summary="Take a subject away from an SME (admin)",
-    description="An SME keeps at least one subject (409 for the last one). Audited.",
+    description="An SME keeps at least one subject (409 for the last one). Refused (409) "
+    "while the SME owns an open unit in the subject: use `…/revoke` with transfers. Audited.",
 )
 def revoke_subject(
     user_id: UUID, subject_id: UUID, who: PrincipalDep, backends: BackendsDep
@@ -160,5 +183,32 @@ def revoke_subject(
         current_user(unit, who, MANAGE)
         found = unit.entitlements.revoke(
             who.college_id, who.user_id, UserId(user_id), SubjectId(subject_id)
+        )
+    return _subjects_out(user_id, found)
+
+
+@router.post(
+    "/{user_id}/subjects/{subject_id}/revoke",
+    response_model=AccountSubjectsOut,
+    responses={404: {"model": ErrorOut}, 409: {"model": ErrorOut}, 422: {"model": ErrorOut}},
+    summary="Take a subject away from an SME, moving their open units in it (admin)",
+    description="`transfers` names a new SME for each open unit the SME has in the subject "
+    "(`GET /units?owner_id=…&subject_id=…&state=open`), with one reason. All or nothing: a "
+    "unit left out (409) or a target who is not an active SME entitled to the subject (422) "
+    "changes nothing. Each transfer is emailed and audited, then the revoke.",
+)
+def revoke_with_transfers(
+    user_id: UUID, subject_id: UUID, body: RevokeIn, who: PrincipalDep, backends: BackendsDep
+) -> AccountSubjectsOut:
+    moves = {UnitId(t.unit_id): UserId(t.owner_id) for t in body.transfers}
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, MANAGE)
+        found = unit.transfers.revoke_subject(
+            who.college_id,
+            who.user_id,
+            UserId(user_id),
+            SubjectId(subject_id),
+            transfers=moves,
+            reason=body.reason,
         )
     return _subjects_out(user_id, found)

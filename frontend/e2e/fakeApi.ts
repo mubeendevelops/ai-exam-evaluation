@@ -25,10 +25,11 @@ const CAPABILITIES: Record<Role, string[]> = {
     'manage_smes',
     'manage_students',
     'manage_subjects',
+    'redistribute_units',
     'upload_booklets',
     'view_progress',
   ],
-  sme: ['author_content', 'evaluate', 'view_progress'],
+  sme: ['author_content', 'evaluate', 'request_reassignment', 'view_progress'],
   governor: [],
 }
 
@@ -249,6 +250,11 @@ export class FakeApi {
 
       case 'GET /subjects':
         return json(200, this.subjects)
+
+      // No units here: FakeBooklets, when installed, answers these itself (P26, P27).
+      case 'GET /units':
+      case 'GET /delegation-requests':
+        return json(200, [])
 
       case 'POST /subjects': {
         if (this.subjects.some((s) => s.code === body.code))

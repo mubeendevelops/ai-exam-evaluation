@@ -146,6 +146,13 @@ def build_world(client: "TestClient", process: Callable[[], None]) -> World:
         if x["user"]["email"] == A_SECOND
     )
     own_blueprint = c.get(f"{BASE}/blueprints/{blueprint['id']}", headers=a).json()
+    # A's SME asks the admin to move the unit (P27): a pending request in the inbox.
+    asked = c.post(
+        f"{BASE}/units/{unit['id']}/delegation-requests",
+        json={"reason": "Sweep: too many units"},
+        headers=a,
+    )
+    assert asked.status_code == 201, asked.text
     return World(
         client=c,
         a=a,
@@ -162,6 +169,8 @@ def build_world(client: "TestClient", process: Callable[[], None]) -> World:
             "region_id": region,
             "diagram_id": str(uuid4()),  # the booklet check comes first; no drawing needed
             "user_id": second,
+            "owner_id": me["user"]["id"],  # A's SME, the unit's owner
+            "request_id": asked.json()["id"],
             "blueprint_id": blueprint["id"],
             "question_id": qid,
             "file_id": key.json()["id"],
@@ -242,6 +251,23 @@ CASES: Mapping[tuple[str, str], Case] = {
         as_admin=True,
     ),
     ("GET", "/api/v1/units/{unit_id}"): Case("college", as_admin=True),
+    # --- another college's transfers and delegation requests (P27) --------------------------
+    ("POST", "/api/v1/units/{unit_id}/transfer"): Case(
+        "college", _json(lambda w: {"owner_id": w.ids["owner_id"], "reason": "x"}), as_admin=True
+    ),
+    ("GET", "/api/v1/units/{unit_id}/transfers"): Case("college", as_admin=True),
+    ("POST", "/api/v1/units/{unit_id}/delegation-requests"): Case(
+        "college", _json(lambda w: {"reason": "Mine now?"})
+    ),
+    ("GET", "/api/v1/delegation-requests"): Case("own"),
+    ("POST", "/api/v1/delegation-requests/{request_id}/decline"): Case(
+        "college", _json(lambda w: {"note": "No"}), as_admin=True
+    ),
+    ("POST", "/api/v1/delegation-requests/{request_id}/withdraw"): Case("college"),
+    ("DELETE", "/api/v1/accounts/{user_id}"): Case("college", as_admin=True),
+    ("POST", "/api/v1/accounts/{user_id}/subjects/{subject_id}/revoke"): Case(
+        "college", _json(lambda w: {"transfers": [], "reason": ""}), as_admin=True
+    ),
     ("POST", "/api/v1/units/{unit_id}/booklets"): Case(
         "college",
         lambda w: {
@@ -440,6 +466,7 @@ def url(world: World, path: str) -> str:
         "subject_id",
         "student_id",
         "unit_id",
+        "request_id",
     ):
         out = out.replace("{" + name + "}", world.ids[name])
     assert "{" not in out, out

@@ -14,6 +14,7 @@ const BLUEPRINT = '66666666-6666-4666-8666-666666666666'
 const UNIT = '88888888-8888-4888-8888-888888888888'
 const SUBJECT = '33333333-3333-4333-8333-333333333333'
 const SME = { id: '99999999-9999-4999-8999-999999999999', name: 'Prof. Asha Rao' }
+const KIRAN = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Prof. Kiran Shah' }
 const STUDENT = {
   id: '77777777-7777-4777-8777-777777777777',
   name: 'Test Student One',
@@ -63,9 +64,34 @@ export class FakeBooklets {
   /** The unit of work the booklet belongs to (P26); made by the admin, or there already. */
   unitMade: boolean
   unitRequests: Record<string, unknown>[] = []
+  /** Who owns the unit now (P27: the admin may transfer it). */
+  owner = SME
+  unitVersion = 1
+  /** Who is looking: the SME sees only the units they own. */
+  viewer: 'admin' | 'sme' = 'sme'
+  /** Delegation requests (P27), as `DelegationRequestOut` bodies. */
+  requests: Record<string, unknown>[] = []
+  transfers: Record<string, unknown>[] = []
 
   constructor(options: { unit?: boolean } = {}) {
     this.unitMade = options.unit ?? true
+  }
+
+  private requestOut(r: Record<string, unknown>) {
+    const unit = this.unitOut()
+    return {
+      ...r,
+      unit: {
+        id: unit.id,
+        code: unit.code,
+        paper_title: unit.paper.title,
+        subject: unit.subject,
+        year: unit.year,
+        due_date: unit.due_date,
+        owner: unit.owner,
+        counts: unit.counts,
+      },
+    }
   }
 
   /** The admin has uploaded the booklet (the SME's tests start after that, P26). */
@@ -90,11 +116,15 @@ export class FakeBooklets {
       },
       subject: { id: SUBJECT, code: 'PHY-501', name: 'Physics' },
       year: '2024',
-      owner: SME,
+      owner: this.owner,
       due_date: '2030-01-31',
       state: 'open',
       created_at: '2026-10-28T08:00:00Z',
-      version: 1,
+      version: this.unitVersion,
+      pending_request: (() => {
+        const r = this.requests.find((x) => x.state === 'pending')
+        return r ? { id: r.id, requested_at: r.requested_at } : null
+      })(),
       counts: {
         total: b.length,
         processing: count(['uploaded', 'processing', 'reading', 'text_ready', 'segmented']),
@@ -466,14 +496,67 @@ export class FakeBooklets {
 
     // --- units of work (P26) ---
     if (method === 'GET' && path === '/units') {
-      return json(200, this.unitMade ? [this.unitOut()] : [])
+      const visible = this.unitMade && (this.viewer === 'admin' || this.owner.id === SME.id)
+      return json(200, visible ? [this.unitOut()] : [])
+    }
+    // --- transfers and the delegation inbox (P27) ---
+    if (method === 'POST' && path === `/units/${UNIT}/delegation-requests`) {
+      if (this.requests.some((r) => r.state === 'pending'))
+        return json(409, { detail: 'A request to move this unit is waiting already.' })
+      const made = {
+        id: `req-${this.requests.length + 1}`,
+        requested_by: SME,
+        reason: body.reason,
+        requested_at: '2026-10-28T10:00:00Z',
+        state: 'pending',
+        closed_at: null,
+        note: '',
+      }
+      this.requests.push(made)
+      return json(201, this.requestOut(made))
+    }
+    if (method === 'GET' && path === '/delegation-requests') {
+      const state = url.searchParams.get('state')
+      return json(
+        200,
+        this.requests
+          .filter((r) => !state || r.state === state)
+          .map((r) => this.requestOut(r))
+          .reverse(),
+      )
+    }
+    const closing = /^\/delegation-requests\/([^/]+)\/(decline|withdraw)$/.exec(path)
+    if (method === 'POST' && closing) {
+      const found = this.requests.find((r) => r.id === closing[1])
+      if (!found) return json(404, { detail: 'Not found.' })
+      if (found.state !== 'pending')
+        return json(409, { detail: 'This request has been answered already.' })
+      found.state = closing[2] === 'decline' ? 'declined' : 'withdrawn'
+      found.closed_at = '2026-10-28T11:00:00Z'
+      if (closing[2] === 'decline') found.note = body.note
+      return json(200, this.requestOut(found))
+    }
+    if (method === 'POST' && path === `/units/${UNIT}/transfer`) {
+      const target = [SME, KIRAN].find((s) => s.id === body.owner_id)
+      if (!target || target.id === this.owner.id || !String(body.reason ?? '').trim())
+        return json(422, { detail: "Choose an active SME who has this paper's subject." })
+      if (body.expected_version !== undefined && body.expected_version !== this.unitVersion)
+        return json(409, { detail: 'The unit changed since it was loaded: reload it.' })
+      this.transfers.push(body)
+      this.owner = target
+      this.unitVersion++
+      for (const r of this.requests) if (r.state === 'pending') r.state = 'done'
+      return json(200, this.unitOut())
     }
     if (method === 'GET' && path === '/units/papers') {
       const { paper, subject } = this.unitOut()
       return json(200, [{ ...paper, subject }])
     }
     if (method === 'GET' && path === '/units/smes') {
-      return json(200, [{ ...SME, email: 'asha@synthetic.test' }])
+      return json(200, [
+        { ...SME, email: 'asha@synthetic.test' },
+        { ...KIRAN, email: 'kiran@synthetic.test' },
+      ])
     }
     if (method === 'POST' && path === '/units') {
       this.unitRequests.push(body)

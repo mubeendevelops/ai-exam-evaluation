@@ -12,7 +12,12 @@ from fastapi import APIRouter, File, Query, Request, UploadFile, status
 from tarn_api.backends import Unit, unit_of_work
 from tarn_api.routes.booklets import booklet_out, is_evaluator, read_capped
 from tarn_api.schemas import (
+    DelegationRequestIn,
+    DelegationRequestOut,
+    DelegationUnitOut,
     ErrorOut,
+    TransferIn,
+    TransferOut,
     UnitChoicePaperOut,
     UnitCountsOut,
     UnitDetailOut,
@@ -20,6 +25,7 @@ from tarn_api.schemas import (
     UnitOut,
     UnitOwnerOut,
     UnitPaperOut,
+    UnitRequestRefOut,
     UnitSmeOut,
     UnitStateName,
     UnitSubjectOut,
@@ -31,8 +37,8 @@ from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import APPROVED_STATUSES, Booklet, BookletStatus
 from tarn_core.domain.content import Subject
 from tarn_core.domain.personas import Capability
+from tarn_core.domain.unit import DelegationRequest, UnitState
 from tarn_core.domain.unit import Unit as WorkUnit
-from tarn_core.domain.unit import UnitState
 from tarn_core.ids import BlueprintId, CollegeId, SubjectId, UnitId, UserId
 from tarn_core.services.unit_upload import PROBLEM_TEXT, FileOutcome, NamedFile
 
@@ -92,6 +98,46 @@ def _unit_out(unit: Unit, college_id: CollegeId, work: WorkUnit) -> UnitOut:
         created_at=work.created_at,
         version=work.version,
         counts=_counts(unit.scope.booklets.in_unit(college_id, work.id)),
+        pending_request=_pending(unit, college_id, work),
+    )
+
+
+def _pending(unit: Unit, college_id: CollegeId, work: WorkUnit) -> UnitRequestRefOut | None:
+    found = unit.scope.units.pending_request(college_id, work.id)
+    return (
+        None if found is None else UnitRequestRefOut(id=found.id, requested_at=found.requested_at)
+    )
+
+
+def owner_out(unit: Unit, college_id: CollegeId, user_id: UserId) -> UnitOwnerOut:
+    return UnitOwnerOut(id=user_id, name=unit.scope.users.get(college_id, user_id).display_name)
+
+
+def delegation_out(
+    unit: Unit, college_id: CollegeId, request: DelegationRequest
+) -> DelegationRequestOut:
+    """The request with its unit as it is now (code, paper, owner, progress: no marks)."""
+    work = unit.scope.units.get(college_id, request.unit_id)
+    paper = unit.scope.content.get(college_id, ExamBlueprint, work.paper_id)
+    subject = unit.scope.content.get(college_id, Subject, work.subject_id)
+    return DelegationRequestOut(
+        id=request.id,
+        unit=DelegationUnitOut(
+            id=work.id,
+            code=work.code,
+            paper_title=paper.title,
+            subject=_subject_out(subject),
+            year=work.year,
+            due_date=work.due_date,
+            owner=owner_out(unit, college_id, work.owner_id),
+            counts=_counts(unit.scope.booklets.in_unit(college_id, work.id)),
+        ),
+        requested_by=owner_out(unit, college_id, request.requested_by),
+        reason=request.reason,
+        requested_at=request.requested_at,
+        state=request.state.value,
+        closed_at=request.closed_at,
+        note=request.note,
     )
 
 
@@ -249,3 +295,75 @@ async def upload_to_unit(
         refused=report.count(FileOutcome.REFUSED),
         not_queued=report.count(FileOutcome.NOT_QUEUED),
     )
+
+
+# --- transfers and delegation requests (P27, D163) ---------------------------------------------
+
+
+@router.post(
+    "/units/{unit_id}/transfer",
+    response_model=UnitOut,
+    responses={404: {"model": ErrorOut}, 409: {"model": ErrorOut}, 422: {"model": ErrorOut}},
+    summary="Move an open unit to another SME entitled to its subject (admin)",
+    description="The whole unit moves with every booklet's state; the old SME loses access at "
+    "once and their locks on its booklets are released. A pending delegation request for the "
+    "unit closes as done. Both SMEs are emailed (no reason, no student data). Audited with the "
+    "reason.",
+)
+def transfer_unit(
+    unit_id: UUID, body: TransferIn, who: PrincipalDep, backends: BackendsDep
+) -> UnitOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.REDISTRIBUTE_UNITS)
+        moved = unit.transfers.transfer(
+            who.college_id,
+            who.user_id,
+            UnitId(unit_id),
+            owner_id=UserId(body.owner_id),
+            reason=body.reason,
+            expected_version=body.expected_version,
+        )
+        return _unit_out(unit, who.college_id, moved)
+
+
+@router.get(
+    "/units/{unit_id}/transfers",
+    response_model=list[TransferOut],
+    responses={404: {"model": ErrorOut}},
+    summary="The unit's transfers, oldest first (admin)",
+)
+def unit_transfers(unit_id: UUID, who: PrincipalDep, backends: BackendsDep) -> list[TransferOut]:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.REDISTRIBUTE_UNITS)
+        found = unit.transfers.history(who.college_id, who.user_id, UnitId(unit_id))
+        return [
+            TransferOut(
+                id=t.id,
+                from_owner=owner_out(unit, who.college_id, t.from_owner),
+                to_owner=owner_out(unit, who.college_id, t.to_owner),
+                reason=t.reason,
+                at=t.at,
+                request_id=t.request_id,
+            )
+            for t in found
+        ]
+
+
+@router.post(
+    "/units/{unit_id}/delegation-requests",
+    response_model=DelegationRequestOut,
+    status_code=status.HTTP_201_CREATED,
+    responses={404: {"model": ErrorOut}, 409: {"model": ErrorOut}, 422: {"model": ErrorOut}},
+    summary="Ask your admin to move one of your units to another SME (SME)",
+    description="One pending request per unit (409 while one waits). The admin picks the new "
+    "SME. Audited.",
+)
+def request_reassignment(
+    unit_id: UUID, body: DelegationRequestIn, who: PrincipalDep, backends: BackendsDep
+) -> DelegationRequestOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.REQUEST_REASSIGNMENT)
+        made = unit.delegation.request(
+            who.college_id, who.user_id, UnitId(unit_id), reason=body.reason
+        )
+        return delegation_out(unit, who.college_id, made)

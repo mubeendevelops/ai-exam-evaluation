@@ -43,11 +43,23 @@ class User:
     email: str
     role: Role
     active: bool = True
+    removed_at: datetime | None = None
+    """When the admin removed the SME (P27, D193): the account is off and out of the
+    directory; the row stays so history (units, reviews, audit) still names the person."""
 
     def __post_init__(self) -> None:
         check_text("display name", self.display_name)
         if "@" not in self.email:
             raise InvariantError("email must contain '@'")
+        if self.removed_at is not None:
+            if self.active:
+                raise InvariantError("a removed account cannot be active")
+            if self.removed_at.tzinfo is None:
+                raise InvariantError("removed_at must be timezone-aware")
+
+    @property
+    def removed(self) -> bool:
+        return self.removed_at is not None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

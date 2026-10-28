@@ -12,7 +12,7 @@ from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
 from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
-from tarn_core.domain.unit import Unit, UnitState
+from tarn_core.domain.unit import DelegationRequest, RequestState, Unit, UnitState, UnitTransfer
 from tarn_core.errors import (
     AlreadyExistsError,
     InvariantError,
@@ -25,12 +25,14 @@ from tarn_core.ids import (
     BlueprintId,
     BookletId,
     CollegeId,
+    DelegationRequestId,
     PageId,
     QuestionId,
     SegmentId,
     StudentId,
     SubjectId,
     UnitId,
+    UnitTransferId,
     UserId,
 )
 from tarn_core.ports.repositories import ContentItem, QuestionPage, QuestionPart, QuestionQuery
@@ -279,6 +281,10 @@ class MemoryUnitRepository:
 
     def __init__(self, log: TenantLog) -> None:
         self._t: _Table[UnitId, Unit] = _Table(log, "unit")
+        self._transfers: _Table[UnitTransferId, UnitTransfer] = _Table(log, "unit transfer")
+        self._requests: _Table[DelegationRequestId, DelegationRequest] = _Table(
+            log, "delegation request"
+        )
 
     def get(self, college_id: CollegeId, unit_id: UnitId) -> Unit:
         return self._t.get(college_id, unit_id)
@@ -325,6 +331,52 @@ class MemoryUnitRepository:
             if other.paper_id == unit.paper_id and other.year.casefold() == unit.year.casefold():
                 raise AlreadyExistsError("a unit for this paper and year exists already")
         self._t.put(college_id, unit.id, unit)
+
+    def save_transfer(self, college_id: CollegeId, transfer: UnitTransfer) -> None:
+        self.get(college_id, transfer.unit_id)  # like the composite foreign key
+        if transfer.id in self._transfers.rows(college_id):
+            raise AlreadyExistsError(f"unit transfer {transfer.id}")
+        self._transfers.put(college_id, transfer.id, transfer)
+
+    def transfers(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[UnitTransfer]:
+        return [t for t in self._transfers.values(college_id) if t.unit_id == unit_id]
+
+    def get_request(
+        self, college_id: CollegeId, request_id: DelegationRequestId
+    ) -> DelegationRequest:
+        return self._requests.get(college_id, request_id)
+
+    def requests(
+        self,
+        college_id: CollegeId,
+        *,
+        requested_by: UserId | None = None,
+        state: RequestState | None = None,
+    ) -> Sequence[DelegationRequest]:
+        return [
+            r
+            for r in self._requests.values(college_id)
+            if (requested_by is None or r.requested_by == requested_by)
+            and (state is None or r.state is state)
+        ]
+
+    def pending_request(self, college_id: CollegeId, unit_id: UnitId) -> DelegationRequest | None:
+        return next(
+            (r for r in self._requests.values(college_id) if r.unit_id == unit_id and r.pending),
+            None,
+        )
+
+    def save_request(self, college_id: CollegeId, request: DelegationRequest) -> None:
+        # Like 0015: one pending request per unit; a closed request is not reopened.
+        self.get(college_id, request.unit_id)
+        stored = self._requests.rows(college_id).get(request.id)
+        if stored is not None and not stored.pending:
+            raise StaleWriteError("the request is closed already")
+        if request.pending:
+            other = self.pending_request(college_id, request.unit_id)
+            if other is not None and other.id != request.id:
+                raise AlreadyExistsError("a request for this unit is waiting already")
+        self._requests.put(college_id, request.id, request)
 
 
 class MemoryStudentRepository:

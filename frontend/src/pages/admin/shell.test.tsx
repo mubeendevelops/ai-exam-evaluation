@@ -46,7 +46,6 @@ describe('admin portal shell', () => {
     const sidebar = await screen.findByRole('navigation', { name: 'Admin sections' })
     const empty: [string, string][] = [
       ['SME Progress Reports', 'No progress to report yet'],
-      ['Redistribute Workload', 'Nothing to redistribute yet'],
       ['Audit & External Reports', 'No reports yet'],
     ]
     for (const [link, text] of empty) {

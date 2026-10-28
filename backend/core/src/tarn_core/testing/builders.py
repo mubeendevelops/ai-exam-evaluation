@@ -65,11 +65,13 @@ from tarn_core.services._support import Runtime
 from tarn_core.services.blueprints import BlueprintService
 from tarn_core.services.booklets import BookletService
 from tarn_core.services.content import ContentService
+from tarn_core.services.delegation import DelegationService
 from tarn_core.services.entitlements import EntitlementService
 from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.scoring import ScoringService
 from tarn_core.services.subjects import SubjectService
 from tarn_core.services.totals import TotalsService
+from tarn_core.services.transfers import TransferService
 from tarn_core.services.units import UnitService
 from tarn_core.testing import FixedCreditScorer, MemoryMailer
 
@@ -342,6 +344,8 @@ class Services:
     subjects: SubjectService
     totals: TotalsService
     units: UnitService
+    transfers: TransferService
+    delegation: DelegationService
 
 
 def make_services(
@@ -350,6 +354,14 @@ def make_services(
     """Every core service wired to the in-memory adapters. ``mailer`` catches the units'
     emails (default: a fresh ``MemoryMailer``)."""
     rt = mem.runtime
+    mailer = mailer or MemoryMailer()
+    entitlements = EntitlementService(
+        entitlements=mem.entitlements,
+        users=mem.users,
+        content=mem.content,
+        units=mem.units,
+        runtime=rt,
+    )
     return Services(
         units=UnitService(
             units=mem.units,
@@ -357,9 +369,20 @@ def make_services(
             entitlements=mem.entitlements,
             content=mem.content,
             booklets=mem.booklets,
-            mailer=mailer or MemoryMailer(),
+            mailer=mailer,
             runtime=rt,
         ),
+        transfers=TransferService(
+            units=mem.units,
+            users=mem.users,
+            entitlements=mem.entitlements,
+            entitlement_service=entitlements,
+            content=mem.content,
+            booklets=mem.booklets,
+            mailer=mailer,
+            runtime=rt,
+        ),
+        delegation=DelegationService(units=mem.units, users=mem.users, runtime=rt),
         bank=QuestionBankService(
             content=mem.content,
             users=mem.users,
@@ -377,9 +400,7 @@ def make_services(
         subjects=SubjectService(
             content=mem.content, users=mem.users, entitlements=mem.entitlements, runtime=rt
         ),
-        entitlements=EntitlementService(
-            entitlements=mem.entitlements, users=mem.users, content=mem.content, runtime=rt
-        ),
+        entitlements=entitlements,
         booklets=BookletService(
             booklets=mem.booklets,
             students=mem.students,

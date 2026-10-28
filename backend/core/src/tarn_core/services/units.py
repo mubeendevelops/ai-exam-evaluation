@@ -31,6 +31,15 @@ from tarn_core.services.access import require
 NOT_ENTITLED = "Choose an active SME who has this paper's subject."
 
 
+def may_own(entitlements: EntitlementRepository, user: User, subject_id: SubjectId) -> bool:
+    """An active SME entitled to the subject may own (be assigned or sent) its units (D160)."""
+    return (
+        user.role is Role.SME
+        and user.active
+        and subject_id in entitlements.subjects_of(user.college_id, user.id)
+    )
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class PaperChoice:
     """A paper a unit can be made from: every slot linked (D56), an exam code, a live
@@ -99,11 +108,7 @@ class UnitService:
         )
 
     def _may_own(self, user: User, subject_id: SubjectId) -> bool:
-        return (
-            user.role is Role.SME
-            and user.active
-            and subject_id in self._entitlements.subjects_of(user.college_id, user.id)
-        )
+        return may_own(self._entitlements, user, subject_id)
 
     # --- create --------------------------------------------------------------------------------
 

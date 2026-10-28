@@ -74,6 +74,12 @@ class AuditAction(StrEnum):
     UNIT_CREATED = "unit.created"  # ids, year, due date; never student data
     UNIT_UPLOADED = "unit.uploaded"  # counts per outcome only: file names carry roll numbers
     BOOKLET_REPLACED = "booklet.replaced"  # retake: the old and the new booklet's ids
+    # Transfers and the delegation inbox (P27)
+    UNIT_TRANSFERRED = "unit.transferred"  # old and new owner, the admin's reason, locks freed
+    ACCOUNT_REMOVED = "account.removed"  # the SME leaves the directory; subjects dropped (ids)
+    DELEGATION_REQUESTED = "delegation.requested"  # the SME's reason
+    DELEGATION_DECLINED = "delegation.declined"  # the admin's note
+    DELEGATION_WITHDRAWN = "delegation.withdrawn"
     # College settings (P19)
     COLLEGE_LLM_SCORING_SET = "college.llm_scoring_set"  # a Tarn operator switches the flag
 

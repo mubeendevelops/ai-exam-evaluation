@@ -212,6 +212,7 @@ users = Table(
     _text("role"),
     Column("active", Boolean(), nullable=False),
     _seq(),
+    Column("removed_at", DateTime(timezone=True), nullable=True),
 )
 
 # An SME's subjects (P24, migration 0013, D160).
@@ -256,6 +257,38 @@ units = Table(
     _uuid("created_by", nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("version", Integer(), nullable=False, server_default="1"),
+    _seq(),
+)
+
+# Transfers and the delegation inbox (P27, migration 0015, D163).
+delegation_requests = Table(
+    "delegation_requests",
+    metadata,
+    _uuid("college_id", primary_key=True),
+    _uuid("id", primary_key=True),
+    _uuid("unit_id"),
+    _uuid("requested_by"),
+    _text("reason"),
+    Column("requested_at", DateTime(timezone=True), nullable=False),
+    Column("state", Text(), nullable=False, server_default="pending"),
+    _uuid("closed_by", nullable=True),
+    Column("closed_at", DateTime(timezone=True), nullable=True),
+    Column("note", Text(), nullable=False, server_default=""),
+    _seq(),
+)
+
+unit_transfers = Table(
+    "unit_transfers",
+    metadata,
+    _uuid("college_id", primary_key=True),
+    _uuid("id", primary_key=True),
+    _uuid("unit_id"),
+    _uuid("from_owner"),
+    _uuid("to_owner"),
+    _text("reason"),
+    _uuid("by_user"),
+    Column("at", DateTime(timezone=True), nullable=False),
+    _uuid("request_id", nullable=True),
     _seq(),
 )
 
@@ -595,6 +628,8 @@ COLLEGE_TABLES: tuple[Table, ...] = (
     sme_subjects,
     students,
     units,
+    delegation_requests,
+    unit_transfers,
     booklets,
     pages,
     regions,
