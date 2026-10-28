@@ -84,7 +84,7 @@ describe('schema designer layout', () => {
       expect(screen.getByRole('button', { name })).toBeVisible()
     }
     const doc = shownJson()
-    expect(doc.schema_version).toBe('1.0') // the real schema, not the prototype's hard-coded JSON
+    expect(doc.schema_version).toBe('1.1') // the real schema, not the prototype's hard-coded JSON
     expect(Object.keys(doc)).toContain('negative_marking')
     expect(doc.sections).toHaveLength(1)
   })
@@ -275,7 +275,7 @@ describe('valid / invalid status', () => {
     designer({ 'POST /api/v1/blueprints/validate': { status: 500, json: { detail: 'down' } } })
     await open()
     expect(await screen.findByText('Cannot check right now')).toBeVisible()
-    expect(screen.getByTestId('schema-json')).toHaveTextContent('"schema_version": "1.0"')
+    expect(screen.getByTestId('schema-json')).toHaveTextContent('"schema_version": "1.1"')
   })
 })
 

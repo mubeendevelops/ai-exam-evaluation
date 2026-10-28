@@ -1,7 +1,8 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "title": "Synthetic paper, IPR shape",
   "course_code": "SYN-IPR",
+  "exam_code": "IPR-2021-JUL",
   "subject_id": "00000000-0000-4000-8000-000000000001",
   "duration_minutes": 180,
   "total_marks": 60,

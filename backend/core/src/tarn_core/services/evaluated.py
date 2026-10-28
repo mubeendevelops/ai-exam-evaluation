@@ -92,7 +92,7 @@ class EvaluatedBooklets:
                 blueprint = blueprints[(ref.id, ref.version)] = self._content.get(
                     college_id, ExamBlueprint, ref.id, ref.version
                 )
-            if not reach.sees(blueprint.subject_id):
+            if not reach.sees_booklet(blueprint.subject_id, booklet.unit_id):
                 continue
             if exam_q and exam_q not in f"{blueprint.title} {blueprint.course_code}".lower():
                 continue
@@ -119,7 +119,8 @@ class EvaluatedBooklets:
         booklet = self._booklets.get(college_id, booklet_id)
         ref = booklet.blueprint
         paper = self._content.get(college_id, ExamBlueprint, ref.id, ref.version)
-        reach.check(paper.subject_id, f"booklet {booklet_id}")
+        if not reach.sees_booklet(paper.subject_id, booklet.unit_id):
+            raise NotFoundError(f"booklet {booklet_id}")
         sheet = next(
             (s for s in self._sheets.versions(college_id, booklet_id) if s.version == version),
             None,

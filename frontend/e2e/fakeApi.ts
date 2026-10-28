@@ -20,7 +20,14 @@ interface Signed {
 
 /** The server's capability table (tarn_core.domain.personas, D177). */
 const CAPABILITIES: Record<Role, string[]> = {
-  admin: ['manage_smes', 'manage_students', 'manage_subjects', 'upload_booklets', 'view_progress'],
+  admin: [
+    'assign_units',
+    'manage_smes',
+    'manage_students',
+    'manage_subjects',
+    'upload_booklets',
+    'view_progress',
+  ],
   sme: ['author_content', 'evaluate', 'view_progress'],
   governor: [],
 }
@@ -55,15 +62,12 @@ export class FakeApi {
   }[] = []
   students: { id: string; name: string; usn: string; class_section: string }[] = []
   private nextId = 1
-  /** Who signs in: an SME by default (the screens under test are the SME's). */
-  private readonly role: Role
-  /** Step 1's upload controls are the admin's since P24 (D162); `uploads` lets the SME of a
-   * test use them too, so a booklet can be uploaded and reviewed in one browser. */
-  private readonly uploads: boolean
+  /** Who signs in next: an SME by default (the screens under test are the SME's). A test may
+   * change it between sign-ins (the admin, then the SME, P26). */
+  role: Role
 
-  constructor(options: { role?: Role; uploads?: boolean } = {}) {
+  constructor(options: { role?: Role } = {}) {
     this.role = options.role ?? 'sme'
-    this.uploads = options.uploads ?? false
     this.addTenant({
       institutionId: 'SYNTH_COLLEGE',
       collegeName: 'Synthetic College',
@@ -219,10 +223,7 @@ export class FakeApi {
           institution_id: this.signed.tenant.institutionId,
           college_name: this.signed.tenant.collegeName,
           recovery_codes_left: 0,
-          capabilities: [
-            ...CAPABILITIES[this.signed.role],
-            ...(this.uploads ? ['upload_booklets'] : []),
-          ],
+          capabilities: [...CAPABILITIES[this.signed.role]],
         })
 
       case 'POST /auth/logout':

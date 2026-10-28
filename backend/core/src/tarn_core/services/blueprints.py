@@ -8,9 +8,19 @@ from dataclasses import replace
 from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.blueprint import ExamBlueprint, leaves
 from tarn_core.domain.content import ContentMeta, Question, Subject
-from tarn_core.errors import InvariantError, NotFoundError
+from tarn_core.errors import (
+    AlreadyExistsError,
+    IllegalTransitionError,
+    InvariantError,
+    NotFoundError,
+)
 from tarn_core.ids import BlueprintId, CollegeId, SubjectId, UserId
-from tarn_core.ports.repositories import ContentRepository, EntitlementRepository, UserRepository
+from tarn_core.ports.repositories import (
+    ContentRepository,
+    EntitlementRepository,
+    UnitRepository,
+    UserRepository,
+)
 from tarn_core.services._support import Runtime, ref_json
 from tarn_core.services.access import Reach
 from tarn_core.services.blueprint_document import DocumentReport, check_document, require_valid
@@ -25,7 +35,9 @@ class BlueprintService:
         users: UserRepository,
         entitlements: EntitlementRepository,
         runtime: Runtime,
+        units: UnitRepository,
     ):
+        self._units = units
         self._content = content
         self._users = users
         self._entitlements = entitlements
@@ -79,6 +91,7 @@ class BlueprintService:
             meta=ContentMeta(college_id=college_id, created_by=actor_id),
         )
         self._require_questions(college_id, blueprint)
+        self._require_free_exam_code(college_id, blueprint)
         self._content.save(college_id, blueprint)
         self._rt.record(
             college_id, actor_id, AuditAction.CONTENT_CREATED, after=ref_json(blueprint.ref)
@@ -97,12 +110,20 @@ class BlueprintService:
             college_id, parsed.subject_id, new_paper=parsed.subject_id != current.subject_id
         )
         if parsed.subject_id != current.subject_id:
+            if any(
+                u.paper_id == current.id
+                for u in self._units.list(college_id, subject_id=current.subject_id)
+            ):
+                raise IllegalTransitionError(
+                    "subject_id: a unit uses this paper, so its subject cannot change"
+                )
             ensure_author(self._users, self._entitlements, college_id, actor_id, parsed.subject_id)
         edited = parsed.build(
             id=current.id,
             meta=replace(current.meta, version=current.meta.version + 1, created_by=actor_id),
         )
         self._require_questions(college_id, edited)
+        self._require_free_exam_code(college_id, edited)
         self._content.save(college_id, edited)
         self._rt.record(
             college_id,
@@ -126,6 +147,18 @@ class BlueprintService:
             ) from None
         if subject.retired and new_paper:
             raise InvariantError("subject_id: the subject is retired; papers cannot use it")
+
+    def _require_free_exam_code(self, college_id: CollegeId, blueprint: ExamBlueprint) -> None:
+        """An exam code names one paper of the college (P26): unique, ignoring case, among the
+        newest versions of the college's blueprints that carry one."""
+        code = blueprint.exam_code.casefold()
+        if not code:
+            return
+        for other in self._content.latest(college_id, ExamBlueprint):
+            if other.id != blueprint.id and other.exam_code.casefold() == code:
+                raise AlreadyExistsError(
+                    f"exam_code: {blueprint.exam_code} is taken by another paper of your college"
+                )
 
     def _require_questions(self, college_id: CollegeId, blueprint: ExamBlueprint) -> None:
         """Every linked question is one of the college's own (content is private, D165)."""

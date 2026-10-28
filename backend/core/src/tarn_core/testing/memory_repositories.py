@@ -12,9 +12,17 @@ from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
 from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
-from tarn_core.errors import InvariantError, NotFoundError, TenantViolationError
+from tarn_core.domain.unit import Unit, UnitState
+from tarn_core.errors import (
+    AlreadyExistsError,
+    InvariantError,
+    NotFoundError,
+    StaleWriteError,
+    TenantViolationError,
+)
 from tarn_core.ids import (
     AnswerId,
+    BlueprintId,
     BookletId,
     CollegeId,
     PageId,
@@ -22,6 +30,7 @@ from tarn_core.ids import (
     SegmentId,
     StudentId,
     SubjectId,
+    UnitId,
     UserId,
 )
 from tarn_core.ports.repositories import ContentItem, QuestionPage, QuestionPart, QuestionQuery
@@ -265,6 +274,59 @@ class MemoryEntitlementRepository:
         self._t.rows(college_id).pop((user_id, subject_id), None)
 
 
+class MemoryUnitRepository:
+    """Like ``units`` (0014): unique code and (paper, lower(year)) per college."""
+
+    def __init__(self, log: TenantLog) -> None:
+        self._t: _Table[UnitId, Unit] = _Table(log, "unit")
+
+    def get(self, college_id: CollegeId, unit_id: UnitId) -> Unit:
+        return self._t.get(college_id, unit_id)
+
+    def list(
+        self,
+        college_id: CollegeId,
+        *,
+        subject_id: SubjectId | None = None,
+        owner_id: UserId | None = None,
+        state: UnitState | None = None,
+    ) -> Sequence[Unit]:
+        return [
+            u
+            for u in self._t.values(college_id)
+            if (subject_id is None or u.subject_id == subject_id)
+            and (owner_id is None or u.owner_id == owner_id)
+            and (state is None or u.state is state)
+        ]
+
+    def find(self, college_id: CollegeId, paper_id: BlueprintId, year: str) -> Unit | None:
+        wanted = year.casefold()
+        return next(
+            (
+                u
+                for u in self._t.values(college_id)
+                if u.paper_id == paper_id and u.year.casefold() == wanted
+            ),
+            None,
+        )
+
+    def count(self, college_id: CollegeId) -> int:
+        return len(self._t.values(college_id))
+
+    def save(self, college_id: CollegeId, unit: Unit) -> None:
+        stored = self._t.rows(college_id).get(unit.id)
+        if stored is not None and unit.version != stored.version + 1:
+            raise StaleWriteError(f"unit {unit.code} was changed by someone else")
+        for other in self._t.values(college_id):
+            if other.id == unit.id:
+                continue
+            if other.code == unit.code:
+                raise AlreadyExistsError(f"unit code {unit.code} is taken")
+            if other.paper_id == unit.paper_id and other.year.casefold() == unit.year.casefold():
+                raise AlreadyExistsError("a unit for this paper and year exists already")
+        self._t.put(college_id, unit.id, unit)
+
+
 class MemoryStudentRepository:
     def __init__(self, log: TenantLog) -> None:
         self._t: _Table[StudentId, Student] = _Table(log, "student")
@@ -312,6 +374,9 @@ class MemoryBookletRepository:
 
     def find_by_hash(self, college_id: CollegeId, file_sha256: str) -> Sequence[Booklet]:
         return [b for b in self._booklets.values(college_id) if b.file_sha256 == file_sha256]
+
+    def in_unit(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[Booklet]:
+        return [b for b in self._booklets.values(college_id) if b.unit_id == unit_id]
 
     def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:
         return sum(

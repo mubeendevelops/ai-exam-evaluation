@@ -13,6 +13,7 @@ from tarn_core.seed import (
     SeedReport,
     seed_accounts,
     seed_content,
+    seed_units,
 )
 from tarn_core.seed.model import CollegeSeed
 from tarn_core.testing import InMemory
@@ -66,6 +67,16 @@ def seed_in_memory(
             entitlements=services.entitlements,
             blueprints=services.blueprints,
             assets=assets or (lambda _name: PNG),
+            report=report,
+        )
+        seed_units(
+            college,
+            college_id=college_id,
+            accounts=accounts,
+            users=mem.users,
+            content=mem.content,
+            units=services.units,
+            runtime=mem.runtime,
             report=report,
         )
         seeded.append(SeededCollege(college, accounts, content))

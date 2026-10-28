@@ -79,9 +79,13 @@ test('on a phone the question bank, a question and the New Question modal do not
   expect(await overflow()).toBeLessThanOrEqual(0)
 })
 
-test('on a phone the upload and segmentation steps do not scroll sideways', async ({ page }) => {
-  await new FakeApi({ uploads: true }).install(page)
-  await new FakeBooklets().install(page)
+test('on a phone the submission list and segmentation steps do not scroll sideways', async ({
+  page,
+}) => {
+  await new FakeApi().install(page)
+  const booklets = new FakeBooklets()
+  booklets.startUploaded() // the admin uploaded it into the SME's unit (P26)
+  await booklets.install(page)
   await page.goto('/')
   await page.getByLabel('Institution / Org Domain ID').fill('SYNTH_COLLEGE')
   await page.getByLabel('Username / Evaluator Email').fill('admin@synthetic.test')
@@ -95,14 +99,6 @@ test('on a phone the upload and segmentation steps do not scroll sideways', asyn
 
   const sideways = () =>
     page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
-  await page.getByRole('combobox', { name: 'Student' }).click()
-  await page.getByRole('option', { name: /Test Student One/ }).click()
-  await page.getByLabel('Exam').selectOption({ label: 'Mid-term Physics' })
-  await page.getByLabel('Answer sheet files').setInputFiles({
-    name: 'booklet.pdf',
-    mimeType: 'application/pdf',
-    buffer: Buffer.from('%PDF-1.7 synthetic'),
-  })
   await expect(page.getByRole('article', { name: 'Submission Test Student One' })).toBeVisible()
   expect(await sideways()).toBeLessThanOrEqual(0)
 

@@ -31,6 +31,7 @@ from tarn_core.domain.content import (
     Subject,
 )
 from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
+from tarn_core.domain.unit import Unit, unit_code
 from tarn_core.ids import (
     AnswerId,
     BlueprintId,
@@ -41,9 +42,11 @@ from tarn_core.ids import (
     SegmentId,
     StudentId,
     SubjectId,
+    UnitId,
     UserId,
 )
 from tarn_core.ports.engines import Scorer
+from tarn_core.ports.identity import Mailer
 from tarn_core.ports.jobs import JobQueue
 from tarn_core.ports.repositories import (
     BookletRepository,
@@ -53,6 +56,7 @@ from tarn_core.ports.repositories import (
     ResultSheetRepository,
     ScoreRepository,
     StudentRepository,
+    UnitRepository,
     UserRepository,
 )
 from tarn_core.ports.runtime import IdGenerator
@@ -66,7 +70,8 @@ from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.scoring import ScoringService
 from tarn_core.services.subjects import SubjectService
 from tarn_core.services.totals import TotalsService
-from tarn_core.testing import FixedCreditScorer
+from tarn_core.services.units import UnitService
+from tarn_core.testing import FixedCreditScorer, MemoryMailer
 
 
 class Backend(Protocol):
@@ -84,6 +89,8 @@ class Backend(Protocol):
     def content(self) -> ContentRepository: ...
     @property
     def entitlements(self) -> EntitlementRepository: ...
+    @property
+    def units(self) -> UnitRepository: ...
     @property
     def booklets(self) -> BookletRepository: ...
     @property
@@ -169,6 +176,38 @@ def add_subject(mem: Backend, owner: CollegeFixture, code: str, name: str) -> Su
     mem.content.save(owner.id, subject)
     grant(mem, owner, subject.id)
     return subject
+
+
+def unit_for(
+    mem: Backend,
+    college_id: CollegeId,
+    paper_id: BlueprintId,
+    *,
+    owner_id: UserId | None = None,
+    year: str = "2024",
+) -> UnitId:
+    """The college's unit of ``paper_id`` and ``year``, made on first use (a builder: no
+    service checks). Its owner is ``owner_id`` or the college's first SME."""
+    found = mem.units.find(college_id, paper_id, year)
+    if found is not None:
+        return found.id
+    paper = mem.content.get(college_id, ExamBlueprint, paper_id)
+    if owner_id is None:
+        owner_id = next(u.id for u in mem.users.list(college_id) if u.role is Role.SME)
+    unit = Unit(
+        id=UnitId(mem.ids.new()),
+        college_id=college_id,
+        code=unit_code(mem.units.count(college_id) + 1),
+        paper_id=paper.id,
+        subject_id=paper.subject_id,
+        year=year,
+        owner_id=owner_id,
+        due_date=mem.runtime.clock.now().date(),
+        created_by=None,
+        created_at=mem.runtime.clock.now(),
+    )
+    mem.units.save(college_id, unit)
+    return unit.id
 
 
 def make_subject(svc: "Services", owner: CollegeFixture, *, code: str, name: str) -> Subject:
@@ -302,12 +341,25 @@ class Services:
     scoring: ScoringService
     subjects: SubjectService
     totals: TotalsService
+    units: UnitService
 
 
-def make_services(mem: Backend, scorers: Sequence[Scorer] | None = None) -> Services:
-    """Every core service wired to the in-memory adapters."""
+def make_services(
+    mem: Backend, scorers: Sequence[Scorer] | None = None, mailer: Mailer | None = None
+) -> Services:
+    """Every core service wired to the in-memory adapters. ``mailer`` catches the units'
+    emails (default: a fresh ``MemoryMailer``)."""
     rt = mem.runtime
     return Services(
+        units=UnitService(
+            units=mem.units,
+            users=mem.users,
+            entitlements=mem.entitlements,
+            content=mem.content,
+            booklets=mem.booklets,
+            mailer=mailer or MemoryMailer(),
+            runtime=rt,
+        ),
         bank=QuestionBankService(
             content=mem.content,
             users=mem.users,
@@ -316,7 +368,11 @@ def make_services(mem: Backend, scorers: Sequence[Scorer] | None = None) -> Serv
             runtime=rt,
         ),
         blueprints=BlueprintService(
-            content=mem.content, users=mem.users, entitlements=mem.entitlements, runtime=rt
+            content=mem.content,
+            users=mem.users,
+            entitlements=mem.entitlements,
+            runtime=rt,
+            units=mem.units,
         ),
         subjects=SubjectService(
             content=mem.content, users=mem.users, entitlements=mem.entitlements, runtime=rt
@@ -333,6 +389,7 @@ def make_services(mem: Backend, scorers: Sequence[Scorer] | None = None) -> Serv
             sheets=mem.sheets,
             blobs=mem.blobs,
             runtime=rt,
+            units=mem.units,
         ),
         content=ContentService(
             content=mem.content, users=mem.users, entitlements=mem.entitlements, runtime=rt

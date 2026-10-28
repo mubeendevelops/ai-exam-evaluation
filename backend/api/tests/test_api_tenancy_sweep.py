@@ -19,6 +19,7 @@ from tarn_api.tenancy_sweep import (
     call,
     invite_with_another_colleges_subject,
     login,
+    smes_of_another_colleges_subject,
     unclassified,
     upload_for_another_college,
     url,
@@ -92,6 +93,16 @@ def test_b_cannot_register_a_booklet_for_a_student_of_a(
 ) -> None:
     world, _ = sweep
     assert upload_for_another_college(world).status_code == 404
+
+
+def test_b_is_offered_nobody_for_a_subject_of_a(sweep: tuple[World, MemoryBackends]) -> None:
+    world, _ = sweep
+    response = smes_of_another_colleges_subject(world)
+    assert response.status_code == 200 and response.json() == []
+    c, b_admin = world.client, world.b_admin
+    assert world.ids["unit_id"] not in c.get("/api/v1/units", headers=b_admin).text
+    papers = c.get("/api/v1/units/papers", headers=b_admin).text
+    assert world.ids["blueprint_id"] not in papers
 
 
 def test_b_cannot_grant_a_subject_of_a(sweep: tuple[World, MemoryBackends]) -> None:

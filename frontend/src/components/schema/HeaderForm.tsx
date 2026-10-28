@@ -27,6 +27,14 @@ export function HeaderForm({ form, onChange }: Props) {
         maxLength={200}
         onChange={(e) => onChange({ courseCode: e.target.value })}
       />
+      <TextInput
+        label="Exam Code"
+        value={form.examCode}
+        placeholder="PHY-2026-MIDTERM"
+        maxLength={50}
+        hint="Names this exam in your college. A paper needs one before the admin can make a unit of it."
+        onChange={(e) => onChange({ examCode: e.target.value })}
+      />
       <SubjectPicker value={form.subjectId} onChange={(subjectId) => onChange({ subjectId })} />
       <TextInput
         label="Duration (Minutes)"

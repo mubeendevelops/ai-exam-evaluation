@@ -44,6 +44,7 @@ from tarn_core.testing.builders import (
     add_subject,
     make_services,
     meta,
+    unit_for,
 )
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"synthetic reference diagram"
@@ -234,7 +235,7 @@ def diagram_world[B: Backend](
         college.id,
         college.teacher.id,
         student_id=college.students[0].id,
-        blueprint_id=blueprint.id,
+        unit_id=unit_for(mem, college.id, blueprint.id),
         file_sha256=f"{mem.ids.new().int:064x}"[-64:],
     ).booklet
     return DiagramWorld(

@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from tarn_api.testing import MemoryBackends
 from tarn_core.domain.booklet import Booklet
 from tarn_core.domain.tenancy import Role, Student
-from tarn_core.ids import AnswerId, AnswerScoreId, CollegeId, StudentId
+from tarn_core.ids import AnswerId, AnswerScoreId, CollegeId, StudentId, UserId
 from tarn_core.ports.jobs import JOB_RESCORE_ANSWERS, JOB_RESEGMENT_BOOKLET
 from tarn_core.testing.auth_world import TEACHER_PASSWORD, AuthWorld
 from tarn_core.testing.builders import CollegeFixture, ci_shaped_blueprint, grant
@@ -39,6 +39,16 @@ class Setup:
     other: dict[str, str]
     college_id: CollegeId
     booklet: Booklet
+    smes: dict[str, UserId]
+
+    def hand_to(self, who: str) -> None:
+        """Give the booklet's unit to the SME ``"teacher"`` or ``"teacher2"``, keeping any lock
+        (what a transfer does before P27 releases the old owner's lock): only a unit's owner
+        reaches its booklets (P26)."""
+        unit = self.mem.units.get(self.college_id, self.booklet.unit_id)
+        self.mem.units.save(
+            self.college_id, replace(unit, owner_id=self.smes[who], version=unit.version + 1)
+        )
 
     @property
     def url(self) -> str:
@@ -91,6 +101,7 @@ def s(client: TestClient, backends: MemoryBackends, world: AuthWorld) -> Setup:
         other=_login(client, "COLLEGE_B", "sme@b.example", TEACHER_PASSWORD),
         college_id=cid,
         booklet=booklet,
+        smes={"teacher": fixture.teacher.id, "teacher2": second.id},
     )
 
 
@@ -111,10 +122,14 @@ def test_review_approve_and_amend(s: Setup) -> None:
     assert view["status"] == "in_review" and view["lock"]["mine"] is True
     assert view["lock"]["holder_name"] == "Teacher T"
 
-    # A second teacher is kept out.
+    # Another SME does not reach the booklet at all (P26); handed the unit while the first
+    # still holds the lock, they meet the lock.
+    assert c.post(f"{s.url}/lock", headers=s.teacher2).status_code == 404
+    s.hand_to("teacher2")
     locked = c.post(f"{s.url}/lock", headers=s.teacher2)
     assert locked.status_code == 423
     assert locked.json()["holder_id"] == view["lock"]["holder_id"]
+    s.hand_to("teacher")
 
     # Accept the AI mark on 1; override 2 with tags and remarks.
     done = c.post(f"{s.url}/answers/{one['id']}/approve", json=approve, headers=s.teacher)
@@ -190,8 +205,9 @@ def test_review_approve_and_amend(s: Setup) -> None:
     assert [x["version"] for x in sheets] == [1, 2]
     assert sheets[1]["note"] == "2: Recount"
 
-    # Closing releases the lock; the second teacher may open it now.
+    # Closing releases the lock; the unit's next owner may open it now.
     assert c.delete(f"{s.url}/lock", headers=s.teacher).status_code == 204
+    s.hand_to("teacher2")
     assert c.post(f"{s.url}/lock", headers=s.teacher2).status_code == 200
 
 
@@ -231,7 +247,10 @@ def test_another_college_sees_nothing(s: Setup) -> None:
 def test_deletion_waits_for_the_other_teachers_lock(s: Setup) -> None:
     c = s.client
     assert c.post(f"{s.url}/lock", headers=s.teacher).status_code == 200
+    assert c.delete(s.url, headers=s.teacher2).status_code == 404  # not their unit (P26)
+    s.hand_to("teacher2")
     assert c.delete(s.url, headers=s.teacher2).status_code == 423
+    s.hand_to("teacher")
     assert c.delete(s.url, headers=s.teacher).status_code == 204
 
 
@@ -276,6 +295,7 @@ def test_resegment_is_queued_under_the_lock_and_the_version(s: Setup) -> None:
     assert done.json() == {"booklet_version": opened["version"]}
     (job,) = [j for j in s.mem.jobs.jobs if j.kind == JOB_RESEGMENT_BOOKLET]
     assert job.payload["expected_version"] == opened["version"]
+    s.hand_to("teacher2")
     assert (
         c.post(
             f"{s.url}/segments/resegment",

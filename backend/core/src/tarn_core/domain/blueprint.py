@@ -183,10 +183,16 @@ class ExamBlueprint:
     sections: tuple[Section, ...]
     mark_step: Decimal = Decimal("0.5")
     course_code: str = ""
+    """The course code printed on the paper (often the subject's code): not unique."""
+    exam_code: str = ""
+    """Names this exam (P26): unique per college among blueprints that carry one; a paper
+    needs it before a unit can use it. Empty on papers made before schema v1.1."""
     duration_minutes: int | None = None
 
     def __post_init__(self) -> None:
         check_text("blueprint title", self.title)
+        if self.exam_code != self.exam_code.strip() or len(self.exam_code) > 50:
+            raise InvariantError("exam code: trimmed, at most 50 characters")
         if self.duration_minutes is not None and self.duration_minutes < 1:
             raise InvariantError(f"duration must be at least 1 minute, got {self.duration_minutes}")
         check_marks("exam total", self.total_marks, allow_zero=False)

@@ -2,33 +2,24 @@ import { useId, useRef, useState, type DragEvent, type KeyboardEvent } from 'rea
 
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png'
 
-/** Why a set of files is not one booklet, or null. One PDF, or JPEG/PNG page images. */
-export function checkFiles(files: File[]): string | null {
-  if (files.length === 0) return 'Choose at least one file.'
-  const isPdf = (f: File) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name)
-  const isImage = (f: File) => /^image\/(jpeg|png)$/.test(f.type) || /\.(jpe?g|png)$/i.test(f.name)
-  const pdfs = files.filter(isPdf).length
-  if (pdfs > 1) return 'Drop one PDF at a time: each PDF is one booklet.'
-  if (pdfs === 1 && files.length > 1) return 'Send one PDF, or the page images, not both.'
-  if (pdfs === 0 && !files.every(isImage)) return 'Only PDF, JPEG and PNG files can be uploaded.'
-  return null
-}
-
-/** Page images in the order a person would number them (IMG_2 before IMG_10). */
-export function inPageOrder(files: File[]): File[] {
-  return [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
-}
-
 /** The prototype's dashed drop area: drag files onto it, or press it to choose them. */
 export function Dropzone({
   disabled,
   hint,
   onFiles,
+  accept = ACCEPT,
+  title = 'Drag & Drop Scanned Student Answer Sheets',
+  subtitle = 'Supports a PDF, or JPEG and PNG page scans in page order. One booklet per drop.',
+  label = 'Drag and drop scanned student answer sheets, or press to choose files',
 }: {
   disabled: boolean
   /** Why it is off, shown under the title. */
   hint?: string
   onFiles: (files: File[]) => void
+  accept?: string
+  title?: string
+  subtitle?: string
+  label?: string
 }) {
   const input = useRef<HTMLInputElement>(null)
   const inputId = useId()
@@ -56,7 +47,7 @@ export function Dropzone({
       role="button"
       tabIndex={disabled ? -1 : 0}
       aria-disabled={disabled}
-      aria-label="Drag and drop scanned student answer sheets, or press to choose files"
+      aria-label={label}
       onClick={() => !disabled && input.current?.click()}
       onKeyDown={key}
       onDragOver={(e) => {
@@ -78,7 +69,7 @@ export function Dropzone({
         ref={input}
         type="file"
         multiple
-        accept={ACCEPT}
+        accept={accept}
         className="hidden"
         aria-label="Answer sheet files"
         tabIndex={-1}
@@ -89,12 +80,8 @@ export function Dropzone({
       >
         <i className="fa-solid fa-cloud-arrow-up text-2xl" aria-hidden="true" />
       </div>
-      <h3 className="text-lg font-semibold text-white">
-        Drag & Drop Scanned Student Answer Sheets
-      </h3>
-      <p className="mt-1 text-xs text-gray-400">
-        Supports a PDF, or JPEG and PNG page scans in page order. One booklet per drop.
-      </p>
+      <h3 className="text-lg font-semibold text-white">{title}</h3>
+      <p className="mt-1 text-xs text-gray-400">{subtitle}</p>
       {hint && <p className="mt-2 text-xs font-semibold text-amber-300">{hint}</p>}
     </div>
   )

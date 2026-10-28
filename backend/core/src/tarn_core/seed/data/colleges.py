@@ -5,7 +5,7 @@ password is for local development only: ``tarn seed`` refuses to run when TARN_E
 production."""
 
 from tarn_core.seed.data import aiml, assignments, constitution, ipr, papers
-from tarn_core.seed.model import CollegeSeed, PersonSeed, StudentSeed
+from tarn_core.seed.model import CollegeSeed, PersonSeed, StudentSeed, UnitSeed
 
 DEV_PASSWORD = "Tarn-Demo-Seed-2026!"  # noqa: S105  (development seed only)
 
@@ -83,6 +83,13 @@ COMMERCE = CollegeSeed(
         *((assignments.SUBJECT_SU.code, q) for q in assignments.QUESTIONS_SU),
     ),
     papers=papers.PAPERS_COMMERCE,
+    # P26: one unit per paper, the two SMEs taking two each (D162).
+    units=(
+        UnitSeed(papers.QP_CI_TITLE, "2024", "suresh.naik@demo-com.example.test"),
+        UnitSeed(papers.QP_IPR_TITLE, "2024", "anita.desai@demo-com.example.test"),
+        UnitSeed(papers.ASSIGNMENT_1_TITLE, "2024", "suresh.naik@demo-com.example.test"),
+        UnitSeed(papers.ASSIGNMENT_2_TITLE, "2024", "anita.desai@demo-com.example.test"),
+    ),
 )
 
 COLLEGES = (ENGINEERING, COMMERCE)

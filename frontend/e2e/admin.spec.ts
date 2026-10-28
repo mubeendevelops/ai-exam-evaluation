@@ -62,7 +62,7 @@ test.describe('admin portal', () => {
 
     // --- a student, from Upload & Assign Papers ---
     await sidebar.getByRole('link', { name: 'Upload & Assign Papers' }).click()
-    await page.getByRole('link', { name: /Open the student roster/ }).click()
+    await page.getByRole('link', { name: 'Students', exact: true }).click()
     await expect(page).toHaveURL(/\/admin\/upload\/students$/)
     await page.getByRole('button', { name: 'Add student' }).click()
     const studentDialog = page.getByRole('dialog', { name: 'Add student' })

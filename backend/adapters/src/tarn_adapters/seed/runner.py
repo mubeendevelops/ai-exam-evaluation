@@ -20,17 +20,20 @@ from tarn_core.ports.storage import BlobStore
 from tarn_core.seed import (
     COLLEGES,
     DEV_PASSWORD,
+    MailCatcher,
     SeededAccounts,
     SeedError,
     SeedReport,
     seed_accounts,
     seed_content,
+    seed_units,
 )
 from tarn_core.seed.model import CollegeSeed
 from tarn_core.services.blueprints import BlueprintService
 from tarn_core.services.entitlements import EntitlementService
 from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.subjects import SubjectService
+from tarn_core.services.units import UnitService
 
 DATA = Path(__file__).parent / "data"
 
@@ -96,6 +99,8 @@ def run_seed(settings: Settings, *, blobs: BlobStore | None = None) -> SeedSumma
 
             with app.session(college_id, ids=ids, clock=clock, blobs=blobs) as scope:
                 _content(college, accounts, scope, assets, report)
+            with app.session(college_id, ids=ids, clock=clock, blobs=blobs) as scope:
+                _units(college, accounts, scope, report)
             seeded.append((college, accounts))
     finally:
         app.dispose()
@@ -139,7 +144,32 @@ def _content(
             users=scope.users,
             entitlements=scope.entitlements,
             runtime=scope.runtime,
+            units=scope.units,
         ),
         assets=assets,
+        report=report,
+    )
+
+
+def _units(
+    college: CollegeSeed, accounts: SeededAccounts, scope: PostgresSession, report: SeedReport
+) -> None:
+    """The demo units (P26); their emails are caught, not sent (demo addresses)."""
+    seed_units(
+        college,
+        college_id=accounts.college_id,
+        accounts=accounts,
+        users=scope.users,
+        content=scope.content,
+        units=UnitService(
+            units=scope.units,
+            users=scope.users,
+            entitlements=scope.entitlements,
+            content=scope.content,
+            booklets=scope.booklets,
+            mailer=MailCatcher(),
+            runtime=scope.runtime,
+        ),
+        runtime=scope.runtime,
         report=report,
     )

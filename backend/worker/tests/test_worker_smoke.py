@@ -128,7 +128,7 @@ def test_a_worker_without_ocr_fails_reading_jobs_and_finally_their_booklets() ->
     from tarn_core.domain.booklet import BookletStatus
     from tarn_core.ports.jobs import JOB_PREPARE_BOOKLET, JOB_READ_BOOKLET
     from tarn_core.testing import InMemory
-    from tarn_core.testing.builders import add_college, ci_shaped_blueprint, make_services
+    from tarn_core.testing.builders import add_college, ci_shaped_blueprint, make_services, unit_for
     from tarn_worker.booklets import BookletJobRunner, OcrUnavailableError
 
     runner = BookletJobRunner(
@@ -155,7 +155,7 @@ def test_a_worker_without_ocr_fails_reading_jobs_and_finally_their_booklets() ->
             college.id,
             college.teacher.id,
             student_id=college.students[0].id,
-            blueprint_id=blueprint.id,
+            unit_id=unit_for(mem, college.id, blueprint.id),
             file_sha256="a" * 64,
         )
         .booklet

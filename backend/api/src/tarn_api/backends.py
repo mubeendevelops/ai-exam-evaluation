@@ -36,6 +36,7 @@ from tarn_core.ports.repositories import (
     ResultSheetRepository,
     ScoreRepository,
     StudentRepository,
+    UnitRepository,
     UserRepository,
 )
 from tarn_core.ports.runtime import Clock, IdGenerator
@@ -54,6 +55,8 @@ from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.registration import RegistrationService
 from tarn_core.services.roster import RosterService
 from tarn_core.services.subjects import SubjectService
+from tarn_core.services.unit_upload import UnitUploadService
+from tarn_core.services.units import UnitService
 from tarn_core.services.uploads import UploadLimits, UploadService
 from tarn_core.services.workflow import (
     BookletGuard,
@@ -87,6 +90,9 @@ class CollegeScope(Protocol):
 
     @property
     def entitlements(self) -> EntitlementRepository: ...
+
+    @property
+    def units(self) -> UnitRepository: ...
 
     @property
     def booklets(self) -> BookletRepository: ...
@@ -164,11 +170,13 @@ class Unit:
             entitlements=self.scope.entitlements,
             content=self.scope.content,
             booklets=self.scope.booklets,
+            units=self.scope.units,
         )
 
     def reach(self, user: User) -> Reach:
-        """The subjects ``user``'s work is limited to (D178)."""
-        return reach_of(user, self.scope.entitlements)
+        """The subjects ``user``'s work is limited to (D178) and, for booklets, the units an
+        SME owns (P26)."""
+        return reach_of(user, self.scope.entitlements, self.scope.units)
 
     @property
     def registration(self) -> RegistrationService:
@@ -212,6 +220,7 @@ class Unit:
             users=self.scope.users,
             entitlements=self.scope.entitlements,
             runtime=self.scope.runtime,
+            units=self.scope.units,
         )
 
     @property
@@ -225,6 +234,32 @@ class Unit:
             sheets=self.scope.sheets,
             blobs=self.scope.blobs,
             runtime=self.scope.runtime,
+            units=self.scope.units,
+        )
+
+    @property
+    def units(self) -> UnitService:
+        return UnitService(
+            units=self.scope.units,
+            users=self.scope.users,
+            entitlements=self.scope.entitlements,
+            content=self.scope.content,
+            booklets=self.scope.booklets,
+            mailer=self.kit.mailer,
+            runtime=self.scope.runtime,
+        )
+
+    @property
+    def unit_uploads(self) -> UnitUploadService:
+        return UnitUploadService(
+            uploads=self.uploads,
+            booklet_service=self.booklet_service,
+            units=self.scope.units,
+            booklets=self.scope.booklets,
+            students=self.scope.students,
+            users=self.scope.users,
+            runtime=self.scope.runtime,
+            limits=self.limits,
         )
 
     @property
@@ -388,6 +423,7 @@ class PostgresBackends:
             max_waiting=settings.max_queued_booklets_per_teacher,
             max_total_bytes=settings.upload_max_bytes,
             max_files=settings.upload_max_pages,
+            max_batch_files=settings.upload_max_files,
         )
         self.lock_minutes = settings.booklet_lock_minutes
         self.sheet_renderer: SheetRenderer = PyMuPdfSheetRenderer()

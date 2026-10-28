@@ -1,4 +1,3 @@
-import { Link } from 'react-router'
 import ComingSoonPage from './ComingSoonPage'
 
 export function OverviewPage() {
@@ -10,27 +9,6 @@ export function OverviewPage() {
       description="How the college's evaluation is going, at a glance."
       emptyTitle="Nothing to show yet"
       emptyText="Figures appear here once papers are uploaded and assigned to SMEs. Start with the SME Directory & Subjects."
-    />
-  )
-}
-
-export function UploadAssignPage() {
-  return (
-    <ComingSoonPage
-      icon="fa-solid fa-file-arrow-up"
-      iconTone="text-cyan-400"
-      title="Upload & Assign Papers"
-      description="Upload answer booklets and give them to the SME of their subject."
-      emptyTitle="Uploading and assigning is not built yet"
-      emptyText="Papers will be uploaded and assigned here. Meanwhile the student roster they are filed under is ready."
-      action={
-        <Link
-          to="/admin/upload/students"
-          className="inline-flex items-center gap-2 rounded-xl border border-purple-500/40 bg-purple-950/50 px-4 py-2 text-xs font-bold text-purple-200 hover:bg-purple-900/60"
-        >
-          <i className="fa-solid fa-user-graduate" aria-hidden="true" /> Open the student roster
-        </Link>
-      }
     />
   )
 }

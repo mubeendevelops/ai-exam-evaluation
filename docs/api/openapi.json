@@ -2029,7 +2029,7 @@
                 "additionalProperties": true,
                 "type": "object",
                 "title": "Document",
-                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.0) and the examples next to it."
+                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.1; 1.0 is still read) and the examples next to it."
               }
             }
           },
@@ -2146,7 +2146,7 @@
                 "additionalProperties": true,
                 "type": "object",
                 "title": "Document",
-                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.0) and the examples next to it."
+                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.1; 1.0 is still read) and the examples next to it."
               }
             }
           },
@@ -2326,7 +2326,7 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": true,
-                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.0) and the examples next to it.",
+                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.1; 1.0 is still read) and the examples next to it.",
                 "title": "Document"
               }
             }
@@ -3859,36 +3859,84 @@
         }
       }
     },
-    "/api/v1/booklets": {
-      "post": {
+    "/api/v1/units": {
+      "get": {
         "tags": [
-          "booklets"
+          "units"
         ],
-        "summary": "Upload a booklet: one PDF, or the page images in order",
-        "description": "`files` is one PDF, or JPEG/PNG images in page order (the order sent is the page order). The type is judged from the file's content. The booklet is queued for page cleaning (status `uploaded`). The same file hash within the college is refused with 409 unless `allow_duplicate` is true; a teacher may have a limited number of booklets waiting (429 beyond it).",
-        "operationId": "upload_booklet_api_v1_booklets_post",
+        "summary": "Units of work, newest first: every unit for the admin, your own for an SME",
+        "operationId": "list_units_api_v1_units_get",
         "security": [
           {
             "HTTPBearer": []
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_upload_booklet_api_v1_booklets_post"
-              }
+        "parameters": [
+          {
+            "name": "subject_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          },
+          {
+            "name": "owner_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The admin's filter by SME",
+              "title": "Owner Id"
+            },
+            "description": "The admin's filter by SME"
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "open",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
             }
           }
-        },
+        ],
         "responses": {
-          "201": {
+          "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BookletOut"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UnitOut"
+                  },
+                  "title": "Response List Units Api V1 Units Get"
                 }
               }
             }
@@ -3913,39 +3961,6 @@
             },
             "description": "Forbidden"
           },
-          "409": {
-            "description": "The same file was uploaded before (`duplicate_of` lists the booklets)"
-          },
-          "413": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Request Entity Too Large"
-          },
-          "415": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Unsupported Media Type"
-          },
-          "429": {
-            "description": "You already have the maximum waiting",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            }
-          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -3958,6 +3973,421 @@
           }
         }
       },
+      "post": {
+        "tags": [
+          "units"
+        ],
+        "summary": "Create a unit of work and assign it to an SME (emailed)",
+        "description": "The paper must have every question linked and an exam code; the SME must be active and entitled to the paper's subject; the due date is today or later. The SME is emailed the unit code, paper, subject and due date (no student data). Audited.",
+        "operationId": "create_unit_api_v1_units_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnitIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "A unit of this paper and year exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/v1/units/papers": {
+      "get": {
+        "tags": [
+          "units"
+        ],
+        "summary": "Papers a unit can be made from: every question linked, an exam code, a live subject",
+        "operationId": "unit_papers_api_v1_units_papers_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "subject_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UnitChoicePaperOut"
+                  },
+                  "title": "Response Unit Papers Api V1 Units Papers Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/units/smes": {
+      "get": {
+        "tags": [
+          "units"
+        ],
+        "summary": "The SMEs a unit of this subject may be assigned to: active and entitled (D160)",
+        "operationId": "unit_smes_api_v1_units_smes_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "subject_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UnitSmeOut"
+                  },
+                  "title": "Response Unit Smes Api V1 Units Smes Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/units/{unit_id}": {
+      "get": {
+        "tags": [
+          "units"
+        ],
+        "summary": "One unit with each booklet's processing status (no marks for the admin, D167)",
+        "operationId": "get_unit_api_v1_units__unit_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "unit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Unit Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitDetailOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/units/{unit_id}/booklets": {
+      "post": {
+        "tags": [
+          "units"
+        ],
+        "summary": "Upload booklets into a unit: one PDF per student, named by the roll number",
+        "description": "Each file is named by the student's roll number (USN), for example `1XX21CS001.pdf`, matched without regard to case. Every file is checked first; a file that fails is listed with its reason and nothing is stored for it. Valid files are queued while you have free queue slots; the rest are listed as not queued (upload them again later). Only the last part of a file name counts.",
+        "operationId": "upload_to_unit_api_v1_units__unit_id__booklets_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "unit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Unit Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_to_unit_api_v1_units__unit_id__booklets_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitUploadOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/v1/booklets": {
       "get": {
         "tags": [
           "booklets"
@@ -3981,6 +4411,25 @@
               "title": "Mine"
             },
             "description": "Only booklets I uploaded"
+          },
+          {
+            "name": "unit_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only the booklets of this unit",
+              "title": "Unit Id"
+            },
+            "description": "Only the booklets of this unit"
           },
           {
             "name": "status",
@@ -4234,6 +4683,7 @@
           "booklets"
         ],
         "summary": "The cleaned page image (or the original with `kind=original`)",
+        "description": "For the SME. The admin may fetch the cleaned image of a page that holds a retake back, while the booklet waits for the retake (P26); anything else is 404.",
         "operationId": "page_image_api_v1_booklets__booklet_id__pages__number__image_get",
         "security": [
           {
@@ -4491,6 +4941,115 @@
               }
             },
             "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/v1/booklets/{booklet_id}/replace": {
+      "post": {
+        "tags": [
+          "booklets"
+        ],
+        "summary": "Retake: replace a booklet that needs a retake, or failed, with a new PDF",
+        "description": "The old booklet is deleted (a content-free deletion record stays) and the new PDF is queued for the same student in the same unit, in one transaction. Everything is checked before anything is deleted.",
+        "operationId": "replace_booklet_api_v1_booklets__booklet_id__replace_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booklet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booklet Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_replace_booklet_api_v1_booklets__booklet_id__replace_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookletOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "The booklet is not waiting for a retake",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
           },
           "422": {
             "content": {
@@ -7173,6 +7732,11 @@
             "type": "string",
             "title": "Course Code"
           },
+          "exam_code": {
+            "type": "string",
+            "title": "Exam Code",
+            "description": "Names the exam (blueprint 1.1); empty when not set."
+          },
           "subject_id": {
             "type": "string",
             "format": "uuid",
@@ -7229,6 +7793,7 @@
           "version",
           "title",
           "course_code",
+          "exam_code",
           "subject_id",
           "subject_name",
           "total_marks",
@@ -7258,6 +7823,11 @@
           "course_code": {
             "type": "string",
             "title": "Course Code"
+          },
+          "exam_code": {
+            "type": "string",
+            "title": "Exam Code",
+            "description": "Names the exam (blueprint 1.1); empty when not set."
           },
           "subject_id": {
             "type": "string",
@@ -7309,6 +7879,7 @@
           "version",
           "title",
           "course_code",
+          "exam_code",
           "subject_id",
           "subject_name",
           "total_marks",
@@ -7319,18 +7890,23 @@
         ],
         "title": "BlueprintSummaryOut"
       },
-      "Body_upload_booklet_api_v1_booklets_post": {
+      "Body_replace_booklet_api_v1_booklets__booklet_id__replace_post": {
         "properties": {
-          "student_id": {
+          "file": {
             "type": "string",
-            "format": "uuid",
-            "title": "Student Id"
-          },
-          "blueprint_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Blueprint Id"
-          },
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "The new PDF"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_replace_booklet_api_v1_booklets__booklet_id__replace_post"
+      },
+      "Body_upload_to_unit_api_v1_units__unit_id__booklets_post": {
+        "properties": {
           "files": {
             "items": {
               "type": "string",
@@ -7338,21 +7914,14 @@
             },
             "type": "array",
             "title": "Files",
-            "description": "One PDF, or images in page order"
-          },
-          "allow_duplicate": {
-            "type": "boolean",
-            "title": "Allow Duplicate",
-            "default": false
+            "description": "PDFs, one per student"
           }
         },
         "type": "object",
         "required": [
-          "student_id",
-          "blueprint_id",
           "files"
         ],
-        "title": "Body_upload_booklet_api_v1_booklets_post"
+        "title": "Body_upload_to_unit_api_v1_units__unit_id__booklets_post"
       },
       "BookletBlueprintOut": {
         "properties": {
@@ -7406,6 +7975,9 @@
           },
           "student": {
             "$ref": "#/components/schemas/BookletStudentOut"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/BookletUnitOut"
           },
           "blueprint": {
             "$ref": "#/components/schemas/BookletBlueprintOut"
@@ -7507,6 +8079,7 @@
           "id",
           "status",
           "student",
+          "unit",
           "blueprint",
           "uploaded_by",
           "uploaded_at",
@@ -7550,6 +8123,9 @@
           },
           "student": {
             "$ref": "#/components/schemas/BookletStudentOut"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/BookletUnitOut"
           },
           "blueprint": {
             "$ref": "#/components/schemas/BookletBlueprintOut"
@@ -7644,6 +8220,7 @@
           "id",
           "status",
           "student",
+          "unit",
           "blueprint",
           "uploaded_by",
           "uploaded_at",
@@ -7748,6 +8325,25 @@
           "usn"
         ],
         "title": "BookletStudentOut"
+      },
+      "BookletUnitOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code"
+        ],
+        "title": "BookletUnitOut"
       },
       "ChangePasswordIn": {
         "properties": {
@@ -9143,6 +9739,7 @@
                 "manage_smes",
                 "manage_subjects",
                 "manage_students",
+                "assign_units",
                 "upload_booklets",
                 "view_progress",
                 "author_content",
@@ -11969,6 +12566,529 @@
           "slots"
         ],
         "title": "TotalsOut"
+      },
+      "UnitChoicePaperOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "The paper's current version (new booklets pin it)."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "exam_code": {
+            "type": "string",
+            "title": "Exam Code"
+          },
+          "course_code": {
+            "type": "string",
+            "title": "Course Code"
+          },
+          "total_marks": {
+            "type": "number",
+            "title": "Total Marks"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/UnitSubjectOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "title",
+          "exam_code",
+          "course_code",
+          "total_marks",
+          "subject"
+        ],
+        "title": "UnitChoicePaperOut"
+      },
+      "UnitCountsOut": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Booklets in the unit."
+          },
+          "processing": {
+            "type": "integer",
+            "title": "Processing",
+            "description": "Uploaded, being cleaned, read, segmented or scored."
+          },
+          "needs_retake": {
+            "type": "integer",
+            "title": "Needs Retake"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "ready": {
+            "type": "integer",
+            "title": "Ready",
+            "description": "Scored, waiting for the SME (not opened yet)."
+          },
+          "in_review": {
+            "type": "integer",
+            "title": "In Review",
+            "description": "Opened by the SME, not approved yet."
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed",
+            "description": "Approved (result sheet issued), amendments included."
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "processing",
+          "needs_retake",
+          "failed",
+          "ready",
+          "in_review",
+          "completed"
+        ],
+        "title": "UnitCountsOut"
+      },
+      "UnitDetailOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Short readable code, U-0001, unique in the college."
+          },
+          "paper": {
+            "$ref": "#/components/schemas/UnitPaperOut"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/UnitSubjectOut"
+          },
+          "year": {
+            "type": "string",
+            "title": "Year",
+            "description": "The student year or batch, for example 2024."
+          },
+          "owner": {
+            "$ref": "#/components/schemas/UnitOwnerOut"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Due Date"
+          },
+          "state": {
+            "type": "string",
+            "const": "open",
+            "title": "State"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/UnitCountsOut"
+          },
+          "booklets": {
+            "items": {
+              "$ref": "#/components/schemas/BookletOut"
+            },
+            "type": "array",
+            "title": "Booklets",
+            "description": "Oldest first. Processing status only: no marks, page images or text (D167)."
+          },
+          "waiting": {
+            "type": "integer",
+            "title": "Waiting",
+            "description": "Your booklets that are queued or being processed."
+          },
+          "max_waiting": {
+            "type": "integer",
+            "title": "Max Waiting",
+            "description": "How many you may have waiting at once."
+          },
+          "max_files": {
+            "type": "integer",
+            "title": "Max Files",
+            "description": "PDFs per upload."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "paper",
+          "subject",
+          "year",
+          "owner",
+          "due_date",
+          "state",
+          "created_at",
+          "version",
+          "counts",
+          "booklets",
+          "waiting",
+          "max_waiting",
+          "max_files"
+        ],
+        "title": "UnitDetailOut"
+      },
+      "UnitIn": {
+        "properties": {
+          "paper_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paper Id"
+          },
+          "year": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Year"
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owner Id",
+            "description": "An active SME entitled to the paper's subject."
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Due Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paper_id",
+          "year",
+          "owner_id",
+          "due_date"
+        ],
+        "title": "UnitIn"
+      },
+      "UnitOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Short readable code, U-0001, unique in the college."
+          },
+          "paper": {
+            "$ref": "#/components/schemas/UnitPaperOut"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/UnitSubjectOut"
+          },
+          "year": {
+            "type": "string",
+            "title": "Year",
+            "description": "The student year or batch, for example 2024."
+          },
+          "owner": {
+            "$ref": "#/components/schemas/UnitOwnerOut"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Due Date"
+          },
+          "state": {
+            "type": "string",
+            "const": "open",
+            "title": "State"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/UnitCountsOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "paper",
+          "subject",
+          "year",
+          "owner",
+          "due_date",
+          "state",
+          "created_at",
+          "version",
+          "counts"
+        ],
+        "title": "UnitOut"
+      },
+      "UnitOwnerOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "UnitOwnerOut"
+      },
+      "UnitPaperOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "The paper's current version (new booklets pin it)."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "exam_code": {
+            "type": "string",
+            "title": "Exam Code"
+          },
+          "course_code": {
+            "type": "string",
+            "title": "Course Code"
+          },
+          "total_marks": {
+            "type": "number",
+            "title": "Total Marks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "title",
+          "exam_code",
+          "course_code",
+          "total_marks"
+        ],
+        "title": "UnitPaperOut"
+      },
+      "UnitSmeOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email"
+        ],
+        "title": "UnitSmeOut"
+      },
+      "UnitSubjectOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name"
+        ],
+        "title": "UnitSubjectOut"
+      },
+      "UnitUploadOut": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/UploadFileOut"
+            },
+            "type": "array",
+            "title": "Files",
+            "description": "One per file, in the order sent."
+          },
+          "queued": {
+            "type": "integer",
+            "title": "Queued"
+          },
+          "refused": {
+            "type": "integer",
+            "title": "Refused"
+          },
+          "not_queued": {
+            "type": "integer",
+            "title": "Not Queued"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files",
+          "queued",
+          "refused",
+          "not_queued"
+        ],
+        "title": "UnitUploadOut"
+      },
+      "UploadFileOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The file name as sent."
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "refused",
+              "not_queued"
+            ],
+            "title": "Outcome"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "bad_name",
+                  "not_pdf",
+                  "empty",
+                  "too_large",
+                  "unknown_usn",
+                  "usn_twice",
+                  "same_file_twice",
+                  "already_in_unit",
+                  "uploaded_before",
+                  "queue_full"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "Why, in words; null when queued."
+          },
+          "usn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usn",
+            "description": "The roll number read from the name, if any."
+          },
+          "student_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Student Id"
+          },
+          "booklet_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booklet Id",
+            "description": "The new booklet, when queued."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "outcome",
+          "problem",
+          "message",
+          "usn",
+          "student_id",
+          "booklet_id"
+        ],
+        "title": "UploadFileOut"
       },
       "UserOut": {
         "properties": {

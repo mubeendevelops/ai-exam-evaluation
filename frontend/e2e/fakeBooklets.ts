@@ -11,6 +11,9 @@ const STAGE_MS = 1200
 const RESCORE_MS = 1500
 const BOOKLET = '55555555-5555-4555-8555-555555555555'
 const BLUEPRINT = '66666666-6666-4666-8666-666666666666'
+const UNIT = '88888888-8888-4888-8888-888888888888'
+const SUBJECT = '33333333-3333-4333-8333-333333333333'
+const SME = { id: '99999999-9999-4999-8999-999999999999', name: 'Prof. Asha Rao' }
 const STUDENT = {
   id: '77777777-7777-4777-8777-777777777777',
   name: 'Test Student One',
@@ -57,6 +60,52 @@ interface Line {
 
 export class FakeBooklets {
   uploaded = false
+  /** The unit of work the booklet belongs to (P26); made by the admin, or there already. */
+  unitMade: boolean
+  unitRequests: Record<string, unknown>[] = []
+
+  constructor(options: { unit?: boolean } = {}) {
+    this.unitMade = options.unit ?? true
+  }
+
+  /** The admin has uploaded the booklet (the SME's tests start after that, P26). */
+  startUploaded() {
+    this.uploaded = true
+    this.since = Date.now()
+  }
+
+  private unitOut() {
+    const b = this.uploaded ? [this.bookletOut()] : []
+    const count = (s: string[]) => b.filter((x) => s.includes(x.status)).length
+    return {
+      id: UNIT,
+      code: 'U-0001',
+      paper: {
+        id: BLUEPRINT,
+        version: 1,
+        title: 'Mid-term Physics',
+        exam_code: 'PHY-2026-MID',
+        course_code: 'PHY-101',
+        total_marks: 6,
+      },
+      subject: { id: SUBJECT, code: 'PHY-501', name: 'Physics' },
+      year: '2024',
+      owner: SME,
+      due_date: '2030-01-31',
+      state: 'open',
+      created_at: '2026-10-28T08:00:00Z',
+      version: 1,
+      counts: {
+        total: b.length,
+        processing: count(['uploaded', 'processing', 'reading', 'text_ready', 'segmented']),
+        needs_retake: 0,
+        failed: 0,
+        ready: count(['scored']),
+        in_review: count(['in_review']),
+        completed: count(['approved', 'amendment_in_progress', 'approved_amended']),
+      },
+    }
+  }
   private since = 0
   private version = 4
   private locked = false
@@ -123,6 +172,7 @@ export class FakeBooklets {
       id: BOOKLET,
       status,
       student: { id: STUDENT.id, name: STUDENT.name, usn: STUDENT.usn },
+      unit: { id: UNIT, code: 'U-0001' },
       blueprint: { id: BLUEPRINT, version: 1, title: 'Mid-term Physics' },
       uploaded_by: '22222222-2222-4222-8222-222222222222',
       uploaded_at: '2026-10-06T08:00:00Z',
@@ -414,11 +464,55 @@ export class FakeBooklets {
       })
     }
 
-    if (method === 'POST' && path === '/booklets') {
+    // --- units of work (P26) ---
+    if (method === 'GET' && path === '/units') {
+      return json(200, this.unitMade ? [this.unitOut()] : [])
+    }
+    if (method === 'GET' && path === '/units/papers') {
+      const { paper, subject } = this.unitOut()
+      return json(200, [{ ...paper, subject }])
+    }
+    if (method === 'GET' && path === '/units/smes') {
+      return json(200, [{ ...SME, email: 'asha@synthetic.test' }])
+    }
+    if (method === 'POST' && path === '/units') {
+      this.unitRequests.push(body)
+      this.unitMade = true
+      return json(201, this.unitOut())
+    }
+    if (method === 'GET' && path === `/units/${UNIT}`) {
+      const b = this.uploaded ? [this.bookletOut()] : []
+      return json(200, {
+        ...this.unitOut(),
+        booklets: b,
+        waiting: 0,
+        max_waiting: 5,
+        max_files: 20,
+      })
+    }
+    if (method === 'POST' && path === `/units/${UNIT}/booklets`) {
       this.uploadRequests++
-      this.uploaded = true
-      this.since = Date.now()
-      return json(201, this.bookletOut())
+      const names = [...(request.postData() ?? '').matchAll(/filename="([^"]+)"/g)].map(
+        (m) => m[1] ?? '',
+      )
+      const files = names.map((name) => {
+        const usn = name.replace(/\.pdf$/i, '').toUpperCase()
+        const known = usn === STUDENT.usn && !this.uploaded
+        if (known) this.startUploaded()
+        return {
+          name,
+          outcome: known ? 'queued' : 'refused',
+          problem: known ? null : 'unknown_usn',
+          message: known
+            ? null
+            : 'No student with this roll number: add or correct it in Students.',
+          usn,
+          student_id: known ? STUDENT.id : null,
+          booklet_id: known ? BOOKLET : null,
+        }
+      })
+      const queued = files.filter((f) => f.outcome === 'queued').length
+      return json(200, { files, queued, refused: files.length - queued, not_queued: 0 })
     }
     if (method === 'GET' && path === '/booklets') {
       const items = this.uploaded ? [this.bookletOut()] : []

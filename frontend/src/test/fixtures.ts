@@ -19,7 +19,14 @@ export function userOf(overrides: Partial<User> = {}): User {
 
 /** The server's capability table (tarn_core.domain.personas, D177). */
 export const CAPABILITIES: Record<User['role'], Me['capabilities']> = {
-  admin: ['manage_smes', 'manage_students', 'manage_subjects', 'upload_booklets', 'view_progress'],
+  admin: [
+    'assign_units',
+    'manage_smes',
+    'manage_students',
+    'manage_subjects',
+    'upload_booklets',
+    'view_progress',
+  ],
   sme: ['author_content', 'evaluate', 'view_progress'],
   governor: [],
 }

@@ -13,6 +13,7 @@ export type Graph = components['schemas']['DiagramGraphOut']
 
 export const BOOKLET = 'b-1'
 export const BLUEPRINT = 'bp-1'
+export const UNIT = 'unit-1'
 // All names are invented: no student data in the repository.
 export const STUDENT = { id: 'st-1', name: 'Test Student One', usn: 'TST001', class_section: 'A' }
 
@@ -21,6 +22,7 @@ export function booklet(over: Partial<Booklet> = {}): Booklet {
     id: BOOKLET,
     status: 'scored',
     student: { id: STUDENT.id, name: STUDENT.name, usn: STUDENT.usn },
+    unit: { id: UNIT, code: 'U-0001' },
     blueprint: { id: BLUEPRINT, version: 1, title: 'Mid-term Physics' },
     uploaded_by: 'u-1',
     uploaded_at: '2026-10-06T08:00:00Z',

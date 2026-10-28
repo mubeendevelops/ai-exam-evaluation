@@ -17,7 +17,7 @@ from tarn_core.domain.scoring import AnswerFlag
 from tarn_core.seed.data.papers import QP_CI_TITLE
 from tarn_core.services.scoring import BookletScorer, ScoringService
 from tarn_core.testing import InMemory
-from tarn_core.testing.builders import make_services
+from tarn_core.testing.builders import make_services, unit_for
 from tarn_core.testing.scoring import written_answer
 from tarn_core.testing.seed_world import seed_in_memory, seeded_blueprints
 
@@ -85,7 +85,7 @@ def test_the_scoring_model_scores_a_booklet_without_the_network(
             college_id,
             college.accounts.sme_ids[0],
             student_id=mem.students.list(college_id)[0].id,
-            blueprint_id=blueprint.id,
+            unit_id=unit_for(mem, college_id, blueprint.id),
             file_sha256="e" * 64,
         )
         .booklet

@@ -36,6 +36,7 @@ from tarn_core.testing.builders import (
     add_college,
     ci_shaped_blueprint,
     make_services,
+    unit_for,
 )
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"rest"
@@ -60,7 +61,7 @@ class World:
             self.college.id,
             user.id,
             student_id=self.college.students[student].id,
-            blueprint_id=self.blueprint_id,  # type: ignore[arg-type]
+            unit_id=unit_for(self.mem, self.college.id, self.blueprint_id),  # type: ignore[arg-type]
             files=list(files),
             **kw,  # type: ignore[arg-type]
         ).booklet
@@ -199,7 +200,7 @@ def test_a_failed_registration_removes_the_stored_files(w: World) -> None:
             w.college.id,
             w.college.teacher.id,
             student_id=w.other.students[0].id,  # another college's student
-            blueprint_id=w.blueprint_id,  # type: ignore[arg-type]
+            unit_id=unit_for(w.mem, w.college.id, w.blueprint_id),  # type: ignore[arg-type]
             files=[fake_pdf(1)],
         )
     assert w.mem.blobs.keys == () and w.mem.jobs.jobs == []
@@ -248,7 +249,7 @@ def test_the_same_file_in_the_same_college_is_refused_unless_confirmed(w: World)
         w.college.id,
         w.college.teacher.id,
         student_id=w.college.students[1].id,
-        blueprint_id=w.blueprint_id,  # type: ignore[arg-type]
+        unit_id=unit_for(w.mem, w.college.id, w.blueprint_id),  # type: ignore[arg-type]
         files=[pdf],
         allow_duplicate=True,
     )
@@ -282,7 +283,7 @@ def test_another_colleges_upload_is_not_a_duplicate(w: World) -> None:
         w.other.id,
         w.other.teacher.id,
         student_id=w.other.students[0].id,
-        blueprint_id=ci_shaped_blueprint(w.mem, w.other).id,  # its own paper (D165)
+        unit_id=unit_for(w.mem, w.other.id, ci_shaped_blueprint(w.mem, w.other).id),  # own paper
         files=[fake_pdf(1)],
     )
     assert registration.duplicates == ()

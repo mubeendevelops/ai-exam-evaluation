@@ -38,7 +38,7 @@ Document = Annotated[
     dict[str, Any],
     Body(
         description="An exam blueprint in the public form: see docs/api/blueprint.schema.json "
-        "(version 1.0) and the examples next to it."
+        "(version 1.1; 1.0 is still read) and the examples next to it."
     ),
 ]
 _INVALID: dict[int | str, dict[str, Any]] = {
@@ -67,6 +67,7 @@ def _summary(b: ExamBlueprint, subjects: dict[UUID, Subject]) -> dict[str, Any]:
         "version": b.meta.version,
         "title": b.title,
         "course_code": b.course_code,
+        "exam_code": b.exam_code,
         "subject_id": b.subject_id,
         "subject_name": None if subject is None else subject.name,
         "total_marks": float(b.total_marks),

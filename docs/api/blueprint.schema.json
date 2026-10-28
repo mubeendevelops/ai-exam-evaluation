@@ -1,15 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:tarn:schema:exam-blueprint:1.0",
+  "$id": "urn:tarn:schema:exam-blueprint:1.1",
   "title": "Tarn exam blueprint",
-  "description": "The structure of one question paper: header, sections, choice rules (answer any N of M), OR pairs, sub-parts with their own marks, step marks, the evaluation method of each section and optional links to question ids. Version 1.0 (field schema_version). A document that satisfies this schema may still be refused by the API, because some rules are arithmetic and cannot be written here: question and sub-part marks use at most 2 decimal places; sub-part marks and step marks add up to the marks of the question they belong to; the alternatives of an OR pair carry equal marks; 'any N' has N between 1 and the number of items; question numbers, sub-part labels and step labels are unique; and total_marks equals the sum over sections of the marks of the N largest items (all items when the rule is 'all'). The API explains each broken rule with a path and a sentence (POST /api/v1/blueprints/validate). Negative marking is exam-wide and applies to wrong answers in sections evaluated by exact_pattern_match or omr_bubble_scan.",
+  "description": "The structure of one question paper: header, sections, choice rules (answer any N of M), OR pairs, sub-parts with their own marks, step marks, the evaluation method of each section and optional links to question ids. Version 1.1 (field schema_version; 1.1 adds the optional exam_code, and 1.0 documents are still accepted). A document that satisfies this schema may still be refused by the API, because some rules are arithmetic and cannot be written here: question and sub-part marks use at most 2 decimal places; sub-part marks and step marks add up to the marks of the question they belong to; the alternatives of an OR pair carry equal marks; 'any N' has N between 1 and the number of items; question numbers, sub-part labels and step labels are unique; and total_marks equals the sum over sections of the marks of the N largest items (all items when the rule is 'all'). The API explains each broken rule with a path and a sentence (POST /api/v1/blueprints/validate). Negative marking is exam-wide and applies to wrong answers in sections evaluated by exact_pattern_match or omr_bubble_scan.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "title", "course_code", "subject_id", "total_marks", "sections"],
   "properties": {
-    "schema_version": { "const": "1.0" },
+    "schema_version": { "enum": ["1.0", "1.1"] },
     "title": { "$ref": "#/$defs/text", "description": "Exam title, e.g. the header of the paper." },
     "course_code": { "$ref": "#/$defs/text", "description": "Course code printed on the paper." },
+    "exam_code": {
+      "type": "string",
+      "maxLength": 50,
+      "description": "Since 1.1: the code that names this exam (for example MATH-2026-FINAL), unique per college among the papers that carry one. A paper needs one before a unit of work can use it. Empty or absent: none yet."
+    },
     "subject_id": {
       "type": "string",
       "format": "uuid",

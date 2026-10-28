@@ -17,7 +17,7 @@ from tarn_core.domain.booklet import (
 )
 from tarn_core.domain.common import ContentKind, ContentRef
 from tarn_core.errors import IllegalTransitionError, InvariantError
-from tarn_core.ids import AnswerId, BookletId, CollegeId, SegmentId, StudentId, UserId
+from tarn_core.ids import AnswerId, BookletId, CollegeId, SegmentId, StudentId, UnitId, UserId
 
 S = BookletStatus
 
@@ -27,6 +27,7 @@ def booklet(status: BookletStatus) -> Booklet:
         id=BookletId(uuid4()),
         college_id=CollegeId(uuid4()),
         student_id=StudentId(uuid4()),
+        unit_id=UnitId(uuid4()),
         blueprint=ContentRef(kind=ContentKind.BLUEPRINT, id=uuid4(), version=1),
         file_sha256="0" * 64,
         uploaded_by=UserId(uuid4()),

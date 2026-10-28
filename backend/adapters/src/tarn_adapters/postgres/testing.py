@@ -60,6 +60,7 @@ from tarn_core.testing.builders import (
     add_college,
     ci_shaped_blueprint,
     make_services,
+    unit_for,
 )
 
 SHARED_HASH = "f" * 64
@@ -154,11 +155,12 @@ def _seed(open_: Opener, college: CollegeFixture, blueprint_id: BlueprintId) -> 
     with open_(cid) as s:
         svc = make_services(s)
         teacher = college.teacher.id
+        unit_id = unit_for(s, cid, blueprint_id)
         booklet = svc.booklets.register(
             cid,
             teacher,
             student_id=college.students[0].id,
-            blueprint_id=blueprint_id,
+            unit_id=unit_id,
             file_sha256=SHARED_HASH,
         ).booklet
         answers = tuple(add_answer(s, booklet, label) for label in ("1", "2", "8"))
@@ -327,7 +329,7 @@ def _seed(open_: Opener, college: CollegeFixture, blueprint_id: BlueprintId) -> 
             cid,
             teacher,
             student_id=college.students[1].id,
-            blueprint_id=blueprint_id,
+            unit_id=unit_id,
             file_sha256="e" * 64,
         ).booklet
         svc.booklets.delete(cid, teacher, doomed.id)

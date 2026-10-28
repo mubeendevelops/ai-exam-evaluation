@@ -20,7 +20,7 @@ from tarn_core.seed.data.papers import QP_CI_TITLE
 from tarn_core.services.scoring import UNSCORED, NoScorerError, ScoringPolicy, ScoringService
 from tarn_core.services.segmentation.similarity import TrigramEmbedder
 from tarn_core.testing import FixedCreditScorer, InMemory
-from tarn_core.testing.builders import make_services
+from tarn_core.testing.builders import make_services, unit_for
 from tarn_core.testing.scoring import Line, Written, written_answer
 from tarn_core.testing.seed_world import SeededCollege, seed_in_memory, seeded_blueprints
 
@@ -105,7 +105,7 @@ def paper(seeded: tuple[InMemory, list[SeededCollege]]) -> Paper:
             college_id,
             college.accounts.sme_ids[0],
             student_id=student.id,
-            blueprint_id=blueprint.id,
+            unit_id=unit_for(mem, college_id, blueprint.id),
             file_sha256=f"{mem.ids.new().int:064x}"[-64:],
         )
         .booklet

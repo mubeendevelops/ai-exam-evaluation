@@ -33,8 +33,9 @@ def core_accepts(document: object) -> bool:
 
 def test_the_schema_is_a_valid_versioned_schema() -> None:
     Draft202012Validator.check_schema(SCHEMA)
-    assert SCHEMA["$id"].endswith(":1.0")
-    assert SCHEMA["properties"]["schema_version"] == {"const": "1.0"}
+    assert SCHEMA["$id"].endswith(":1.1")
+    # 1.1 (P26) adds the optional exam code; 1.0 documents stay valid.
+    assert SCHEMA["properties"]["schema_version"] == {"enum": ["1.0", "1.1"]}
 
 
 @pytest.mark.parametrize("name", ["ci", "ipr", "objective"])

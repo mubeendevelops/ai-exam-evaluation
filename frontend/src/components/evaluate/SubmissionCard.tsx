@@ -1,119 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../../api/client'
 import { NETWORK_PROBLEM, problemOf } from '../../api/errors'
-import { AuthImage } from '../qna/AuthImage'
 import { SmallButton } from '../schema/controls'
 import { GlassPanel, useToast } from '../ui'
-import { FAILURE, RETAKE_REASON, STATUS, isReviewable, resultText, type Booklet } from './model'
+import { FAILURE, STATUS, isReviewable, resultText, type Booklet } from './model'
 import { StatusBadge } from './StatusBadge'
-
-/** The pages the quality gate flagged, with why, and the teacher's choice: use anyway, or retake. */
-function RetakePanel({ booklet }: { booklet: Booklet }) {
-  const toast = useToast()
-  const queryClient = useQueryClient()
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const detail = useQuery({
-    queryKey: ['booklet', booklet.id],
-    queryFn: async () => {
-      const { data } = await api.GET('/api/v1/booklets/{booklet_id}', {
-        params: { path: { booklet_id: booklet.id } },
-      })
-      if (!data) throw new Error('booklet unavailable')
-      return data
-    },
-  })
-
-  const proceed = useMutation({
-    mutationFn: async (number: number) => {
-      const { data, error } = await api.POST(
-        '/api/v1/booklets/{booklet_id}/pages/{number}/use-anyway',
-        {
-          params: { path: { booklet_id: booklet.id, number } },
-        },
-      )
-      if (!data) throw new Error(problemOf(error, 'Could not go on with that page.').message)
-    },
-    onSuccess: async (_none, number) => {
-      toast.show(`Going on with page ${number}.`)
-      await queryClient.invalidateQueries({ queryKey: ['booklets'] })
-      await queryClient.invalidateQueries({ queryKey: ['booklet', booklet.id] })
-    },
-    onError: (e) => toast.show(e instanceof Error ? e.message : NETWORK_PROBLEM, 'red'),
-  })
-
-  const remove = useMutation({
-    mutationFn: async () => {
-      const { response, error } = await api.DELETE('/api/v1/booklets/{booklet_id}', {
-        params: { path: { booklet_id: booklet.id } },
-      })
-      if (!response.ok) throw new Error(problemOf(error, 'Could not delete the booklet.').message)
-    },
-    onSuccess: async () => {
-      toast.show('Deleted. Photograph the flagged pages again and upload the booklet.')
-      await queryClient.invalidateQueries({ queryKey: ['booklets'] })
-    },
-    onError: (e) => toast.show(e instanceof Error ? e.message : NETWORK_PROBLEM, 'red'),
-  })
-
-  const flagged = (detail.data?.pages ?? []).filter((p) => booklet.flagged_pages.includes(p.number))
-  return (
-    <div
-      role="region"
-      aria-label={`Retake needed for ${booklet.student.name}`}
-      className="mt-3 space-y-3 rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-xs"
-    >
-      <p className="text-amber-100">
-        <i className="fa-solid fa-camera-rotate mr-1.5 text-amber-300" aria-hidden="true" />
-        {flagged.length === 1 ? '1 page needs' : `${booklet.flagged_pages.length} pages need`} a
-        retake. Retake and upload the booklet again, or go on with the page as it is.
-      </p>
-      {detail.isPending && <p className="text-gray-400">Loading the pages…</p>}
-      {detail.isError && <p className="text-red-400">The pages could not be loaded.</p>}
-      <ul className="space-y-2">
-        {flagged.map((p) => (
-          <li
-            key={p.number}
-            className="flex flex-wrap items-start gap-3 rounded-lg border border-gray-800 bg-gray-900/70 p-2"
-          >
-            {p.image_url && <AuthImage path={p.image_url} alt={`Page ${p.number}`} />}
-            <div className="min-w-0 grow space-y-1">
-              <strong className="text-white">Page {p.number}</strong>
-              <ul className="list-disc pl-4 text-gray-200">
-                {p.retake_reasons.map((r) => (
-                  <li key={r}>{RETAKE_REASON[r]}</li>
-                ))}
-              </ul>
-              <SmallButton
-                icon="fa-solid fa-forward"
-                tone="purple"
-                disabled={proceed.isPending}
-                onClick={() => proceed.mutate(p.number)}
-              >
-                {`Use page ${p.number} anyway`}
-              </SmallButton>
-            </div>
-          </li>
-        ))}
-      </ul>
-      {confirmDelete ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-gray-200">Delete this booklet and its pages?</span>
-          <SmallButton tone="gray" disabled={remove.isPending} onClick={() => remove.mutate()}>
-            Yes, delete it
-          </SmallButton>
-          <SmallButton tone="gray" onClick={() => setConfirmDelete(false)}>
-            Keep it
-          </SmallButton>
-        </div>
-      ) : (
-        <SmallButton icon="fa-solid fa-trash" tone="gray" onClick={() => setConfirmDelete(true)}>
-          Delete and upload again
-        </SmallButton>
-      )}
-    </div>
-  )
-}
 
 /** One uploaded booklet: who, how many pages, where it is, its result, and what to do next. */
 export function SubmissionCard({
@@ -125,7 +17,6 @@ export function SubmissionCard({
 }) {
   const toast = useToast()
   const queryClient = useQueryClient()
-  const [retake, setRetake] = useState(false)
   const [confirming, setConfirming] = useState(false)
 
   const remove = useMutation({
@@ -191,13 +82,10 @@ export function SubmissionCard({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         {needsRetake ? (
-          <SmallButton
-            icon="fa-solid fa-camera-rotate"
-            tone="purple"
-            onClick={() => setRetake((v) => !v)}
-          >
-            {retake ? 'Hide pages' : 'Review flagged pages'}
-          </SmallButton>
+          <span className="text-[11px] text-amber-300">
+            <i className="fa-solid fa-camera-rotate mr-1" aria-hidden="true" />
+            Waiting for a retake by your admin
+          </span>
         ) : booklet.status === 'failed' ? (
           <span />
         ) : (
@@ -231,7 +119,6 @@ export function SubmissionCard({
           </button>
         )}
       </div>
-      {needsRetake && retake && <RetakePanel booklet={booklet} />}
     </GlassPanel>
   )
 }

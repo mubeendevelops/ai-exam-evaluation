@@ -75,18 +75,30 @@ def build_world(client: "TestClient", process: Callable[[], None]) -> World:
     b = login(c, B_INSTITUTION, B_TEACHER)
     b_admin = login(c, B_INSTITUTION, B_ADMIN)
     a_admin = login(c, A_INSTITUTION, A_ADMIN)
-    student = c.get(f"{BASE}/students", headers=a_admin).json()[0]
     blueprint = next(
         x for x in c.get(f"{BASE}/blueprints", headers=a).json() if x["title"].startswith("QP-CI")
     )
-    upload = c.post(
-        f"{BASE}/booklets",
-        headers=a_admin,
-        data={"student_id": student["id"], "blueprint_id": blueprint["id"]},
-        files=[("files", ("b.pdf", fake_pdf(1, "sweep"), "application/pdf"))],
+    # The seed's QP-CI unit belongs to A's SME (P26).
+    unit = next(
+        u
+        for u in c.get(f"{BASE}/units", headers=a_admin).json()
+        if u["paper"]["id"] == blueprint["id"]
     )
-    assert upload.status_code == 201, upload.text
-    booklet = upload.json()["id"]
+    # A student without a booklet in the unit yet (a journey may have run first).
+    taken = {
+        b["student"]["id"]
+        for b in c.get(f"{BASE}/units/{unit['id']}", headers=a_admin).json()["booklets"]
+    }
+    roster = c.get(f"{BASE}/students", params={"limit": 50}, headers=a_admin).json()
+    student = next(s for s in roster if s["id"] not in taken)
+    upload = c.post(
+        f"{BASE}/units/{unit['id']}/booklets",
+        headers=a_admin,
+        files=[("files", (f"{student['usn']}.pdf", fake_pdf(1, "sweep"), "application/pdf"))],
+    )
+    assert upload.status_code == 200, upload.text
+    booklet = upload.json()["files"][0]["booklet_id"]
+    assert booklet, upload.text
     process()
     review = c.post(f"{BASE}/booklets/{booklet}/lock", headers=a).json()
     answers = [x for x in review["answers"] if x["attempted"] and x["suggestion"]]
@@ -156,6 +168,8 @@ def build_world(client: "TestClient", process: Callable[[], None]) -> World:
             "ref_diagram_id": diagram.json()["id"],
             "ref_answer_id": detail["reference_answers"][0]["id"],
             "student_id": student["id"],
+            "student_usn": student["usn"],
+            "unit_id": unit["id"],
             "subject_id": blueprint["subject_id"],
             "segment_a": segments[0]["id"],
             "segment_b": segments[-1]["id"],
@@ -208,6 +222,40 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("GET", "/api/v1/question-topics"): Case("own"),
     ("GET", "/api/v1/booklets"): Case("own"),
     ("GET", "/api/v1/evaluated-booklets"): Case("own"),
+    ("GET", "/api/v1/units"): Case("own"),
+    ("GET", "/api/v1/units/papers"): Case("own"),
+    # A's subject: B is offered nobody (an empty list), see ``smes_of_another_colleges_subject``
+    ("GET", "/api/v1/units/smes"): Case(
+        "own", lambda w: {"params": {"subject_id": w.ids["subject_id"]}}
+    ),
+    # --- another college's units (P26) --------------------------------------------------------
+    ("POST", "/api/v1/units"): Case(
+        "college",
+        _json(
+            lambda w: {
+                "paper_id": w.ids["blueprint_id"],
+                "year": "Sweep",
+                "owner_id": w.ids["user_id"],
+                "due_date": "2030-01-01",
+            }
+        ),
+        as_admin=True,
+    ),
+    ("GET", "/api/v1/units/{unit_id}"): Case("college", as_admin=True),
+    ("POST", "/api/v1/units/{unit_id}/booklets"): Case(
+        "college",
+        lambda w: {
+            "files": [
+                ("files", (f"{w.ids['student_usn']}.pdf", fake_pdf(1, "b"), "application/pdf"))
+            ]
+        },
+        as_admin=True,
+    ),
+    ("POST", "/api/v1/booklets/{booklet_id}/replace"): Case(
+        "college",
+        lambda w: {"files": [("file", ("r.pdf", fake_pdf(1, "b-retake"), "application/pdf"))]},
+        as_admin=True,
+    ),
     # --- another college's accounts ----------------------------------------------------------
     ("POST", "/api/v1/accounts/{user_id}/disable"): Case("college", as_admin=True),
     ("POST", "/api/v1/accounts/{user_id}/enable"): Case("college", as_admin=True),
@@ -281,7 +329,9 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("DELETE", "/api/v1/booklets/{booklet_id}"): Case("college"),
     ("GET", "/api/v1/booklets/{booklet_id}/pages/{number}/image"): Case("college"),
     ("GET", "/api/v1/booklets/{booklet_id}/pages/{number}/text"): Case("college"),
-    ("POST", "/api/v1/booklets/{booklet_id}/pages/{number}/use-anyway"): Case("college"),
+    ("POST", "/api/v1/booklets/{booklet_id}/pages/{number}/use-anyway"): Case(
+        "college", as_admin=True
+    ),
     ("GET", "/api/v1/booklets/{booklet_id}/diagrams"): Case("college"),
     ("POST", "/api/v1/booklets/{booklet_id}/diagrams/{diagram_id}/edits"): Case(
         "college",
@@ -352,8 +402,6 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("POST", "/api/v1/booklets/{booklet_id}/segments/resegment"): Case(
         "college", _json(lambda w: {"expected_version": _v(w)})
     ),
-    # --- another college's ids in the body ---------------------------------------------------
-    ("POST", "/api/v1/booklets"): Case("own"),  # see ``upload_for_another_college``
 }
 
 # Path parameters whose name differs between the question and booklet families.
@@ -384,7 +432,15 @@ def url(world: World, path: str) -> str:
             if family in path and param == name:
                 key = renamed
         out = out.replace("{" + name + "}", world.ids[key])
-    for name in ("user_id", "blueprint_id", "question_id", "file_id", "subject_id", "student_id"):
+    for name in (
+        "user_id",
+        "blueprint_id",
+        "question_id",
+        "file_id",
+        "subject_id",
+        "student_id",
+        "unit_id",
+    ):
         out = out.replace("{" + name + "}", world.ids[name])
     assert "{" not in out, out
     return out
@@ -412,11 +468,21 @@ def invite_with_another_colleges_subject(world: World) -> Any:
 
 
 def upload_for_another_college(world: World) -> Any:
-    """B registers a booklet for A's student: the student is A's row, so it is not found."""
-    blueprint = world.ids["blueprint_id"]
+    """B's admin uploads A's student's roll number into B's own unit (if B has one) or into
+    A's unit: A's unit is not found, and in B's college A's roll number is unknown."""
     return world.client.post(
-        f"{BASE}/booklets",
+        f"{BASE}/units/{world.ids['unit_id']}/booklets",
         headers=world.b_admin,
-        data={"student_id": world.ids["student_id"], "blueprint_id": blueprint},
-        files=[("files", ("b.pdf", fake_pdf(1, "b-takes-a"), "application/pdf"))],
+        files=[
+            ("files", (f"{world.ids['student_usn']}.pdf", fake_pdf(1, "b-a"), "application/pdf"))
+        ],
+    )
+
+
+def smes_of_another_colleges_subject(world: World) -> Any:
+    """B's admin asks which SMEs may own a unit of A's subject: nobody (an empty list)."""
+    return world.client.get(
+        f"{BASE}/units/smes",
+        headers=world.b_admin,
+        params={"subject_id": world.ids["subject_id"]},
     )

@@ -70,6 +70,10 @@ class AuditAction(StrEnum):
     ROSTER_IMPORTED = "roster.imported"
     STUDENT_ADDED = "student.added"  # P25: by hand, ids only (no student data)
     STUDENT_EDITED = "student.edited"  # names the fields changed, not their values
+    # Units of work (P26)
+    UNIT_CREATED = "unit.created"  # ids, year, due date; never student data
+    UNIT_UPLOADED = "unit.uploaded"  # counts per outcome only: file names carry roll numbers
+    BOOKLET_REPLACED = "booklet.replaced"  # retake: the old and the new booklet's ids
     # College settings (P19)
     COLLEGE_LLM_SCORING_SET = "college.llm_scoring_set"  # a Tarn operator switches the flag
 

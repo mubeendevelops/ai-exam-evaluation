@@ -23,7 +23,7 @@ from tarn_core.domain.booklet import (
 )
 from tarn_core.domain.common import college_blob_key
 from tarn_core.errors import InvariantError, NotFoundError
-from tarn_core.ids import BookletId, CollegeId, StudentId, UserId
+from tarn_core.ids import BookletId, CollegeId, StudentId, UnitId, UserId
 from tarn_core.ports.jobs import JOB_DIAGRAMS_BOOKLET, JOB_SCORE_BOOKLET, JOB_SEGMENT_BOOKLET
 from tarn_core.services.diagrams.service import BookletDiagrams
 from tarn_core.services.marking import Outcome, apply_choice_rules
@@ -74,6 +74,7 @@ class World:
             id=BookletId(self.mem.ids.new()),
             college_id=college_id,
             student_id=StudentId(student.id),
+            unit_id=UnitId(self.mem.ids.new()),
             blueprint=self.blueprint.ref,
             file_sha256=SHA,
             uploaded_by=user.id,

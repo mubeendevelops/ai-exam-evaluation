@@ -30,11 +30,12 @@ from tarn_adapters.stages import Stages
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import BookletStatus
 from tarn_core.errors import DomainError
-from tarn_core.ids import CollegeId, StudentId, UserId
+from tarn_core.ids import CollegeId, StudentId, UnitId, UserId
 from tarn_core.ports.storage import BlobStore, PageSource
 from tarn_core.services.evaluation import Evaluated
 from tarn_core.services.uploads import UploadLimits
 from tarn_core.testing import InMemory
+from tarn_core.testing.builders import unit_for
 from tarn_core.testing.seed_world import SeededCollege, seed_in_memory
 
 MANIFEST = "booklet.json"
@@ -101,7 +102,10 @@ def choose(
         raise typer.BadParameter("name the exam (--exam); `tarn exams` lists them")
     wanted = exam.casefold()
     hits = [
-        b for b in blueprints if wanted in b.title.casefold() or wanted == b.course_code.casefold()
+        b
+        for b in blueprints
+        if wanted in b.title.casefold()
+        or wanted in (b.course_code.casefold(), b.exam_code.casefold())
     ]
     if len(hits) != 1:
         names = "; ".join(b.title for b in blueprints)
@@ -120,6 +124,12 @@ def choose(
         actor=found.accounts.sme_ids[0],
         college_id=college_id,
     )
+
+
+def unit_of(mem: InMemory, college_id: CollegeId, paper: ExamBlueprint) -> UnitId:
+    """The seed's unit of the paper (P26), or one made for this run (nothing is stored)."""
+    found = next((u for u in mem.units.list(college_id) if u.paper_id == paper.id), None)
+    return found.id if found is not None else unit_for(mem, college_id, paper.id)
 
 
 def write_result(evaluated: Evaluated, out: Path) -> tuple[Path, Path | None]:
@@ -197,7 +207,7 @@ def evaluate_command(
             choice.college_id,
             choice.actor,
             student_id=choice.student,
-            blueprint_id=choice.blueprint.id,
+            unit_id=unit_of(mem, choice.college_id, choice.blueprint),
             use_anyway=use_anyway,
         )
     except DomainError as error:

@@ -201,6 +201,7 @@ class Settings(BaseSettings):
     max_queued_booklets_per_teacher: int = Field(5, ge=1)
     upload_max_bytes: int = Field(100 * 1024 * 1024, ge=1)
     upload_max_pages: int = Field(40, ge=1)  # image files per booklet, and PDF pages
+    upload_max_files: int = Field(20, ge=1)  # PDFs in one upload into a unit (P26)
     # Cleaned pages: long side in pixels and file size, at most.
     page_max_edge_px: int = Field(2200, ge=600)
     page_max_bytes: int = Field(800_000, ge=50_000)

@@ -39,6 +39,7 @@ from tarn_core.testing.builders import (
     ipr_shaped_blueprint,
     make_services,
     meta,
+    unit_for,
 )
 from tarn_core.testing.scoring import written_answer
 
@@ -69,7 +70,7 @@ def register(mem: InMemory, college: CollegeFixture, blueprint: ExamBlueprint) -
             college.id,
             college.teacher.id,
             student_id=college.students[0].id,
-            blueprint_id=blueprint.id,
+            unit_id=unit_for(mem, college.id, blueprint.id),
             file_sha256=f"{mem.ids.new().int:064x}"[-64:],
         )
         .booklet

@@ -5,7 +5,8 @@
  * has the last word on validity; nothing here decides that.
  */
 
-export const SCHEMA_VERSION = '1.0'
+/** 1.1 adds the exam code (P26); 1.0 documents (no exam code) still load. */
+export const SCHEMA_VERSION = '1.1'
 
 export type Method =
   'exact_pattern_match' | 'omr_bubble_scan' | 'keyword_formula' | 'semantic_rubric' | 'diagram'
@@ -54,9 +55,10 @@ export interface DocSection {
   items: DocItem[]
 }
 export interface BlueprintDocument {
-  schema_version: typeof SCHEMA_VERSION
+  schema_version: typeof SCHEMA_VERSION | '1.0'
   title: string
   course_code: string
+  exam_code?: string
   subject_id: string
   duration_minutes: Num | null
   total_marks: Num
@@ -103,6 +105,7 @@ export interface FormSection {
 export interface FormState {
   title: string
   courseCode: string
+  examCode: string
   subjectId: string
   duration: string
   /** Typed total; null follows the calculated total. */
@@ -154,6 +157,7 @@ export function initialForm(): FormState {
   return {
     title: '',
     courseCode: '',
+    examCode: '',
     subjectId: '',
     duration: '',
     totalMarks: null,
@@ -199,6 +203,7 @@ export function toDocument(form: FormState): BlueprintDocument {
     schema_version: SCHEMA_VERSION,
     title: form.title,
     course_code: form.courseCode,
+    exam_code: form.examCode.trim(),
     subject_id: form.subjectId,
     duration_minutes: form.duration.trim() === '' ? null : numberOf(form.duration),
     total_marks: numberOf(form.totalMarks ?? String(calculatedTotal(form))),
@@ -246,6 +251,7 @@ export function fromDocument(doc: BlueprintDocument): FormState {
   return {
     title: doc.title,
     courseCode: doc.course_code,
+    examCode: doc.exam_code ?? '',
     subjectId: doc.subject_id,
     duration: doc.duration_minutes === null ? '' : String(doc.duration_minutes),
     totalMarks: String(doc.total_marks),

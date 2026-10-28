@@ -1,6 +1,6 @@
 """What each persona may do (P24, D177). The one table the API checks: routes ask for a
 capability, never for a list of roles. A capability that no route checks is not defined here;
-later prompts add theirs (units: ``assign_units``, the Governor: ``freeze_units``)."""
+later prompts add theirs (the Governor: ``freeze_units``)."""
 
 from collections.abc import Mapping
 from enum import StrEnum
@@ -16,8 +16,11 @@ class Capability(StrEnum):
     """The college's subject list: create, rename, retire (D160)."""
     MANAGE_STUDENTS = "manage_students"
     """The roster: import and search."""
+    ASSIGN_UNITS = "assign_units"
+    """Create units of work and assign each to an entitled SME (P26, D162)."""
     UPLOAD_BOOKLETS = "upload_booklets"
-    """Upload scanned booklets (D162: the admin's job)."""
+    """Upload scanned booklets into a unit, use a flagged page anyway, replace a booklet for a
+    retake (D162: the admin's job; P26)."""
     VIEW_PROGRESS = "view_progress"
     """Booklets and their processing status, without marks, page images or text (D167)."""
     AUTHOR_CONTENT = "author_content"
@@ -34,6 +37,7 @@ CAPABILITIES: Mapping[Role, frozenset[Capability]] = MappingProxyType(
                 Capability.MANAGE_SMES,
                 Capability.MANAGE_SUBJECTS,
                 Capability.MANAGE_STUDENTS,
+                Capability.ASSIGN_UNITS,
                 Capability.UPLOAD_BOOKLETS,
                 Capability.VIEW_PROGRESS,
             }

@@ -20,6 +20,7 @@ from tarn_core.testing.builders import (
     add_college,
     ci_shaped_blueprint,
     make_services,
+    unit_for,
 )
 
 SHARED_HASH = "f" * 64
@@ -32,7 +33,7 @@ def seed(
         college.id,
         college.teacher.id,
         student_id=college.students[0].id,
-        blueprint_id=blueprint_id,
+        unit_id=unit_for(mem, college.id, blueprint_id),
         file_sha256=SHARED_HASH,
     ).booklet
     for label in ("1", "2", "8"):
@@ -72,7 +73,7 @@ def test_service_for_a_sees_only_a(
         a.id,
         a.teacher.id,
         student_id=a.students[1].id,
-        blueprint_id=BlueprintId(booklet_a.blueprint.id),
+        unit_id=booklet_a.unit_id,
         file_sha256=SHARED_HASH,
     )
     assert again.duplicates == (booklet_a.id,)
@@ -83,7 +84,7 @@ def test_service_for_a_sees_only_a(
             a.id,
             a.teacher.id,
             student_id=b.students[0].id,
-            blueprint_id=BlueprintId(booklet_a.blueprint.id),
+            unit_id=booklet_a.unit_id,
             file_sha256="e" * 64,
         )
     with pytest.raises(NotFoundError):
@@ -91,7 +92,7 @@ def test_service_for_a_sees_only_a(
             a.id,
             b.teacher.id,
             student_id=a.students[0].id,
-            blueprint_id=BlueprintId(booklet_a.blueprint.id),
+            unit_id=booklet_a.unit_id,
             file_sha256="e" * 64,
         )
     answer_b = mem.booklets.answers(b.id, booklet_b.id)[0]

@@ -8,13 +8,14 @@ from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import Booklet, SourceFile
 from tarn_core.domain.common import BlobKey, college_blob_key
 from tarn_core.errors import BookletLockedError, InvariantError
-from tarn_core.ids import BlueprintId, BookletId, CollegeId, StudentId, UserId
+from tarn_core.ids import BookletId, CollegeId, StudentId, UnitId, UserId
 from tarn_core.ports.repositories import (
     BookletRepository,
     ContentRepository,
     ResultSheetRepository,
     ScoreRepository,
     StudentRepository,
+    UnitRepository,
     UserRepository,
 )
 from tarn_core.ports.storage import BlobStore
@@ -45,7 +46,9 @@ class BookletService:
         sheets: ResultSheetRepository,
         blobs: BlobStore,
         runtime: Runtime,
+        units: UnitRepository,
     ):
+        self._units = units
         self._booklets = booklets
         self._students = students
         self._users = users
@@ -61,16 +64,17 @@ class BookletService:
         actor_id: UserId,
         *,
         student_id: StudentId,
-        blueprint_id: BlueprintId,
+        unit_id: UnitId,
         file_sha256: str,
         booklet_id: BookletId | None = None,
         sources: tuple[SourceFile, ...] = (),
     ) -> Registration:
-        """Create a booklet for a student picked from this college's roster (D17), pinned to
-        the blueprint's current version."""
+        """Create a booklet in a unit (P26) for a student of this college's roster (D17),
+        pinned to the current version of the unit's paper."""
         self._users.get(college_id, actor_id)
         self._students.get(college_id, student_id)
-        blueprint = self._content.get(college_id, ExamBlueprint, blueprint_id)
+        unit = self._units.get(college_id, unit_id)
+        blueprint = self._content.get(college_id, ExamBlueprint, unit.paper_id)
         unlinked = blueprint.unlinked_leaves()
         if unlinked:
             raise InvariantError(
@@ -82,6 +86,7 @@ class BookletService:
             id=booklet_id or self._rt.new_id(BookletId),
             college_id=college_id,
             student_id=student_id,
+            unit_id=unit.id,
             blueprint=blueprint.ref,
             file_sha256=file_sha256,
             uploaded_by=actor_id,
@@ -96,6 +101,7 @@ class BookletService:
             booklet_id=booklet.id,
             after={
                 "student_id": str(student_id),
+                "unit_id": str(unit.id),
                 "blueprint": ref_json(blueprint.ref),
                 "duplicate_of": [str(d) for d in duplicates],
             },

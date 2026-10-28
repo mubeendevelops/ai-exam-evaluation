@@ -36,6 +36,7 @@ from tarn_core.testing.builders import (
     add_college,
     ci_shaped_blueprint,
     make_services,
+    unit_for,
 )
 
 LINE_1 = Box(x0=50, y0=100, x1=900, y1=150)
@@ -61,7 +62,7 @@ class World:
             self.college.id,
             self.college.teacher.id,
             student_id=self.college.students[0].id,
-            blueprint_id=self.blueprint_id,  # type: ignore[arg-type]
+            unit_id=unit_for(self.mem, self.college.id, self.blueprint_id),  # type: ignore[arg-type]
             files=list(files or [fake_pdf(2)]),
         ).booklet
         while not self.pipeline.step(self.college.id, booklet.id):

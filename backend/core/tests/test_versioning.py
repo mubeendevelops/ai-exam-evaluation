@@ -21,6 +21,7 @@ from tarn_core.testing.builders import (
     ci_shaped_blueprint,
     make_services,
     meta,
+    unit_for,
 )
 
 
@@ -40,7 +41,7 @@ def test_score_records_question_criteria_blueprint_and_scorer(
         college.id,
         college.teacher.id,
         student_id=college.students[0].id,
-        blueprint_id=blueprint.id,
+        unit_id=unit_for(mem, college.id, blueprint.id),
         file_sha256="a" * 64,
     ).booklet
     answer = add_answer(mem, booklet, "8")  # section B, 5 marks
@@ -65,7 +66,7 @@ def test_editing_a_question_leaves_old_scores_on_the_old_version(
         college.id,
         college.teacher.id,
         student_id=college.students[0].id,
-        blueprint_id=blueprint.id,
+        unit_id=unit_for(mem, college.id, blueprint.id),
         file_sha256="b" * 64,
     ).booklet
     answer = add_answer(mem, booklet, "1")
@@ -134,7 +135,7 @@ def test_scorer_answering_for_another_criterion_version_is_rejected(
         college.id,
         college.teacher.id,
         student_id=college.students[0].id,
-        blueprint_id=blueprint.id,
+        unit_id=unit_for(mem, college.id, blueprint.id),
         file_sha256="c" * 64,
     ).booklet
     answer = add_answer(mem, booklet, "1")
@@ -177,7 +178,7 @@ def test_guidance_only_key_gets_a_mark_manually_score() -> None:
         college.id,
         college.teacher.id,
         student_id=college.students[0].id,
-        blueprint_id=blueprint.id,
+        unit_id=unit_for(mem, college.id, blueprint.id),
         file_sha256="d" * 64,
     ).booklet
     answer = add_answer(mem, booklet, "1")

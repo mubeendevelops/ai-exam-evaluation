@@ -1,6 +1,6 @@
 """Request and response bodies (the OpenAPI contract, ``docs/api/openapi.json``)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -85,6 +85,7 @@ CapabilityName = Literal[
     "manage_smes",
     "manage_subjects",
     "manage_students",
+    "assign_units",
     "upload_booklets",
     "view_progress",
     "author_content",
@@ -293,6 +294,7 @@ class BlueprintSummaryOut(BaseModel):
     version: int
     title: str
     course_code: str
+    exam_code: str = Field(description="Names the exam (blueprint 1.1); empty when not set.")
     subject_id: UUID
     subject_name: str | None
     total_marks: float
@@ -563,10 +565,16 @@ class BookletResultOut(BaseModel):
     sheet_version: int = Field(description="The latest result sheet's version.")
 
 
+class BookletUnitOut(BaseModel):
+    id: UUID
+    code: str
+
+
 class BookletOut(BaseModel):
     id: UUID
     status: BookletStatusName
     student: BookletStudentOut
+    unit: BookletUnitOut
     blueprint: BookletBlueprintOut
     uploaded_by: UUID
     uploaded_at: datetime
@@ -655,6 +663,112 @@ class BookletPageOut(BaseModel):
     offset: int
     waiting: int = Field(description="Your booklets that are queued or being processed.")
     max_waiting: int = Field(description="How many you may have waiting at once.")
+
+
+# --- units of work (P26) -------------------------------------------------------------------------
+
+UnitStateName = Literal["open"]
+
+
+class UnitPaperOut(BaseModel):
+    id: UUID
+    version: int = Field(description="The paper's current version (new booklets pin it).")
+    title: str
+    exam_code: str
+    course_code: str
+    total_marks: float
+
+
+class UnitSubjectOut(BaseModel):
+    id: UUID
+    code: str
+    name: str
+
+
+class UnitOwnerOut(BaseModel):
+    id: UUID
+    name: str
+
+
+class UnitCountsOut(BaseModel):
+    total: int = Field(description="Booklets in the unit.")
+    processing: int = Field(description="Uploaded, being cleaned, read, segmented or scored.")
+    needs_retake: int
+    failed: int
+    ready: int = Field(description="Scored, waiting for the SME (not opened yet).")
+    in_review: int = Field(description="Opened by the SME, not approved yet.")
+    completed: int = Field(description="Approved (result sheet issued), amendments included.")
+
+
+class UnitOut(BaseModel):
+    id: UUID
+    code: str = Field(description="Short readable code, U-0001, unique in the college.")
+    paper: UnitPaperOut
+    subject: UnitSubjectOut
+    year: str = Field(description="The student year or batch, for example 2024.")
+    owner: UnitOwnerOut
+    due_date: date
+    state: UnitStateName
+    created_at: datetime
+    version: int
+    counts: UnitCountsOut
+
+
+class UnitDetailOut(UnitOut):
+    booklets: list[BookletOut] = Field(
+        description="Oldest first. Processing status only: no marks, page images or text (D167)."
+    )
+    waiting: int = Field(description="Your booklets that are queued or being processed.")
+    max_waiting: int = Field(description="How many you may have waiting at once.")
+    max_files: int = Field(description="PDFs per upload.")
+
+
+class UnitIn(BaseModel):
+    paper_id: UUID
+    year: str = Field(min_length=1, max_length=40)
+    owner_id: UUID = Field(description="An active SME entitled to the paper's subject.")
+    due_date: date
+
+
+class UnitChoicePaperOut(UnitPaperOut):
+    subject: UnitSubjectOut
+
+
+class UnitSmeOut(BaseModel):
+    id: UUID
+    name: str
+    email: str
+
+
+FileProblemName = Literal[
+    "bad_name",
+    "not_pdf",
+    "empty",
+    "too_large",
+    "unknown_usn",
+    "usn_twice",
+    "same_file_twice",
+    "already_in_unit",
+    "uploaded_before",
+    "queue_full",
+]
+
+
+class UploadFileOut(BaseModel):
+    name: str = Field(description="The file name as sent.")
+    outcome: Literal["queued", "refused", "not_queued"]
+    problem: FileProblemName | None
+    message: str | None = Field(description="Why, in words; null when queued.")
+    usn: str | None = Field(description="The roll number read from the name, if any.")
+    student_id: UUID | None
+    booklet_id: UUID | None = Field(description="The new booklet, when queued.")
+
+
+class UnitUploadOut(BaseModel):
+    files: list[UploadFileOut] = Field(description="One per file, in the order sent.")
+    queued: int
+    refused: int
+    not_queued: int
 
 
 # --- diagrams (P14) ---------------------------------------------------------------------------

@@ -22,7 +22,7 @@ from tarn_core.services.blueprint_document import (
     check_document,
 )
 from tarn_core.testing import InMemory
-from tarn_core.testing.builders import add_college, make_services, make_subject
+from tarn_core.testing.builders import add_college, make_services, make_subject, unit_for
 
 EXAMPLES = Path(__file__).resolve().parents[3] / "docs" / "api"
 SUBJECT = "00000000-0000-4000-8000-000000000001"
@@ -331,7 +331,7 @@ def test_create_refuses_an_invalid_document_and_an_unknown_subject() -> None:
 
 
 def test_a_blueprint_with_unlinked_questions_cannot_register_booklets() -> None:
-    _, a, _, svc = _world()
+    mem, a, _, svc = _world()
     subject = make_subject(svc, a, code="S", name="Subject")
     blueprint = svc.blueprints.create(a.id, a.teacher.id, _document(subject.id))
     with pytest.raises(InvariantError, match="no question linked for 1, 2, 3"):
@@ -339,7 +339,7 @@ def test_a_blueprint_with_unlinked_questions_cannot_register_booklets() -> None:
             a.id,
             a.teacher.id,
             student_id=a.students[0].id,
-            blueprint_id=blueprint.id,
+            unit_id=unit_for(mem, a.id, blueprint.id),
             file_sha256="0" * 64,
         )
 

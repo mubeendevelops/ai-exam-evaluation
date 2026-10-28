@@ -10,7 +10,7 @@ from tarn_adapters.postgres.testing import SHARED_HASH, Opener, World
 from tarn_core.domain.booklet import AnswerStatus
 from tarn_core.domain.review import Review
 from tarn_core.errors import NotFoundError, TenantViolationError
-from tarn_core.ids import BlueprintId, ReviewId
+from tarn_core.ids import ReviewId
 from tarn_core.testing.builders import make_services
 
 pytestmark = pytest.mark.integration
@@ -18,7 +18,6 @@ pytestmark = pytest.mark.integration
 
 def test_service_for_a_sees_only_a(session: Opener, world: World) -> None:
     a, b = world.a, world.b
-    blueprint_id = BlueprintId(world.blueprint.id)
     with session(a.id) as s:
         svc = make_services(s)
         assert [bk.id for bk in svc.booklets.list(a.id)] == [a.booklet.id]
@@ -35,7 +34,7 @@ def test_service_for_a_sees_only_a(session: Opener, world: World) -> None:
             a.id,
             a.college.teacher.id,
             student_id=a.college.students[2].id,
-            blueprint_id=blueprint_id,
+            unit_id=a.booklet.unit_id,
             file_sha256=SHARED_HASH,
         )
         assert again.duplicates == (a.booklet.id,)
@@ -45,7 +44,7 @@ def test_service_for_a_sees_only_a(session: Opener, world: World) -> None:
                 a.id,
                 a.college.teacher.id,
                 student_id=b.college.students[0].id,
-                blueprint_id=blueprint_id,
+                unit_id=a.booklet.unit_id,
                 file_sha256="d" * 64,
             )
         with pytest.raises(NotFoundError):  # B's teacher
@@ -53,7 +52,7 @@ def test_service_for_a_sees_only_a(session: Opener, world: World) -> None:
                 a.id,
                 b.college.teacher.id,
                 student_id=a.college.students[0].id,
-                blueprint_id=blueprint_id,
+                unit_id=a.booklet.unit_id,
                 file_sha256="d" * 64,
             )
         with pytest.raises(NotFoundError):

@@ -23,7 +23,7 @@ from tarn_core.services.workflow import (
 )
 from tarn_core.services.workflow.sheets import SheetBuilder, SheetPublisher
 from tarn_core.services.workflow.truth import CorrectionTruth
-from tarn_core.testing.builders import Backend, CollegeFixture, make_services
+from tarn_core.testing.builders import Backend, CollegeFixture, make_services, unit_for
 from tarn_core.testing.scoring import Line, written_answer
 from tarn_core.testing.sheets import FakeSheetRenderer
 
@@ -144,7 +144,7 @@ def scored_booklet(
             college.id,
             college.teacher.id,
             student_id=college.students[0].id,
-            blueprint_id=blueprint.id,
+            unit_id=unit_for(mem, college.id, blueprint.id),
             file_sha256=f"{mem.ids.new().int:064x}"[-64:],
         )
         .booklet

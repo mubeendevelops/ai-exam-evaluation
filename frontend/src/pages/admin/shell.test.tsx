@@ -45,7 +45,6 @@ describe('admin portal shell', () => {
     renderApp('/admin')
     const sidebar = await screen.findByRole('navigation', { name: 'Admin sections' })
     const empty: [string, string][] = [
-      ['Upload & Assign Papers', 'Uploading and assigning is not built yet'],
       ['SME Progress Reports', 'No progress to report yet'],
       ['Redistribute Workload', 'Nothing to redistribute yet'],
       ['Audit & External Reports', 'No reports yet'],
@@ -61,7 +60,7 @@ describe('admin portal shell', () => {
     adminSession()
     const user = userEvent.setup()
     renderApp('/admin/upload')
-    await user.click(await screen.findByRole('link', { name: /Open the student roster/ }))
+    await user.click(await screen.findByRole('link', { name: 'Students' }))
     expect(await screen.findByRole('heading', { name: 'Students', level: 1 })).toBeInTheDocument()
     const sidebar = screen.getByRole('navigation', { name: 'Admin sections' })
     expect(within(sidebar).getByRole('link', { name: 'Upload & Assign Papers' })).toHaveAttribute(

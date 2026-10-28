@@ -21,7 +21,7 @@ from tarn_core.errors import (
     UnsupportedFileError,
     UploadTooLargeError,
 )
-from tarn_core.ids import BlueprintId, BookletId, CollegeId, StudentId, UserId
+from tarn_core.ids import BookletId, CollegeId, StudentId, UnitId, UserId
 from tarn_core.ports.jobs import JOB_PREPARE_BOOKLET, JobQueue
 from tarn_core.ports.repositories import BookletRepository
 from tarn_core.ports.storage import BlobStore
@@ -41,6 +41,9 @@ class UploadLimits:
     """Booklets one teacher may have queued or in processing at once."""
     max_total_bytes: int = 100 * 1024 * 1024
     max_files: int = 40
+    """Image files of one booklet."""
+    max_batch_files: int = 20
+    """PDFs in one upload into a unit (P26)."""
 
 
 def sniff_media_type(data: bytes) -> str:
@@ -101,7 +104,7 @@ class UploadService:
         actor_id: UserId,
         *,
         student_id: StudentId,
-        blueprint_id: BlueprintId,
+        unit_id: UnitId,
         files: Sequence[bytes],
         allow_duplicate: bool = False,
         booklet_id: BookletId | None = None,
@@ -140,7 +143,7 @@ class UploadService:
                 college_id,
                 actor_id,
                 student_id=student_id,
-                blueprint_id=blueprint_id,
+                unit_id=unit_id,
                 file_sha256=file_hash,
                 booklet_id=booklet_id,
                 sources=sources,

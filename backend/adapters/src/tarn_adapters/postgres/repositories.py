@@ -68,10 +68,13 @@ from tarn_core.domain.review import (
 )
 from tarn_core.domain.scoring import AnswerFlag, AnswerScore, CriterionScore, SentenceVector
 from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
+from tarn_core.domain.unit import Unit, UnitState
 from tarn_core.errors import (
+    AlreadyExistsError,
     DomainError,
     InvariantError,
     NotFoundError,
+    StaleWriteError,
     TenantViolationError,
 )
 from tarn_core.ids import (
@@ -96,6 +99,7 @@ from tarn_core.ids import (
     StudentDiagramId,
     StudentId,
     SubjectId,
+    UnitId,
     UserId,
 )
 from tarn_core.ports.repositories import ContentItem, QuestionPage, QuestionPart, QuestionQuery
@@ -314,6 +318,7 @@ def _blueprint_values(b: ExamBlueprint) -> dict[str, object]:
         "subject_id": b.subject_id,
         "title": b.title,
         "course_code": b.course_code,
+        "exam_code": b.exam_code,
         "duration_minutes": b.duration_minutes,
         "total_marks": b.total_marks,
         "mark_step": b.mark_step,
@@ -328,6 +333,7 @@ def _blueprint(r: Row[Any]) -> ExamBlueprint:
         subject_id=SubjectId(r.subject_id),
         title=r.title,
         course_code=r.course_code,
+        exam_code=r.exam_code,
         duration_minutes=r.duration_minutes,
         total_marks=r.total_marks,
         mark_step=r.mark_step,
@@ -768,6 +774,115 @@ class PgStudentRepository:
             )
 
 
+# --- units of work (P26) -------------------------------------------------------------------------
+
+
+def _unit(r: Row[Any]) -> Unit:
+    return Unit(
+        id=UnitId(r.id),
+        college_id=CollegeId(r.college_id),
+        code=r.code,
+        paper_id=BlueprintId(r.paper_id),
+        subject_id=SubjectId(r.subject_id),
+        year=r.year,
+        owner_id=UserId(r.owner_id),
+        due_date=r.due_date,
+        created_by=None if r.created_by is None else UserId(r.created_by),
+        created_at=r.created_at,
+        state=UnitState(r.state),
+        version=r.version,
+    )
+
+
+class PgUnitRepository:
+    """``units`` (0014): college RLS, composite keys to the paper, subject and users."""
+
+    def __init__(self, conn: Connection) -> None:
+        self._conn = conn
+
+    def get(self, college_id: CollegeId, unit_id: UnitId) -> Unit:
+        t = m.units
+        row = self._conn.execute(
+            select(t).where(t.c.college_id == college_id, t.c.id == unit_id)
+        ).first()
+        return _unit(_one(row, f"unit {unit_id}"))
+
+    def list(
+        self,
+        college_id: CollegeId,
+        *,
+        subject_id: SubjectId | None = None,
+        owner_id: UserId | None = None,
+        state: UnitState | None = None,
+    ) -> Sequence[Unit]:
+        t = m.units
+        stmt = select(t).where(t.c.college_id == college_id)
+        if subject_id is not None:
+            stmt = stmt.where(t.c.subject_id == subject_id)
+        if owner_id is not None:
+            stmt = stmt.where(t.c.owner_id == owner_id)
+        if state is not None:
+            stmt = stmt.where(t.c.state == state.value)
+        return [_unit(r) for r in self._conn.execute(stmt.order_by(t.c.seq))]
+
+    def find(self, college_id: CollegeId, paper_id: BlueprintId, year: str) -> Unit | None:
+        t = m.units
+        row = self._conn.execute(
+            select(t).where(
+                t.c.college_id == college_id,
+                t.c.paper_id == paper_id,
+                func.lower(t.c.year) == year.lower(),
+            )
+        ).first()
+        return None if row is None else _unit(row)
+
+    def count(self, college_id: CollegeId) -> int:
+        t = m.units
+        stmt = select(func.count()).select_from(t).where(t.c.college_id == college_id)
+        return int(self._conn.execute(stmt).scalar_one())
+
+    def save(self, college_id: CollegeId, unit: Unit) -> None:
+        _check_tenant(college_id, unit.college_id, "unit")
+        t = m.units
+        values = {
+            "code": unit.code,
+            "paper_id": unit.paper_id,
+            "subject_id": unit.subject_id,
+            "year": unit.year,
+            "owner_id": unit.owner_id,
+            "due_date": unit.due_date,
+            "state": unit.state.value,
+            "created_by": unit.created_by,
+            "created_at": unit.created_at,
+            "version": unit.version,
+        }
+        try:
+            with self._conn.begin_nested():
+                exists_now = self._conn.execute(
+                    select(t.c.version)
+                    .where(t.c.college_id == college_id, t.c.id == unit.id)
+                    .with_for_update()
+                ).first()
+                if exists_now is None:
+                    self._conn.execute(
+                        insert(t).values(college_id=unit.college_id, id=unit.id, **values)
+                    )
+                elif unit.version != exists_now.version + 1:
+                    raise StaleWriteError(f"unit {unit.code} was changed by someone else")
+                else:
+                    self._conn.execute(
+                        t.update()
+                        .where(t.c.college_id == college_id, t.c.id == unit.id)
+                        .values(**values)
+                    )
+        except DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) == "23505":
+                raise AlreadyExistsError(
+                    "a unit with this code, or for this paper and year, exists already"
+                ) from exc
+            translate(exc, f"unit {unit.id}", TenantViolationError)
+
+
 # --- booklets ---------------------------------------------------------------------------------
 
 
@@ -776,6 +891,7 @@ def _booklet(r: Row[Any]) -> Booklet:
         id=BookletId(r.id),
         college_id=CollegeId(r.college_id),
         student_id=StudentId(r.student_id),
+        unit_id=UnitId(r.unit_id),
         blueprint=ContentRef(
             kind=ContentKind.BLUEPRINT, id=r.blueprint_id, version=r.blueprint_version
         ),
@@ -921,6 +1037,9 @@ class PgBookletRepository:
         rows = self._rows(m.booklets, college_id, file_sha256=file_sha256)
         return [_booklet(r) for r in rows]
 
+    def in_unit(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[Booklet]:
+        return [_booklet(r) for r in self._rows(m.booklets, college_id, unit_id=unit_id)]
+
     def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:
         t = m.booklets
         waiting = [s.value for s in WAITING_STATUSES]
@@ -943,6 +1062,7 @@ class PgBookletRepository:
                     "id": booklet.id,
                     "college_id": booklet.college_id,
                     "student_id": booklet.student_id,
+                    "unit_id": booklet.unit_id,
                     "blueprint_id": booklet.blueprint.id,
                     "blueprint_version": booklet.blueprint.version,
                     "file_sha256": booklet.file_sha256,

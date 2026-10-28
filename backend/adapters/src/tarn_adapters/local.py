@@ -42,6 +42,7 @@ def build_evaluation(
         sheets=mem.sheets,
         blobs=mem.blobs,
         runtime=rt,
+        units=mem.units,
     )
     return BookletEvaluation(
         source=source,

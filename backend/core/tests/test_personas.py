@@ -143,10 +143,16 @@ def test_grants_are_audited_and_the_last_subject_stays(mem: InMemory) -> None:
 def test_reach_by_persona(mem: InMemory) -> None:
     college, svc = add_college(mem, "A"), make_services(mem)
     physics = make_subject(svc, college, code="PHY", name="Physics")
-    assert reach_of(college.teacher, mem.entitlements) == Reach(frozenset({physics.id}))
-    assert reach_of(college.admin, mem.entitlements) == WHOLE_COLLEGE
+    # Without the units, an SME's reach holds no booklet (content-only callers, P26).
+    assert reach_of(college.teacher, mem.entitlements) == Reach(
+        frozenset({physics.id}), frozenset()
+    )
+    assert reach_of(college.teacher, mem.entitlements, mem.units) == Reach(
+        frozenset({physics.id}), frozenset()
+    )
+    assert reach_of(college.admin, mem.entitlements, mem.units) == WHOLE_COLLEGE
     governor = replace(college.admin, id=UserId(mem.ids.new()), role=Role.GOVERNOR)
-    assert reach_of(governor, mem.entitlements) == Reach(frozenset())
+    assert reach_of(governor, mem.entitlements) == Reach(frozenset(), frozenset())
 
 
 def test_an_sme_works_only_in_their_subjects(mem: InMemory) -> None:

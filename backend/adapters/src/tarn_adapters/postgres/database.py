@@ -24,6 +24,7 @@ from tarn_adapters.postgres.repositories import (
     PgResultSheetRepository,
     PgScoreRepository,
     PgStudentRepository,
+    PgUnitRepository,
     PgUserRepository,
 )
 from tarn_adapters.postgres.scoring_calibrations import PgScoringCalibrationStore
@@ -62,6 +63,7 @@ class PostgresSession:
     entitlements: PgEntitlementRepository = field(init=False)
     students: PgStudentRepository = field(init=False)
     content: PgContentRepository = field(init=False)
+    units: PgUnitRepository = field(init=False)
     booklets: PgBookletRepository = field(init=False)
     scores: PgScoreRepository = field(init=False)
     sheets: PgResultSheetRepository = field(init=False)
@@ -76,6 +78,7 @@ class PostgresSession:
         self.entitlements = PgEntitlementRepository(self.conn)
         self.students = PgStudentRepository(self.conn)
         self.content = PgContentRepository(self.conn)
+        self.units = PgUnitRepository(self.conn)
         self.booklets = PgBookletRepository(self.conn)
         self.scores = PgScoreRepository(self.conn)
         self.sheets = PgResultSheetRepository(self.conn)

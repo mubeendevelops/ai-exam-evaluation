@@ -34,7 +34,7 @@ from tarn_core.ports.pages import CleanedPage
 from tarn_core.services.pipeline import PagePipeline, QualityPolicy
 from tarn_core.services.uploads import UploadService
 from tarn_core.testing import FakePageCleaner, MemoryBlobStore
-from tarn_core.testing.builders import ci_shaped_blueprint, make_services
+from tarn_core.testing.builders import ci_shaped_blueprint, make_services, unit_for
 from tarn_worker.booklets import BookletJobRunner
 
 pytestmark = pytest.mark.integration
@@ -185,7 +185,7 @@ class Env:
                 self.college.id,
                 self.college.teacher.id,
                 student_id=self.college.students[student].id,
-                blueprint_id=self.blueprint.id,
+                unit_id=unit_for(s, self.college.id, self.blueprint.id),
                 files=list(files),
             ).booklet
 
@@ -394,7 +394,7 @@ def test_each_college_is_processed_in_its_own_transaction_scope(env: Env) -> Non
             other.id,
             other.teacher.id,
             student_id=other.students[0].id,
-            blueprint_id=other_blueprint.id,
+            unit_id=unit_for(s, other.id, other_blueprint.id),
             files=[_pdf([page])],
         )
     assert env.runner.run_one() and env.runner.run_one()  # one job per college, fairly

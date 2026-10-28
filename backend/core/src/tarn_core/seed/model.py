@@ -116,7 +116,17 @@ class PaperSeed:
     title: str
     subject_code: str
     document: dict[str, object]
-    """``schema_version`` 1.0 document; ``question_id`` entries hold ``@CODE`` references."""
+    """``schema_version`` 1.1 document; ``question_id`` entries hold ``@CODE`` references."""
+
+
+@dataclass(frozen=True, slots=True)
+class UnitSeed:
+    """A demo unit of work (P26): the paper (by title), the student year and the SME who owns
+    it (by email). Its due date is 30 days after the seed runs."""
+
+    paper_title: str
+    year: str
+    owner_email: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +140,7 @@ class CollegeSeed:
     questions: tuple[tuple[str, QuestionSeed], ...]
     """(subject code, question): this college owns them."""
     papers: tuple[PaperSeed, ...]
+    units: tuple[UnitSeed, ...] = ()
 
 
 # ---- vocabulary -----------------------------------------------------------------------------

@@ -47,7 +47,7 @@ from tarn_core.ports.engines import ScoringInput
 from tarn_core.services.scoring import ScoringPolicy, ScoringService
 from tarn_core.services.segmentation.similarity import TrigramEmbedder
 from tarn_core.testing import InMemory
-from tarn_core.testing.builders import add_college, ci_shaped_blueprint, make_services
+from tarn_core.testing.builders import add_college, ci_shaped_blueprint, make_services, unit_for
 from tarn_core.testing.scoring import written_answer
 
 CASSETTE: dict[str, Any] = json.loads(
@@ -491,7 +491,7 @@ def test_recorded_responses_through_the_service_flag_a_disagreement() -> None:
             college.id,
             college.teacher.id,
             student_id=college.students[0].id,
-            blueprint_id=blueprint.id,
+            unit_id=unit_for(mem, college.id, blueprint.id),
             file_sha256=f"{mem.ids.new().int:064x}"[-64:],
         )
         .booklet
@@ -522,7 +522,7 @@ def test_a_provider_that_is_down_leaves_the_local_marks() -> None:
             college.id,
             college.teacher.id,
             student_id=college.students[0].id,
-            blueprint_id=blueprint.id,
+            unit_id=unit_for(mem, college.id, blueprint.id),
             file_sha256=f"{mem.ids.new().int:064x}"[-64:],
         )
         .booklet

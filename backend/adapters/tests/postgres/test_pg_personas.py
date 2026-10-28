@@ -76,7 +76,7 @@ def test_0013_turns_teachers_into_smes_with_every_subject(at_0012: TestDatabase)
                 "VALUES (%s, 1, %s, 'Synthetic', %s, %s)",
                 (subject, f"S{n}", college, teacher),
             )
-    migrate.upgrade(db.owner_url)
+    migrate.upgrade(db.owner_url, "0013")
     assert migrate.current_revision(db.owner_url) == "0013"
     with db.owner() as conn:
         roles = {r[0]: r[1] for r in conn.execute("SELECT id, role FROM users").fetchall()}

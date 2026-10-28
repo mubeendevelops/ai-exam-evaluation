@@ -1,4 +1,5 @@
-"""The exam blueprints of the sample papers, as public blueprint documents (schema 1.0).
+"""The exam blueprints of the sample papers, as public blueprint documents (schema 1.1:
+with an exam code, P26).
 
 ``question_id`` values are ``@CODE`` references to the seeded questions; the seeder replaces
 them with the real ids and fills ``subject_id`` before the document goes through
@@ -32,12 +33,18 @@ def _alternative(prefix: str, number: int) -> Doc:
 
 
 def _document(
-    title: str, course_code: str, minutes: int | None, total: int, sections: list[Doc]
+    title: str,
+    course_code: str,
+    exam_code: str,
+    minutes: int | None,
+    total: int,
+    sections: list[Doc],
 ) -> Doc:
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "title": title,
         "course_code": course_code,
+        "exam_code": exam_code,
         "subject_id": "@subject",
         "duration_minutes": minutes,
         "total_marks": total,
@@ -58,6 +65,7 @@ QP_CI = PaperSeed(
     document=_document(
         QP_CI_TITLE,
         "19AU0003",
+        "QP-CI-2021-06",
         180,
         50,
         [
@@ -92,6 +100,7 @@ QP_IPR = PaperSeed(
     document=_document(
         QP_IPR_TITLE,
         "17NC301",
+        "QP-IPR-2021-07",
         180,
         60,
         [
@@ -134,6 +143,7 @@ ASSIGNMENT_1 = PaperSeed(
     document=_document(
         ASSIGNMENT_1_TITLE,
         "IEL",
+        "IEL-A1",
         None,
         20,
         [
@@ -153,6 +163,7 @@ ASSIGNMENT_2 = PaperSeed(
     subject_code="STARTUP-A2",
     document=_document(
         ASSIGNMENT_2_TITLE,
+        "STARTUP-A2",
         "STARTUP-A2",
         None,
         10,

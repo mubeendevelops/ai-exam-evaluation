@@ -7,7 +7,7 @@ import {
   BOOKLET,
   PAGE_TEXT,
   SEGMENTS,
-  STUDENT,
+  UNIT,
   answer,
   booklet,
   detail,
@@ -16,6 +16,7 @@ import {
   region,
   review,
 } from '../test/evaluateFixtures'
+import { unitOf } from '../test/adminFixtures'
 import { mockApi } from '../test/mockApi'
 import { detail as qnaDetail } from '../test/qnaFixtures'
 import { renderApp } from '../test/render'
@@ -52,78 +53,82 @@ const listOf = (items = [booklet()], extra: Record<string, unknown> = {}) => ({
   json: { items, total: items.length, limit: 100, offset: 0, waiting: 0, max_waiting: 5, ...extra },
 })
 
-/** Step 1's upload controls belong to whoever may upload (the admin since P24, D162); the
- * tests sign in with both capabilities so the controls and the review can be tried together. */
-const UPLOADER = { ...meOf(), capabilities: [...meOf().capabilities, 'upload_booklets' as const] }
+/** The SME's open units (P26): step 1 lists the booklets of the one picked. */
+const UNITS = [
+  unitOf({ id: UNIT, code: 'U-0001' }),
+  unitOf({
+    id: 'unit-2',
+    code: 'U-0002',
+    year: '2025',
+    paper: { ...unitOf().paper, exam_code: 'PHY-2026-END' },
+  }),
+]
 
-function signedIn(extra: Parameters<typeof mockApi>[0] = {}, me = UPLOADER) {
+function signedIn(extra: Parameters<typeof mockApi>[0] = {}, me = meOf()) {
   return mockApi({
     'POST /api/v1/auth/refresh': { json: tokenOf() },
     'GET /api/v1/auth/me': { json: me },
     'GET /api/v1/health': { json: healthy },
     'GET /api/v1/blueprints': { json: [exam] },
+    'GET /api/v1/units': { json: UNITS },
     'GET /api/v1/booklets': listOf(),
     ...extra,
   })
-}
-
-/** The file names appended to the upload form, in order (jsdom's File is not fetch's own). */
-function sentFiles(): string[] {
-  const names: string[] = []
-  const append = FormData.prototype.append as (name: string, value: string) => void
-  vi.spyOn(FormData.prototype, 'append').mockImplementation(function (
-    this: FormData,
-    name: string,
-    value: string | Blob,
-    filename?: string,
-  ) {
-    if (name === 'files') names.push(filename ?? '')
-    return append.call(this, name, typeof value === 'string' ? value : 'file')
-  })
-  return names
 }
 
 // ---------------------------------------------------------------------------------------------
 // Step 1: Scan Upload
 // ---------------------------------------------------------------------------------------------
 
-describe('step 1: scan upload', () => {
-  it('shows an SME the submissions of their subjects without upload controls', async () => {
-    signedIn({}, meOf())
+describe('step 1: the booklets of my units', () => {
+  it('shows the three steps, my first unit and its booklets, and no upload controls', async () => {
+    const mock = signedIn()
     renderApp('/evaluate')
-    expect(await screen.findByText(/Scanned booklets are uploaded by your admin/)).toBeVisible()
-    expect(screen.queryByText('Drag & Drop Scanned Student Answer Sheets')).toBeNull()
-    expect(screen.queryByRole('combobox', { name: 'Student' })).toBeNull()
-  })
-
-  const pdf = () => new File(['%PDF-1.7 synthetic'], 'booklet.pdf', { type: 'application/pdf' })
-
-  async function readyToDrop(extra: Parameters<typeof mockApi>[0] = {}) {
-    const mock = signedIn({
-      'GET /api/v1/students': { json: [STUDENT] },
-      ...extra,
-    })
-    const user = userEvent.setup()
-    renderApp('/evaluate')
-    await screen.findByRole('heading', { name: 'AI Automated Answer Evaluation Pipeline' })
-    return { mock, user }
-  }
-
-  async function choose(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(await screen.findByRole('combobox', { name: 'Student' }))
-    await user.click(await screen.findByRole('option', { name: /Test Student One/ }))
-    await user.selectOptions(screen.getByLabelText('Exam'), BLUEPRINT)
-  }
-
-  it('shows the three steps with the first one current, and the drop zone', async () => {
-    await readyToDrop()
+    expect(
+      await screen.findByText(/uploaded by your admin into the units assigned to you/),
+    ).toBeVisible()
     const steps = screen.getByRole('list', { name: 'Evaluation steps' })
     expect(within(steps).getByRole('button', { name: '1. Scan Upload' })).toHaveAttribute(
       'aria-current',
       'step',
     )
-    expect(screen.getByText('Drag & Drop Scanned Student Answer Sheets')).toBeVisible()
-    expect(screen.getByText(/Supports a PDF, or JPEG and PNG/)).toBeVisible()
+    const picker = await screen.findByLabelText('Unit')
+    expect(picker).toHaveValue(UNIT)
+    expect(
+      within(picker)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['U-0001 · PHY-2026-MID · 2024', 'U-0002 · PHY-2026-END · 2025'])
+    expect(
+      await screen.findByRole('article', { name: 'Submission Test Student One' }),
+    ).toBeVisible()
+    expect(screen.queryByText('Drag & Drop Scanned Student Answer Sheets')).toBeNull()
+    expect(mock.callsTo('GET /api/v1/units')[0]?.query.get('state')).toBe('open')
+    expect(mock.callsTo('GET /api/v1/booklets')[0]?.query.get('unit_id')).toBe(UNIT)
+  })
+
+  it('lists the booklets of the unit picked', async () => {
+    const mock = signedIn({
+      'GET /api/v1/booklets': (call) =>
+        call.query.get('unit_id') === 'unit-2'
+          ? listOf([
+              booklet({
+                id: 'b-2',
+                student: { id: 's-2', name: 'Test Student Two', usn: 'TST002' },
+                unit: { id: 'unit-2', code: 'U-0002' },
+              }),
+            ])
+          : listOf(),
+    })
+    const user = userEvent.setup()
+    renderApp('/evaluate')
+    await screen.findByRole('article', { name: 'Submission Test Student One' })
+    await user.selectOptions(screen.getByLabelText('Unit'), 'unit-2')
+    expect(
+      await screen.findByRole('article', { name: 'Submission Test Student Two' }),
+    ).toBeVisible()
+    expect(screen.queryByRole('article', { name: 'Submission Test Student One' })).toBeNull()
+    expect(mock.callsTo('GET /api/v1/booklets').at(-1)?.query.get('unit_id')).toBe('unit-2')
   })
 
   it('lists the submissions with name, USN, pages, status and result, and the right button', async () => {
@@ -149,6 +154,12 @@ describe('step 1: scan upload', () => {
           student: { id: 's-4', name: 'Test Student Four', usn: 'TST004' },
           page_count: 0,
         }),
+        booklet({
+          id: 'b-retake',
+          status: 'needs_retake',
+          flagged_pages: [2],
+          student: { id: 's-5', name: 'Test Student Five', usn: 'TST005' },
+        }),
       ]),
     })
     renderApp('/evaluate')
@@ -169,146 +180,15 @@ describe('step 1: scan upload', () => {
     const failed = screen.getByRole('article', { name: 'Submission Test Student Four' })
     expect(within(failed).getByRole('alert')).toHaveTextContent('The file could not be read.')
     expect(within(failed).queryByRole('button', { name: /Open|Run AI Eval/ })).toBeNull()
-    expect(screen.getByText(/Uploaded Student Answer Submissions \(4\)/)).toBeVisible()
+
+    // Retakes are the admin's (P26): the SME is told, and offered no page decisions.
+    const retake = screen.getByRole('article', { name: 'Submission Test Student Five' })
+    expect(within(retake).getByText('Waiting for a retake by your admin')).toBeVisible()
+    expect(within(retake).queryByRole('button', { name: /anyway|flagged/ })).toBeNull()
+    expect(screen.getByText(/Student Answer Submissions \(5\)/)).toBeVisible()
   })
 
-  it('keeps the drop zone off until a student and an exam are chosen, then uploads', async () => {
-    const mock = signedIn({
-      'GET /api/v1/students': { json: [STUDENT] },
-      'POST /api/v1/booklets': { status: 201, json: booklet({ status: 'uploaded' }) },
-    })
-    const sent = sentFiles()
-    const user = userEvent.setup()
-    renderApp('/evaluate')
-    expect(await screen.findByText('Choose the student first.')).toBeVisible()
-    await user.click(screen.getByRole('combobox', { name: 'Student' }))
-    await user.click(await screen.findByRole('option', { name: /Test Student One/ }))
-    expect(await screen.findByText('Choose the exam first.')).toBeVisible()
-    await user.selectOptions(screen.getByLabelText('Exam'), BLUEPRINT)
-    expect(screen.getByText('PHY-101 · 6 marks · 3 questions')).toBeVisible()
-    expect(screen.queryByText('Choose the exam first.')).toBeNull()
-
-    await user.upload(screen.getByLabelText('Answer sheet files'), pdf())
-    expect(await screen.findByText(/Test Student One: file uploaded/)).toBeVisible()
-    const [post] = mock.callsTo('POST /api/v1/booklets')
-    expect(String(post?.body)).toContain('st-1')
-    expect(String(post?.body)).toContain(BLUEPRINT)
-    expect(sent).toEqual(['booklet.pdf'])
-    expect(String(post?.body)).not.toContain('allow_duplicate')
-  })
-
-  it('refuses a mix of a PDF and images, and two PDFs, before sending anything', async () => {
-    const { mock, user } = await readyToDrop()
-    await choose(user)
-    const input = screen.getByLabelText('Answer sheet files')
-    const png = new File(['x'], 'page1.png', { type: 'image/png' })
-    await user.upload(input, [pdf(), png])
-    expect(await screen.findByRole('alert')).toHaveTextContent('one PDF, or the page images')
-    await user.upload(input, [pdf(), pdf()])
-    expect(await screen.findByRole('alert')).toHaveTextContent('one PDF at a time')
-    expect(mock.callsTo('POST /api/v1/booklets')).toHaveLength(0)
-  })
-
-  it('sends page images in page order', async () => {
-    const { user } = await readyToDrop({
-      'POST /api/v1/booklets': { status: 201, json: booklet({ status: 'uploaded' }) },
-    })
-    const sent = sentFiles()
-    await choose(user)
-    const names = ['IMG_10.jpg', 'IMG_2.jpg', 'IMG_1.jpg']
-    await user.upload(
-      screen.getByLabelText('Answer sheet files'),
-      names.map((n) => new File(['x'], n, { type: 'image/jpeg' })),
-    )
-    await screen.findByText(/3 pages uploaded/)
-    expect(sent).toEqual(['IMG_1.jpg', 'IMG_2.jpg', 'IMG_10.jpg'])
-  })
-
-  it('offers "upload anyway" for a file sent before', async () => {
-    let calls = 0
-    const { mock, user } = await readyToDrop({
-      'POST /api/v1/booklets': () => {
-        calls++
-        return calls === 1
-          ? {
-              status: 409,
-              json: { detail: 'The same file was uploaded before.', duplicate_of: ['b-0'] },
-            }
-          : { status: 201, json: booklet({ status: 'uploaded' }) }
-      },
-    })
-    await choose(user)
-    await user.upload(screen.getByLabelText('Answer sheet files'), pdf())
-    expect(await screen.findByText('The same file was uploaded before.')).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'Upload anyway' }))
-    expect(await screen.findByText(/file uploaded/)).toBeVisible()
-    const second = mock.callsTo('POST /api/v1/booklets')[1]
-    expect(String(second?.body)).toContain('allow_duplicate')
-  })
-
-  it('says why an upload was refused and lets the teacher try again', async () => {
-    const { user } = await readyToDrop({
-      'POST /api/v1/booklets': {
-        status: 429,
-        json: { detail: 'You already have 5 booklets waiting.' },
-      },
-    })
-    await choose(user)
-    await user.upload(screen.getByLabelText('Answer sheet files'), pdf())
-    expect(await screen.findByText('You already have 5 booklets waiting.')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible()
-  })
-
-  it('stops at the queue limit of five waiting booklets', async () => {
-    const { user } = await readyToDrop({
-      'GET /api/v1/booklets': listOf([booklet({ status: 'reading' })], { waiting: 5 }),
-    })
-    await choose(user)
-    expect(await screen.findByText(/You already have 5 booklets waiting/)).toBeVisible()
-    expect(screen.getByRole('button', { name: /Drag and drop scanned/ })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    )
-    expect(screen.getByRole('heading', { name: /Queue \(5 of 5\)/ })).toBeVisible()
-  })
-
-  it('shows the retake reasons of a flagged booklet, and goes on with a page anyway', async () => {
-    let flagged = true
-    const mock = signedIn({
-      'GET /api/v1/booklets': () =>
-        listOf([
-          booklet({
-            status: flagged ? 'needs_retake' : 'pages_ready',
-            flagged_pages: flagged ? [2] : [],
-          }),
-        ]),
-      [`GET ${B}`]: {
-        json: detail({
-          status: 'needs_retake',
-          flagged_pages: [2],
-          pages: [page(1), page(2, { retake_reasons: ['blurry', 'glare'] })],
-        }),
-      },
-      [`GET ${B}/pages/2/image`]: PNG,
-      [`POST ${B}/pages/2/use-anyway`]: () => {
-        flagged = false
-        return { json: booklet({ status: 'pages_ready' }) }
-      },
-    })
-    const user = userEvent.setup()
-    renderApp('/evaluate')
-    await user.click(await screen.findByRole('button', { name: 'Review flagged pages' }))
-    const panel = await screen.findByRole('region', { name: /Retake needed for Test Student One/ })
-    expect(await within(panel).findByText('Page 2')).toBeVisible()
-    expect(within(panel).getByText(/The writing is blurred/)).toBeVisible()
-    expect(within(panel).getByText(/Glare covers part of the page/)).toBeVisible()
-    await user.click(within(panel).getByRole('button', { name: 'Use page 2 anyway' }))
-    expect(await screen.findByText('Going on with page 2.')).toBeVisible()
-    expect(mock.callsTo(`POST ${B}/pages/2/use-anyway`)).toHaveLength(1)
-    await waitFor(() => expect(screen.queryByRole('region', { name: /Retake needed/ })).toBeNull())
-  })
-
-  it('deletes a booklet after asking, and opens one in step 2', async () => {
+  it('deletes a booklet after asking', async () => {
     const mock = signedIn({ [`DELETE ${B}`]: { status: 204 } })
     const user = userEvent.setup()
     renderApp('/evaluate')
@@ -320,10 +200,17 @@ describe('step 1: scan upload', () => {
     await waitFor(() => expect(mock.callsTo(`DELETE ${B}`)).toHaveLength(1))
   })
 
-  it('explains an empty list', async () => {
+  it('explains an empty unit', async () => {
     signedIn({ 'GET /api/v1/booklets': listOf([]) })
     renderApp('/evaluate')
     expect(await screen.findByText('No submissions yet')).toBeVisible()
+  })
+
+  it('says so when no unit is assigned to me', async () => {
+    const mock = signedIn({ 'GET /api/v1/units': { json: [] } })
+    renderApp('/evaluate')
+    expect(await screen.findByText('No units assigned to you')).toBeVisible()
+    expect(mock.callsTo('GET /api/v1/booklets')).toHaveLength(0)
   })
 })
 
@@ -843,7 +730,7 @@ describe('step 2: AI segmentation', () => {
   it('goes back to the submissions, and a stepper click to step 1 does too', async () => {
     const { user } = await openSegments()
     await user.click(screen.getByRole('button', { name: /Submissions/ }))
-    expect(await screen.findByText(/Uploaded Student Answer Submissions/)).toBeVisible()
+    expect(await screen.findByText(/Student Answer Submissions/)).toBeVisible()
   })
 
   it('asks for a booklet when step 2 is opened without one', async () => {

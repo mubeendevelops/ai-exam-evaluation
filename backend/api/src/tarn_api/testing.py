@@ -2,6 +2,7 @@
 
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
+from typing import Any
 
 from tarn_adapters.sheets import PyMuPdfSheetRenderer
 from tarn_api.backends import CollegeScope
@@ -17,6 +18,7 @@ from tarn_core.ports.repositories import (
     ResultSheetRepository,
     ScoreRepository,
     StudentRepository,
+    UnitRepository,
     UserRepository,
 )
 from tarn_core.ports.runtime import Clock, IdGenerator
@@ -55,6 +57,10 @@ class MemoryScope:
     @property
     def entitlements(self) -> EntitlementRepository:
         return self.mem.entitlements
+
+    @property
+    def units(self) -> UnitRepository:
+        return self.mem.units
 
     @property
     def booklets(self) -> BookletRepository:
@@ -102,3 +108,32 @@ class MemoryBackends:
 
     def college(self, college_id: CollegeId) -> AbstractContextManager[CollegeScope]:
         return nullcontext(MemoryScope(self.mem, college_id))
+
+
+def upload_for_paper(
+    client: Any,
+    admin: dict[str, str],
+    paper_id: str,
+    usn: str,
+    pdf: bytes,
+) -> Any:
+    """Tests only. The admin uploads one student's PDF (named by the roll number) into the
+    college's unit of ``paper_id`` (the seed has one per demo paper, P26). Returns the response
+    of ``POST /units/{id}/booklets``."""
+    units = client.get("/api/v1/units", headers=admin).json()
+    unit = next(u for u in units if u["paper"]["id"] == str(paper_id))
+    return client.post(
+        f"/api/v1/units/{unit['id']}/booklets",
+        headers=admin,
+        files=[("files", (f"{usn}.pdf", pdf, "application/pdf"))],
+    )
+
+
+def queued_booklet(response: Any) -> str:
+    """The booklet id of a one-file unit upload that was queued."""
+    if response.status_code != 200:
+        raise AssertionError(response.text)
+    (result,) = response.json()["files"]
+    if result["outcome"] != "queued":
+        raise AssertionError(result)
+    return str(result["booklet_id"])

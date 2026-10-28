@@ -21,9 +21,14 @@ def fake_image(tag: str = "ok") -> bytes:
     return JPEG + tag.encode("ascii")
 
 
-def fake_pdf(pages: int, tag: str = "") -> bytes:
-    """A PDF of ``pages`` pages; ``tag`` makes its bytes (and so its hash) unique."""
-    return b"%PDF-fake:" + str(pages).encode("ascii") + b"#" + tag.encode("ascii")
+def fake_pdf(pages: int, tag: str = "", *, page_tags: tuple[str, ...] = ()) -> bytes:
+    """A PDF of ``pages`` pages; ``tag`` makes its bytes (and so its hash) unique;
+    ``page_tags`` steer the cleaner page by page (``blur``, ``glare``…; default ``p0``,
+    ``p1``…)."""
+    body = b"%PDF-fake:" + str(pages).encode("ascii") + b"#" + tag.encode("ascii")
+    if page_tags:
+        body += b"|" + ",".join(page_tags).encode("ascii")
+    return body
 
 
 class FakePageSplitter:
@@ -33,8 +38,14 @@ class FakePageSplitter:
         count = int(data.split(b":")[1].split(b"#")[0])
         if count > max_pages:
             raise InvariantError("too many pages")
+        _, bar, tags = data.partition(b"|")
+        names = tags.decode("ascii").split(",") if bar else []
         return [
-            PageImage(index=i, data=fake_image(f"p{i}"), media_type="image/jpeg")
+            PageImage(
+                index=i,
+                data=fake_image(names[i] if i < len(names) else f"p{i}"),
+                media_type="image/jpeg",
+            )
             for i in range(count)
         ]
 

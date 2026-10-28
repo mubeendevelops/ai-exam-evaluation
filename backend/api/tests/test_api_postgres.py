@@ -6,6 +6,7 @@ throwaway identity database (``make up`` first; ``make test-integration``)."""
 from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -18,6 +19,7 @@ from tarn_adapters.ocr.transform import OpenCvPageTransform
 from tarn_adapters.postgres.testing import create_test_database, drop_test_database
 from tarn_api.app import create_app
 from tarn_api.backends import PostgresBackends
+from tarn_api.testing import queued_booklet
 from tarn_core.domain.booklet import RegionKind
 from tarn_core.domain.common import Box
 from tarn_core.domain.ocr import SelectorSettings
@@ -219,7 +221,7 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
     from tarn_core.domain.common import BlobKey
     from tarn_core.ids import CollegeId
     from tarn_core.services.pipeline import QualityPolicy
-    from tarn_core.testing.builders import CollegeFixture, ci_shaped_blueprint
+    from tarn_core.testing.builders import CollegeFixture, ci_shaped_blueprint, unit_for
     from tarn_worker.booklets import BookletJobRunner
 
     client, mailer = setup
@@ -230,7 +232,7 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
     college_id = CollegeId(UUID(me["user"]["college_id"]))
     csv = "name,usn,class/section\nSynthetic Student,1BK21CS001,A\n"
     client.post("/api/v1/roster/import", content=csv, headers=a | {"Content-Type": "text/csv"})
-    student = client.get("/api/v1/students", headers=a).json()[0]["id"]
+    assert client.get("/api/v1/students", headers=a).json()[0]["usn"] == "1BK21CS001"
     ids, clock = UuidGenerator(), SystemClock()
     sme = _teacher(client, mailer, a, "PG_BK", "sme@pg-bk.example")  # opens the pages
     with backends._app.session(college_id, ids=ids, clock=clock, blobs=backends._blobs) as s:
@@ -244,6 +246,7 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
                 students=(),
             ),
         )
+        unit = unit_for(s, college_id, blueprint.id)  # owned by the SME (P26)
 
     page = synth.ruled_page(900, 1200, lines=10)
     document = pymupdf.open()
@@ -255,19 +258,18 @@ def test_booklet_upload_worker_and_status_with_real_database_and_minio(
         sheet.insert_image(sheet.rect, stream=synth.jpeg(shot))
     pdf: bytes = document.tobytes()
 
-    def upload(**extra: str) -> object:
+    def upload() -> Any:
         return client.post(
-            "/api/v1/booklets",
+            f"/api/v1/units/{unit}/booklets",
             headers=a,
-            data={"student_id": student, "blueprint_id": str(blueprint.id), **extra},
-            files=[("files", ("booklet.pdf", pdf, "application/pdf"))],
+            files=[("files", ("1bk21cs001.pdf", pdf, "application/pdf"))],
         )
 
-    created = upload()
-    assert created.status_code == 201, created.text  # type: ignore[attr-defined]
-    booklet = created.json()  # type: ignore[attr-defined]
+    booklet_id = queued_booklet(upload())
+    booklet = client.get(f"/api/v1/booklets/{booklet_id}", headers=a).json()
     assert booklet["status"] == "uploaded" and booklet["student"]["usn"] == "1BK21CS001"
-    assert upload().status_code == 409  # type: ignore[attr-defined]  # same file again
+    again = upload().json()["files"][0]
+    assert again["problem"] == "already_in_unit"  # the same student again
 
     runner = BookletJobRunner(
         db=backends._app,

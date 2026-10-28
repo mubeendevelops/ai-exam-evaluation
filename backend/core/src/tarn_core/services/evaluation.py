@@ -23,11 +23,11 @@ from tarn_core.domain.review import ResultLine, ResultSheet
 from tarn_core.domain.scoring import AnswerScore
 from tarn_core.errors import NotFoundError
 from tarn_core.ids import (
-    BlueprintId,
     BookletId,
     CollegeId,
     ResultSheetId,
     StudentId,
+    UnitId,
     UserId,
 )
 from tarn_core.ports.rendering import SheetRenderer
@@ -212,10 +212,11 @@ class BookletEvaluation:
         actor_id: UserId,
         *,
         student_id: StudentId,
-        blueprint_id: BlueprintId,
+        unit_id: UnitId,
         use_anyway: bool = False,
     ) -> Evaluated:
-        """Register the source's booklet for the student and exam, process it, and report.
+        """Register the source's booklet for the student in the unit (its exam), process it,
+        and report.
 
         A page the quality gate flags stops the run with the booklet in ``needs_retake`` and
         the pages named in the result; ``use_anyway`` goes on with them (the teacher's "use
@@ -229,7 +230,7 @@ class BookletEvaluation:
             college_id,
             actor_id,
             student_id=student_id,
-            blueprint_id=blueprint_id,
+            unit_id=unit_id,
             files=files,
             allow_duplicate=True,
             booklet_id=booklet_id,

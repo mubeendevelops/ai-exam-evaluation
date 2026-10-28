@@ -24,6 +24,7 @@ from tarn_core.ids import (
     RegionId,
     SegmentId,
     StudentId,
+    UnitId,
     UserId,
 )
 
@@ -126,6 +127,8 @@ class Booklet:
     id: BookletId
     college_id: CollegeId
     student_id: StudentId
+    unit_id: UnitId
+    """The unit of work the booklet was uploaded into (P26, D162)."""
     blueprint: ContentRef
     file_sha256: str
     uploaded_by: UserId

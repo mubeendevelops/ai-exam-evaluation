@@ -32,6 +32,7 @@ _SMES = _needs(C.MANAGE_SMES)
 _SUBJECTS = _needs(C.MANAGE_SUBJECTS)
 _STUDENTS = _needs(C.MANAGE_STUDENTS)
 _UPLOAD = _needs(C.UPLOAD_BOOKLETS)
+_ASSIGN = _needs(C.ASSIGN_UNITS)
 _PROGRESS = _needs(C.VIEW_PROGRESS)
 _AUTHOR = _needs(C.AUTHOR_CONTENT)
 _EVALUATE = _needs(C.EVALUATE)
@@ -71,10 +72,21 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("GET", "/api/v1/students"): _STUDENTS,
     ("POST", "/api/v1/students"): _STUDENTS,
     ("PUT", "/api/v1/students/{student_id}"): _STUDENTS,
-    ("POST", "/api/v1/booklets"): _UPLOAD,
+    ("GET", "/api/v1/units/papers"): _ASSIGN,
+    ("GET", "/api/v1/units/smes"): _ASSIGN,
+    ("POST", "/api/v1/units"): _ASSIGN,
+    ("POST", "/api/v1/units/{unit_id}/booklets"): _UPLOAD,
+    ("POST", "/api/v1/booklets/{booklet_id}/replace"): _UPLOAD,
+    ("POST", "/api/v1/booklets/{booklet_id}/pages/{number}/use-anyway"): _UPLOAD,
     # --- progress: admin and SME, no marks for the admin (D167) -------------------------------
     ("GET", "/api/v1/booklets"): _PROGRESS,
     ("GET", "/api/v1/booklets/{booklet_id}"): _PROGRESS,
+    ("GET", "/api/v1/units"): _PROGRESS,
+    ("GET", "/api/v1/units/{unit_id}"): _PROGRESS,
+    # A flagged page's cleaned image: the SME, and the admin while it waits for a retake (P26).
+    ("GET", "/api/v1/booklets/{booklet_id}/pages/{number}/image"): _needs(
+        C.EVALUATE, C.UPLOAD_BOOKLETS
+    ),
     # --- the SME's content (D165, D178) -------------------------------------------------------
     ("POST", "/api/v1/blueprints/validate"): _AUTHOR,
     ("GET", "/api/v1/blueprints"): _AUTHOR,
@@ -101,9 +113,7 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("POST", "/api/v1/questions/{question_id}/diagrams/{diagram_id}/recognize"): _AUTHOR,
     # --- the SME's evaluation: pages, text, marks, reviews, sheets (never the admin, D167) ----
     ("DELETE", "/api/v1/booklets/{booklet_id}"): _EVALUATE,
-    ("GET", "/api/v1/booklets/{booklet_id}/pages/{number}/image"): _EVALUATE,
     ("GET", "/api/v1/booklets/{booklet_id}/pages/{number}/text"): _EVALUATE,
-    ("POST", "/api/v1/booklets/{booklet_id}/pages/{number}/use-anyway"): _EVALUATE,
     ("GET", "/api/v1/booklets/{booklet_id}/diagrams"): _EVALUATE,
     ("POST", "/api/v1/booklets/{booklet_id}/diagrams/{diagram_id}/edits"): _EVALUATE,
     ("GET", "/api/v1/booklets/{booklet_id}/answers/{answer_id}/diagram-comparisons"): _EVALUATE,
@@ -162,9 +172,17 @@ _OWN_BODIES: Mapping[tuple[str, str], Callable[[World], dict[str, Any]]] = {
             "difficulty": "easy",
         }
     },
-    ("POST", "/api/v1/booklets"): lambda w: {
-        "data": {"student_id": w.ids["student_id"], "blueprint_id": w.ids["blueprint_id"]},
-        "files": [("files", ("p.pdf", fake_pdf(1, "persona"), "application/pdf"))],
+    ("POST", "/api/v1/units"): lambda w: {
+        "json": {
+            "paper_id": w.ids["blueprint_id"],
+            "year": "Persona",
+            "owner_id": w.ids["user_id"],
+            "due_date": "2030-01-01",
+        }
+    },
+    ("POST", "/api/v1/units/{unit_id}/booklets"): lambda w: {
+        # Named by no roll number: the file is refused, the request is allowed (200).
+        "files": [("files", ("persona.pdf", fake_pdf(1, "persona"), "application/pdf"))],
     },
 }
 

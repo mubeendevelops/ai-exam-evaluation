@@ -27,6 +27,7 @@ from tarn_api.routes import (
     review,
     roster,
     segments,
+    units,
 )
 from tarn_core.services.question_bank import DIAGRAM_MAX_BYTES, KEY_FILE_MAX_BYTES
 
@@ -111,6 +112,7 @@ def create_app(
         roster,
         blueprints,
         questions,
+        units,
         booklets,
         diagrams,
         evaluated,

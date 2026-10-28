@@ -160,7 +160,7 @@ def test_booklet_uploads_get_their_own_cap(backends: MemoryBackends) -> None:
     settings = Settings(_env_file=None, device="cpu", upload_max_bytes=1024)
     with TestClient(create_app(settings, backends=backends)) as client:
         response = client.post(
-            "/api/v1/booklets",
+            "/api/v1/units/00000000-0000-0000-0000-000000000001/booklets",
             content=_chunks(3 * 1024 * 1024),
             headers={"content-type": "multipart/form-data; boundary=x"},
         )

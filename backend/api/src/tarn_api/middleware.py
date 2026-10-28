@@ -3,8 +3,9 @@
 **Body caps.** Starlette spools a multipart upload whole before a route sees it, and
 ``request.body()`` reads any length, so a route's own size check comes too late (and a chunked
 request has no Content-Length to check). ``BodyLimit`` counts the bytes as they arrive and stops
-at the cap with 413: booklet uploads may carry ``upload_max_bytes`` (plus room for the form),
-key files and reference diagrams their own limit, everything else (JSON, the roster CSV) 2 MiB.
+at the cap with 413: unit uploads and replacements may carry ``upload_max_bytes`` (plus room
+for the form), key files and reference diagrams their own limit, everything else (JSON, the
+roster CSV) 2 MiB.
 
 **Headers.** Every API response is ``nosniff``, never framed, sends no referrer, and is not
 cached unless the route says otherwise (responses hold student data). Production adds HSTS.
@@ -31,7 +32,8 @@ class BodyRule:
 
 def body_rules(upload_max_bytes: int, key_file_bytes: int, diagram_bytes: int) -> list[BodyRule]:
     return [
-        BodyRule("POST", re.compile(r"^/api/v1/booklets$"), upload_max_bytes + MIB),
+        BodyRule("POST", re.compile(r"^/api/v1/units/[^/]+/booklets$"), upload_max_bytes + MIB),
+        BodyRule("POST", re.compile(r"^/api/v1/booklets/[^/]+/replace$"), upload_max_bytes + MIB),
         BodyRule("POST", re.compile(r"^/api/v1/questions/[^/]+/key-files$"), key_file_bytes + MIB),
         BodyRule("POST", re.compile(r"^/api/v1/questions/[^/]+/diagrams$"), diagram_bytes + MIB),
     ]

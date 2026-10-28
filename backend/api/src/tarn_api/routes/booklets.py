@@ -1,8 +1,8 @@
-"""Booklets: upload (one PDF, or a set of images; the admin's job, D162), the page-cleaning
-and reading status the UI shows (admin and SMEs: ``view_progress``; the admin sees no marks,
-page images or text, D167), the cleaned and original page images, what OCR read on a page, and
-the SME's "use anyway" and delete (``evaluate``). An SME sees the booklets of their subjects
-only; a booklet's subject is its paper's (D178)."""
+"""Booklets: the page-cleaning and reading status the UI shows (admin and SMEs:
+``view_progress``; the admin sees no marks, page images or text, D167), the cleaned and
+original page images, what OCR read on a page, the admin's "use anyway" and retake (replace)
+(``upload_booklets``, P26) and the SME's delete (``evaluate``). Booklets are uploaded into a
+unit (``routes/units.py``). An SME sees the booklets of the units they own only (P26)."""
 
 from typing import Annotated, Literal
 from uuid import UUID
@@ -10,7 +10,6 @@ from uuid import UUID
 from fastapi import (
     APIRouter,
     File,
-    Form,
     HTTPException,
     Query,
     Request,
@@ -28,6 +27,7 @@ from tarn_api.schemas import (
     BookletResultOut,
     BookletStatusName,
     BookletStudentOut,
+    BookletUnitOut,
     ErrorOut,
     PageOut,
     PageTextOut,
@@ -36,12 +36,12 @@ from tarn_api.schemas import (
 )
 from tarn_api.security import BackendsDep, PrincipalDep, booklet_user, current_user
 from tarn_core.domain.blueprint import ExamBlueprint
-from tarn_core.domain.booklet import Booklet, Page, Region
+from tarn_core.domain.booklet import Booklet, BookletStatus, Page, Region
 from tarn_core.domain.common import BlobKey
 from tarn_core.domain.personas import CAPABILITIES, Capability
 from tarn_core.domain.tenancy import User
 from tarn_core.errors import UploadTooLargeError
-from tarn_core.ids import BlueprintId, BookletId, CollegeId, StudentId
+from tarn_core.ids import BookletId, CollegeId, UnitId
 
 router = APIRouter(
     prefix="/api/v1",
@@ -52,14 +52,22 @@ router = APIRouter(
 _MEDIA = {"jpg": "image/jpeg", "png": "image/png"}
 
 
-def _evaluator(user: User) -> bool:
+def is_evaluator(user: User) -> bool:
     """Marks, page images and text are for the SME (D167)."""
     return Capability.EVALUATE in CAPABILITIES[user.role]
 
 
-def _page_out(base: str, page: Page, evaluator: bool = True) -> PageOut:
+def _retake_image(booklet: Booklet, page: Page) -> bool:
+    """The admin may see a page's cleaned image only while it holds a retake back (P26)."""
+    return booklet.status is BookletStatus.NEEDS_RETAKE and page.needs_retake and page.cleaned
+
+
+def _page_out(
+    base: str, page: Page, evaluator: bool = True, booklet: Booklet | None = None
+) -> PageOut:
     m = page.metrics
     number = page.index + 1
+    shown = evaluator or (booklet is not None and _retake_image(booklet, page))
     return PageOut(
         number=number,
         cleaned=page.cleaned,
@@ -76,7 +84,7 @@ def _page_out(base: str, page: Page, evaluator: bool = True) -> PageOut:
         perspective_corrected=None if m is None else m.perspective_corrected,
         neighbour_removed=None if m is None else m.neighbour_removed,
         page_found=None if m is None else m.page_found,
-        image_url=f"{base}/pages/{number}/image" if page.cleaned and evaluator else None,
+        image_url=f"{base}/pages/{number}/image" if page.cleaned and shown else None,
         original_url=(
             f"{base}/pages/{number}/image?kind=original" if page.original and evaluator else None
         ),
@@ -87,7 +95,7 @@ def _page_out(base: str, page: Page, evaluator: bool = True) -> PageOut:
     )
 
 
-def _booklet_out(
+def booklet_out(
     unit: Unit,
     college_id: CollegeId,
     booklet: Booklet,
@@ -100,10 +108,12 @@ def _booklet_out(
     blueprint = unit.scope.content.get(
         college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
     )
+    work = unit.scope.units.get(college_id, booklet.unit_id)
     out = BookletOut(
         id=booklet.id,
         status=booklet.status.value,
         student=BookletStudentOut(id=student.id, name=student.name, usn=student.usn),
+        unit=BookletUnitOut(id=work.id, code=work.code),
         blueprint=BookletBlueprintOut(
             id=blueprint.id, version=blueprint.meta.version, title=blueprint.title
         ),
@@ -130,70 +140,6 @@ def _booklet_out(
     return out, pages
 
 
-@router.post(
-    "/booklets",
-    response_model=BookletOut,
-    status_code=status.HTTP_201_CREATED,
-    responses={
-        409: {
-            "description": "The same file was uploaded before (`duplicate_of` lists the booklets)"
-        },
-        413: {"model": ErrorOut},
-        415: {"model": ErrorOut},
-        429: {"model": ErrorOut, "description": "You already have the maximum waiting"},
-    },
-    summary="Upload a booklet: one PDF, or the page images in order",
-    description="`files` is one PDF, or JPEG/PNG images in page order (the order sent is the "
-    "page order). The type is judged from the file's content. The booklet is queued for page "
-    "cleaning (status `uploaded`). The same file hash within the college is refused with 409 "
-    "unless `allow_duplicate` is true; a teacher may have a limited number of booklets "
-    "waiting (429 beyond it).",
-)
-async def upload_booklet(
-    request: Request,
-    who: PrincipalDep,
-    backends: BackendsDep,
-    student_id: Annotated[UUID, Form()],
-    blueprint_id: Annotated[UUID, Form()],
-    files: Annotated[list[UploadFile], File(description="One PDF, or images in page order")],
-    allow_duplicate: Annotated[bool, Form()] = False,
-) -> BookletOut:
-    limits = backends.upload_limits
-    declared = request.headers.get("content-length")
-    if declared and declared.isdigit() and int(declared) > limits.max_total_bytes + 1024 * 1024:
-        raise UploadTooLargeError(
-            f"The upload is larger than {limits.max_total_bytes // (1024 * 1024)} MB."
-        )
-    data: list[bytes] = []
-    total = 0
-    for upload in files:
-        content = await upload.read(limits.max_total_bytes + 1)
-        total += len(content)
-        if total > limits.max_total_bytes:
-            raise UploadTooLargeError(
-                f"The upload is larger than {limits.max_total_bytes // (1024 * 1024)} MB."
-            )
-        data.append(content)
-    with unit_of_work(backends, who.college_id) as unit:
-        user = current_user(unit, who, Capability.UPLOAD_BOOKLETS)
-        registration = unit.uploads.upload(
-            who.college_id,
-            who.user_id,
-            student_id=StudentId(student_id),
-            blueprint_id=BlueprintId(blueprint_id),
-            files=data,
-            allow_duplicate=allow_duplicate,
-        )
-        out, _ = _booklet_out(
-            unit,
-            who.college_id,
-            registration.booklet,
-            duplicates=tuple(registration.duplicates),
-            evaluator=_evaluator(user),
-        )
-    return out
-
-
 @router.get(
     "/booklets",
     response_model=BookletPageOut,
@@ -203,6 +149,7 @@ def list_booklets(
     who: PrincipalDep,
     backends: BackendsDep,
     mine: Annotated[bool, Query(description="Only booklets I uploaded")] = False,
+    unit_id: Annotated[UUID | None, Query(description="Only the booklets of this unit")] = None,
     booklet_status: Annotated[
         BookletStatusName | None,
         Query(alias="status"),
@@ -219,12 +166,13 @@ def list_booklets(
             b
             for b in visible
             if (not mine or b.uploaded_by == who.user_id)
+            and (unit_id is None or b.unit_id == UnitId(unit_id))
             and (booklet_status is None or b.status.value == booklet_status)
         ]
         every.sort(key=lambda b: (b.uploaded_at, str(b.id)), reverse=True)
-        evaluator = _evaluator(user)
+        evaluator = is_evaluator(user)
         items = [
-            _booklet_out(unit, who.college_id, b, evaluator=evaluator)[0]
+            booklet_out(unit, who.college_id, b, evaluator=evaluator)[0]
             for b in every[offset : offset + limit]
         ]
         waiting = unit.scope.booklets.count_waiting(who.college_id, who.user_id)
@@ -248,11 +196,11 @@ def get_booklet(booklet_id: UUID, who: PrincipalDep, backends: BackendsDep) -> B
     with unit_of_work(backends, who.college_id) as unit:
         user = booklet_user(unit, who, Capability.VIEW_PROGRESS, booklet_id)
         booklet = unit.scope.booklets.get(who.college_id, BookletId(booklet_id))
-        evaluator = _evaluator(user)
-        out, pages = _booklet_out(unit, who.college_id, booklet, evaluator=evaluator)
+        evaluator = is_evaluator(user)
+        out, pages = booklet_out(unit, who.college_id, booklet, evaluator=evaluator)
     base = f"/api/v1/booklets/{booklet_id}"
     return BookletDetailOut(
-        **out.model_dump(), pages=[_page_out(base, p, evaluator) for p in pages]
+        **out.model_dump(), pages=[_page_out(base, p, evaluator, booklet) for p in pages]
     )
 
 
@@ -260,6 +208,8 @@ def get_booklet(booklet_id: UUID, who: PrincipalDep, backends: BackendsDep) -> B
     "/booklets/{booklet_id}/pages/{number}/image",
     responses={200: {"content": {"image/jpeg": {}, "image/png": {}}}, 404: {"model": ErrorOut}},
     summary="The cleaned page image (or the original with `kind=original`)",
+    description="For the SME. The admin may fetch the cleaned image of a page that holds a "
+    "retake back, while the booklet waits for the retake (P26); anything else is 404.",
 )
 def page_image(
     booklet_id: UUID,
@@ -269,11 +219,15 @@ def page_image(
     kind: Annotated[Literal["cleaned", "original"], Query()] = "cleaned",
 ) -> Response:
     with unit_of_work(backends, who.college_id) as unit:
-        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
+        user = current_user(unit, who, Capability.EVALUATE, Capability.UPLOAD_BOOKLETS)
+        booklet = unit.access.booklet(who.college_id, unit.reach(user), BookletId(booklet_id))
         pages = unit.scope.booklets.pages(who.college_id, BookletId(booklet_id))
         page = next((p for p in pages if p.index + 1 == number), None)
         key: BlobKey | None = None
-        if page is not None:
+        if page is not None and not is_evaluator(user):
+            if kind == "cleaned" and _retake_image(booklet, page):
+                key = page.image
+        elif page is not None:
             key = page.original if kind == "original" else (page.image if page.cleaned else None)
         if key is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found.")
@@ -361,12 +315,63 @@ def use_page_anyway(
     booklet_id: UUID, number: int, who: PrincipalDep, backends: BackendsDep
 ) -> BookletOut:
     with unit_of_work(backends, who.college_id) as unit:
-        booklet_user(unit, who, Capability.EVALUATE, booklet_id)
+        user = booklet_user(unit, who, Capability.UPLOAD_BOOKLETS, booklet_id)
         booklet = unit.page_decisions.use_anyway(
             who.college_id, who.user_id, BookletId(booklet_id), number - 1
         )
-        out, _ = _booklet_out(unit, who.college_id, booklet)
+        out, _ = booklet_out(unit, who.college_id, booklet, evaluator=is_evaluator(user))
     return out
+
+
+@router.post(
+    "/booklets/{booklet_id}/replace",
+    response_model=BookletOut,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        404: {"model": ErrorOut},
+        409: {"model": ErrorOut, "description": "The booklet is not waiting for a retake"},
+        413: {"model": ErrorOut},
+        422: {"model": ErrorOut},
+    },
+    summary="Retake: replace a booklet that needs a retake, or failed, with a new PDF",
+    description="The old booklet is deleted (a content-free deletion record stays) and the new "
+    "PDF is queued for the same student in the same unit, in one transaction. Everything is "
+    "checked before anything is deleted.",
+)
+async def replace_booklet(
+    booklet_id: UUID,
+    request: Request,
+    who: PrincipalDep,
+    backends: BackendsDep,
+    file: Annotated[UploadFile, File(description="The new PDF")],
+) -> BookletOut:
+    data = await read_capped(request, [file], backends.upload_limits.max_total_bytes)
+    with unit_of_work(backends, who.college_id) as unit:
+        user = booklet_user(unit, who, Capability.UPLOAD_BOOKLETS, booklet_id)
+        new_id = unit.unit_uploads.replace(
+            who.college_id, who.user_id, BookletId(booklet_id), data[0]
+        )
+        booklet = unit.scope.booklets.get(who.college_id, new_id)
+        out, _ = booklet_out(unit, who.college_id, booklet, evaluator=is_evaluator(user))
+    return out
+
+
+async def read_capped(request: Request, files: list[UploadFile], max_bytes: int) -> list[bytes]:
+    """The files' bytes, refusing a request larger than ``max_bytes`` (plus room for the form)
+    before reading, and again while reading."""
+    too_large = f"The upload is larger than {max_bytes // (1024 * 1024)} MB."
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > max_bytes + 1024 * 1024:
+        raise UploadTooLargeError(too_large)
+    data: list[bytes] = []
+    total = 0
+    for upload in files:
+        content = await upload.read(max_bytes + 1)
+        total += len(content)
+        if total > max_bytes:
+            raise UploadTooLargeError(too_large)
+        data.append(content)
+    return data
 
 
 @router.delete(

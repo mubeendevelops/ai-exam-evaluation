@@ -31,8 +31,10 @@ from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
 from tarn_core.domain.tenancy import College, Student, SubjectGrant, User
+from tarn_core.domain.unit import Unit, UnitState
 from tarn_core.ids import (
     AnswerId,
+    BlueprintId,
     BookletId,
     CollegeId,
     PageId,
@@ -40,6 +42,7 @@ from tarn_core.ids import (
     SegmentId,
     StudentId,
     SubjectId,
+    UnitId,
     UserId,
 )
 
@@ -174,6 +177,37 @@ class EntitlementRepository(Protocol):
     def revoke(self, college_id: CollegeId, user_id: UserId, subject_id: SubjectId) -> None: ...
 
 
+class UnitRepository(Protocol):
+    """Units of work (P26). A college repository."""
+
+    def get(self, college_id: CollegeId, unit_id: UnitId) -> Unit: ...
+
+    def list(
+        self,
+        college_id: CollegeId,
+        *,
+        subject_id: SubjectId | None = None,
+        owner_id: UserId | None = None,
+        state: UnitState | None = None,
+    ) -> Sequence[Unit]:
+        """Oldest first."""
+        ...
+
+    def find(self, college_id: CollegeId, paper_id: BlueprintId, year: str) -> Unit | None:
+        """The unit of this paper and year (compared without regard to case), if any."""
+        ...
+
+    def count(self, college_id: CollegeId) -> int:
+        """Units the college has ever made (codes are numbered from it)."""
+        ...
+
+    def save(self, college_id: CollegeId, unit: Unit) -> None:
+        """Insert, or update the stored unit when ``unit.version`` is one more than its
+        version (``StaleWriteError`` otherwise). A code or (paper, year) already taken is
+        ``AlreadyExistsError``."""
+        ...
+
+
 class StudentRepository(Protocol):
     """The roster."""
 
@@ -199,6 +233,10 @@ class BookletRepository(Protocol):
     def list(self, college_id: CollegeId) -> Sequence[Booklet]: ...
 
     def find_by_hash(self, college_id: CollegeId, file_sha256: str) -> Sequence[Booklet]: ...
+
+    def in_unit(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[Booklet]:
+        """The unit's booklets, oldest first."""
+        ...
 
     def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:
         """Booklets this user uploaded that are still queued or being processed."""

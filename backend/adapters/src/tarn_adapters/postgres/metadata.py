@@ -9,6 +9,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    Date,
     DateTime,
     Double,
     Identity,
@@ -173,6 +174,7 @@ exam_blueprints = _versioned(
     _uuid("subject_id"),
     _text("title"),
     Column("course_code", Text(), nullable=False, server_default=""),
+    Column("exam_code", Text(), nullable=False, server_default=""),  # 0014 (P26)
     Column("duration_minutes", Integer(), nullable=True),
     _num("total_marks"),
     _num("mark_step"),
@@ -236,6 +238,27 @@ students = Table(
     _text("class_section"),
 )
 
+# Units of work (P26, migration 0014, D162).
+units = Table(
+    "units",
+    metadata,
+    _uuid("college_id", primary_key=True),
+    _uuid("id", primary_key=True),
+    _text("code"),
+    _uuid("paper_id"),
+    Column("paper_version", Integer(), nullable=False, server_default="1"),
+    _uuid("subject_id"),
+    Column("subject_version", Integer(), nullable=False, server_default="1"),
+    _text("year"),
+    _uuid("owner_id"),
+    Column("due_date", Date(), nullable=False),
+    Column("state", Text(), nullable=False, server_default="open"),
+    _uuid("created_by", nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("version", Integer(), nullable=False, server_default="1"),
+    _seq(),
+)
+
 booklets = Table(
     "booklets",
     metadata,
@@ -252,6 +275,7 @@ booklets = Table(
     Column("sources", JSONB(), nullable=False),
     _text("failure_reason", nullable=True),
     _seq(),
+    _uuid("unit_id"),  # 0014
 )
 
 pages = Table(
@@ -570,6 +594,7 @@ COLLEGE_TABLES: tuple[Table, ...] = (
     users,
     sme_subjects,
     students,
+    units,
     booklets,
     pages,
     regions,

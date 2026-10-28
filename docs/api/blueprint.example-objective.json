@@ -1,7 +1,8 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "title": "Synthetic paper, objective, worked and diagram sections",
   "course_code": "SYN-OBJ",
+  "exam_code": "",
   "subject_id": "00000000-0000-4000-8000-000000000001",
   "duration_minutes": 90,
   "total_marks": 30,

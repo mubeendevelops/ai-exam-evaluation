@@ -21,6 +21,7 @@ OcrCalibrationId = NewType("OcrCalibrationId", UUID)
 ScoringCalibrationId = NewType("ScoringCalibrationId", UUID)
 
 # College data
+UnitId = NewType("UnitId", UUID)
 BookletId = NewType("BookletId", UUID)
 PageId = NewType("PageId", UUID)
 RegionId = NewType("RegionId", UUID)

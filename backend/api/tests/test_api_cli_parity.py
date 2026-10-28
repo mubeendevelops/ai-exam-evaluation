@@ -18,7 +18,7 @@ from tarn_adapters.sources import FolderPageSource
 from tarn_adapters.stages import LocalStageRunner
 from tarn_adapters.testing import scripted_stages
 from tarn_api.app import create_app
-from tarn_api.testing import MemoryBackends
+from tarn_api.testing import MemoryBackends, queued_booklet, upload_for_paper
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.ids import BookletId
 from tarn_core.seed import DEV_PASSWORD
@@ -26,6 +26,7 @@ from tarn_core.testing import (
     InMemory,
     fake_pdf,
 )
+from tarn_core.testing.builders import unit_for
 from tarn_core.testing.seed_world import SeededCollege, seed_in_memory, seeded_blueprints
 
 BASE = "/api/v1"
@@ -56,7 +57,7 @@ def cli_result(tmp_path: Path) -> tuple[dict[str, Any], bytes]:
         college.accounts.college_id,
         college.accounts.sme_ids[0],
         student_id=mem.students.list(college.accounts.college_id)[0].id,
-        blueprint_id=qp_ci(mem).id,
+        unit_id=unit_for(mem, college.accounts.college_id, qp_ci(mem).id),
     )
     assert done.sheet_pdf is not None
     return json.loads(json.dumps(done.result.as_json())), done.sheet_pdf
@@ -76,14 +77,9 @@ def api_review(client: TestClient, backends: MemoryBackends) -> dict[str, Any]:
 
     headers, admin = login(TEACHER), login(ADMIN)
     students = client.get(f"{BASE}/students", headers=admin).json()
-    upload = client.post(
-        f"{BASE}/booklets",
-        headers=admin,  # the admin uploads (D162), the SME reviews
-        data={"student_id": students[0]["id"], "blueprint_id": str(qp_ci(mem).id)},
-        files=[("files", ("pages.pdf", fake_pdf(1), "application/pdf"))],
-    )
-    assert upload.status_code in (200, 201, 202), upload.text
-    booklet_id = BookletId(UUID(upload.json()["id"]))
+    # The admin uploads into the seed's QP-CI unit (D162, P26); its SME reviews.
+    upload = upload_for_paper(client, admin, str(qp_ci(mem).id), students[0]["usn"], fake_pdf(1))
+    booklet_id = BookletId(UUID(queued_booklet(upload)))
     # What the worker does with the queued job: the same stages, on the same in-memory queue.
     errors = LocalStageRunner(scripted_stages(mem.blobs), mem).run(
         college.accounts.college_id, booklet_id

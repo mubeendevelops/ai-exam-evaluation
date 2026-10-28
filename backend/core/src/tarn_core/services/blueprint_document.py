@@ -31,7 +31,10 @@ from tarn_core.domain.content import ContentMeta
 from tarn_core.errors import InvariantError
 from tarn_core.ids import BlueprintId, QuestionId, SubjectId
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
+SCHEMA_VERSIONS = ("1.0", "1.1")
+"""1.1 (P26) adds the optional ``exam_code``; 1.0 documents are read as before (no code)."""
+MAX_EXAM_CODE = 50
 NEGATIVE_MARKING_VALUES = (Decimal(0), Decimal("0.25"), Decimal("0.5"))
 MARK_STEPS = (Decimal("0.25"), Decimal("0.5"), Decimal(1))
 DEFAULT_MARK_STEP = Decimal("0.5")
@@ -56,6 +59,7 @@ _TOP_KEYS = (
     "schema_version",
     "title",
     "course_code",
+    "exam_code",
     "subject_id",
     "duration_minutes",
     "total_marks",
@@ -115,6 +119,7 @@ class ParsedBlueprint:
     subject_id: SubjectId
     title: str
     course_code: str
+    exam_code: str = ""
     duration_minutes: int | None
     total_marks: Decimal
     mark_step: Decimal
@@ -127,6 +132,7 @@ class ParsedBlueprint:
             subject_id=self.subject_id,
             title=self.title,
             course_code=self.course_code,
+            exam_code=self.exam_code,
             duration_minutes=self.duration_minutes,
             total_marks=self.total_marks,
             mark_step=self.mark_step,
@@ -250,10 +256,13 @@ class _Checker:
         if top is None:
             return self.report(None, ())
         version = top.get("schema_version")
-        if version != SCHEMA_VERSION:
-            self.bad("schema_version", f'must be "{SCHEMA_VERSION}"')
+        if version not in SCHEMA_VERSIONS:
+            self.bad("schema_version", f'must be "{SCHEMA_VERSION}" (or "1.0")')
         title = self.text(top, "title", "")
         course_code = self.text(top, "course_code", "")
+        exam_code = self.text(top, "exam_code", "", required=False) or ""
+        if len(exam_code) > MAX_EXAM_CODE:
+            self.bad("exam_code", f"is longer than {MAX_EXAM_CODE} characters")
         subject_id = self.subject(top)
         duration = self.duration(top)
         total = self.total(top)
@@ -317,6 +326,7 @@ class _Checker:
                 subject_id=subject_id,
                 title=title,
                 course_code=course_code,
+                exam_code=exam_code,
                 duration_minutes=duration,
                 total_marks=total,
                 mark_step=mark_step,
@@ -679,6 +689,7 @@ def blueprint_to_document(blueprint: ExamBlueprint) -> dict[str, JsonValue]:
         "schema_version": SCHEMA_VERSION,
         "title": blueprint.title,
         "course_code": blueprint.course_code,
+        "exam_code": blueprint.exam_code,
         "subject_id": str(blueprint.subject_id),
         "duration_minutes": blueprint.duration_minutes,
         "total_marks": _num(blueprint.total_marks),

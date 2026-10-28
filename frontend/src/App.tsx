@@ -5,14 +5,10 @@ import { PublicLayout } from './components/public/PublicLayout'
 import AcceptInvitePage from './pages/AcceptInvitePage'
 import { AdminLayout } from './pages/admin/AdminLayout'
 import SmeDirectoryPage from './pages/admin/SmeDirectoryPage'
-import {
-  OverviewPage,
-  ProgressPage,
-  RedistributePage,
-  ReportsPage,
-  UploadAssignPage,
-} from './pages/admin/sections'
+import { OverviewPage, ProgressPage, RedistributePage, ReportsPage } from './pages/admin/sections'
 import StudentsPage from './pages/admin/StudentsPage'
+import UnitDetailPage from './pages/admin/UnitDetailPage'
+import UnitsPage from './pages/admin/UnitsPage'
 import EvaluatePage from './pages/EvaluatePage'
 import EvaluatedPage from './pages/EvaluatedPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
@@ -57,7 +53,8 @@ export default function App() {
             <Route path="admin" element={<AdminLayout />}>
               <Route index element={<OverviewPage />} />
               <Route path="smes" element={<SmeDirectoryPage />} />
-              <Route path="upload" element={<UploadAssignPage />} />
+              <Route path="upload" element={<UnitsPage />} />
+              <Route path="upload/units/:unitId" element={<UnitDetailPage />} />
               <Route path="upload/students" element={<StudentsPage />} />
               <Route path="progress" element={<ProgressPage />} />
               <Route path="redistribute" element={<RedistributePage />} />

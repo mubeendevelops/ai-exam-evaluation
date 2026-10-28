@@ -16,6 +16,7 @@ import csv
 import io
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
+from datetime import date, timedelta
 from typing import Any
 
 from tarn_core.domain.blueprint import ExamBlueprint
@@ -42,7 +43,7 @@ from tarn_core.ports.repositories import (
     StudentRepository,
     UserRepository,
 )
-from tarn_core.seed.model import CollegeSeed, CriterionSeed, PaperSeed, QuestionSeed
+from tarn_core.seed.model import CollegeSeed, CriterionSeed, PaperSeed, QuestionSeed, UnitSeed
 from tarn_core.services._support import Runtime
 from tarn_core.services.access import WHOLE_COLLEGE
 from tarn_core.services.auth import AccountService, AuthKit, AuthService
@@ -53,6 +54,7 @@ from tarn_core.services.question_bank import CriterionSpec, QuestionBankService
 from tarn_core.services.registration import RegistrationService
 from tarn_core.services.roster import RosterService
 from tarn_core.services.subjects import SubjectService
+from tarn_core.services.units import UnitService
 
 OPERATOR = "tarn seed"
 """Named in the audit event of the approval."""
@@ -85,7 +87,7 @@ class SeedReport:
             self.found(what, count)
 
 
-class _MailCatcher:
+class MailCatcher:
     """Collects the emails the account flows would send, so the seed can follow the links."""
 
     def __init__(self) -> None:
@@ -127,7 +129,7 @@ def seed_accounts(
 
     ``tenant`` is the registry entry found for the Institution ID (None: register it with
     ``college_id``); the caller opens the units of work for that college."""
-    catcher = _MailCatcher()
+    catcher = MailCatcher()
     kit = replace(kit, mailer=catcher)
     registration = RegistrationService(
         identity=identity, users=users, colleges=colleges, kit=kit, runtime=runtime
@@ -417,10 +419,18 @@ def _seed_paper(
     blueprints: BlueprintService,
     report: SeedReport,
 ) -> None:
-    if any(b.title == paper.title for b in blueprints.list(college_id, reach=WHOLE_COLLEGE)):
+    document = resolve_document(paper, SubjectId(subject.id), question_ids)
+    found = next(
+        (b for b in blueprints.list(college_id, reach=WHOLE_COLLEGE) if b.title == paper.title),
+        None,
+    )
+    if found is not None:
+        if found.exam_code != document.get("exam_code", ""):
+            # Seeded before P26: give the paper its exam code (the next version).
+            blueprints.update(college_id, author, found.id, document)
+            report.made("exam codes")
         report.found("blueprints")
         return
-    document = resolve_document(paper, SubjectId(subject.id), question_ids)
     blueprint = blueprints.create(college_id, author, document)
     check_blueprints_marks(blueprint, content)
     report.made("blueprints")
@@ -443,3 +453,54 @@ def _linked(slot: Any) -> list[QuestionId]:
     if slot.parts:
         return [p.question_id for p in slot.parts if p.question_id is not None]
     return [] if slot.question_id is None else [slot.question_id]
+
+
+def seed_units(
+    college: CollegeSeed,
+    *,
+    college_id: CollegeId,
+    accounts: SeededAccounts,
+    users: UserRepository,
+    content: ContentRepository,
+    units: UnitService,
+    runtime: Runtime,
+    report: SeedReport,
+) -> None:
+    """The demo units (P26), made by the admin like any unit; found again by paper and year."""
+    papers = {b.title: b for b in content.latest(college_id, ExamBlueprint)}
+    smes = {canonical_email(u.email): u for u in users.list(college_id)}
+    due = runtime.clock.now().date() + timedelta(days=30)
+    for seed in college.units:
+        if _seed_unit(seed, college_id, accounts, papers, smes, units, due):
+            report.made("units")
+        else:
+            report.found("units")
+
+
+def _seed_unit(
+    seed: UnitSeed,
+    college_id: CollegeId,
+    accounts: SeededAccounts,
+    papers: Mapping[str, ExamBlueprint],
+    smes: Mapping[str, User],
+    units: UnitService,
+    due: date,
+) -> bool:
+    paper = papers.get(seed.paper_title)
+    owner = smes.get(canonical_email(seed.owner_email))
+    if paper is None or owner is None:
+        raise SeedError(f"unit of {seed.paper_title!r}: paper or SME missing")
+    if any(
+        u.paper_id == paper.id and u.year == seed.year
+        for u in units.list(college_id, accounts.admin_id)
+    ):
+        return False
+    units.create(
+        college_id,
+        accounts.admin_id,
+        paper_id=paper.id,
+        year=seed.year,
+        owner_id=owner.id,
+        due_date=due,
+    )
+    return True

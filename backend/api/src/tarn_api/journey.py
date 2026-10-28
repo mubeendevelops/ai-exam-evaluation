@@ -89,32 +89,41 @@ class Journey:
             if b["title"].startswith("QP-CI")
         )
 
-        def upload(headers: dict[str, str], student: dict[str, Any], tag: str) -> Any:
+        # The seed's QP-CI unit (P26) belongs to the first SME.
+        unit = next(
+            u
+            for u in c.get(f"{BASE}/units", headers=admin).json()
+            if u["paper"]["id"] == blueprint["id"]
+        )
+
+        def upload(headers: dict[str, str], *files: tuple[dict[str, Any], str]) -> Any:
             return c.post(
-                f"{BASE}/booklets",
+                f"{BASE}/units/{unit['id']}/booklets",
                 headers=headers,
-                data={"student_id": student["id"], "blueprint_id": blueprint["id"]},
-                files=[("files", ("booklet.pdf", fake_pdf(1, tag), "application/pdf"))],
+                files=[
+                    ("files", (f"{s['usn']}.pdf", fake_pdf(1, tag), "application/pdf"))
+                    for s, tag in files
+                ],
             )
 
-        # 1. Five booklets queue; the sixth is refused; the same file again is a duplicate.
-        booklets: list[str] = []
-        for i in range(QUEUE):
-            response = self.audited(
-                college, "booklet.registered", partial(upload, admin, students[i], f"b{i}")
-            )
-            assert response.status_code == 201, response.text
-            assert response.json()["status"] == "uploaded"
-            booklets.append(response.json()["id"])
+        # 1. Five booklets queue in one upload; the sixth file is not queued (the queue is full).
+        sent = [(students[i], f"b{i}") for i in range(QUEUE + 1)]
+        response = self.audited(
+            college, "booklet.registered", partial(upload, admin, *sent), count=QUEUE
+        )
+        self.log.extend(["booklet.registered"] * (QUEUE - 1))  # one per booklet
+        assert response.status_code == 200, response.text
+        files = response.json()["files"]
+        assert [f["outcome"] for f in files] == ["queued"] * QUEUE + ["not_queued"]
+        booklets: list[str] = [f["booklet_id"] for f in files[:QUEUE]]
         listing = c.get(f"{BASE}/booklets", params={"mine": True}, headers=admin).json()
         assert listing["waiting"] == QUEUE == listing["max_waiting"]
-        sixth = upload(admin, students[QUEUE], "b-sixth")
-        assert sixth.status_code == 429, sixth.text
-        assert upload(t1, students[QUEUE], "b-sme").status_code == 403  # SMEs do not upload
+        assert upload(t1, (students[QUEUE], "b-sme")).status_code == 403  # SMEs do not upload
 
         # 2. The worker drains the queue: every booklet reaches "scored".
         self.process()
-        assert upload(admin, students[0], "b0").status_code == 409  # the same file: duplicate
+        again = upload(admin, (students[0], "b0")).json()["files"][0]
+        assert again["problem"] == "already_in_unit"
         listing = c.get(f"{BASE}/booklets", params={"mine": True}, headers=admin).json()
         assert {b["id"]: b["status"] for b in listing["items"]} == dict.fromkeys(booklets, "scored")
         assert listing["waiting"] == 0
@@ -135,9 +144,9 @@ class Journey:
             ).json()
             assert review["status"] == "in_review" and review["lock"]["mine"]
             if n == 0:
-                # The second teacher meets the lock: 423, nothing written.
+                # The second SME does not own the unit: the booklet is not found (P26).
                 locked = c.post(f"{BASE}/booklets/{booklet}/lock", headers=t2)
-                assert locked.status_code == 423, locked.text
+                assert locked.status_code == 404, locked.text
             for i, answer in enumerate(review["answers"]):
                 if not answer["attempted"] or answer["suggestion"] is None:
                     continue
@@ -222,9 +231,10 @@ class Journey:
             lambda: c.delete(f"{BASE}/booklets/{target}/lock", headers=t1),
         )
 
-        # 5. The evaluated list holds all five; the second teacher sees them too (A3.2).
-        evaluated = c.get(f"{BASE}/evaluated-booklets", headers=t2).json()
+        # 5. The evaluated list holds all five for the unit's SME, none for the other (P26).
+        evaluated = c.get(f"{BASE}/evaluated-booklets", headers=t1).json()
         assert {b["id"] for b in evaluated["items"]} == set(booklets)
+        assert c.get(f"{BASE}/evaluated-booklets", headers=t2).json()["items"] == []
         statuses = {b["id"]: b["status"] for b in evaluated["items"]}
         assert statuses[target] == "approved_amended"
 
