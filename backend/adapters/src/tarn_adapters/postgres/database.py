@@ -16,6 +16,7 @@ from sqlalchemy.engine import make_url
 from tarn_adapters.postgres.audit import PgAuditSink
 from tarn_adapters.postgres.calibrations import PgCalibrationStore
 from tarn_adapters.postgres.jobs import JobSettings, PgJobQueue
+from tarn_adapters.postgres.overview import PgOverviewRepository
 from tarn_adapters.postgres.repositories import (
     PgBookletRepository,
     PgCollegeRepository,
@@ -64,6 +65,7 @@ class PostgresSession:
     students: PgStudentRepository = field(init=False)
     content: PgContentRepository = field(init=False)
     units: PgUnitRepository = field(init=False)
+    overview: PgOverviewRepository = field(init=False)
     booklets: PgBookletRepository = field(init=False)
     scores: PgScoreRepository = field(init=False)
     sheets: PgResultSheetRepository = field(init=False)
@@ -79,6 +81,7 @@ class PostgresSession:
         self.students = PgStudentRepository(self.conn)
         self.content = PgContentRepository(self.conn)
         self.units = PgUnitRepository(self.conn)
+        self.overview = PgOverviewRepository(self.conn)
         self.booklets = PgBookletRepository(self.conn)
         self.scores = PgScoreRepository(self.conn)
         self.sheets = PgResultSheetRepository(self.conn)

@@ -15,6 +15,7 @@ from tarn_core.ports.repositories import (
     CollegeRepository,
     ContentRepository,
     EntitlementRepository,
+    OverviewRepository,
     ResultSheetRepository,
     ScoreRepository,
     StudentRepository,
@@ -61,6 +62,10 @@ class MemoryScope:
     @property
     def units(self) -> UnitRepository:
         return self.mem.units
+
+    @property
+    def overview(self) -> OverviewRepository:
+        return self.mem.overview
 
     @property
     def booklets(self) -> BookletRepository:

@@ -30,13 +30,14 @@ router = APIRouter(
 )
 
 
-def _out(view: AccountView) -> AccountOut:
+def _out(view: AccountView, idle: frozenset[UserId] = frozenset()) -> AccountOut:
     return AccountOut(
         user=UserOut.of(view.user),
         status=view.status.value,
         locked_until=view.locked_until,
         force_reset=view.force_reset,
         subject_ids=sorted(view.subject_ids, key=str),
+        idle=view.user.id in idle,
     )
 
 
@@ -45,7 +46,8 @@ def list_accounts(who: PrincipalDep, backends: BackendsDep) -> list[AccountOut]:
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, MANAGE)
         views = unit.accounts.list_accounts(who.college_id, who.user_id)
-    return [_out(v) for v in views]
+        idle = unit.overview.idle_smes(who.college_id, who.user_id)
+    return [_out(v, idle) for v in views]
 
 
 @router.post(
@@ -72,6 +74,7 @@ def invite_sme(body: InviteIn, who: PrincipalDep, backends: BackendsDep) -> Acco
         locked_until=None,
         force_reset=False,
         subject_ids=sorted(granted, key=str),
+        idle=True,  # a new SME owns no unit yet
     )
 
 

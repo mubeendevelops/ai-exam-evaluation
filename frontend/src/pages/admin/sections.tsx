@@ -1,31 +1,5 @@
 import ComingSoonPage from './ComingSoonPage'
 
-export function OverviewPage() {
-  return (
-    <ComingSoonPage
-      icon="fa-solid fa-gauge-high"
-      iconTone="text-purple-400"
-      title="Dashboard Overview"
-      description="How the college's evaluation is going, at a glance."
-      emptyTitle="Nothing to show yet"
-      emptyText="Figures appear here once papers are uploaded and assigned to SMEs. Start with the SME Directory & Subjects."
-    />
-  )
-}
-
-export function ProgressPage() {
-  return (
-    <ComingSoonPage
-      icon="fa-solid fa-chart-line"
-      iconTone="text-emerald-400"
-      title="SME Progress Reports"
-      description="How far each SME has got with their assigned papers."
-      emptyTitle="No progress to report yet"
-      emptyText="Progress per SME and subject appears here once papers are assigned."
-    />
-  )
-}
-
 export function ReportsPage() {
   return (
     <ComingSoonPage
@@ -33,8 +7,8 @@ export function ReportsPage() {
       iconTone="text-indigo-400"
       title="Audit & External Reports"
       description="Reports for the college's external bodies and the audit trail."
-      emptyTitle="No reports yet"
-      emptyText="Reports are built on request and appear here when they are ready."
+      emptyTitle="Reports come later"
+      emptyText="Aggregated reports for the college's external bodies are built on request and will appear here when they are ready. Nothing has been generated or sent."
     />
   )
 }

@@ -50,6 +50,11 @@ class CollegeScopedBlobStore:
     def delete_prefix(self, prefix: BlobKey) -> int:
         return self._inner.delete_prefix(self._check(prefix, write=True))
 
+    def usage(self, college_id: CollegeId) -> int:
+        if college_id != self._college_id:
+            raise TenantViolationError("the blobs belong to another college")
+        return self._inner.usage(college_id)
+
 
 def scoped_blobs(blobs: BlobStore, college_id: CollegeId | None) -> BlobStore:
     """``blobs`` bound to ``college_id``; an already scoped store is re-bound, not nested."""

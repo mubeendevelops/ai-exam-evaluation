@@ -11,6 +11,7 @@ Who may edit is checked by the services, not here."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol
 from uuid import UUID
 
@@ -28,6 +29,15 @@ from tarn_core.domain.content import (
     Subject,
 )
 from tarn_core.domain.diagram import StudentDiagram
+from tarn_core.domain.overview import (
+    ActivityItem,
+    QueueDepth,
+    SmeCounts,
+    SmeProgress,
+    StageCounts,
+    UnitCounts,
+    UnitProgress,
+)
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
 from tarn_core.domain.tenancy import College, Student, SubjectGrant, User
@@ -449,4 +459,41 @@ class ResultSheetRepository(Protocol):
 
     def delete_for_booklet(self, college_id: CollegeId, booklet_id: BookletId) -> None:
         """Booklet deletion only (D14)."""
+        ...
+
+
+class OverviewRepository(Protocol):
+    """The figures behind the admin's dashboard and progress report (P29, D167): counts only,
+    computed by the store (SQL aggregates), never a mark, never booklet or student data. A
+    college repository. ``today`` is the clock's date (UTC), so "overdue" is the caller's day."""
+
+    def sme_counts(self, college_id: CollegeId) -> SmeCounts:
+        """Live SMEs (not removed) by status: suspended, idle (active, no open unit), active."""
+        ...
+
+    def unit_counts(self, college_id: CollegeId, today: date) -> UnitCounts: ...
+
+    def booklet_stages(self, college_id: CollegeId) -> StageCounts:
+        """Every booklet of the college by stage."""
+        ...
+
+    def sme_progress(self, college_id: CollegeId, today: date) -> Sequence[SmeProgress]:
+        """One row per live SME, by name; units are grouped by their current owner (D163)."""
+        ...
+
+    def unit_progress(self, college_id: CollegeId, today: date) -> Sequence[UnitProgress]:
+        """One row per unit, newest first, with its booklets by stage."""
+        ...
+
+    def owners_of_open_units(self, college_id: CollegeId) -> frozenset[UserId]:
+        """Who owns at least one open unit (everyone else active is idle)."""
+        ...
+
+    def activity(self, college_id: CollegeId, limit: int) -> Sequence[ActivityItem]:
+        """The latest audited events of ``FEED_ACTIONS``, newest first: action, time, who and
+        the unit's code. Nothing of an event's before/after."""
+        ...
+
+    def queue_depth(self, college_id: CollegeId) -> QueueDepth:
+        """The college's jobs queued and running."""
         ...

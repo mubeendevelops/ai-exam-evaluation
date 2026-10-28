@@ -28,6 +28,7 @@ const CAPABILITIES: Record<Role, string[]> = {
     'redistribute_units',
     'return_units',
     'upload_booklets',
+    'view_overview',
     'view_progress',
   ],
   sme: ['author_content', 'evaluate', 'request_reassignment', 'submit_units', 'view_progress'],
@@ -257,6 +258,19 @@ export class FakeApi {
       case 'GET /delegation-requests':
         return json(200, [])
 
+      // The admin's figures (P29): nothing has happened in the browser tests' college.
+      case 'GET /overview':
+        return json(200, {
+          smes: { active: 0, idle: 0, suspended: 0 },
+          units: { open: 0, submitted: 0, frozen: 0, overdue: 0 },
+          booklets: { processing: 0, ready: 0, in_review: 0, approved: 0, attention: 0, total: 0 },
+          activity: [],
+        })
+      case 'GET /overview/progress':
+        return json(200, { smes: [], units: [] })
+      case 'GET /overview/system':
+        return json(200, { queue_queued: 0, queue_running: 0, storage_bytes: 0 })
+
       case 'POST /subjects': {
         if (this.subjects.some((s) => s.code === body.code))
           return json(409, { detail: 'That subject code is taken.' })
@@ -281,6 +295,7 @@ export class FakeApi {
           locked_until: null,
           force_reset: false,
           subject_ids: body.subject_ids ?? [],
+          idle: true,
         }
         this.smes.push(account)
         return json(201, account)

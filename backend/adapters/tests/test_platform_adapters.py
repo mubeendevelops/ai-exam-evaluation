@@ -222,6 +222,22 @@ def test_gcs_delete_prefix_keeps_the_neighbouring_folder() -> None:
     assert list(client.objects) == [f"{folder.value}0/a.jpg"]
 
 
+def test_gcs_usage_is_one_colleges_bytes() -> None:
+    other = CollegeId(UUID(int=2))
+    client = FakeGcs(
+        {
+            college_blob_key(COLLEGE, "booklet", "1", "a.jpg").value: b"a" * 7,
+            college_blob_key(COLLEGE, "content", "key.pdf").value: b"b" * 5,
+            college_blob_key(other, "booklet", "1", "a.jpg").value: b"c" * 100,
+            "global/models/x.bin": b"d" * 1000,
+        }
+    )
+    store = GcsBlobStore(client, "b")
+    assert store.usage(COLLEGE) == 12
+    assert store.usage(other) == 100
+    assert store.usage(CollegeId(UUID(int=3))) == 0
+
+
 def _event(college: CollegeId, booklet: BookletId, name: str = COMPLETE_MARKER) -> dict[str, str]:
     return {"bucket": "tarn-incoming", "name": f"{incoming_folder(college, booklet)}/{name}"}
 

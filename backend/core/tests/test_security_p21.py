@@ -100,10 +100,12 @@ def test_another_colleges_blob_is_refused_like_its_rows() -> None:
         lambda: store.delete(theirs),
         lambda: store.put(theirs, b"overwrite", "image/jpeg"),
         lambda: store.delete_prefix(college_blob_key(B, "booklet", "x")),
+        lambda: store.usage(B),  # what another college stores is not ours to measure (P29)
     ):
         with pytest.raises(TenantViolationError):
             attempt()
     assert inner.get(theirs) == b"B's page"
+    assert store.usage(A) == len(b"A's page")
 
 
 def test_content_files_are_the_colleges_and_tarn_files_are_read_only() -> None:

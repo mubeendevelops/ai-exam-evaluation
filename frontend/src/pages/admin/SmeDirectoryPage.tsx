@@ -15,6 +15,7 @@ import {
   sectionTitle,
 } from './controls'
 import {
+  SME_STATUS,
   grantsOf,
   isLocked,
   useAccounts,
@@ -472,7 +473,11 @@ function Directory() {
               <tbody className="divide-y divide-gray-800">
                 {smes.map((account) => {
                   const { user } = account
-                  const status = STATUS[account.status]
+                  // Idle is computed (D163): a signed-in, active SME with no open unit.
+                  const status =
+                    account.status === 'ACTIVE' && account.idle
+                      ? SME_STATUS.idle
+                      : STATUS[account.status]
                   return (
                     <tr key={user.id}>
                       <th scope="row" className="py-2.5 pr-4 text-left font-semibold text-white">

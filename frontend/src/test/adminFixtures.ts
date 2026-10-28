@@ -9,6 +9,9 @@ type WorkUnit = components['schemas']['UnitOut']
 type WorkUnitDetail = components['schemas']['UnitDetailOut']
 type Booklet = components['schemas']['BookletOut']
 type DelegationRequest = components['schemas']['DelegationRequestOut']
+type Dashboard = components['schemas']['DashboardOut']
+type Progress = components['schemas']['ProgressOut']
+type SystemFigures = components['schemas']['SystemOut']
 
 export const physics: Subject = {
   id: 'sub-1',
@@ -59,6 +62,7 @@ export const ashaAccount: Account = {
   locked_until: '2999-01-01T00:00:00Z',
   force_reset: true,
   subject_ids: [physics.id, chemistry.id],
+  idle: false,
 }
 export const raviAccount: Account = {
   user: ravi,
@@ -66,9 +70,17 @@ export const raviAccount: Account = {
   locked_until: null,
   force_reset: false,
   subject_ids: [],
+  idle: false,
 }
 export const accounts: Account[] = [
-  { user: adminUser, status: 'ACTIVE', locked_until: null, force_reset: false, subject_ids: [] },
+  {
+    user: adminUser,
+    status: 'ACTIVE',
+    locked_until: null,
+    force_reset: false,
+    subject_ids: [],
+    idle: false,
+  },
   ashaAccount,
   raviAccount,
 ]
@@ -163,6 +175,9 @@ export function adminSession(
     'GET /api/v1/students': { json: students },
     'GET /api/v1/units': { json: [] },
     'GET /api/v1/delegation-requests': { json: [] },
+    'GET /api/v1/overview': { json: dashboardOf() },
+    'GET /api/v1/overview/progress': { json: { smes: [], units: [] } satisfies Progress },
+    'GET /api/v1/overview/system': { json: systemOf() },
     ...extra,
   })
 }
@@ -195,6 +210,68 @@ export function requestOf(over: Partial<DelegationRequest> = {}): DelegationRequ
     state: 'pending',
     closed_at: null,
     note: '',
+    ...over,
+  }
+}
+
+export const STAGES = {
+  processing: 0,
+  ready: 0,
+  in_review: 0,
+  approved: 0,
+  attention: 0,
+  total: 0,
+}
+
+/** The dashboard's figures (P29): all zero unless changed. */
+export function dashboardOf(over: Partial<Dashboard> = {}): Dashboard {
+  return {
+    smes: { active: 0, idle: 0, suspended: 0 },
+    units: { open: 0, submitted: 0, frozen: 0, overdue: 0 },
+    booklets: STAGES,
+    activity: [],
+    ...over,
+  }
+}
+
+export function systemOf(over: Partial<SystemFigures> = {}): SystemFigures {
+  return { queue_queued: 0, queue_running: 0, storage_bytes: 0, ...over }
+}
+
+export function smeRowOf(over: Partial<Progress['smes'][number]> = {}): Progress['smes'][number] {
+  return {
+    user_id: asha.id,
+    display_name: asha.display_name,
+    status: 'active',
+    units_owned: 1,
+    open_units: 1,
+    overdue_units: 0,
+    booklets: 10,
+    approved: 4,
+    pending: 6,
+    last_activity: '2026-10-28T09:30:00Z',
+    heavy_load: false,
+    ...over,
+  }
+}
+
+export function unitRowOf(
+  over: Partial<Progress['units'][number]> = {},
+): Progress['units'][number] {
+  return {
+    unit_id: 'unit-1',
+    code: 'U-0001',
+    year: '2024',
+    paper_title: 'Physics mid-term',
+    exam_code: 'PHY-2026-MID',
+    subject_code: physics.code,
+    subject_name: physics.name,
+    owner_id: asha.id,
+    owner_name: asha.display_name,
+    due_date: '2026-12-01',
+    state: 'open',
+    overdue: false,
+    booklets: { ...STAGES, approved: 4, processing: 6, total: 10 },
     ...over,
   }
 }

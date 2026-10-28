@@ -10,8 +10,9 @@ from minio.error import S3Error
 from tarn_adapters.blob.minio_client import make_client
 from tarn_adapters.blob.minio_store import MinioBlobStore
 from tarn_adapters.config import Settings
-from tarn_core.domain.common import BlobKey, global_blob_key
+from tarn_core.domain.common import BlobKey, college_blob_key, global_blob_key
 from tarn_core.errors import NotFoundError
+from tarn_core.ids import CollegeId
 
 
 def _s3(code: str) -> S3Error:
@@ -100,3 +101,25 @@ def test_a_booklets_ground_truth_lives_in_its_folder_and_goes_with_it() -> None:
     finally:
         assert blobs.delete_prefix(folder) == 2
     assert store.page_ids() == []
+
+
+@pytest.mark.integration
+def test_usage_sums_one_colleges_objects_on_the_dev_minio() -> None:
+    settings = Settings()
+    store = MinioBlobStore(make_client(settings), settings.blob_bucket)
+    mine, other = CollegeId(uuid4()), CollegeId(uuid4())
+    keys = [
+        college_blob_key(mine, "booklet", "b1", "p1.jpg"),
+        college_blob_key(mine, "content", "key.pdf"),
+        college_blob_key(other, "booklet", "b1", "p1.jpg"),
+    ]
+    sizes = [10, 25, 500]
+    for key, size in zip(keys, sizes, strict=True):
+        store.put(key, b"x" * size, "application/octet-stream")
+    try:
+        assert store.usage(mine) == 35
+        assert store.usage(other) == 500
+        assert store.usage(CollegeId(uuid4())) == 0
+    finally:
+        for key in keys:
+            store.delete(key)

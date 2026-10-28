@@ -33,6 +33,9 @@ class Capability(StrEnum):
     FREEZE_UNITS = "freeze_units"
     """List the submitted and frozen units, freeze and sign off a submitted one, read the
     frozen record (marks are for the Governor, D167)."""
+    VIEW_OVERVIEW = "view_overview"
+    """The admin's dashboard and SME progress report: counts of SMEs, units and booklets by
+    stage, health and storage; never marks, text or a speed metric (P29, D167)."""
     VIEW_PROGRESS = "view_progress"
     """Booklets and their processing status, without marks, page images or text (D167)."""
     AUTHOR_CONTENT = "author_content"
@@ -53,6 +56,7 @@ CAPABILITIES: Mapping[Role, frozenset[Capability]] = MappingProxyType(
                 Capability.UPLOAD_BOOKLETS,
                 Capability.REDISTRIBUTE_UNITS,
                 Capability.RETURN_UNITS,
+                Capability.VIEW_OVERVIEW,
                 Capability.VIEW_PROGRESS,
             }
         ),

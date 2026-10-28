@@ -1414,6 +1414,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard figures (admin) */
+        get: operations["dashboard_api_v1_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Progress per SME and per unit (admin)
+         * @description Credit follows the unit's current owner (D163). No marks and no speed (D167).
+         */
+        get: operations["progress_api_v1_overview_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The college's queue and storage used (admin)
+         * @description API and worker status are on `GET /api/v1/health`. Listing the stored files takes longer than the other figures, so it is a call of its own.
+         */
+        get: operations["system_api_v1_overview_system_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/booklets/{booklet_id}/lock": {
         parameters: {
             query?: never;
@@ -1712,6 +1769,12 @@ export interface components {
              * @description An SME's subjects (D160); empty for other personas.
              */
             subject_ids?: string[];
+            /**
+             * Idle
+             * @description An active SME who owns no open unit (D163, computed): the directory shows Idle instead of Active.
+             * @default false
+             */
+            idle: boolean;
         };
         /** AccountSubjectsOut */
         AccountSubjectsOut: {
@@ -1722,6 +1785,23 @@ export interface components {
             user_id: string;
             /** Subject Ids */
             subject_ids: string[];
+        };
+        /** ActivityOut */
+        ActivityOut: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Action
+             * @description An audit action such as `unit.created`.
+             */
+            action: string;
+            /** Actor Name */
+            actor_name: string | null;
+            /** Unit Code */
+            unit_code: string | null;
         };
         /** ApprovalOut */
         ApprovalOut: {
@@ -2133,6 +2213,17 @@ export interface components {
         CurrentPasswordIn: {
             /** Current Password */
             current_password: string;
+        };
+        /** DashboardOut */
+        DashboardOut: {
+            smes: components["schemas"]["SmeCountsOut"];
+            units: components["schemas"]["UnitStateCountsOut"];
+            booklets: components["schemas"]["StageCountsOut"];
+            /**
+             * Activity
+             * @description The latest events about units, people and subjects, newest first. Nothing of an event's details: no student data.
+             */
+            activity: components["schemas"]["ActivityOut"][];
         };
         /** DeclineIn */
         DeclineIn: {
@@ -2819,7 +2910,7 @@ export interface components {
              * Capabilities
              * @description What this persona may do (D177); the screens show what these allow.
              */
-            capabilities: ("manage_smes" | "manage_subjects" | "manage_students" | "assign_units" | "upload_booklets" | "redistribute_units" | "request_reassignment" | "submit_units" | "return_units" | "freeze_units" | "view_progress" | "author_content" | "evaluate")[];
+            capabilities: ("manage_smes" | "manage_subjects" | "manage_students" | "assign_units" | "upload_booklets" | "redistribute_units" | "request_reassignment" | "submit_units" | "return_units" | "freeze_units" | "view_overview" | "view_progress" | "author_content" | "evaluate")[];
         };
         /** MergeIn */
         MergeIn: {
@@ -2996,6 +3087,13 @@ export interface components {
             detail: string;
             /** Reasons */
             reasons: string[];
+        };
+        /** ProgressOut */
+        ProgressOut: {
+            /** Smes */
+            smes: components["schemas"]["SmeProgressOut"][];
+            /** Units */
+            units: components["schemas"]["UnitProgressOut"][];
         };
         /** QuestionCreateIn */
         QuestionCreateIn: {
@@ -3848,6 +3946,64 @@ export interface components {
              */
             outcome: string;
         };
+        /** SmeCountsOut */
+        SmeCountsOut: {
+            /**
+             * Active
+             * @description Active SMEs who own an open unit.
+             */
+            active: number;
+            /**
+             * Idle
+             * @description Active SMEs who own no open unit.
+             */
+            idle: number;
+            /** Suspended */
+            suspended: number;
+        };
+        /** SmeProgressOut */
+        SmeProgressOut: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "idle" | "suspended";
+            /** Units Owned */
+            units_owned: number;
+            /** Open Units */
+            open_units: number;
+            /** Overdue Units */
+            overdue_units: number;
+            /**
+             * Booklets
+             * @description Booklets of every unit the SME owns now (D163).
+             */
+            booklets: number;
+            /** Approved */
+            approved: number;
+            /**
+             * Pending
+             * @description Not approved yet, in open units.
+             */
+            pending: number;
+            /**
+             * Last Activity
+             * @description The SME's latest audited action other than signing in.
+             */
+            last_activity: string | null;
+            /**
+             * Heavy Load
+             * @description More than 100 booklets pending.
+             */
+            heavy_load: boolean;
+        };
         /** SplitIn */
         SplitIn: {
             /** Expected Version */
@@ -3867,6 +4023,33 @@ export interface components {
              * @description None: the unassigned tray.
              */
             label?: string | null;
+        };
+        /** StageCountsOut */
+        StageCountsOut: {
+            /**
+             * Processing
+             * @description Uploaded, cleaned, read, segmented or being scored.
+             */
+            processing: number;
+            /**
+             * Ready
+             * @description Scored, waiting for the SME to open it.
+             */
+            ready: number;
+            /** In Review */
+            in_review: number;
+            /**
+             * Approved
+             * @description Approved, amendments included.
+             */
+            approved: number;
+            /**
+             * Attention
+             * @description Needs a retake or failed (the admin's to act on).
+             */
+            attention: number;
+            /** Total */
+            total: number;
         };
         /** StudentDiagramOut */
         StudentDiagramOut: {
@@ -4018,6 +4201,21 @@ export interface components {
             created_at: string;
             /** Criteria */
             criteria: components["schemas"]["CriterionResultOut"][];
+        };
+        /** SystemOut */
+        SystemOut: {
+            /**
+             * Queue Queued
+             * @description The college's jobs waiting for the worker.
+             */
+            queue_queued: number;
+            /** Queue Running */
+            queue_running: number;
+            /**
+             * Storage Bytes
+             * @description Bytes the college stores; no limit until D167's Provisioner.
+             */
+            storage_bytes: number;
         };
         /** TenantStatusOut */
         TenantStatusOut: {
@@ -4321,6 +4519,46 @@ export interface components {
             /** Total Marks */
             total_marks: number;
         };
+        /** UnitProgressOut */
+        UnitProgressOut: {
+            /**
+             * Unit Id
+             * Format: uuid
+             */
+            unit_id: string;
+            /** Code */
+            code: string;
+            /** Year */
+            year: string;
+            /** Paper Title */
+            paper_title: string | null;
+            /** Exam Code */
+            exam_code: string | null;
+            /** Subject Code */
+            subject_code: string | null;
+            /** Subject Name */
+            subject_name: string | null;
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            /** Owner Name */
+            owner_name: string;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "open" | "submitted" | "frozen";
+            /** Overdue */
+            overdue: boolean;
+            booklets: components["schemas"]["StageCountsOut"];
+        };
         /** UnitRequestRefOut */
         UnitRequestRefOut: {
             /**
@@ -4345,6 +4583,20 @@ export interface components {
             name: string;
             /** Email */
             email: string;
+        };
+        /** UnitStateCountsOut */
+        UnitStateCountsOut: {
+            /** Open */
+            open: number;
+            /** Submitted */
+            submitted: number;
+            /** Frozen */
+            frozen: number;
+            /**
+             * Overdue
+             * @description Open units whose due date has passed.
+             */
+            overdue: number;
         };
         /** UnitSubjectOut */
         UnitSubjectOut: {
@@ -9638,6 +9890,120 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_api_v1_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    progress_api_v1_overview_progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgressOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    system_api_v1_overview_system_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
                 };
             };
         };

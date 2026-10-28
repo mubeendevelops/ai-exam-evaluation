@@ -1,6 +1,7 @@
 """A blob store for processes that must not touch blobs (auth requests, operator commands)."""
 
 from tarn_core.domain.common import BlobKey
+from tarn_core.ids import CollegeId
 
 
 class NoBlobStore:
@@ -20,4 +21,7 @@ class NoBlobStore:
         raise self._refuse()
 
     def delete_prefix(self, prefix: BlobKey) -> int:
+        raise self._refuse()
+
+    def usage(self, college_id: CollegeId) -> int:
         raise self._refuse()

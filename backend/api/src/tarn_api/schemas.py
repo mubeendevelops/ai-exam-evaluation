@@ -92,6 +92,7 @@ CapabilityName = Literal[
     "submit_units",
     "return_units",
     "freeze_units",
+    "view_overview",
     "view_progress",
     "author_content",
     "evaluate",
@@ -194,6 +195,11 @@ class AccountOut(BaseModel):
     force_reset: bool
     subject_ids: list[UUID] = Field(
         default_factory=list, description="An SME's subjects (D160); empty for other personas."
+    )
+    idle: bool = Field(
+        False,
+        description="An active SME who owns no open unit (D163, computed): the directory shows "
+        "Idle instead of Active.",
     )
 
 
@@ -1356,3 +1362,92 @@ class MoveBoundaryIn(_In):
     upper: UUID
     lower: UUID
     region: UUID = Field(description="The first region of `lower` after the move.")
+
+
+# --- the admin's dashboard and progress report (P29, D167: counts, never marks) ------------------
+
+SmeStatusName = Literal["active", "idle", "suspended"]
+
+
+class SmeCountsOut(BaseModel):
+    active: int = Field(description="Active SMEs who own an open unit.")
+    idle: int = Field(description="Active SMEs who own no open unit.")
+    suspended: int
+
+
+class UnitStateCountsOut(BaseModel):
+    open: int
+    submitted: int
+    frozen: int
+    overdue: int = Field(description="Open units whose due date has passed.")
+
+
+class StageCountsOut(BaseModel):
+    processing: int = Field(description="Uploaded, cleaned, read, segmented or being scored.")
+    ready: int = Field(description="Scored, waiting for the SME to open it.")
+    in_review: int
+    approved: int = Field(description="Approved, amendments included.")
+    attention: int = Field(description="Needs a retake or failed (the admin's to act on).")
+    total: int
+
+
+class ActivityOut(BaseModel):
+    at: datetime
+    action: str = Field(description="An audit action such as `unit.created`.")
+    actor_name: str | None
+    unit_code: str | None
+
+
+class DashboardOut(BaseModel):
+    smes: SmeCountsOut
+    units: UnitStateCountsOut
+    booklets: StageCountsOut
+    activity: list[ActivityOut] = Field(
+        description="The latest events about units, people and subjects, newest first. Nothing "
+        "of an event's details: no student data."
+    )
+
+
+class SystemOut(BaseModel):
+    queue_queued: int = Field(description="The college's jobs waiting for the worker.")
+    queue_running: int
+    storage_bytes: int = Field(
+        description="Bytes the college stores; no limit until D167's Provisioner."
+    )
+
+
+class SmeProgressOut(BaseModel):
+    user_id: UUID
+    display_name: str
+    status: SmeStatusName
+    units_owned: int
+    open_units: int
+    overdue_units: int
+    booklets: int = Field(description="Booklets of every unit the SME owns now (D163).")
+    approved: int
+    pending: int = Field(description="Not approved yet, in open units.")
+    last_activity: datetime | None = Field(
+        description="The SME's latest audited action other than signing in."
+    )
+    heavy_load: bool = Field(description="More than 100 booklets pending.")
+
+
+class UnitProgressOut(BaseModel):
+    unit_id: UUID
+    code: str
+    year: str
+    paper_title: str | None
+    exam_code: str | None
+    subject_code: str | None
+    subject_name: str | None
+    owner_id: UUID
+    owner_name: str
+    due_date: date
+    state: UnitStateName
+    overdue: bool
+    booklets: StageCountsOut
+
+
+class ProgressOut(BaseModel):
+    smes: list[SmeProgressOut]
+    units: list[UnitProgressOut]

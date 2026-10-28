@@ -54,6 +54,34 @@ describe('SME directory', () => {
     expect((await rowOf('Asha Rao')).getByText('Invited')).toBeInTheDocument()
   })
 
+  it('shows Idle for an active SME who owns no open unit (computed by the server)', async () => {
+    adminSession({
+      'GET /api/v1/accounts': {
+        json: [
+          { ...ashaAccount, locked_until: null, force_reset: false, idle: true },
+          { ...raviAccount, idle: false },
+        ],
+      },
+    })
+    renderApp('/admin/smes')
+    const idle = await rowOf('Asha Rao')
+    expect(idle.getByText('Idle')).toBeInTheDocument()
+    expect(idle.queryByText('Active')).toBeNull()
+    expect((await rowOf('Ravi Kumar')).getByText('Suspended')).toBeInTheDocument()
+  })
+
+  it('keeps Invited for an SME who has not signed in, even with no unit', async () => {
+    adminSession({
+      'GET /api/v1/accounts': {
+        json: [{ ...ashaAccount, status: 'PENDING', idle: true, locked_until: null }],
+      },
+    })
+    renderApp('/admin/smes')
+    const row = await rowOf('Asha Rao')
+    expect(row.getByText('Invited')).toBeInTheDocument()
+    expect(row.queryByText('Idle')).toBeNull()
+  })
+
   it('searches by name, email or subject', async () => {
     adminSession()
     const user = userEvent.setup()

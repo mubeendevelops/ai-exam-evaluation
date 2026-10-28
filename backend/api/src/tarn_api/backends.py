@@ -33,6 +33,7 @@ from tarn_core.ports.repositories import (
     CollegeRepository,
     ContentRepository,
     EntitlementRepository,
+    OverviewRepository,
     ResultSheetRepository,
     ScoreRepository,
     StudentRepository,
@@ -52,6 +53,7 @@ from tarn_core.services.diagrams.jobs import QueuedRescore
 from tarn_core.services.diagrams.service import ReferenceDiagrams
 from tarn_core.services.entitlements import EntitlementService
 from tarn_core.services.evaluated import EvaluatedBooklets
+from tarn_core.services.overview import OverviewService
 from tarn_core.services.pipeline import PageDecisions
 from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.registration import RegistrationService
@@ -97,6 +99,9 @@ class CollegeScope(Protocol):
 
     @property
     def units(self) -> UnitRepository: ...
+
+    @property
+    def overview(self) -> OverviewRepository: ...
 
     @property
     def booklets(self) -> BookletRepository: ...
@@ -179,6 +184,16 @@ class Unit:
             content=self.scope.content,
             booklets=self.scope.booklets,
             mailer=self.kit.mailer,
+            runtime=self.scope.runtime,
+        )
+
+    @property
+    def overview(self) -> OverviewService:
+        return OverviewService(
+            overview=self.scope.overview,
+            users=self.scope.users,
+            content=self.scope.content,
+            blobs=self.scope.blobs,
             runtime=self.scope.runtime,
         )
 

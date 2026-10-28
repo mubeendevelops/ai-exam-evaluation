@@ -10,6 +10,7 @@ from typing import Protocol
 
 from tarn_core.domain.common import BlobKey
 from tarn_core.errors import NotFoundError
+from tarn_core.ids import CollegeId
 
 
 class _Blob(Protocol):
@@ -92,6 +93,11 @@ class GcsBlobStore:
         for name in names:
             self.delete(BlobKey(name))
         return len(names)
+
+    def usage(self, college_id: CollegeId) -> int:
+        """Bytes of every object under ``college/{id}/`` (one listing, summed)."""
+        listed = self._client.list_blobs(self._bucket_name, prefix=f"college/{college_id}/")
+        return sum(b.size or 0 for b in listed)
 
     def bucket_exists(self) -> bool:
         return self._bucket.exists()

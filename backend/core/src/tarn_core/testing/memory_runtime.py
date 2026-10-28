@@ -217,6 +217,12 @@ class MemoryBlobStore:
             del self._blobs[key]
         return len(doomed)
 
+    def usage(self, college_id: CollegeId) -> int:
+        folder = f"college/{college_id}/"
+        return sum(
+            len(data) for key, (data, _) in self._blobs.items() if key.value.startswith(folder)
+        )
+
     @property
     def keys(self) -> tuple[BlobKey, ...]:
         return tuple(self._blobs)

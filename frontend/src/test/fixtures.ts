@@ -26,6 +26,7 @@ export const CAPABILITIES: Record<User['role'], Me['capabilities']> = {
     'manage_subjects',
     'return_units',
     'upload_booklets',
+    'view_overview',
     'view_progress',
   ],
   sme: ['author_content', 'evaluate', 'submit_units', 'view_progress'],

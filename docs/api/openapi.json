@@ -7295,6 +7295,146 @@
         }
       }
     },
+    "/api/v1/overview": {
+      "get": {
+        "tags": [
+          "overview"
+        ],
+        "summary": "Dashboard figures (admin)",
+        "operationId": "dashboard_api_v1_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/overview/progress": {
+      "get": {
+        "tags": [
+          "overview"
+        ],
+        "summary": "Progress per SME and per unit (admin)",
+        "description": "Credit follows the unit's current owner (D163). No marks and no speed (D167).",
+        "operationId": "progress_api_v1_overview_progress_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/overview/system": {
+      "get": {
+        "tags": [
+          "overview"
+        ],
+        "summary": "The college's queue and storage used (admin)",
+        "description": "API and worker status are on `GET /api/v1/health`. Listing the stored files takes longer than the other figures, so it is a call of its own.",
+        "operationId": "system_api_v1_overview_system_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/booklets/{booklet_id}/lock": {
       "post": {
         "tags": [
@@ -8976,6 +9116,12 @@
             "type": "array",
             "title": "Subject Ids",
             "description": "An SME's subjects (D160); empty for other personas."
+          },
+          "idle": {
+            "type": "boolean",
+            "title": "Idle",
+            "description": "An active SME who owns no open unit (D163, computed): the directory shows Idle instead of Active.",
+            "default": false
           }
         },
         "type": "object",
@@ -9009,6 +9155,50 @@
           "subject_ids"
         ],
         "title": "AccountSubjectsOut"
+      },
+      "ActivityOut": {
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "description": "An audit action such as `unit.created`."
+          },
+          "actor_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Name"
+          },
+          "unit_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "at",
+          "action",
+          "actor_name",
+          "unit_code"
+        ],
+        "title": "ActivityOut"
       },
       "ApprovalOut": {
         "properties": {
@@ -9983,6 +10173,35 @@
           "current_password"
         ],
         "title": "CurrentPasswordIn"
+      },
+      "DashboardOut": {
+        "properties": {
+          "smes": {
+            "$ref": "#/components/schemas/SmeCountsOut"
+          },
+          "units": {
+            "$ref": "#/components/schemas/UnitStateCountsOut"
+          },
+          "booklets": {
+            "$ref": "#/components/schemas/StageCountsOut"
+          },
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityOut"
+            },
+            "type": "array",
+            "title": "Activity",
+            "description": "The latest events about units, people and subjects, newest first. Nothing of an event's details: no student data."
+          }
+        },
+        "type": "object",
+        "required": [
+          "smes",
+          "units",
+          "booklets",
+          "activity"
+        ],
+        "title": "DashboardOut"
       },
       "DeclineIn": {
         "properties": {
@@ -11688,6 +11907,7 @@
                 "submit_units",
                 "return_units",
                 "freeze_units",
+                "view_overview",
                 "view_progress",
                 "author_content",
                 "evaluate"
@@ -12122,6 +12342,30 @@
           "reasons"
         ],
         "title": "PolicyErrorOut"
+      },
+      "ProgressOut": {
+        "properties": {
+          "smes": {
+            "items": {
+              "$ref": "#/components/schemas/SmeProgressOut"
+            },
+            "type": "array",
+            "title": "Smes"
+          },
+          "units": {
+            "items": {
+              "$ref": "#/components/schemas/UnitProgressOut"
+            },
+            "type": "array",
+            "title": "Units"
+          }
+        },
+        "type": "object",
+        "required": [
+          "smes",
+          "units"
+        ],
+        "title": "ProgressOut"
       },
       "QuestionCreateIn": {
         "properties": {
@@ -14172,6 +14416,112 @@
         ],
         "title": "SlotResultOut"
       },
+      "SmeCountsOut": {
+        "properties": {
+          "active": {
+            "type": "integer",
+            "title": "Active",
+            "description": "Active SMEs who own an open unit."
+          },
+          "idle": {
+            "type": "integer",
+            "title": "Idle",
+            "description": "Active SMEs who own no open unit."
+          },
+          "suspended": {
+            "type": "integer",
+            "title": "Suspended"
+          }
+        },
+        "type": "object",
+        "required": [
+          "active",
+          "idle",
+          "suspended"
+        ],
+        "title": "SmeCountsOut"
+      },
+      "SmeProgressOut": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "idle",
+              "suspended"
+            ],
+            "title": "Status"
+          },
+          "units_owned": {
+            "type": "integer",
+            "title": "Units Owned"
+          },
+          "open_units": {
+            "type": "integer",
+            "title": "Open Units"
+          },
+          "overdue_units": {
+            "type": "integer",
+            "title": "Overdue Units"
+          },
+          "booklets": {
+            "type": "integer",
+            "title": "Booklets",
+            "description": "Booklets of every unit the SME owns now (D163)."
+          },
+          "approved": {
+            "type": "integer",
+            "title": "Approved"
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending",
+            "description": "Not approved yet, in open units."
+          },
+          "last_activity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity",
+            "description": "The SME's latest audited action other than signing in."
+          },
+          "heavy_load": {
+            "type": "boolean",
+            "title": "Heavy Load",
+            "description": "More than 100 booklets pending."
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "display_name",
+          "status",
+          "units_owned",
+          "open_units",
+          "overdue_units",
+          "booklets",
+          "approved",
+          "pending",
+          "last_activity",
+          "heavy_load"
+        ],
+        "title": "SmeProgressOut"
+      },
       "SplitIn": {
         "properties": {
           "expected_version": {
@@ -14211,6 +14561,48 @@
           "at_region"
         ],
         "title": "SplitIn"
+      },
+      "StageCountsOut": {
+        "properties": {
+          "processing": {
+            "type": "integer",
+            "title": "Processing",
+            "description": "Uploaded, cleaned, read, segmented or being scored."
+          },
+          "ready": {
+            "type": "integer",
+            "title": "Ready",
+            "description": "Scored, waiting for the SME to open it."
+          },
+          "in_review": {
+            "type": "integer",
+            "title": "In Review"
+          },
+          "approved": {
+            "type": "integer",
+            "title": "Approved",
+            "description": "Approved, amendments included."
+          },
+          "attention": {
+            "type": "integer",
+            "title": "Attention",
+            "description": "Needs a retake or failed (the admin's to act on)."
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "processing",
+          "ready",
+          "in_review",
+          "approved",
+          "attention",
+          "total"
+        ],
+        "title": "StageCountsOut"
       },
       "StudentDiagramOut": {
         "properties": {
@@ -14534,6 +14926,31 @@
           "criteria"
         ],
         "title": "SuggestionOut"
+      },
+      "SystemOut": {
+        "properties": {
+          "queue_queued": {
+            "type": "integer",
+            "title": "Queue Queued",
+            "description": "The college's jobs waiting for the worker."
+          },
+          "queue_running": {
+            "type": "integer",
+            "title": "Queue Running"
+          },
+          "storage_bytes": {
+            "type": "integer",
+            "title": "Storage Bytes",
+            "description": "Bytes the college stores; no limit until D167's Provisioner."
+          }
+        },
+        "type": "object",
+        "required": [
+          "queue_queued",
+          "queue_running",
+          "storage_bytes"
+        ],
+        "title": "SystemOut"
       },
       "TenantStatusOut": {
         "properties": {
@@ -15130,6 +15547,114 @@
         ],
         "title": "UnitPaperOut"
       },
+      "UnitProgressOut": {
+        "properties": {
+          "unit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Unit Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "year": {
+            "type": "string",
+            "title": "Year"
+          },
+          "paper_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paper Title"
+          },
+          "exam_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exam Code"
+          },
+          "subject_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Code"
+          },
+          "subject_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Name"
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owner Id"
+          },
+          "owner_name": {
+            "type": "string",
+            "title": "Owner Name"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Due Date"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "submitted",
+              "frozen"
+            ],
+            "title": "State"
+          },
+          "overdue": {
+            "type": "boolean",
+            "title": "Overdue"
+          },
+          "booklets": {
+            "$ref": "#/components/schemas/StageCountsOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "unit_id",
+          "code",
+          "year",
+          "paper_title",
+          "exam_code",
+          "subject_code",
+          "subject_name",
+          "owner_id",
+          "owner_name",
+          "due_date",
+          "state",
+          "overdue",
+          "booklets"
+        ],
+        "title": "UnitProgressOut"
+      },
       "UnitRequestRefOut": {
         "properties": {
           "id": {
@@ -15173,6 +15698,35 @@
           "email"
         ],
         "title": "UnitSmeOut"
+      },
+      "UnitStateCountsOut": {
+        "properties": {
+          "open": {
+            "type": "integer",
+            "title": "Open"
+          },
+          "submitted": {
+            "type": "integer",
+            "title": "Submitted"
+          },
+          "frozen": {
+            "type": "integer",
+            "title": "Frozen"
+          },
+          "overdue": {
+            "type": "integer",
+            "title": "Overdue",
+            "description": "Open units whose due date has passed."
+          }
+        },
+        "type": "object",
+        "required": [
+          "open",
+          "submitted",
+          "frozen",
+          "overdue"
+        ],
+        "title": "UnitStateCountsOut"
       },
       "UnitSubjectOut": {
         "properties": {

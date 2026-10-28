@@ -34,6 +34,7 @@ _STUDENTS = _needs(C.MANAGE_STUDENTS)
 _UPLOAD = _needs(C.UPLOAD_BOOKLETS)
 _ASSIGN = _needs(C.ASSIGN_UNITS)
 _PROGRESS = _needs(C.VIEW_PROGRESS)
+_OVERVIEW = _needs(C.VIEW_OVERVIEW)
 _REDISTRIBUTE = _needs(C.REDISTRIBUTE_UNITS)
 _REQUEST = _needs(C.REQUEST_REASSIGNMENT)
 _AUTHOR = _needs(C.AUTHOR_CONTENT)
@@ -95,6 +96,10 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("POST", "/api/v1/units/{unit_id}/return"): _needs(C.RETURN_UNITS),
     ("POST", "/api/v1/units/{unit_id}/freeze"): _FREEZE,
     ("GET", "/api/v1/units/{unit_id}/frozen-record"): _FREEZE,
+    # --- the admin's dashboard, progress report and health box: counts, never marks (P29) ----
+    ("GET", "/api/v1/overview"): _OVERVIEW,
+    ("GET", "/api/v1/overview/progress"): _OVERVIEW,
+    ("GET", "/api/v1/overview/system"): _OVERVIEW,
     # --- progress: admin and SME, no marks for the admin (D167) -------------------------------
     ("GET", "/api/v1/booklets"): _PROGRESS,
     ("GET", "/api/v1/booklets/{booklet_id}"): _PROGRESS,

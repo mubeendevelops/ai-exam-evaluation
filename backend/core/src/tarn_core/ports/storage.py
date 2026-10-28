@@ -39,3 +39,7 @@ class BlobStore(Protocol):
         """Delete every object whose key is ``prefix`` followed by ``/`` (a folder); returns how
         many were removed. Used to remove everything stored for one booklet."""
         ...
+
+    def usage(self, college_id: CollegeId) -> int:
+        """Bytes stored under ``college/{id}/`` (everything the college keeps, content too)."""
+        ...

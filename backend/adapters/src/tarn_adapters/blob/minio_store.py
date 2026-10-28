@@ -9,6 +9,7 @@ from minio.error import S3Error
 
 from tarn_core.domain.common import BlobKey
 from tarn_core.errors import NotFoundError
+from tarn_core.ids import CollegeId
 
 _MISSING = {"NoSuchKey", "NoSuchObject", "NoSuchBucket"}
 
@@ -34,6 +35,9 @@ class _Client(Protocol):
 class _Listed(Protocol):
     @property
     def object_name(self) -> str | None: ...
+
+    @property
+    def size(self) -> int | None: ...
 
 
 class _Response(Protocol):
@@ -91,3 +95,9 @@ class MinioBlobStore:
         for name in names:
             self._client.remove_object(self._bucket, name)
         return len(names)
+
+    def usage(self, college_id: CollegeId) -> int:
+        """Bytes of every object under ``college/{id}/`` (one listing, summed)."""
+        folder = f"college/{college_id}/"
+        listed = self._client.list_objects(self._bucket, prefix=folder, recursive=True)
+        return sum(o.size or 0 for o in listed)

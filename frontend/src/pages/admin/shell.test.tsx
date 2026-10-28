@@ -36,17 +36,17 @@ describe('admin portal shell', () => {
     for (const tab of ['Q&A DB', 'AI Evaluation', 'Evaluated', 'Schema Designer']) {
       expect(screen.queryByRole('link', { name: tab })).toBeNull()
     }
-    expect(screen.getByText('Nothing to show yet')).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'SMEs' })).toBeInTheDocument()
   })
 
-  it('shows a short empty state for each section that is not built yet', async () => {
+  it('shows a short empty state for the sections with nothing to show', async () => {
     adminSession()
     const user = userEvent.setup()
     renderApp('/admin')
     const sidebar = await screen.findByRole('navigation', { name: 'Admin sections' })
     const empty: [string, string][] = [
       ['SME Progress Reports', 'No progress to report yet'],
-      ['Audit & External Reports', 'No reports yet'],
+      ['Audit & External Reports', 'Reports come later'],
     ]
     for (const [link, text] of empty) {
       await user.click(within(sidebar).getByRole('link', { name: link }))

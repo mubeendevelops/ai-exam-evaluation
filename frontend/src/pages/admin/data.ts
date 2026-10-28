@@ -123,3 +123,76 @@ export const REQUEST_STATE: Record<DelegationState, { label: string; tone: Tone 
   declined: { label: 'Declined', tone: 'red' },
   withdrawn: { label: 'Withdrawn', tone: 'gray' },
 }
+
+export type Dashboard = components['schemas']['DashboardOut']
+export type Progress = components['schemas']['ProgressOut']
+export type SmeProgress = Progress['smes'][number]
+export type UnitProgress = Progress['units'][number]
+export type StageCounts = components['schemas']['StageCountsOut']
+export type SmeStatus = SmeProgress['status']
+
+/** How an SME's computed status reads (D163): Idle is "active, no open unit". */
+export const SME_STATUS: Record<SmeStatus, { label: string; tone: Tone }> = {
+  active: { label: 'Active', tone: 'emerald' },
+  idle: { label: 'Idle', tone: 'cyan' },
+  suspended: { label: 'Suspended', tone: 'red' },
+}
+
+const FIGURES_REFRESH_MS = 30_000
+
+/** The dashboard's counts and recent activity (P29, D167: no marks). */
+export function useDashboard() {
+  return useQuery({
+    queryKey: ['overview'],
+    queryFn: async () => {
+      const { data } = await api.GET('/api/v1/overview')
+      if (!data) throw new Error('overview unavailable')
+      return data
+    },
+    refetchInterval: FIGURES_REFRESH_MS,
+  })
+}
+
+/** Progress per SME and per unit; credit follows the unit's current owner (D163). */
+export function useProgress() {
+  return useQuery({
+    queryKey: ['overview', 'progress'],
+    queryFn: async () => {
+      const { data } = await api.GET('/api/v1/overview/progress')
+      if (!data) throw new Error('progress unavailable')
+      return data
+    },
+    refetchInterval: FIGURES_REFRESH_MS,
+  })
+}
+
+/** The college's queue and storage (a call of its own: listing the files takes longer). */
+export function useSystemFigures() {
+  return useQuery({
+    queryKey: ['overview', 'system'],
+    queryFn: async () => {
+      const { data } = await api.GET('/api/v1/overview/system')
+      if (!data) throw new Error('system figures unavailable')
+      return data
+    },
+    refetchInterval: FIGURES_REFRESH_MS,
+  })
+}
+
+/** "12.4 MB": bytes in the unit a person reads. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes / 1024
+  let i = 0
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024
+    i += 1
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[i]}`
+}
+
+/** Share of the booklets approved, as a whole percent (0 when there are none). */
+export function percent(part: number, whole: number): number {
+  return whole > 0 ? Math.round((part / whole) * 100) : 0
+}

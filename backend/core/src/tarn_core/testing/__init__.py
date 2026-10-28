@@ -26,6 +26,7 @@ from tarn_core.testing.memory_identity import (
     MemoryMailer,
     SetPasswords,
 )
+from tarn_core.testing.memory_overview import MemoryOverviewRepository
 from tarn_core.testing.memory_repositories import (
     MemoryBookletRepository,
     MemoryCollegeRepository,
@@ -86,6 +87,13 @@ class InMemory:
         self.booklets = MemoryBookletRepository(self.log)
         self.scores = MemoryScoreRepository(self.log)
         self.sheets = MemoryResultSheetRepository(self.log)
+        self.overview = MemoryOverviewRepository(
+            users=self.users,
+            units=self.units,
+            booklets=self.booklets,
+            audit=self.audit,
+            jobs=self.jobs,
+        )
 
     @property
     def runtime(self) -> Runtime:
@@ -126,6 +134,7 @@ __all__ = [
     "MemoryIdentityStore",
     "MemoryJobQueue",
     "MemoryMailer",
+    "MemoryOverviewRepository",
     "MemoryPageSource",
     "MemoryQueueHarness",
     "MemoryResultSheetRepository",

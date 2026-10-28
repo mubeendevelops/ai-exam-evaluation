@@ -99,7 +99,7 @@ def test_0014_puts_earlier_booklets_into_a_unit(at_0013: TestDatabase) -> None:
         mine = _college_with_a_booklet(conn, "UA", entitled=True)
         theirs = _college_with_a_booklet(conn, "UB", entitled=True)
     migrate.upgrade(db.owner_url)
-    assert migrate.current_revision(db.owner_url) == "0016"
+    assert migrate.current_revision(db.owner_url) == "0017"
     with db.owner() as conn:
         rows = conn.execute(
             "SELECT college_id, code, paper_id, subject_id, year, owner_id, created_by FROM units"
