@@ -306,6 +306,10 @@ def test_a_paper_used_by_a_unit_keeps_its_subject(w: World) -> None:
         ("1XX21CS001.jpg", None),
         ("1XX21CS001.pdf.pdf", None),
         ("1XX21C\u0405001.pdf", None),  # a Cyrillic letter
+        # Letters that upper-case into ASCII must not pass as ASCII (P30, F18).
+        ("1xx21cs00\u0131.pdf", None),  # dotless i -> "I"
+        ("1xx21c\u00df001.pdf", None),  # sharp s -> "SS"
+        ("1xx21cs00\u0131\u0307.pdf", None),
         ("1XX-21CS001.pdf", None),
         ("..pdf", None),
         (".pdf", None),

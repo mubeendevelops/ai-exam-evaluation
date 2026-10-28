@@ -98,7 +98,11 @@ class Student:
 
 
 def normalise_usn(raw: str) -> str:
-    return "".join(raw.split()).upper()
+    """Spaces removed, ASCII letters upper-cased. Other letters are left as they are, so the
+    ``[A-Z0-9]`` checks refuse them: ``str.upper`` would turn a dotless i (U+0131) into ``I``
+    and a sharp s into ``SS``, so a name that reads as one roll number could match another
+    (P30, F18)."""
+    return "".join(c.upper() if c.isascii() else c for c in "".join(raw.split()))
 
 
 # Institution ID, as in MainLogin.html "Tenant Registration": upper-case letters, digits and

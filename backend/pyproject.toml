@@ -72,6 +72,7 @@ allowed-confusables = ["α", "β", "−", "×", "’"]
 # The P21 journey and tenancy sweep: tests that run on both the in-memory and PostgreSQL stacks.
 "api/src/tarn_api/journey.py" = ["S101"]
 "api/src/tarn_api/tenancy_sweep.py" = ["S101"]
+"api/src/tarn_api/admin_journey.py" = ["S101"]  # P30, the same on both stacks
 # Migrations build DDL from constants (table names, policy expressions), never from input.
 "**/migrations/**" = ["S608"]
 

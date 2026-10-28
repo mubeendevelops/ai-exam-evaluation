@@ -1,4 +1,4 @@
-# Tarn AI Evaluation — Security review (P21)
+# Tarn AI Evaluation — Security review (P21; admin portal: P30 at the end)
 
 7 Oct 2026 · scope: the code at the end of P20, the dev stack (`make up`), the Terraform in
 `deploy/gcp/` (validated only, never applied). References: `docs/design.md` "Data model and tenancy",
@@ -267,3 +267,92 @@ Every write is checked for its audit event, and the audit log for secrets and st
 - **Not built.** An HTTP route for operator actions (approve, suspend, LLM flag) against
   production (O103); only the CLI exists.
 - **PDF vector-render cost.** See section 5.
+
+---
+
+# Admin portal review (P30)
+
+29 Oct 2026 · scope: what Stage F added (P23–P29): personas and the capability table, the shared
+admin login, subject entitlements, units, upload by roll number, transfers and the delegation
+inbox, submit / return / freeze, content deletion, the dashboard. References: D159–D169 (the
+boss's answers) and D170–D212.
+
+## How it was reviewed
+
+1. Read the routes and services of the new surface: `security.current_user` / `booklet_user`,
+   `services/access.py` (`Reach`), `units.py`, `unit_upload.py`, `transfers.py`,
+   `delegation.py`, `unit_flow.py`, `unit_guard.py`, `content_deletion.py`, `overview.py`, the
+   lockout path in `services/auth.py` and `api/ratelimit.py`, and the email texts.
+2. Extended the sweeps to every operation and both stacks, wrote the admin portal's journey,
+   and attacked the file-name parser and the lockout with tests; each fix got a mutation check.
+
+## Findings and fixes
+
+| # | Area | Finding | Sev. | Fix | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| F18 | Input | Roll numbers (file names and the roster) were normalised with `str.upper` after NFKC, so non-ASCII letters turned into ASCII ones: `1xx21cs00ı.pdf` (dotless i) became `1XX21CS00I`, a sharp s became `SS`. A name that reads as one roll number could attach a booklet to another student; D188 says non-ASCII letters are refused | Low | `normalise_usn` upper-cases ASCII letters only; anything else stays and fails the `[A-Z0-9]{4,20}` check (`bad_name` for a file, a row error in the roster). Full-width forms still fold through NFKC (D188). D213 | `core/tests/test_units.py` (three new names), `test_roster.py::test_a_usn_with_a_letter_that_upper_cases_into_ascii_is_refused`, `test_security_p30.py`; mutation checked (3 failures) |
+| F19 | Auth | The shared admin login is locked per client address (D179), and the per-address rate limits key on the address: an IPv6 client holding a /64 (the usual allocation) could take a fresh counter for every guess | Low | `address_bucket`: an IPv6 address counts as its /64 (an IPv4-mapped one as the IPv4 address), for the lockout source and every per-address rate limit (`ip_of`). The identity store still keeps only a digest. D214 | `test_api_auth.py::test_an_ipv6_client_cannot_dodge_the_admin_lockout_inside_its_64`, `test_security_p30.py`; mutation checked |
+
+No finding of severity Medium or High: every check below held.
+
+## What holds
+
+- **Capabilities on the server.** Every route calls `current_user(unit, who, capability)` and
+  the services check again (`require`). `tarn_api.persona_sweep` classifies all 108 published
+  operations; the 93 that need a capability are called by the admin, an SME and the Governor
+  of one college with that college's own ids, now **on PostgreSQL too**
+  (`test_each_persona_is_allowed_or_refused_on_postgres`, P30). A persona without the
+  capability gets 403 "Your role cannot do this.", whatever the ids.
+- **Entitlements and units on the server.** Content is filtered by the SME's subjects, booklets
+  by subject **and** unit (`Reach`, D178, D187); another subject's or SME's content, unit or
+  booklet is 404, like another college's (the "physics SME" sweep, the journey: the second SME
+  meets 404 before the transfer, the first after it). Units are offered and transferred only to
+  active SMEs entitled to the subject (D186, D191); a closed unit refuses every write (409,
+  service guard and database triggers, D199, D204).
+- **Another college.** `tarn_api.tenancy_sweep`: 71 operations called by college B with
+  college A's ids answer 404 and change nothing, in memory and **on PostgreSQL including the
+  Governor's freeze and frozen-record routes** (they were skipped there before P30).
+- **RLS on the new tables.** `sme_subjects`, `units`, `delegation_requests`, `unit_transfers`,
+  `unit_submissions`, `unmarked_booklets` and the three `frozen_*` tables are college tables with
+  RLS forced; `test_pg_security` sweeps them with crafted reads and writes as `tarn_app`, and
+  `test_pg_admin_portal.py` (P30) checks them by name, that every reference to college data is a
+  composite `(college_id, …)` key, and tries all 20 such keys with another college's parent row
+  (12 as `tarn_app`, 8 whose copy would collide with the row's own key by the owner): each is
+  refused by the foreign key.
+- **File names.** Only the last part counts, they are never storage keys, never logged and
+  never audited (`unit.uploaded` holds counts per outcome; the journey checks every audit event
+  for the five roll numbers and the mistyped one). Length capped (255), PDF checked by its first
+  bytes, at most 20 files per request, body cap per route.
+- **Emails.** Assignment, transfer (both SMEs), return: unit code, paper title and exam code,
+  subject, student year, due date. No student name, roll number or answer text (the journey
+  checks every email it sends); the transfer reason is not emailed. The return note is the
+  admin's own text and is sent as written (D200): the admin should not type student data there.
+- **The admin never reaches marks.** `persona_sweep.MARKS_AND_TEXT` (review, sheets, page text,
+  evaluated list, segments, drawings, the keys) is refused to the admin; the journey reads every
+  admin screen's data (accounts, papers, SMEs, units, unit detail, booklets, booklet detail,
+  transfers, students, dashboard, progress) and finds no mark, credit, suggestion, answer text,
+  review or sheet field, and no page image, original or text link; `test_api_overview` checks the
+  dashboard schemas for mark, score, speed and accuracy fields.
+- **The shared admin login.** Failures count per client address bucket (F19), so a device
+  guessing wrong does not lock the other staff out; every refusal hashes once (D153); the
+  per-(institution, email) and per-address rate limits stay in front.
+
+## Accepted risks and open items (P30)
+
+- **Lockout and rate limits per instance (O106, O107).** The admin's real brute-force guard is
+  the per-account rate limit (10 per 15 minutes) and Cloud Armor; each Cloud Run instance counts
+  on its own, and per-address counter rows are never pruned.
+- **Free-text fields reach other people.** The return note goes to the SME by email; transfer
+  and decline reasons and the SME's request reason stay in the app and the audit log. Nothing
+  stops an admin or SME typing a student's name there; the screens could say so (O139).
+- **Who unlocks the admin.** Nobody but the admin: a password reset (or recovery code) clears
+  every counter. The operator has no unlock command (O109).
+
+## Tests and checks run (P30)
+
+New: `api/tests/test_e2e_admin_journey.py` and `test_admin_portal_journey_on_postgres` (the
+journey, P30 item 2), the persona sweep on PostgreSQL, the Governor routes in the PostgreSQL
+tenancy sweep, `adapters/tests/postgres/test_pg_admin_portal.py`,
+`core/tests/test_security_p30.py`, the F18/F19 tests above. Mutation checks: the ASCII-only
+upper-casing (3 tests failed) and the /64 bucket (1 failed), each reverted. Totals are in the
+Progress log P30.

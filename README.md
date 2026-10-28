@@ -51,14 +51,37 @@ All ports bind to 127.0.0.1. Verification, invitation and reset emails go to the
 | `DEMO_COM` | `anita.desai@demo-com.example.test` | QP-CI, QP-IPR, Assignments 1 and 2 (synthetic keys) |
 | `DEMO_ENG` | `kavya.shetty@demo-eng.example.test` | AI & ML keys K-AI1 to K-AI3 |
 
-(Admins: `admin@demo-com.example.test`, `admin@demo-eng.example.test`: one shared admin login per college, which manages SMEs, subjects, the roster and uploads and never sees marks (P24). A Governor is created with `tarn tenants governor DEMO_COM --email … --operator …` and sees a placeholder page for now.) The keys without a faculty source are written for development and carry the badge **SYNTHETIC – dev only, needs teacher validation**.
+The keys without a faculty source are written for development and carry the badge **SYNTHETIC – dev only, needs teacher validation**.
 
-The SME's path through the tabs (an SME sees only the subjects the admin granted; uploads are the admin's since P24 and have no screen until P25/P26, so step 1 shows the submissions only):
+### Who does what (personas)
+
+Each college has three kinds of account (D159–D164). What each may do is one capability table (`tarn_core/domain/personas.py`), checked by every API route; a persona without the capability gets 403, and another subject's, SME's or college's data looks missing (404).
+
+| Persona | Accounts | Does | Never |
+| --- | --- | --- | --- |
+| **Admin** | One shared login per college (`admin@demo-com.example.test`); wrong passwords lock the device's address, not the account | SMEs (invite, subjects, suspend, remove), the subject list, the student roster, units of work (paper + student year + subject + one SME + due date), booklet upload by roll number and retakes, transfers and the SMEs' reassignment requests, returning a submitted unit, the dashboard and progress report | Marks, answer text, page images, reviews or result sheets |
+| **SME** (subject expert) | Invited by the admin (`anita.desai@…`, `suresh.naik@demo-com.example.test`) | Questions, keys, rubrics and papers of the subjects granted; marks the booklets of the units they own; submits a unit; deletes content once its units are frozen | Another subject's content or another SME's unit |
+| **Governor** | One per college, created by the Tarn operator: `tarn tenants governor DEMO_COM --email E --operator NAME` | Freezes and signs off submitted units; reads their frozen record | Anything else for now (the Governor portal is Stage H) |
+
+### The admin portal
+
+Sign in as the admin (`DEMO_COM`, `admin@demo-com.example.test`, the seed's password) and you land on `/admin`, a sidebar of six sections:
+
+1. **Dashboard Overview** – SMEs (Active, Idle, Suspended), units and overdue ones, booklets by stage, recent activity, system health (API, worker, queue, storage used).
+2. **SME Directory & Subjects** – the college's subjects (add, rename, retire) and SMEs (add with subjects, edit subjects, suspend, resume, force a reset, unlock, remove). Removing a subject from an SME who has open units in it asks you to transfer them first.
+3. **Upload & Assign Papers** – create a unit from a paper an SME wrote (it needs an exam code and every slot linked) for an SME entitled to its subject; open the unit and drop PDFs named by roll number (`1XX21CS001.pdf`, one per student, up to 20 at once). Each file is queued or refused with its reason; an unknown roll number is fixed under **Students** (`/admin/upload/students`: add, edit, CSV import) and the file uploaded again. Flagged pages can be used anyway or the file replaced. A submitted unit shows the SME's submission and **Return to SME**.
+4. **SME Progress Reports** – per SME and per unit: booklets, approved, pending, overdue, Heavy load.
+5. **Redistribute Workload** – the SMEs' reassignment requests, and a transfer of a whole open unit to another entitled SME.
+6. **Audit & External Reports** – "Reports come later".
+
+A unit goes open → submitted (by its SME) → frozen (by the Governor, at `/governor`); the admin may return a submitted unit with a note. Emails go out on assignment, transfer and return (to the API log in development).
+
+The SME's path through the tabs (an SME sees only the subjects the admin granted and the units they own):
 
 1. **Q&A DB** – questions, benchmark answers, rubrics, glossaries, reference diagrams and key files.
-2. **AI Evaluation** – step 1 the submissions (for an uploader: pick the student and exam and drop the booklet, a PDF or page images in order; one drop is one booklet); step 2 check the segmentation (the machine reads and splits it; the teacher can correct lines, split, merge and reassign); step 3 approve answer by answer (AI suggestion, reference beside the student's text, per-criterion reasons, override in the paper's mark step), then approve the booklet.
+2. **AI Evaluation** – step 1 the SME's units and their booklets ("Submit unit", "Request reassignment"); step 2 check the segmentation (the machine reads and splits it; the SME can correct lines, split, merge and reassign); step 3 approve answer by answer (AI suggestion, reference beside the student's text, per-criterion reasons, override in the paper's mark step), then approve the booklet.
 3. **Evaluated** – approved booklets and their result-sheet PDFs (a new version when an approved booklet is amended).
-4. **Schema Designer** – exam blueprints (any N of M, OR pairs, sub-parts, per-step marks); the JSON is validated by the server.
+4. **Schema Designer** – exam blueprints (any N of M, OR pairs, sub-parts, per-step marks, exam code); the JSON is validated by the server.
 
 Registering a new college: the public page, then the emailed verification link, then a Tarn operator approves it: `cd backend && uv run tarn tenants list` and `uv run tarn tenants approve <ID> --operator <you>`.
 
@@ -72,7 +95,7 @@ Everything runs from `backend/` as `uv run tarn …`.
 | Page cleaning check | `tarn pages check FILE…` |
 | OCR | `tarn ocr models check\|fetch`, `tarn ocr read FILE…`, `tarn ocr calibrate MANIFEST` |
 | Benchmarks | `tarn bench ocr DIR`, `tarn bench segment DIR`, `tarn score bench SET`, `tarn score calibrate SET`, `tarn diagram bench` |
-| Tenants (Tarn operator) | `tarn tenants list\|approve\|suspend\|resume ID --operator NAME`; `tarn tenants llm ID --on\|--off --operator NAME` |
+| Tenants (Tarn operator) | `tarn tenants list\|approve\|suspend\|resume ID --operator NAME`; `tarn tenants governor ID --email E --operator NAME`; `tarn tenants llm ID --on\|--off --operator NAME` |
 | Database and identity | `tarn db …`, `tarn identity export\|import`, `tarn seed` |
 
 `tarn evaluate` uses the demo seed's exams and the core's in-memory adapters (no PostgreSQL, MinIO or API), and never calls the LLM. Use synthetic pages, not real student booklets, outside git-ignored folders.
@@ -119,4 +142,14 @@ These are stated plainly because they bound what the system can claim today.
 - **Handwritten diagrams, formulas and computations** have no real samples; the diagram detector was trained on public flowchart sets. Circuits, plots and labelled drawings are not scored.
 - **The Schema Designer does not save blueprints from the page** (the API does); paper auto-generation, bulk question import and a saved-schema library from the prototype are not built.
 
+- **The admin portal is built; the SME and Governor portals are not.** SMEs still work in today's tabs with a unit list in step 1, and the Governor has a freeze page only. Reports, AI question generation and storage limits come later.
+
 The full list is in `docs/acceptance.md` and, for contributors, `CLAUDE.md`.
+
+## What comes next
+
+1. **Stage G — SME portal:** a landing page (My Assignments) that drives to the existing screens, Manage Question Papers, Manage Schema, My Profile and My Reports, notifications; it replaces the unit list in step 1.
+2. **Stage H — Governor portal:** analytics, audits, freeze and sign-off (publishing), report requests; it replaces the `/governor` freeze page.
+3. **Later, on request:** aggregated reports (signed PDFs, D168), AI question and answer generation (D169), the Provisioner (storage limits, colleges).
+
+What is known about each, and the questions still open, is in `docs/notes/later_stages.md` (kept locally).

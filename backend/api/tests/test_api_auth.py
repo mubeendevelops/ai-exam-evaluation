@@ -132,6 +132,17 @@ def test_the_shared_admin_login_is_locked_per_address(
     assert "198.51.100.7" not in str(sources) and any(x.startswith("addr:") for x in sources)
 
 
+def test_an_ipv6_client_cannot_dodge_the_admin_lockout_inside_its_64(
+    client: TestClient, backends: MemoryBackends, college: tuple[CollegeId, UserId, UserId]
+) -> None:
+    """P30 F19: each guess from a new address of one /64 still counts on the same counter;
+    another /64 (another device or network) is not locked."""
+    for host in range(1, 6):
+        assert _attempt_from(client, f"2001:db8:7:1::{host:x}", ADMIN, "wrong password 1") == 401
+    assert _attempt_from(client, "2001:db8:7:1:ffff::99", ADMIN, ADMIN_PASSWORD) == 401
+    assert _attempt_from(client, "2001:db8:7:2::1", ADMIN, ADMIN_PASSWORD) == 200
+
+
 def test_an_sme_account_is_locked_whatever_the_address(
     client: TestClient, backends: MemoryBackends, college: tuple[CollegeId, UserId, UserId]
 ) -> None:

@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 
 from fastapi import HTTPException, Request, status
 
+from tarn_core.domain.identity import address_bucket
 from tarn_core.domain.tenancy import canonical_email, normalise_institution_id
 
 TOO_MANY = "Too many attempts. Wait a few minutes and try again."
@@ -126,7 +127,8 @@ def check(request: Request, *hits: tuple[Limit, str]) -> None:
 
 
 def ip_of(request: Request) -> str:
-    return client_address(request, request.app.state.trusted_proxy_hops)
+    """The client's address bucket: an IPv6 client counts as its /64 (P30, F19)."""
+    return address_bucket(client_address(request, request.app.state.trusted_proxy_hops))
 
 
 def account_key(institution_id: str, email: str) -> str:

@@ -1,9 +1,11 @@
-"""P21 on the real stack (``make up``; ``make test-integration``): the teacher's journey with five
-queued booklets and the cross-college sweep of every endpoint, on PostgreSQL as ``tarn_app`` and
+"""P21 and P30 on the real stack (``make up``; ``make test-integration``): the teacher's journey
+with five queued booklets, the admin portal's journey from a new college to a frozen unit, the
+cross-college sweep and the persona sweep of every endpoint, on PostgreSQL as ``tarn_app`` and
 ``tarn_auth`` (row-level security), MinIO, and the worker's runner on the real job queue. Then
 what the application role can and cannot do in SQL to the audit log, and O7 as accepted risk."""
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -13,21 +15,36 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from tarn_adapters.auth.mail import ConsoleMailer
 from tarn_adapters.config import Settings
 from tarn_adapters.identity.testing import create_test_identity_database
 from tarn_adapters.postgres.testing import TestDatabase, create_test_database, drop_test_database
 from tarn_adapters.runtime import SystemClock, UuidGenerator
 from tarn_adapters.seed.runner import run_seed
 from tarn_adapters.testing import QP_CI_PAGE, scripted_stages
+from tarn_api import persona_sweep
+from tarn_api.admin_journey import JOURNEY_PAGE, AdminJourney
 from tarn_api.app import create_app
-from tarn_api.backends import PostgresBackends
+from tarn_api.backends import PostgresBackends, unit_of_work
 from tarn_api.journey import Event, Journey, event_payload
-from tarn_api.tenancy_sweep import CASES, World, build_world, call, upload_for_another_college
+from tarn_api.persona_sweep import ACCESS, PERSONAS, checked
+from tarn_api.security import ROLE_REFUSED
+from tarn_api.tenancy_sweep import (
+    A_INSTITUTION,
+    B_INSTITUTION,
+    CASES,
+    World,
+    build_world,
+    call,
+    login,
+    upload_for_another_college,
+)
 from tarn_core.domain.common import BlobKey
+from tarn_core.domain.personas import CAPABILITIES
+from tarn_core.domain.tenancy import Role
 from tarn_core.ids import CollegeId
+from tarn_core.seed import DEV_PASSWORD
 from tarn_core.services.pipeline import QualityPolicy
-from tarn_core.testing import FakePageCleaner, FakePageSplitter
+from tarn_core.testing import FakePageCleaner, FakePageSplitter, MemoryMailer
 from tarn_worker.booklets import BookletJobRunner
 
 pytestmark = pytest.mark.integration
@@ -41,6 +58,7 @@ class Stack:
     app_db: TestDatabase
     backends: PostgresBackends
     runner: BookletJobRunner
+    mail: MemoryMailer
 
     def process(self) -> None:
         for _ in range(200):
@@ -60,13 +78,33 @@ class Stack:
             for action, booklet, b, a in rows
         ]
 
+    def governor(self, institution: str, email: str) -> dict[str, str]:
+        """The operator creates the college's Governor (``tarn tenants governor``), who
+        accepts the invitation and signs in."""
+        with self.backends.identity() as store:
+            tenant = store.find_tenant(institution)
+        assert tenant is not None
+        with unit_of_work(self.backends, tenant.college_id) as unit:
+            unit.accounts.invite_governor(
+                tenant.college_id, display_name="Governor", email=email, operator="test"
+            )
+        accepted = self.client.post(
+            "/api/v1/auth/invitations/accept",
+            json={"token": self.mail.last_token(email), "password": DEV_PASSWORD},
+        )
+        assert accepted.status_code == 204, accepted.text
+        return login(self.client, institution, email)
 
-@pytest.fixture(scope="module")
-def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
+
+@contextmanager
+def open_stack(
+    keys: Path, *, seed: bool = True, lines: Sequence[str] = QP_CI_PAGE
+) -> Iterator[Stack]:
+    """Throwaway application and identity databases, MinIO, the worker's runner with scripted
+    OCR reading ``lines``; the demo seed unless ``seed`` is false."""
     base = Settings()
     app_db = create_test_database(base.database_url, base.app_database_url)
     identity_db = create_test_identity_database(base.database_url, base.identity_app_database_url)
-    keys: Path = tmp_path_factory.mktemp("keys")
     settings = Settings(
         app_database_url=app_db.app_url,
         identity_app_database_url=identity_db.app_url,
@@ -75,9 +113,11 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
         rate_limits_enabled=False,
     )
     backends = PostgresBackends(settings)
-    backends.kit = replace(backends.kit, mailer=ConsoleMailer())
-    run_seed(settings, blobs=backends._blobs)
-    ocr = scripted_stages(backends._blobs).ocr
+    mail = MemoryMailer()
+    backends.kit = replace(backends.kit, mailer=mail)
+    if seed:
+        run_seed(settings, blobs=backends._blobs)
+    ocr = scripted_stages(backends._blobs, lines).ocr
     runner = BookletJobRunner(
         db=backends._app,
         blobs=backends._blobs,
@@ -92,11 +132,17 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
     )
     try:
         with TestClient(create_app(settings, backends=backends)) as client:
-            yield Stack(client, app_db, backends, runner)
+            yield Stack(client, app_db, backends, runner, mail)
     finally:
         backends.dispose()
         drop_test_database(base.database_url, app_db.name)
         drop_test_database(base.database_url, identity_db.name)
+
+
+@pytest.fixture(scope="module")
+def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
+    with open_stack(tmp_path_factory.mktemp("keys")) as opened:
+        yield opened
 
 
 # --- the journey -------------------------------------------------------------------------------
@@ -169,14 +215,14 @@ def test_o7_the_application_role_can_still_name_another_college(stack: Stack) ->
 
 @pytest.fixture(scope="module")
 def world(stack: Stack, journey: dict[str, Any]) -> World:
-    return build_world(stack.client, stack.process)
+    built = build_world(stack.client, stack.process)
+    built.b_governor = stack.governor(B_INSTITUTION, "governor@demo-eng.example.test")
+    return built
 
 
 @pytest.mark.parametrize(
     ("method", "path"),
-    # The Governor's two routes (P28) need a Governor of college B, made in the in-memory sweep
-    # only; ``test_api_unit_flow_postgres`` covers them on PostgreSQL.
-    [op for op, case in CASES.items() if case.kind != "own" and not case.as_governor],
+    [op for op, case in CASES.items() if case.kind != "own"],
     ids=lambda v: str(v),
 )
 def test_college_b_cannot_reach_college_a_on_postgres(
@@ -199,3 +245,61 @@ def test_college_b_cannot_reach_college_a_on_postgres(
 
 def test_b_cannot_register_a_booklet_for_a_student_of_a_on_postgres(world: World) -> None:
     assert upload_for_another_college(world).status_code == 404
+
+
+# --- the admin portal's journey (P30) ----------------------------------------------------------
+
+
+def test_admin_portal_journey_on_postgres(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """A new college on empty databases (no seed): see ``tarn_api.admin_journey``."""
+    with open_stack(tmp_path_factory.mktemp("keys"), seed=False, lines=JOURNEY_PAGE) as s:
+        journey = AdminJourney(s.client, s.backends, s.process, s.events, s.mail)
+        result = journey.run()
+        college, unit = result["college"], result["unit"]
+        with s.app_db.owner() as conn:
+            # The paper's rows are gone; the frozen record and every sheet row stay.
+            assert conn.execute(
+                "SELECT count(*) FROM exam_blueprints WHERE id = %s", (UUID(result["paper"]),)
+            ).fetchone() == (0,)
+            assert conn.execute(
+                "SELECT state FROM units WHERE id = %s", (UUID(unit),)
+            ).fetchone() == ("frozen",)
+            assert conn.execute(
+                "SELECT count(*) FROM frozen_booklets WHERE unit_id = %s", (UUID(unit),)
+            ).fetchone() == (5,)
+            assert conn.execute(
+                "SELECT count(*) FROM result_sheets WHERE college_id = %s", (college,)
+            ).fetchone() == (6,)
+        sheets = BlobKey(f"college/{college}/booklet/{result['amended']}/sheets/v2.pdf")
+        assert s.backends._blobs.get(sheets).startswith(b"%PDF")
+
+
+# --- the persona sweep on PostgreSQL (P30) -----------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def personas(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[tuple[World, dict[str, dict[str, str]]]]:
+    """A stack of its own: the sweep submits, freezes and deletes."""
+    with open_stack(tmp_path_factory.mktemp("keys")) as s:
+        governor = s.governor(A_INSTITUTION, "governor@demo-com.example.test")
+        w = build_world(s.client, s.process)
+        yield w, {"admin": w.a_admin, "sme": w.a, "governor": governor}
+
+
+@pytest.mark.parametrize(("method", "path"), checked(), ids=lambda v: str(v))
+def test_each_persona_is_allowed_or_refused_on_postgres(
+    personas: tuple[World, dict[str, dict[str, str]]], method: str, path: str
+) -> None:
+    world, headers = personas
+    access = ACCESS[(method, path)]
+    assert isinstance(access, frozenset)
+    for persona in PERSONAS:
+        allowed = bool(access & CAPABILITIES[Role(persona)])
+        response = persona_sweep.call(world, headers[persona], method, path)
+        if allowed:
+            assert response.status_code not in (401, 403), (persona, method, path, response.text)
+        else:
+            assert response.status_code == 403, (persona, method, path, response.text)
+            assert response.json() == {"detail": ROLE_REFUSED}

@@ -106,6 +106,12 @@ def test_bom_crlf_blank_lines_quotes_and_extra_columns() -> None:
     ]
 
 
+def test_a_usn_with_a_letter_that_upper_cases_into_ascii_is_refused() -> None:
+    """P30, F18: ``str.upper`` turns a dotless i into I and a sharp s into SS."""
+    _, errors = parse_roster("name,usn\nAsha,1ab21cs00\u0131\nRavi,1ab21c\u00df002\n")
+    assert [e.field for e in errors] == ["usn", "usn"], errors
+
+
 def test_row_limit() -> None:
     lines = ["name,usn"] + [f"S{i},USN{i:05d}" for i in range(MAX_ROWS + 1)]
     _, errors = parse_roster("\n".join(lines))

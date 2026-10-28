@@ -8,6 +8,7 @@ Nothing here is ever logged or audited: hashes, wrapped keys and encrypted value
 the identity store and in encrypted backups."""
 
 import hashlib
+import ipaddress
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -183,13 +184,33 @@ class LoginCounters:
         return self.lockout_until is not None and self.lockout_until > now
 
 
+IPV6_BUCKET = 64
+"""An IPv6 client usually holds a whole /64: counting each address apart would hand it a fresh
+counter per request (P30, F19)."""
+
+
+def address_bucket(address: str) -> str:
+    """The client address as counted by the per-address limits and the shared admin login's
+    lockout: an IPv4 address as it is, an IPv6 address as its /64 network (an IPv4-mapped one as
+    the IPv4 address), anything else unchanged."""
+    try:
+        ip = ipaddress.ip_address(address.strip())
+    except ValueError:
+        return address
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.IPv6Network(f"{ip}/{IPV6_BUCKET}", strict=False))
+    return str(ip)
+
+
 def lockout_source(address: str) -> str:
     """The counter key of the shared admin login for one client address (D161, D179): a
-    SHA-256 prefix, so the identity store keeps no address. "" (the account-wide counter) when
-    the address is unknown."""
+    SHA-256 prefix of its bucket (``address_bucket``), so the identity store keeps no address.
+    "" (the account-wide counter) when the address is unknown."""
     if not address:
         return ""
-    return "addr:" + hashlib.sha256(address.encode()).hexdigest()[:32]
+    return "addr:" + hashlib.sha256(address_bucket(address).encode()).hexdigest()[:32]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
