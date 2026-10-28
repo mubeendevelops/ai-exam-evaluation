@@ -3,6 +3,7 @@ import { PageBanner } from '../components/app/PageBanner'
 import { SmallButton } from '../components/schema/controls'
 import { HeaderForm } from '../components/schema/HeaderForm'
 import { JsonPanel } from '../components/schema/JsonPanel'
+import { SavedPapers } from '../components/schema/SavedPapers'
 import { SectionCard } from '../components/schema/SectionCard'
 import { GlassPanel, Modal, useToast } from '../components/ui'
 import { useBlueprintCheck } from '../hooks/useBlueprintCheck'
@@ -173,6 +174,8 @@ export default function SchemaPage() {
           </div>
         </div>
       </div>
+
+      <SavedPapers />
 
       <Modal
         open={confirmReset}

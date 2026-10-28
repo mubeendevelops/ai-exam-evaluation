@@ -31,6 +31,7 @@ from tarn_core.ports.repositories import (
 from tarn_core.services._support import Runtime
 from tarn_core.services.access import require
 from tarn_core.services.booklets import BookletService
+from tarn_core.services.unit_guard import ensure_unit_open
 from tarn_core.services.uploads import UploadLimits, UploadService
 
 _USN = re.compile(r"[A-Z0-9]{4,20}")
@@ -159,7 +160,7 @@ class UnitUploadService:
     ) -> UploadReport:
         """Check every file, queue the valid ones while there are free slots."""
         require(self._users.get(college_id, actor_id), Capability.UPLOAD_BOOKLETS)
-        unit = self._units.get(college_id, unit_id)
+        unit = ensure_unit_open(self._units, college_id, unit_id)
         if not files:
             raise InvariantError("Choose the PDFs to upload.")
         if len(files) > self._limits.max_batch_files:
@@ -234,6 +235,7 @@ class UnitUploadService:
         same unit. Everything is checked before anything is deleted."""
         require(self._users.get(college_id, actor_id), Capability.UPLOAD_BOOKLETS)
         old = self._booklets.get(college_id, booklet_id)
+        ensure_unit_open(self._units, college_id, old.unit_id)
         if old.status not in REPLACEABLE:
             raise IllegalTransitionError(
                 "Only a booklet that needs a retake, or that failed, can be replaced."

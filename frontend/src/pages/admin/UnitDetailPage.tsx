@@ -1,17 +1,23 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
 import { api } from '../../api/client'
+import { NETWORK_PROBLEM, problemOf } from '../../api/errors'
 import { uploadToUnit } from '../../api/booklets'
 import { PageBanner } from '../../components/app/PageBanner'
 import { FormError } from '../../components/public/fields'
 import { Dropzone } from '../../components/evaluate/Dropzone'
 import { STATUS } from '../../components/evaluate/model'
 import { StatusBadge } from '../../components/evaluate/StatusBadge'
-import { EmptyState, GlassPanel, useToast } from '../../components/ui'
-import { RowButton, sectionTitle } from './controls'
-import type { UploadedFile, WorkUnitDetail } from './data'
+import { TextArea } from '../../components/schema/controls'
+import { Badge, EmptyState, GlassPanel, Modal, useToast } from '../../components/ui'
+import type { components } from '../../api/schema'
+import { CancelButton, PrimaryButton, RowButton, SubmitInDialog, sectionTitle } from './controls'
+import { UNIT_STATE, returnNote, type UploadedFile, type WorkUnitDetail } from './data'
+import { REASON_MAX } from './TransferDialog'
 import { RetakePanel } from './RetakePanel'
+
+type UnmarkedReason = components['schemas']['UnmarkedOut']['reason']
 
 const isPdf = (f: File) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name)
 
@@ -52,6 +58,135 @@ function Results({ files, onDismiss }: { files: UploadedFile[]; onDismiss: () =>
         </p>
       )}
     </section>
+  )
+}
+
+const REASON: Record<UnmarkedReason, string> = {
+  absent: 'Absent',
+  unreadable: 'Unreadable',
+  other: 'Other',
+}
+
+/**
+ * P28 (D164): where the unit stands. Submitted: what the SME handed over (booklets not
+ * marked, with their reasons) and "Return to SME" until the Governor freezes it. Frozen: who
+ * signed it off. Open after a return: the note the SME was sent.
+ */
+function SubmissionPanel({ unit }: { unit: WorkUnitDetail }) {
+  const [returning, setReturning] = useState(false)
+  const state = UNIT_STATE[unit.state]
+  const submission = unit.submission
+  const note = returnNote(unit)
+  if (unit.state === 'open' && !note) return null
+  const students = new Map(unit.booklets.map((b) => [b.id, b.student]))
+  return (
+    <GlassPanel as="section" aria-labelledby="submission-title" className="space-y-3 p-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="submission-title" className={sectionTitle}>
+          <i className="fa-solid fa-paper-plane text-amber-400" aria-hidden="true" /> Submission
+          <Badge tone={state.tone}>{state.label}</Badge>
+        </h2>
+        {unit.state === 'submitted' && (
+          <PrimaryButton onClick={() => setReturning(true)}>
+            <i className="fa-solid fa-rotate-left" aria-hidden="true" /> Return to SME
+          </PrimaryButton>
+        )}
+      </div>
+      {unit.state === 'open' && (
+        <p className="text-xs text-gray-300">
+          Returned to {unit.owner.name} with the note: <q className="text-amber-200">{note}</q>
+        </p>
+      )}
+      {unit.state !== 'open' && submission && (
+        <>
+          <p className="text-xs text-gray-300">
+            Submitted by {submission.submitted_by.name} on{' '}
+            {new Date(submission.submitted_at).toLocaleString()}.{' '}
+            {unit.state === 'frozen' && unit.frozen
+              ? `Frozen and signed off by ${unit.frozen.frozen_by.name} on ${new Date(unit.frozen.frozen_at).toLocaleString()}: nothing in the unit changes now.`
+              : 'Nothing in the unit can be changed unless you return it, until the Governor freezes it.'}
+          </p>
+          {submission.unmarked.length > 0 && (
+            <ul aria-label="Booklets not marked" className="space-y-1 text-xs">
+              {submission.unmarked.map((m) => {
+                const student = students.get(m.booklet_id)
+                return (
+                  <li key={m.booklet_id} className="text-gray-300">
+                    <span className="font-mono text-gray-200">{student?.usn ?? 'Booklet'}</span>{' '}
+                    {student?.name} · not marked: {REASON[m.reason]}
+                    {m.note && ` (${m.note})`}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </>
+      )}
+      {returning && <ReturnDialog unit={unit} onClose={() => setReturning(false)} />}
+    </GlassPanel>
+  )
+}
+
+function ReturnDialog({ unit, onClose }: { unit: WorkUnitDetail; onClose: () => void }) {
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const { data, error: err } = await api.POST('/api/v1/units/{unit_id}/return', {
+        params: { path: { unit_id: unit.id } },
+        body: { note: note.trim(), expected_version: unit.version },
+      })
+      if (data) {
+        toast.show(`${unit.code} returned; ${unit.owner.name} was emailed your note.`)
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['unit', unit.id] }),
+          queryClient.invalidateQueries({ queryKey: ['units'] }),
+        ])
+        onClose()
+      } else setError(problemOf(err, 'Could not return the unit.').message)
+    } catch {
+      setError(NETWORK_PROBLEM)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      eyebrow="Return to SME"
+      title={`Return ${unit.code} to ${unit.owner.name}`}
+      description="The unit opens again for its SME, who is emailed your note. They submit it again when done."
+      footer={
+        <div className="flex justify-end gap-2">
+          <CancelButton onClick={onClose}>Cancel</CancelButton>
+          <SubmitInDialog form="return-form" busy={busy} disabled={!note.trim()}>
+            Return unit
+          </SubmitInDialog>
+        </div>
+      }
+    >
+      <form id="return-form" onSubmit={submit} className="space-y-4">
+        <TextArea
+          label="Note to the SME"
+          value={note}
+          required
+          rows={3}
+          maxLength={REASON_MAX}
+          placeholder="e.g. recheck question 3 in every booklet"
+          onChange={(e) => setNote(e.target.value)}
+        />
+        <FormError message={error} />
+      </form>
+    </Modal>
   )
 }
 
@@ -193,7 +328,8 @@ export default function UnitDetailPage() {
         </Link>
       </PageBanner>
       {unit.isError && <FormError message="Could not load the unit." />}
-      {u && (
+      {u && <SubmissionPanel unit={u} />}
+      {u && u.state === 'open' && (
         <>
           <GlassPanel as="section" aria-labelledby="upload-title" className="space-y-4 p-6">
             <h2 id="upload-title" className={sectionTitle}>
@@ -222,6 +358,10 @@ export default function UnitDetailPage() {
             )}
             {results && <Results files={results} onDismiss={() => setResults(null)} />}
           </GlassPanel>
+        </>
+      )}
+      {u && (
+        <>
           <GlassPanel as="section" aria-labelledby="booklets-title" className="space-y-4 p-6">
             <h2 id="booklets-title" className={sectionTitle}>
               <i className="fa-solid fa-folder-open text-cyan-400" aria-hidden="true" /> Booklets (

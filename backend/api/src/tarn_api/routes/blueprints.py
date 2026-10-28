@@ -7,12 +7,13 @@ booklets pin a version and content rows are append-only until P28."""
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Query, status
+from fastapi import APIRouter, Body, Query, Response, status
 
 from tarn_api.backends import Unit, unit_of_work
 from tarn_api.schemas import (
     BlueprintOut,
     BlueprintSummaryOut,
+    DeletionCheckOut,
     ErrorOut,
     IssueOut,
     SectionSummaryOut,
@@ -274,3 +275,38 @@ def update_blueprint(
             who.college_id, who.user_id, BlueprintId(blueprint_id), document
         )
         return _full_out(blueprint, unit)
+
+
+# --- permanent deletion (P28, D166) -----------------------------------------------------------
+
+
+@router.get(
+    "/blueprints/{blueprint_id}/deletion",
+    response_model=DeletionCheckOut,
+    responses={404: {"model": ErrorOut}},
+    summary="Can this paper or schema be deleted yet? The reasons it cannot",
+)
+def blueprint_deletion(
+    blueprint_id: UUID, who: PrincipalDep, backends: BackendsDep
+) -> DeletionCheckOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
+        check = unit.content_deletion.check_paper(
+            who.college_id, who.user_id, BlueprintId(blueprint_id)
+        )
+        return DeletionCheckOut(allowed=check.allowed, blockers=list(check.blockers))
+
+
+@router.delete(
+    "/blueprints/{blueprint_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={403: {"model": ErrorOut}, 404: {"model": ErrorOut}, 409: {"model": ErrorOut}},
+    summary="Delete a paper or schema for good, every version (SMEs only)",
+    description="Allowed once no unit that is not frozen uses it (D166). Frozen records and "
+    "issued result sheets stay. Audited without content.",
+)
+def delete_blueprint(blueprint_id: UUID, who: PrincipalDep, backends: BackendsDep) -> Response:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
+        unit.content_deletion.delete_paper(who.college_id, who.user_id, BlueprintId(blueprint_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

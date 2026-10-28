@@ -137,7 +137,9 @@ def w() -> World:
             runtime=mem.runtime,
             jobs=mem.jobs,
         ),
-        decisions=PageDecisions(booklets=mem.booklets, runtime=mem.runtime, jobs=mem.jobs),
+        decisions=PageDecisions(
+            booklets=mem.booklets, units=mem.units, runtime=mem.runtime, jobs=mem.jobs
+        ),
         transform=FakePageTransform(),
         blueprint_id=blueprint.id,
     )

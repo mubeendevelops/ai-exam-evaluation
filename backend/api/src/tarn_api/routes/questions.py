@@ -14,6 +14,7 @@ from tarn_api.backends import unit_of_work
 from tarn_api.schemas import (
     CriterionBody,
     CriterionOut,
+    DeletionCheckOut,
     DiagramCriterion,
     DiagramKindName,
     DiagramParamsBody,
@@ -671,3 +672,38 @@ def _file_response(data: bytes, media_type: str, name: str) -> Response:
             "Cache-Control": "private, max-age=300",
         },
     )
+
+
+# --- permanent deletion (P28, D166) -----------------------------------------------------------
+
+
+@router.get(
+    "/questions/{question_id}/deletion",
+    response_model=DeletionCheckOut,
+    responses={404: {"model": ErrorOut}},
+    summary="Can this question be deleted yet? The reasons it cannot",
+)
+def question_deletion(
+    question_id: UUID, who: PrincipalDep, backends: BackendsDep
+) -> DeletionCheckOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
+        check = unit.content_deletion.check_question(
+            who.college_id, who.user_id, QuestionId(question_id)
+        )
+        return DeletionCheckOut(allowed=check.allowed, blockers=list(check.blockers))
+
+
+@router.delete(
+    "/questions/{question_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**_TEACHERS, 409: {"model": ErrorOut, "description": "Still in use"}},
+    summary="Delete a question for good, with every version, key, rubric and file",
+    description="Allowed once no paper links it and no unit that is not frozen uses it (D166). "
+    "Frozen records and issued result sheets stay. Audited without content.",
+)
+def delete_question(question_id: UUID, who: PrincipalDep, backends: BackendsDep) -> Response:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
+        unit.content_deletion.delete_question(who.college_id, who.user_id, QuestionId(question_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

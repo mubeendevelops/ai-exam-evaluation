@@ -41,6 +41,8 @@ class Case:
     request: Callable[["World"], dict[str, Any]] | None = None
     """``client.request`` keyword arguments besides method and URL (body, params)."""
     as_admin: bool = False
+    as_governor: bool = False
+    """Called by college B's Governor (``World.b_governor``; P28's freeze routes)."""
 
 
 @dataclass
@@ -56,6 +58,8 @@ class World:
     """Path parameters (A's ids) and other values the requests need."""
     review: dict[str, Any]
     blueprint_document: dict[str, Any]
+    b_governor: dict[str, str] | None = None
+    """College B's Governor, when the fixture made one (the in-memory sweep)."""
 
 
 def login(client: "TestClient", institution: str, email: str) -> dict[str, str]:
@@ -268,6 +272,19 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("POST", "/api/v1/accounts/{user_id}/subjects/{subject_id}/revoke"): Case(
         "college", _json(lambda w: {"transfers": [], "reason": ""}), as_admin=True
     ),
+    # --- another college's submit, return, freeze, deletion (P28) ----------------------------
+    ("POST", "/api/v1/units/{unit_id}/submit"): Case("college", _json(lambda w: {"unmarked": []})),
+    ("POST", "/api/v1/units/{unit_id}/return"): Case(
+        "college", _json(lambda w: {"note": "Taken back"}), as_admin=True
+    ),
+    ("POST", "/api/v1/units/{unit_id}/freeze"): Case(
+        "college", _json(lambda w: {}), as_governor=True
+    ),
+    ("GET", "/api/v1/units/{unit_id}/frozen-record"): Case("college", as_governor=True),
+    ("GET", "/api/v1/questions/{question_id}/deletion"): Case("college"),
+    ("DELETE", "/api/v1/questions/{question_id}"): Case("college"),
+    ("GET", "/api/v1/blueprints/{blueprint_id}/deletion"): Case("college"),
+    ("DELETE", "/api/v1/blueprints/{blueprint_id}"): Case("college"),
     ("POST", "/api/v1/units/{unit_id}/booklets"): Case(
         "college",
         lambda w: {
@@ -474,7 +491,11 @@ def url(world: World, path: str) -> str:
 
 
 def call(world: World, method: str, path: str, case: Case) -> Any:
-    headers = dict(world.b_admin if case.as_admin else world.b)
+    if case.as_governor:
+        assert world.b_governor is not None, "this case needs college B's Governor"
+        headers = dict(world.b_governor)
+    else:
+        headers = dict(world.b_admin if case.as_admin else world.b)
     extra = case.request(world) if case.request else {}
     headers |= extra.pop("headers", {})
     return world.client.request(method, url(world, path), headers=headers, **extra)

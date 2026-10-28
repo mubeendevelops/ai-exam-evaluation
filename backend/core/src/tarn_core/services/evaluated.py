@@ -4,20 +4,21 @@ stored PDF of any version. College data; every call takes ``college_id``."""
 
 from dataclasses import dataclass
 
-from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import APPROVED_STATUSES, Booklet, BookletStatus
 from tarn_core.domain.review import ResultSheet
 from tarn_core.domain.tenancy import Student, normalise_usn
 from tarn_core.errors import InvariantError, NotFoundError
-from tarn_core.ids import BookletId, CollegeId
+from tarn_core.ids import BlueprintId, BookletId, CollegeId
 from tarn_core.ports.repositories import (
     BookletRepository,
     ContentRepository,
     ResultSheetRepository,
     StudentRepository,
+    UnitRepository,
 )
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services.access import Reach
+from tarn_core.services.unit_flow import PaperSummary, paper_summary
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -49,7 +50,9 @@ class EvaluatedBooklets:
         content: ContentRepository,
         sheets: ResultSheetRepository,
         blobs: BlobStore,
+        units: UnitRepository,
     ) -> None:
+        self._units = units
         self._booklets = booklets
         self._students = students
         self._content = content
@@ -74,7 +77,8 @@ class EvaluatedBooklets:
             raise InvariantError(f"an evaluated booklet is {_names(APPROVED_STATUSES)}")
         exam_q, student_q, usn_q = exam.strip().lower(), student.strip().lower(), normalise_usn(usn)
         students = {s.id: s for s in self._students.list(college_id)}
-        blueprints: dict[tuple[object, int], ExamBlueprint] = {}
+        blueprints: dict[tuple[object, int], PaperSummary] = {}
+        units = {u.id: u for u in self._units.list(college_id)}
         found: list[EvaluatedBooklet] = []
         for booklet in self._booklets.list(college_id):
             if booklet.status not in APPROVED_STATUSES or status not in (None, booklet.status):
@@ -86,14 +90,20 @@ class EvaluatedBooklets:
                 continue
             if usn_q and usn_q not in owner.usn:
                 continue
+            if not reach.sees_booklet(units[booklet.unit_id].subject_id, booklet.unit_id):
+                continue
             ref = booklet.blueprint
             blueprint = blueprints.get((ref.id, ref.version))
             if blueprint is None:
-                blueprint = blueprints[(ref.id, ref.version)] = self._content.get(
-                    college_id, ExamBlueprint, ref.id, ref.version
+                # After the freeze the paper may be deleted: its frozen copy names it (D166).
+                blueprint = blueprints[(ref.id, ref.version)] = paper_summary(
+                    self._content,
+                    self._units,
+                    college_id,
+                    booklet.unit_id,
+                    BlueprintId(ref.id),
+                    ref.version,
                 )
-            if not reach.sees_booklet(blueprint.subject_id, booklet.unit_id):
-                continue
             if exam_q and exam_q not in f"{blueprint.title} {blueprint.course_code}".lower():
                 continue
             versions = tuple(self._sheets.versions(college_id, booklet.id))
@@ -117,9 +127,8 @@ class EvaluatedBooklets:
         """The stored PDF of one version. ``NotFoundError`` for a booklet of another college
         or out of reach, a version that was never issued, or a sheet issued without a PDF."""
         booklet = self._booklets.get(college_id, booklet_id)
-        ref = booklet.blueprint
-        paper = self._content.get(college_id, ExamBlueprint, ref.id, ref.version)
-        if not reach.sees_booklet(paper.subject_id, booklet.unit_id):
+        unit = self._units.get(college_id, booklet.unit_id)
+        if not reach.sees_booklet(unit.subject_id, booklet.unit_id):
             raise NotFoundError(f"booklet {booklet_id}")
         sheet = next(
             (s for s in self._sheets.versions(college_id, booklet_id) if s.version == version),

@@ -16,11 +16,20 @@ from tarn_api.schemas import (
     DelegationRequestOut,
     DelegationUnitOut,
     ErrorOut,
+    FreezeIn,
+    FrozenAnswerOut,
+    FrozenBookletOut,
+    FrozenPaperOut,
+    FrozenRecordOut,
+    FrozenSheetOut,
+    ReturnIn,
+    SubmitIn,
     TransferIn,
     TransferOut,
     UnitChoicePaperOut,
     UnitCountsOut,
     UnitDetailOut,
+    UnitFrozenOut,
     UnitIn,
     UnitOut,
     UnitOwnerOut,
@@ -29,7 +38,9 @@ from tarn_api.schemas import (
     UnitSmeOut,
     UnitStateName,
     UnitSubjectOut,
+    UnitSubmissionOut,
     UnitUploadOut,
+    UnmarkedOut,
     UploadFileOut,
 )
 from tarn_api.security import BackendsDep, PrincipalDep, current_user
@@ -37,9 +48,10 @@ from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import APPROVED_STATUSES, Booklet, BookletStatus
 from tarn_core.domain.content import Subject
 from tarn_core.domain.personas import Capability
-from tarn_core.domain.unit import DelegationRequest, UnitState
+from tarn_core.domain.unit import DelegationRequest, UnitState, UnmarkedBooklet, UnmarkedReason
 from tarn_core.domain.unit import Unit as WorkUnit
-from tarn_core.ids import BlueprintId, CollegeId, SubjectId, UnitId, UserId
+from tarn_core.ids import BlueprintId, BookletId, CollegeId, SubjectId, UnitId, UserId
+from tarn_core.services.unit_flow import PaperSummary, paper_summary, summary_of
 from tarn_core.services.unit_upload import PROBLEM_TEXT, FileOutcome, NamedFile
 
 router = APIRouter(
@@ -67,10 +79,12 @@ def _counts(booklets: Sequence[Booklet]) -> UnitCountsOut:
     )
 
 
-def _paper_out(paper: ExamBlueprint) -> UnitPaperOut:
+def _paper_out(paper: ExamBlueprint | PaperSummary) -> UnitPaperOut:
+    if isinstance(paper, ExamBlueprint):
+        paper = summary_of(paper)
     return UnitPaperOut(
         id=paper.id,
-        version=paper.meta.version,
+        version=paper.version,
         title=paper.title,
         exam_code=paper.exam_code,
         course_code=paper.course_code,
@@ -82,8 +96,45 @@ def _subject_out(subject: Subject) -> UnitSubjectOut:
     return UnitSubjectOut(id=subject.id, code=subject.code, name=subject.name)
 
 
-def _unit_out(unit: Unit, college_id: CollegeId, work: WorkUnit) -> UnitOut:
-    paper = unit.scope.content.get(college_id, ExamBlueprint, work.paper_id)
+def _paper(unit: Unit, college_id: CollegeId, work: WorkUnit) -> PaperSummary:
+    """The unit's paper, or its frozen copy once the paper is deleted (D166)."""
+    return paper_summary(unit.scope.content, unit.scope.units, college_id, work.id, work.paper_id)
+
+
+def _submission_out(unit: Unit, college_id: CollegeId, work: WorkUnit) -> UnitSubmissionOut | None:
+    found = unit.scope.units.submissions(college_id, work.id)
+    if not found:
+        return None
+    last = found[-1]
+    return UnitSubmissionOut(
+        id=last.id,
+        submitted_by=owner_out(unit, college_id, last.submitted_by),
+        submitted_at=last.submitted_at,
+        unmarked=[
+            UnmarkedOut(booklet_id=u.booklet_id, reason=u.reason.value, note=u.note)
+            for u in last.unmarked
+        ],
+        returned_at=last.returned_at,
+        returned_by=None
+        if last.returned_by is None
+        else owner_out(unit, college_id, last.returned_by),
+        return_note=last.return_note,
+    )
+
+
+def _frozen_out(unit: Unit, college_id: CollegeId, work: WorkUnit) -> UnitFrozenOut | None:
+    if work.state is not UnitState.FROZEN:
+        return None
+    record = unit.scope.units.frozen(college_id, work.id)
+    if record is None:
+        return None
+    return UnitFrozenOut(
+        frozen_by=owner_out(unit, college_id, record.frozen_by), frozen_at=record.frozen_at
+    )
+
+
+def unit_out(unit: Unit, college_id: CollegeId, work: WorkUnit) -> UnitOut:
+    paper = _paper(unit, college_id, work)
     subject = unit.scope.content.get(college_id, Subject, work.subject_id)
     owner = unit.scope.users.get(college_id, work.owner_id)
     return UnitOut(
@@ -99,6 +150,8 @@ def _unit_out(unit: Unit, college_id: CollegeId, work: WorkUnit) -> UnitOut:
         version=work.version,
         counts=_counts(unit.scope.booklets.in_unit(college_id, work.id)),
         pending_request=_pending(unit, college_id, work),
+        submission=_submission_out(unit, college_id, work),
+        frozen=_frozen_out(unit, college_id, work),
     )
 
 
@@ -118,7 +171,7 @@ def delegation_out(
 ) -> DelegationRequestOut:
     """The request with its unit as it is now (code, paper, owner, progress: no marks)."""
     work = unit.scope.units.get(college_id, request.unit_id)
-    paper = unit.scope.content.get(college_id, ExamBlueprint, work.paper_id)
+    paper = _paper(unit, college_id, work)
     subject = unit.scope.content.get(college_id, Subject, work.subject_id)
     return DelegationRequestOut(
         id=request.id,
@@ -144,7 +197,8 @@ def delegation_out(
 @router.get(
     "/units",
     response_model=list[UnitOut],
-    summary="Units of work, newest first: every unit for the admin, your own for an SME",
+    summary="Units of work, newest first: every unit for the admin, your own for an SME, the "
+    "submitted and frozen ones for the Governor",
 )
 def list_units(
     who: PrincipalDep,
@@ -154,7 +208,7 @@ def list_units(
     state: Annotated[UnitStateName | None, Query()] = None,
 ) -> list[UnitOut]:
     with unit_of_work(backends, who.college_id) as unit:
-        current_user(unit, who, Capability.VIEW_PROGRESS)
+        current_user(unit, who, Capability.VIEW_PROGRESS, Capability.FREEZE_UNITS)
         found = unit.units.list(
             who.college_id,
             who.user_id,
@@ -162,7 +216,7 @@ def list_units(
             owner_id=None if owner_id is None else UserId(owner_id),
             state=None if state is None else UnitState(state),
         )
-        return [_unit_out(unit, who.college_id, u) for u in found]
+        return [unit_out(unit, who.college_id, u) for u in found]
 
 
 @router.get(
@@ -227,7 +281,7 @@ def create_unit(body: UnitIn, who: PrincipalDep, backends: BackendsDep) -> UnitO
             owner_id=UserId(body.owner_id),
             due_date=body.due_date,
         )
-        return _unit_out(unit, who.college_id, made)
+        return unit_out(unit, who.college_id, made)
 
 
 @router.get(
@@ -247,7 +301,7 @@ def get_unit(unit_id: UUID, who: PrincipalDep, backends: BackendsDep) -> UnitDet
         ]
         limits = backends.upload_limits
         return UnitDetailOut(
-            **_unit_out(unit, who.college_id, work).model_dump(),
+            **unit_out(unit, who.college_id, work).model_dump(),
             booklets=booklets,
             waiting=unit.scope.booklets.count_waiting(who.college_id, who.user_id),
             max_waiting=limits.max_waiting,
@@ -323,7 +377,7 @@ def transfer_unit(
             reason=body.reason,
             expected_version=body.expected_version,
         )
-        return _unit_out(unit, who.college_id, moved)
+        return unit_out(unit, who.college_id, moved)
 
 
 @router.get(
@@ -367,3 +421,143 @@ def request_reassignment(
             who.college_id, who.user_id, UnitId(unit_id), reason=body.reason
         )
         return delegation_out(unit, who.college_id, made)
+
+
+# --- submit, return, freeze (P28, D164) --------------------------------------------------------
+
+_CLOSED = {"model": ErrorOut, "description": "Not in a state that allows this, or stale"}
+
+
+@router.post(
+    "/units/{unit_id}/submit",
+    response_model=UnitOut,
+    responses={404: {"model": ErrorOut}, 409: _CLOSED, 422: {"model": ErrorOut}},
+    summary="Submit your unit to the admin (SME): final until the admin returns it",
+    description="Every booklet must be approved, or listed in `unmarked` with a reason (absent, "
+    "unreadable, or other with a note). Refused while a booklet is still being processed or "
+    "has an amendment in progress. Afterwards nothing in the unit can be changed. Audited "
+    "(reason codes and counts only).",
+)
+def submit_unit(unit_id: UUID, body: SubmitIn, who: PrincipalDep, backends: BackendsDep) -> UnitOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.SUBMIT_UNITS)
+        done = unit.unit_flow.submit(
+            who.college_id,
+            who.user_id,
+            UnitId(unit_id),
+            unmarked=[
+                UnmarkedBooklet(
+                    booklet_id=BookletId(u.booklet_id),
+                    reason=UnmarkedReason(u.reason),
+                    note=u.note.strip(),
+                )
+                for u in body.unmarked
+            ],
+            expected_version=body.expected_version,
+        )
+        return unit_out(unit, who.college_id, done)
+
+
+@router.post(
+    "/units/{unit_id}/return",
+    response_model=UnitOut,
+    responses={404: {"model": ErrorOut}, 409: _CLOSED, 422: {"model": ErrorOut}},
+    summary="Return a submitted unit to its SME with a note (admin), until it is frozen",
+    description="The unit is open again; the SME is emailed the note. Audited (without the note).",
+)
+def return_unit(unit_id: UUID, body: ReturnIn, who: PrincipalDep, backends: BackendsDep) -> UnitOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.RETURN_UNITS)
+        done = unit.unit_flow.return_(
+            who.college_id,
+            who.user_id,
+            UnitId(unit_id),
+            note=body.note,
+            expected_version=body.expected_version,
+        )
+        return unit_out(unit, who.college_id, done)
+
+
+@router.post(
+    "/units/{unit_id}/freeze",
+    response_model=UnitOut,
+    responses={404: {"model": ErrorOut}, 409: _CLOSED},
+    summary="Freeze and sign off a submitted unit (Governor): nothing in it changes again",
+    description="Writes the frozen record (marks per booklet and answer, paper versions and "
+    "slots, result sheet versions, who froze it and when). Audited.",
+)
+def freeze_unit(unit_id: UUID, body: FreezeIn, who: PrincipalDep, backends: BackendsDep) -> UnitOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.FREEZE_UNITS)
+        done = unit.unit_flow.freeze(
+            who.college_id, who.user_id, UnitId(unit_id), expected_version=body.expected_version
+        )
+        return unit_out(unit, who.college_id, done)
+
+
+@router.get(
+    "/units/{unit_id}/frozen-record",
+    response_model=FrozenRecordOut,
+    responses={404: {"model": ErrorOut}},
+    summary="The frozen record of a frozen unit (Governor); kept when content is deleted",
+)
+def frozen_record(unit_id: UUID, who: PrincipalDep, backends: BackendsDep) -> FrozenRecordOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.FREEZE_UNITS)
+        record = unit.unit_flow.frozen_record(who.college_id, who.user_id, UnitId(unit_id))
+        return FrozenRecordOut(
+            unit_id=record.unit_id,
+            unit_code=record.unit_code,
+            year=record.year,
+            subject_code=record.subject_code,
+            subject_name=record.subject_name,
+            frozen_by=owner_out(unit, who.college_id, record.frozen_by),
+            frozen_at=record.frozen_at,
+            papers=[
+                FrozenPaperOut(
+                    paper_id=UUID(str(p["paper_id"])),
+                    version=int(str(p["version"])),
+                    title=str(p["title"]),
+                    exam_code=str(p["exam_code"]),
+                    course_code=str(p["course_code"]),
+                    total_marks=float(str(p["total_marks"])),
+                )
+                for p in record.papers
+            ],
+            booklets=[
+                FrozenBookletOut(
+                    booklet_id=b.booklet_id,
+                    student_id=b.student_id,
+                    paper_id=b.paper_id,
+                    paper_version=b.paper_version,
+                    outcome=b.outcome.value,
+                    reason=None if b.reason is None else b.reason.value,
+                    total=None if b.total is None else float(b.total),
+                    max_marks=float(b.max_marks),
+                    sheets=[
+                        FrozenSheetOut(
+                            version=x.version,
+                            total=float(x.total),
+                            max_marks=float(x.max_marks),
+                            issued_at=x.issued_at,
+                            note=x.note,
+                        )
+                        for x in b.sheets
+                    ],
+                    answers=[
+                        FrozenAnswerOut(
+                            slot_label=a.slot_label,
+                            question_id=a.question_id,
+                            question_version=a.question_version,
+                            question_code=a.question_code,
+                            max_marks=float(a.max_marks),
+                            ai_mark=None if a.ai_mark is None else float(a.ai_mark),
+                            sme_mark=None if a.sme_mark is None else float(a.sme_mark),
+                            counted=a.counted,
+                        )
+                        for a in b.answers
+                    ],
+                )
+                for b in record.booklets
+            ],
+        )

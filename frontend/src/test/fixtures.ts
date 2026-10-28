@@ -24,11 +24,12 @@ export const CAPABILITIES: Record<User['role'], Me['capabilities']> = {
     'manage_smes',
     'manage_students',
     'manage_subjects',
+    'return_units',
     'upload_booklets',
     'view_progress',
   ],
-  sme: ['author_content', 'evaluate', 'view_progress'],
-  governor: [],
+  sme: ['author_content', 'evaluate', 'submit_units', 'view_progress'],
+  governor: ['freeze_units'],
 }
 
 export function meOf(overrides: Partial<User> = {}, left = 10): Me {

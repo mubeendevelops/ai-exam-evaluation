@@ -20,6 +20,7 @@ from tarn_core.ports.repositories import (
 )
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime, ref_json
+from tarn_core.services.unit_guard import ensure_booklet_open, ensure_unit_open
 
 
 def booklet_folder(college_id: CollegeId, booklet_id: BookletId) -> BlobKey:
@@ -73,7 +74,7 @@ class BookletService:
         pinned to the current version of the unit's paper."""
         self._users.get(college_id, actor_id)
         self._students.get(college_id, student_id)
-        unit = self._units.get(college_id, unit_id)
+        unit = ensure_unit_open(self._units, college_id, unit_id)
         blueprint = self._content.get(college_id, ExamBlueprint, unit.paper_id)
         unlinked = blueprint.unlinked_leaves()
         if unlinked:
@@ -116,8 +117,10 @@ class BookletService:
 
     def delete(self, college_id: CollegeId, actor_id: UserId, booklet_id: BookletId) -> None:
         """Remove images, text and marks; keep a content-free deletion record (D14). Refused
-        while another teacher has the booklet open."""
+        while another teacher has the booklet open, and once its unit is submitted or frozen
+        (P28)."""
         self._users.get(college_id, actor_id)
+        ensure_booklet_open(self._booklets, self._units, college_id, booklet_id)
         lock = self._booklets.lock(college_id, booklet_id)
         if lock is not None and lock.holder != actor_id and lock.live(self._rt.clock.now()):
             raise BookletLockedError(

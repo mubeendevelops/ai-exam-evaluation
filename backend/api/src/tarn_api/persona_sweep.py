@@ -38,6 +38,7 @@ _REDISTRIBUTE = _needs(C.REDISTRIBUTE_UNITS)
 _REQUEST = _needs(C.REQUEST_REASSIGNMENT)
 _AUTHOR = _needs(C.AUTHOR_CONTENT)
 _EVALUATE = _needs(C.EVALUATE)
+_FREEZE = _needs(C.FREEZE_UNITS)
 
 ACCESS: Mapping[tuple[str, str], Access] = {
     # --- no sign-in, or the caller's own account ----------------------------------------------
@@ -89,10 +90,15 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("POST", "/api/v1/units/{unit_id}/delegation-requests"): _REQUEST,
     ("POST", "/api/v1/delegation-requests/{request_id}/withdraw"): _REQUEST,
     ("GET", "/api/v1/delegation-requests"): _needs(C.REDISTRIBUTE_UNITS, C.REQUEST_REASSIGNMENT),
+    # --- submit, return, freeze (P28, D164) ---------------------------------------------------
+    ("POST", "/api/v1/units/{unit_id}/submit"): _needs(C.SUBMIT_UNITS),
+    ("POST", "/api/v1/units/{unit_id}/return"): _needs(C.RETURN_UNITS),
+    ("POST", "/api/v1/units/{unit_id}/freeze"): _FREEZE,
+    ("GET", "/api/v1/units/{unit_id}/frozen-record"): _FREEZE,
     # --- progress: admin and SME, no marks for the admin (D167) -------------------------------
     ("GET", "/api/v1/booklets"): _PROGRESS,
     ("GET", "/api/v1/booklets/{booklet_id}"): _PROGRESS,
-    ("GET", "/api/v1/units"): _PROGRESS,
+    ("GET", "/api/v1/units"): _needs(C.VIEW_PROGRESS, C.FREEZE_UNITS),
     ("GET", "/api/v1/units/{unit_id}"): _PROGRESS,
     # A flagged page's cleaned image: the SME, and the admin while it waits for a retake (P26).
     ("GET", "/api/v1/booklets/{booklet_id}/pages/{number}/image"): _needs(
@@ -105,6 +111,10 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("GET", "/api/v1/blueprints/{blueprint_id}"): _AUTHOR,
     ("PUT", "/api/v1/blueprints/{blueprint_id}"): _AUTHOR,
     ("GET", "/api/v1/blueprints/{blueprint_id}/versions"): _AUTHOR,
+    ("GET", "/api/v1/blueprints/{blueprint_id}/deletion"): _AUTHOR,
+    ("DELETE", "/api/v1/blueprints/{blueprint_id}"): _AUTHOR,
+    ("GET", "/api/v1/questions/{question_id}/deletion"): _AUTHOR,
+    ("DELETE", "/api/v1/questions/{question_id}"): _AUTHOR,
     ("GET", "/api/v1/questions"): _AUTHOR,
     ("POST", "/api/v1/questions"): _AUTHOR,
     ("GET", "/api/v1/question-topics"): _AUTHOR,
@@ -191,6 +201,9 @@ _OWN_BODIES: Mapping[tuple[str, str], Callable[[World], dict[str, Any]]] = {
             "due_date": "2030-01-01",
         }
     },
+    ("POST", "/api/v1/units/{unit_id}/submit"): lambda w: {"json": {"unmarked": []}},
+    ("POST", "/api/v1/units/{unit_id}/return"): lambda w: {"json": {"note": "Persona"}},
+    ("POST", "/api/v1/units/{unit_id}/freeze"): lambda w: {"json": {}},
     ("POST", "/api/v1/units/{unit_id}/booklets"): lambda w: {
         # Named by no roll number: the file is refused, the request is allowed (200).
         "files": [("files", ("persona.pdf", fake_pdf(1, "persona"), "application/pdf"))],
@@ -198,6 +211,9 @@ _OWN_BODIES: Mapping[tuple[str, str], Callable[[World], dict[str, Any]]] = {
 }
 
 LAST = (
+    # The world's paper and question are in use (409), but they go last all the same.
+    ("DELETE", "/api/v1/questions/{question_id}"),
+    ("DELETE", "/api/v1/blueprints/{blueprint_id}"),
     ("DELETE", "/api/v1/accounts/{user_id}/subjects/{subject_id}"),
     ("POST", "/api/v1/subjects/{subject_id}/retire"),
     ("POST", "/api/v1/accounts/{user_id}/disable"),

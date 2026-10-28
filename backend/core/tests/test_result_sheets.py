@@ -67,6 +67,7 @@ def evaluated(mem: InMemory) -> EvaluatedBooklets:
         content=mem.content,
         sheets=mem.sheets,
         blobs=mem.blobs,
+        units=mem.units,
     )
 
 

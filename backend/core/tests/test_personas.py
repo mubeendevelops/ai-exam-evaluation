@@ -36,7 +36,7 @@ def test_the_capability_table() -> None:
     assert Capability.EVALUATE not in admin and Capability.AUTHOR_CONTENT not in admin  # D167
     assert {Capability.MANAGE_SMES, Capability.MANAGE_SUBJECTS} <= admin
     assert Capability.UPLOAD_BOOKLETS in admin and Capability.UPLOAD_BOOKLETS not in sme  # D162
-    assert CAPABILITIES[Role.GOVERNOR] == frozenset()
+    assert CAPABILITIES[Role.GOVERNOR] == frozenset({Capability.FREEZE_UNITS})  # P28
     assert {c for caps in CAPABILITIES.values() for c in caps} == set(Capability)
 
 

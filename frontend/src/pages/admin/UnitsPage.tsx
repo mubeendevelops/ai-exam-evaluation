@@ -6,9 +6,16 @@ import { NETWORK_PROBLEM, problemOf } from '../../api/errors'
 import { PageBanner } from '../../components/app/PageBanner'
 import { FormError, TextField } from '../../components/public/fields'
 import { SelectInput } from '../../components/schema/controls'
-import { EmptyState, GlassPanel, Modal, useToast } from '../../components/ui'
+import { Badge, EmptyState, GlassPanel, Modal, useToast } from '../../components/ui'
 import { CancelButton, PrimaryButton, SubmitInDialog, sectionTitle } from './controls'
-import { useAccounts, useSubjects, useUnits, type UnitFilter, type WorkUnit } from './data'
+import {
+  UNIT_STATE,
+  useAccounts,
+  useSubjects,
+  useUnits,
+  type UnitFilter,
+  type WorkUnit,
+} from './data'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -243,6 +250,8 @@ function UnitsTable() {
         >
           <option value="">Any state</option>
           <option value="open">Open</option>
+          <option value="submitted">Submitted</option>
+          <option value="frozen">Frozen</option>
         </SelectInput>
       </div>
       {units.isError && <FormError message="Could not load the units." />}
@@ -275,8 +284,11 @@ function UnitsTable() {
                 <th scope="col" className="pr-4 pb-2">
                   Booklets
                 </th>
-                <th scope="col" className="pb-2">
+                <th scope="col" className="pr-4 pb-2">
                   Due
+                </th>
+                <th scope="col" className="pb-2">
+                  State
                 </th>
               </tr>
             </thead>
@@ -303,7 +315,10 @@ function UnitsTable() {
                   <td className="py-2 pr-4">
                     <Progress unit={u} />
                   </td>
-                  <td className="py-2 text-gray-300">{u.due_date}</td>
+                  <td className="py-2 pr-4 text-gray-300">{u.due_date}</td>
+                  <td className="py-2">
+                    <Badge tone={UNIT_STATE[u.state].tone}>{UNIT_STATE[u.state].label}</Badge>
+                  </td>
                 </tr>
               ))}
             </tbody>

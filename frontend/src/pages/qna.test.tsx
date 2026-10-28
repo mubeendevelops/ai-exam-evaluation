@@ -733,3 +733,40 @@ describe('reference diagram graph editor', () => {
     expect(await screen.findByText('The graph could not be loaded.')).toBeVisible()
   })
 })
+
+describe('permanent deletion (P28, D166)', () => {
+  it('says why a question cannot be deleted yet', async () => {
+    const mock = opened(detail(), {
+      'GET /api/v1/questions/q-1/deletion': {
+        json: {
+          allowed: false,
+          blockers: [
+            "The paper 'Mid-term' links it: unlink it there, or delete the paper first.",
+            'Unit U-0001 (open) uses it.',
+          ],
+        },
+      },
+    })
+    const user = await openFirst()
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = await screen.findByRole('dialog')
+    const why = await within(dialog).findByRole('list', { name: 'Why not yet' })
+    expect(why).toHaveTextContent('Unit U-0001 (open) uses it.')
+    expect(within(dialog).queryByRole('button', { name: 'Delete permanently' })).toBeNull()
+    expect(mock.callsTo('DELETE /api/v1/questions/q-1')).toHaveLength(0)
+  })
+
+  it('deletes a question no unfrozen unit uses, after asking', async () => {
+    const mock = opened(detail(), {
+      'GET /api/v1/questions/q-1/deletion': { json: { allowed: true, blockers: [] } },
+      'DELETE /api/v1/questions/q-1': { status: 204 },
+    })
+    const user = await openFirst()
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText(/cannot be undone/)).toBeVisible()
+    await user.click(within(dialog).getByRole('button', { name: 'Delete permanently' }))
+    await waitFor(() => expect(mock.callsTo('DELETE /api/v1/questions/q-1')).toHaveLength(1))
+    expect(await screen.findByText('Question PHY-Q1 deleted.')).toBeVisible()
+  })
+})

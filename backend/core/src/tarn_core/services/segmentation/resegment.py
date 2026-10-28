@@ -12,11 +12,17 @@ from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import Booklet, Segment
 from tarn_core.ids import AnswerId, BookletId, CollegeId, SegmentId, UserId
 from tarn_core.ports.engines import Embedder
-from tarn_core.ports.repositories import BookletRepository, ContentRepository, ScoreRepository
+from tarn_core.ports.repositories import (
+    BookletRepository,
+    ContentRepository,
+    ScoreRepository,
+    UnitRepository,
+)
 from tarn_core.services._support import Runtime
 from tarn_core.services.segmentation.edits import RESEGMENTABLE, SegmentEditor
 from tarn_core.services.segmentation.segmenter import SegmentationPolicy, Segmenter
 from tarn_core.services.segmentation.service import booklet_inputs, question_texts
+from tarn_core.services.unit_guard import ensure_unit_open
 from tarn_core.services.workflow.rescore import RescoreRequests
 
 
@@ -38,8 +44,10 @@ class BookletResegmenter:
         runtime: Runtime,
         rescore: RescoreRequests,
         policy: SegmentationPolicy | None = None,
+        units: UnitRepository | None = None,
     ) -> None:
         self._booklets = booklets
+        self._units = units
         self._content = content
         self._embedder = embedder
         self._rt = runtime
@@ -54,6 +62,8 @@ class BookletResegmenter:
     ) -> ResegmentResult | None:
         """None: nothing was done (the booklet moved on since the request)."""
         booklet = self._booklets.get(college_id, booklet_id)
+        if self._units is not None:
+            ensure_unit_open(self._units, college_id, booklet.unit_id)
         if booklet.version != expected_version or booklet.status not in RESEGMENTABLE:
             return None
         blueprint = self._content.get(

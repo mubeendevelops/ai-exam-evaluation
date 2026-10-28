@@ -83,7 +83,9 @@ def workflow(
     mem: Backend, *, policy: LockPolicy | None = None, rescorer: Rescorer | None = None
 ) -> Workflow:
     rt = mem.runtime
-    guard = BookletGuard(booklets=mem.booklets, users=mem.users, runtime=rt, policy=policy)
+    guard = BookletGuard(
+        booklets=mem.booklets, users=mem.users, units=mem.units, runtime=rt, policy=policy
+    )
     rescore = RescoreRequests(
         booklets=mem.booklets, runtime=rt, rescorer=rescorer or booklet_scorer(mem)
     )

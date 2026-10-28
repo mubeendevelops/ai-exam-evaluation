@@ -16,9 +16,10 @@ from tarn_core.domain.scoring import AnswerFlag, AnswerScore
 from tarn_core.errors import DomainError
 from tarn_core.ids import AnswerId, BookletId, CollegeId, UserId
 from tarn_core.ports.jobs import JOB_SCORE_BOOKLET, JobQueue
-from tarn_core.ports.repositories import BookletRepository
+from tarn_core.ports.repositories import BookletRepository, UnitRepository
 from tarn_core.services._support import Runtime
 from tarn_core.services.scoring.service import ScoringService
+from tarn_core.services.unit_guard import ensure_booklet_open
 
 FAILED_SCORING = "scoring_failed"
 
@@ -39,9 +40,17 @@ def queue_scoring(jobs: JobQueue, college_id: CollegeId, booklet_id: BookletId) 
 
 class BookletScorer:
     def __init__(
-        self, *, booklets: BookletRepository, scoring: ScoringService, runtime: Runtime
+        self,
+        *,
+        booklets: BookletRepository,
+        scoring: ScoringService,
+        runtime: Runtime,
+        units: UnitRepository | None = None,
     ) -> None:
+        """``units``: when given, re-scoring refuses the answers of a submitted or frozen
+        unit (``UnitClosedError``, P28); the worker passes it."""
         self._booklets = booklets
+        self._units = units
         self._scoring = scoring
         self._rt = runtime
 
@@ -91,6 +100,9 @@ class BookletScorer:
         """New suggestions for these answers only; an answer left without segments is not
         attempted and gets none. Approved answers are refused."""
         answers = [self._booklets.get_answer(college_id, a) for a in answer_ids]
+        if self._units is not None:
+            for booklet_id in {a.booklet_id for a in answers}:
+                ensure_booklet_open(self._booklets, self._units, college_id, booklet_id)
         if any(a.status is AnswerStatus.APPROVED for a in answers):
             raise AnswerApprovedError("an approved answer changes only through an amendment")
         return [

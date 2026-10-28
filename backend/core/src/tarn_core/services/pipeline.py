@@ -31,9 +31,10 @@ from tarn_core.errors import InvariantError, NotFoundError, UnreadableFileError
 from tarn_core.ids import BookletId, CollegeId, PageId, UserId
 from tarn_core.ports.jobs import JOB_READ_BOOKLET, JobQueue
 from tarn_core.ports.pages import PageCleaner, PageSplitter
-from tarn_core.ports.repositories import BookletRepository
+from tarn_core.ports.repositories import BookletRepository, UnitRepository
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services._support import Runtime
+from tarn_core.services.unit_guard import ensure_unit_open
 
 FAILED_UNREADABLE = "unreadable_file"
 FAILED_TOO_MANY_PAGES = "too_many_pages"
@@ -251,8 +252,16 @@ class _TooManyPagesError(Exception):
 class PageDecisions:
     """What a teacher decides about flagged pages."""
 
-    def __init__(self, *, booklets: BookletRepository, runtime: Runtime, jobs: JobQueue) -> None:
+    def __init__(
+        self,
+        *,
+        booklets: BookletRepository,
+        units: UnitRepository,
+        runtime: Runtime,
+        jobs: JobQueue,
+    ) -> None:
         self._booklets = booklets
+        self._units = units
         self._rt = runtime
         self._jobs = jobs
 
@@ -262,6 +271,7 @@ class PageDecisions:
         """Go on with a flagged page (page numbers count from 0). When no flagged page is left
         the booklet moves from NEEDS_RETAKE to PAGES_READY."""
         booklet = self._booklets.get(college_id, booklet_id)
+        ensure_unit_open(self._units, college_id, booklet.unit_id)
         pages = self._booklets.pages(college_id, booklet_id)
         page = next((p for p in pages if p.index == page_index), None)
         if page is None:

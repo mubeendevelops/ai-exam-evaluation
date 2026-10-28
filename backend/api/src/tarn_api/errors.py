@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from tarn_core.errors import (
     AlreadyExistsError,
     BookletLockedError,
+    ContentDeletedError,
     DomainError,
     DuplicateBookletError,
     IllegalTransitionError,
@@ -20,6 +21,7 @@ from tarn_core.errors import (
     StaleWriteError,
     TenantViolationError,
     TokenError,
+    UnitClosedError,
     UnsupportedFileError,
     UploadTooLargeError,
 )
@@ -41,6 +43,10 @@ _STATUS: list[tuple[type[DomainError], int]] = [
     (RescorePendingError, status.HTTP_409_CONFLICT),
     (AnswerApprovedError, status.HTTP_409_CONFLICT),
     (BookletLockedError, status.HTTP_423_LOCKED),
+    # P28: a submitted or frozen unit takes no write (D164); content of a frozen booklet
+    # deleted after the freeze (D166).
+    (UnitClosedError, status.HTTP_409_CONFLICT),
+    (ContentDeletedError, status.HTTP_410_GONE),
     (PermissionDeniedError, status.HTTP_403_FORBIDDEN),
     # Another college's rows look exactly like missing rows.
     (TenantViolationError, status.HTTP_404_NOT_FOUND),

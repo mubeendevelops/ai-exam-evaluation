@@ -49,7 +49,7 @@ describe('route guards', () => {
   })
 
   it('shows the Governor a placeholder page and nothing else', async () => {
-    signedIn('governor')
+    signedIn('governor', { 'GET /api/v1/units': { json: [] } })
     renderApp('/qna')
     expect(await screen.findByRole('heading', { name: 'Governor portal' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Schema/ })).not.toBeInTheDocument()

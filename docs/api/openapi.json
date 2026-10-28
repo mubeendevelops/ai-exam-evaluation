@@ -2575,6 +2575,86 @@
             "description": "Not Found"
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Delete a paper or schema for good, every version (SMEs only)",
+        "description": "Allowed once no unit that is not frozen uses it (D166). Frozen records and issued result sheets stay. Audited without content.",
+        "operationId": "delete_blueprint_api_v1_blueprints__blueprint_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blueprint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Blueprint Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/blueprints/{blueprint_id}/versions": {
@@ -2612,6 +2692,84 @@
                     "$ref": "#/components/schemas/BlueprintSummaryOut"
                   },
                   "title": "Response Blueprint Versions Api V1 Blueprints  Blueprint Id  Versions Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/blueprints/{blueprint_id}/deletion": {
+      "get": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Can this paper or schema be deleted yet? The reasons it cannot",
+        "operationId": "blueprint_deletion_api_v1_blueprints__blueprint_id__deletion_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blueprint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Blueprint Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionCheckOut"
                 }
               }
             }
@@ -3147,6 +3305,86 @@
               }
             },
             "description": "Conflict"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Delete a question for good, with every version, key, rubric and file",
+        "description": "Allowed once no paper links it and no unit that is not frozen uses it (D166). Frozen records and issued result sheets stay. Audited without content.",
+        "operationId": "delete_question_api_v1_questions__question_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "SMEs only: the admin does not edit content.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "A rule is broken; the message says which.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Still in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
           }
         }
       }
@@ -4050,12 +4288,90 @@
         }
       }
     },
+    "/api/v1/questions/{question_id}/deletion": {
+      "get": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "Can this question be deleted yet? The reasons it cannot",
+        "operationId": "question_deletion_api_v1_questions__question_id__deletion_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionCheckOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/units": {
       "get": {
         "tags": [
           "units"
         ],
-        "summary": "Units of work, newest first: every unit for the admin, your own for an SME",
+        "summary": "Units of work, newest first: every unit for the admin, your own for an SME, the submitted and frozen ones for the Governor",
         "operationId": "list_units_api_v1_units_get",
         "security": [
           {
@@ -4106,7 +4422,11 @@
             "schema": {
               "anyOf": [
                 {
-                  "const": "open",
+                  "enum": [
+                    "open",
+                    "submitted",
+                    "frozen"
+                  ],
                   "type": "string"
                 },
                 {
@@ -4854,6 +5174,381 @@
               }
             },
             "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/v1/units/{unit_id}/submit": {
+      "post": {
+        "tags": [
+          "units"
+        ],
+        "summary": "Submit your unit to the admin (SME): final until the admin returns it",
+        "description": "Every booklet must be approved, or listed in `unmarked` with a reason (absent, unreadable, or other with a note). Refused while a booklet is still being processed or has an amendment in progress. Afterwards nothing in the unit can be changed. Audited (reason codes and counts only).",
+        "operationId": "submit_unit_api_v1_units__unit_id__submit_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "unit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Unit Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Not in a state that allows this, or stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/v1/units/{unit_id}/return": {
+      "post": {
+        "tags": [
+          "units"
+        ],
+        "summary": "Return a submitted unit to its SME with a note (admin), until it is frozen",
+        "description": "The unit is open again; the SME is emailed the note. Audited (without the note).",
+        "operationId": "return_unit_api_v1_units__unit_id__return_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "unit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Unit Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Not in a state that allows this, or stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/v1/units/{unit_id}/freeze": {
+      "post": {
+        "tags": [
+          "units"
+        ],
+        "summary": "Freeze and sign off a submitted unit (Governor): nothing in it changes again",
+        "description": "Writes the frozen record (marks per booklet and answer, paper versions and slots, result sheet versions, who froze it and when). Audited.",
+        "operationId": "freeze_unit_api_v1_units__unit_id__freeze_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "unit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Unit Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FreezeIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Not in a state that allows this, or stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/units/{unit_id}/frozen-record": {
+      "get": {
+        "tags": [
+          "units"
+        ],
+        "summary": "The frozen record of a frozen unit (Governor); kept when content is deleted",
+        "operationId": "frozen_record_api_v1_units__unit_id__frozen_record_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "unit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Unit Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrozenRecordOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       }
@@ -8720,6 +9415,16 @@
           "unit": {
             "$ref": "#/components/schemas/BookletUnitOut"
           },
+          "unit_state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "submitted",
+              "frozen"
+            ],
+            "title": "Unit State",
+            "description": "Submitted or frozen: the booklet is read-only (P28, D164)."
+          },
           "blueprint": {
             "$ref": "#/components/schemas/BookletBlueprintOut"
           },
@@ -8821,6 +9526,7 @@
           "status",
           "student",
           "unit",
+          "unit_state",
           "blueprint",
           "uploaded_by",
           "uploaded_at",
@@ -8867,6 +9573,16 @@
           },
           "unit": {
             "$ref": "#/components/schemas/BookletUnitOut"
+          },
+          "unit_state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "submitted",
+              "frozen"
+            ],
+            "title": "Unit State",
+            "description": "Submitted or frozen: the booklet is read-only (P28, D164)."
           },
           "blueprint": {
             "$ref": "#/components/schemas/BookletBlueprintOut"
@@ -8962,6 +9678,7 @@
           "status",
           "student",
           "unit",
+          "unit_state",
           "blueprint",
           "uploaded_by",
           "uploaded_at",
@@ -9409,6 +10126,28 @@
           "counts"
         ],
         "title": "DelegationUnitOut"
+      },
+      "DeletionCheckOut": {
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "title": "Allowed"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blockers",
+            "description": "Why it cannot be deleted yet, one line each."
+          }
+        },
+        "type": "object",
+        "required": [
+          "allowed",
+          "blockers"
+        ],
+        "title": "DeletionCheckOut"
       },
       "DeviceOut": {
         "properties": {
@@ -9874,6 +10613,325 @@
           "confidence"
         ],
         "title": "FreeLabelOut"
+      },
+      "FreezeIn": {
+        "properties": {
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "FreezeIn"
+      },
+      "FrozenAnswerOut": {
+        "properties": {
+          "slot_label": {
+            "type": "string",
+            "title": "Slot Label"
+          },
+          "question_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Id"
+          },
+          "question_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Version"
+          },
+          "question_code": {
+            "type": "string",
+            "title": "Question Code"
+          },
+          "max_marks": {
+            "type": "number",
+            "title": "Max Marks"
+          },
+          "ai_mark": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Mark"
+          },
+          "sme_mark": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sme Mark",
+            "description": "None when the answer was not approved."
+          },
+          "counted": {
+            "type": "boolean",
+            "title": "Counted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slot_label",
+          "question_id",
+          "question_version",
+          "question_code",
+          "max_marks",
+          "ai_mark",
+          "sme_mark",
+          "counted"
+        ],
+        "title": "FrozenAnswerOut"
+      },
+      "FrozenBookletOut": {
+        "properties": {
+          "booklet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Booklet Id"
+          },
+          "student_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Student Id"
+          },
+          "paper_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paper Id"
+          },
+          "paper_version": {
+            "type": "integer",
+            "title": "Paper Version"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "unmarked"
+            ],
+            "title": "Outcome"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "absent",
+                  "unreadable",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          },
+          "max_marks": {
+            "type": "number",
+            "title": "Max Marks"
+          },
+          "sheets": {
+            "items": {
+              "$ref": "#/components/schemas/FrozenSheetOut"
+            },
+            "type": "array",
+            "title": "Sheets"
+          },
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/FrozenAnswerOut"
+            },
+            "type": "array",
+            "title": "Answers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "booklet_id",
+          "student_id",
+          "paper_id",
+          "paper_version",
+          "outcome",
+          "reason",
+          "total",
+          "max_marks",
+          "sheets",
+          "answers"
+        ],
+        "title": "FrozenBookletOut"
+      },
+      "FrozenPaperOut": {
+        "properties": {
+          "paper_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paper Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "exam_code": {
+            "type": "string",
+            "title": "Exam Code"
+          },
+          "course_code": {
+            "type": "string",
+            "title": "Course Code"
+          },
+          "total_marks": {
+            "type": "number",
+            "title": "Total Marks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paper_id",
+          "version",
+          "title",
+          "exam_code",
+          "course_code",
+          "total_marks"
+        ],
+        "title": "FrozenPaperOut"
+      },
+      "FrozenRecordOut": {
+        "properties": {
+          "unit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Unit Id"
+          },
+          "unit_code": {
+            "type": "string",
+            "title": "Unit Code"
+          },
+          "year": {
+            "type": "string",
+            "title": "Year"
+          },
+          "subject_code": {
+            "type": "string",
+            "title": "Subject Code"
+          },
+          "subject_name": {
+            "type": "string",
+            "title": "Subject Name"
+          },
+          "frozen_by": {
+            "$ref": "#/components/schemas/UnitOwnerOut"
+          },
+          "frozen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Frozen At"
+          },
+          "papers": {
+            "items": {
+              "$ref": "#/components/schemas/FrozenPaperOut"
+            },
+            "type": "array",
+            "title": "Papers"
+          },
+          "booklets": {
+            "items": {
+              "$ref": "#/components/schemas/FrozenBookletOut"
+            },
+            "type": "array",
+            "title": "Booklets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "unit_id",
+          "unit_code",
+          "year",
+          "subject_code",
+          "subject_name",
+          "frozen_by",
+          "frozen_at",
+          "papers",
+          "booklets"
+        ],
+        "title": "FrozenRecordOut"
+      },
+      "FrozenSheetOut": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "total": {
+            "type": "number",
+            "title": "Total"
+          },
+          "max_marks": {
+            "type": "number",
+            "title": "Max Marks"
+          },
+          "issued_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Issued At"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "total",
+          "max_marks",
+          "issued_at",
+          "note"
+        ],
+        "title": "FrozenSheetOut"
       },
       "GlossaryIn": {
         "properties": {
@@ -10627,6 +11685,9 @@
                 "upload_booklets",
                 "redistribute_units",
                 "request_reassignment",
+                "submit_units",
+                "return_units",
+                "freeze_units",
                 "view_progress",
                 "author_content",
                 "evaluate"
@@ -12344,6 +13405,33 @@
         ],
         "title": "ResultSheetOut"
       },
+      "ReturnIn": {
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Note"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "note"
+        ],
+        "title": "ReturnIn"
+      },
       "ReviewAnswerOut": {
         "properties": {
           "id": {
@@ -13344,6 +14432,34 @@
         ],
         "title": "SubjectOut"
       },
+      "SubmitIn": {
+        "properties": {
+          "unmarked": {
+            "items": {
+              "$ref": "#/components/schemas/UnmarkedIn"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Unmarked",
+            "description": "A reason for every booklet that is not approved."
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version",
+            "description": "The unit's version as loaded (409 when it changed)."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SubmitIn"
+      },
       "SuggestionOut": {
         "properties": {
           "id": {
@@ -13705,7 +14821,11 @@
           },
           "state": {
             "type": "string",
-            "const": "open",
+            "enum": [
+              "open",
+              "submitted",
+              "frozen"
+            ],
             "title": "State"
           },
           "created_at": {
@@ -13730,6 +14850,28 @@
               }
             ],
             "description": "The SME's request to move this unit, while it waits (P27)."
+          },
+          "submission": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnitSubmissionOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The latest submission (P28): while submitted, or after a return (the admin's note is shown to the SME)."
+          },
+          "frozen": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnitFrozenOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set once frozen."
           },
           "booklets": {
             "items": {
@@ -13774,6 +14916,24 @@
           "max_files"
         ],
         "title": "UnitDetailOut"
+      },
+      "UnitFrozenOut": {
+        "properties": {
+          "frozen_by": {
+            "$ref": "#/components/schemas/UnitOwnerOut"
+          },
+          "frozen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Frozen At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "frozen_by",
+          "frozen_at"
+        ],
+        "title": "UnitFrozenOut"
       },
       "UnitIn": {
         "properties": {
@@ -13842,7 +15002,11 @@
           },
           "state": {
             "type": "string",
-            "const": "open",
+            "enum": [
+              "open",
+              "submitted",
+              "frozen"
+            ],
             "title": "State"
           },
           "created_at": {
@@ -13867,6 +15031,28 @@
               }
             ],
             "description": "The SME's request to move this unit, while it waits (P27)."
+          },
+          "submission": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnitSubmissionOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The latest submission (P28): while submitted, or after a return (the admin's note is shown to the SME)."
+          },
+          "frozen": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnitFrozenOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set once frozen."
           }
         },
         "type": "object",
@@ -14012,6 +15198,69 @@
         ],
         "title": "UnitSubjectOut"
       },
+      "UnitSubmissionOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "submitted_by": {
+            "$ref": "#/components/schemas/UnitOwnerOut"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Submitted At"
+          },
+          "unmarked": {
+            "items": {
+              "$ref": "#/components/schemas/UnmarkedOut"
+            },
+            "type": "array",
+            "title": "Unmarked",
+            "description": "Booklets not marked, with the reason."
+          },
+          "returned_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Returned At"
+          },
+          "returned_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnitOwnerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "return_note": {
+            "type": "string",
+            "title": "Return Note",
+            "description": "The admin's note when the unit was returned."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "submitted_by",
+          "submitted_at",
+          "unmarked",
+          "returned_at",
+          "returned_by",
+          "return_note"
+        ],
+        "title": "UnitSubmissionOut"
+      },
       "UnitUploadOut": {
         "properties": {
           "files": {
@@ -14043,6 +15292,67 @@
           "not_queued"
         ],
         "title": "UnitUploadOut"
+      },
+      "UnmarkedIn": {
+        "properties": {
+          "booklet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Booklet Id"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "absent",
+              "unreadable",
+              "other"
+            ],
+            "title": "Reason"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Note",
+            "description": "Required for 'other'.",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "booklet_id",
+          "reason"
+        ],
+        "title": "UnmarkedIn"
+      },
+      "UnmarkedOut": {
+        "properties": {
+          "booklet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Booklet Id"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "absent",
+              "unreadable",
+              "other"
+            ],
+            "title": "Reason"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "booklet_id",
+          "reason",
+          "note"
+        ],
+        "title": "UnmarkedOut"
       },
       "UploadFileOut": {
         "properties": {

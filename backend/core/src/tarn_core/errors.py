@@ -86,6 +86,16 @@ class IllegalTransitionError(DomainError, ValueError):
     """The booklet or answer cannot move from its current state to the one asked for."""
 
 
+class UnitClosedError(DomainError, ValueError):
+    """The booklet's unit was submitted to the admin or frozen by the Governor (D164): nothing
+    in it may change (HTTP 409)."""
+
+
+class ContentDeletedError(DomainError, LookupError):
+    """The paper or a question this frozen booklet used was deleted after the freeze (D166):
+    its result sheets and the frozen record remain (HTTP 410)."""
+
+
 class RescorePendingError(DomainError, ValueError):
     """A new suggestion for the answer is being computed: wait for it before deciding."""
 

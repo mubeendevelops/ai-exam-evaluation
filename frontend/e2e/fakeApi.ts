@@ -26,11 +26,12 @@ const CAPABILITIES: Record<Role, string[]> = {
     'manage_students',
     'manage_subjects',
     'redistribute_units',
+    'return_units',
     'upload_booklets',
     'view_progress',
   ],
-  sme: ['author_content', 'evaluate', 'request_reassignment', 'view_progress'],
-  governor: [],
+  sme: ['author_content', 'evaluate', 'request_reassignment', 'submit_units', 'view_progress'],
+  governor: ['freeze_units'],
 }
 
 /**

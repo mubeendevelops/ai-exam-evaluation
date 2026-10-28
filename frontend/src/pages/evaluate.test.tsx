@@ -81,6 +81,65 @@ function signedIn(extra: Parameters<typeof mockApi>[0] = {}, me = meOf()) {
 // Step 1: Scan Upload
 // ---------------------------------------------------------------------------------------------
 
+describe('step 1: submitting a unit (P28)', () => {
+  it('asks a reason for each booklet not marked, then submits the whole unit', async () => {
+    const marked = booklet({ id: 'b-ok', status: 'approved' })
+    const absent = booklet({
+      id: 'b-no',
+      status: 'in_review',
+      student: { id: 'st-2', name: 'Test Student Two', usn: 'TST002' },
+    })
+    const mock = signedIn({
+      'GET /api/v1/booklets': listOf([marked, absent]),
+      [`POST /api/v1/units/${UNIT}/submit`]: { json: unitOf({ id: UNIT, state: 'submitted' }) },
+    })
+    const user = userEvent.setup()
+    renderApp('/evaluate')
+    await screen.findByRole('article', { name: 'Submission Test Student Two' })
+    await user.click(screen.getByRole('button', { name: 'Submit unit' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('1 of 2 booklets are marked.')
+    const send = within(dialog).getByRole('button', { name: 'Submit unit' })
+    expect(send).toBeDisabled()
+    await user.selectOptions(within(dialog).getByLabelText('Reason for TST002'), 'other')
+    expect(send).toBeDisabled() // "other" needs a note
+    await user.type(within(dialog).getByLabelText('Note for TST002'), 'Left the hall')
+    await user.click(send)
+    await waitFor(() => expect(mock.callsTo(`POST /api/v1/units/${UNIT}/submit`)).toHaveLength(1))
+    expect(mock.callsTo(`POST /api/v1/units/${UNIT}/submit`)[0]?.body).toEqual({
+      expected_version: 1,
+      unmarked: [{ booklet_id: 'b-no', reason: 'other', note: 'Left the hall' }],
+    })
+  })
+
+  it('shows a submitted unit as handed over, and a returned one with the admin note', async () => {
+    const submitted = unitOf({ id: UNIT, code: 'U-0001', state: 'submitted' })
+    const returned = unitOf({
+      id: 'unit-2',
+      code: 'U-0002',
+      submission: {
+        id: 's-1',
+        submitted_by: { id: 't-1', name: 'Me' },
+        submitted_at: '2026-10-28T08:00:00Z',
+        unmarked: [],
+        returned_at: '2026-10-28T09:00:00Z',
+        returned_by: { id: 'a-1', name: 'Admin' },
+        return_note: 'Recheck question 3',
+      },
+    })
+    signedIn({ 'GET /api/v1/units': { json: [submitted, returned] } })
+    const user = userEvent.setup()
+    renderApp('/evaluate')
+    expect(await screen.findByText('Submitted to your admin')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Submit unit' })).toBeNull()
+    await user.selectOptions(screen.getByLabelText('Unit'), 'unit-2')
+    expect(
+      await screen.findByText(/Your admin returned this unit: Recheck question 3/),
+    ).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Submit unit' })).toBeVisible()
+  })
+})
+
 describe('step 1: the booklets of my units', () => {
   it('shows the three steps, my first unit and its booklets, and no upload controls', async () => {
     const mock = signedIn()
@@ -104,7 +163,8 @@ describe('step 1: the booklets of my units', () => {
       await screen.findByRole('article', { name: 'Submission Test Student One' }),
     ).toBeVisible()
     expect(screen.queryByText('Drag & Drop Scanned Student Answer Sheets')).toBeNull()
-    expect(mock.callsTo('GET /api/v1/units')[0]?.query.get('state')).toBe('open')
+    // Every state: a submitted or frozen unit stays readable (P28).
+    expect(mock.callsTo('GET /api/v1/units')[0]?.query.get('state')).toBeNull()
     expect(mock.callsTo('GET /api/v1/booklets')[0]?.query.get('unit_id')).toBe(UNIT)
   })
 

@@ -593,6 +593,16 @@ describe('step 3: evaluation view', () => {
       expect(mock.callsTo(`POST ${B}/answers/a1/approve`)).toHaveLength(0)
     })
 
+    it('takes no lock and is read-only once the unit is submitted (P28)', async () => {
+      const { mock } = await open(start(), {
+        [`GET ${B}`]: { json: detail({ status: 'in_review', unit_state: 'submitted' }) },
+      })
+      const notes = await screen.findAllByText(/submitted to your admin/)
+      expect(notes.length).toBeGreaterThan(0)
+      expect(screen.getByRole('button', { name: 'Approve answer' })).toBeDisabled()
+      expect(mock.callsTo(`POST ${B}/lock`)).toHaveLength(0)
+    })
+
     it('reopens the booklet when a decision finds the lock gone (423)', async () => {
       const { mock, user } = await open(start(), {
         [`POST ${B}/answers/a1/approve`]: { status: 423, json: { detail: 'Not open.' } },

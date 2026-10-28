@@ -31,7 +31,15 @@ from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
 from tarn_core.domain.tenancy import College, Student, SubjectGrant, User
-from tarn_core.domain.unit import DelegationRequest, RequestState, Unit, UnitState, UnitTransfer
+from tarn_core.domain.unit import (
+    DelegationRequest,
+    FrozenUnit,
+    RequestState,
+    Unit,
+    UnitState,
+    UnitSubmission,
+    UnitTransfer,
+)
 from tarn_core.ids import (
     AnswerId,
     BlueprintId,
@@ -139,6 +147,24 @@ class ContentRepository(Protocol):
         if this (id, version) exists or skips a version."""
         ...
 
+    # --- deletion (P28, D166) -------------------------------------------------------------
+    # The rule (no unfrozen unit or booklet uses the item) is checked by
+    # ``services.content_deletion`` and again by the database functions behind these calls.
+
+    def question_parts(
+        self, college_id: CollegeId, question_id: QuestionId
+    ) -> Sequence[QuestionPart]:
+        """Every version of every part of the question, retired ones included."""
+        ...
+
+    def delete_question(self, college_id: CollegeId, question_id: QuestionId) -> int:
+        """Remove every version of the question and of its parts; the number of rows gone."""
+        ...
+
+    def delete_blueprint(self, college_id: CollegeId, blueprint_id: BlueprintId) -> int:
+        """Remove every version of the blueprint; the number of rows gone."""
+        ...
+
 
 class CollegeRepository(Protocol):
     def get(self, college_id: CollegeId) -> College: ...
@@ -240,6 +266,23 @@ class UnitRepository(Protocol):
         """Insert, or record how a pending request was closed. A second pending request for
         the unit is ``AlreadyExistsError``."""
         ...
+
+    # --- submission, return, freeze (P28) -------------------------------------------------
+
+    def save_submission(self, college_id: CollegeId, submission: UnitSubmission) -> None:
+        """Insert (with its unmarked booklets), or record the return of a submission that was
+        not returned yet (``StaleWriteError`` otherwise)."""
+        ...
+
+    def submissions(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[UnitSubmission]:
+        """Oldest first."""
+        ...
+
+    def save_frozen(self, college_id: CollegeId, record: FrozenUnit) -> None:
+        """Insert only; a second record for the unit is ``AlreadyExistsError``."""
+        ...
+
+    def frozen(self, college_id: CollegeId, unit_id: UnitId) -> FrozenUnit | None: ...
 
 
 class StudentRepository(Protocol):

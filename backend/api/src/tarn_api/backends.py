@@ -46,6 +46,7 @@ from tarn_core.services.access import AccessService, Reach, reach_of
 from tarn_core.services.auth import AccountService, AuthKit, AuthService
 from tarn_core.services.blueprints import BlueprintService
 from tarn_core.services.booklets import BookletService
+from tarn_core.services.content_deletion import ContentDeletion
 from tarn_core.services.delegation import DelegationService
 from tarn_core.services.diagrams.jobs import QueuedRescore
 from tarn_core.services.diagrams.service import ReferenceDiagrams
@@ -57,6 +58,7 @@ from tarn_core.services.registration import RegistrationService
 from tarn_core.services.roster import RosterService
 from tarn_core.services.subjects import SubjectService
 from tarn_core.services.transfers import TransferService
+from tarn_core.services.unit_flow import UnitFlowService
 from tarn_core.services.unit_upload import UnitUploadService
 from tarn_core.services.units import UnitService
 from tarn_core.services.uploads import UploadLimits, UploadService
@@ -177,6 +179,32 @@ class Unit:
             content=self.scope.content,
             booklets=self.scope.booklets,
             mailer=self.kit.mailer,
+            runtime=self.scope.runtime,
+        )
+
+    @property
+    def unit_flow(self) -> UnitFlowService:
+        return UnitFlowService(
+            units=self.scope.units,
+            users=self.scope.users,
+            booklets=self.scope.booklets,
+            scores=self.scope.scores,
+            sheets=self.scope.sheets,
+            content=self.scope.content,
+            mailer=self.kit.mailer,
+            runtime=self.scope.runtime,
+        )
+
+    @property
+    def content_deletion(self) -> ContentDeletion:
+        return ContentDeletion(
+            content=self.scope.content,
+            units=self.scope.units,
+            booklets=self.scope.booklets,
+            scores=self.scope.scores,
+            users=self.scope.users,
+            entitlements=self.scope.entitlements,
+            blobs=self.scope.blobs,
             runtime=self.scope.runtime,
         )
 
@@ -326,6 +354,7 @@ class Unit:
         return BookletGuard(
             booklets=self.scope.booklets,
             users=self.scope.users,
+            units=self.scope.units,
             runtime=self.scope.runtime,
             policy=LockPolicy(timeout=timedelta(minutes=self.lock_minutes)),
         )
@@ -377,6 +406,7 @@ class Unit:
             content=self.scope.content,
             sheets=self.scope.sheets,
             blobs=self.scope.blobs,
+            units=self.scope.units,
         )
 
     def text_editor(self, booklet_id: BookletId) -> TextEditor:
@@ -408,7 +438,10 @@ class Unit:
     @property
     def page_decisions(self) -> PageDecisions:
         return PageDecisions(
-            booklets=self.scope.booklets, runtime=self.scope.runtime, jobs=self.scope.jobs
+            booklets=self.scope.booklets,
+            units=self.scope.units,
+            runtime=self.scope.runtime,
+            jobs=self.scope.jobs,
         )
 
 

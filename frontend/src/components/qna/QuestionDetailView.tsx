@@ -7,6 +7,7 @@ import { can } from '../../auth/capabilities'
 import { NETWORK_PROBLEM, problemOf } from '../../api/errors'
 import { fetchBlob, saveBlob } from '../../api/files'
 import type { components } from '../../api/schema'
+import { DeleteContentDialog } from '../app/DeleteContentDialog'
 import { Badge, EmptyState, GlassPanel, useToast } from '../ui'
 import { SmallButton } from '../schema/controls'
 import { AuthImage } from './AuthImage'
@@ -73,6 +74,7 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
   const [dialog, setDialog] = useState<Dialog>(null)
   const [answer, setAnswer] = useState<Answer | undefined>()
   const [graphOf, setGraphOf] = useState<RefDiagram | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const query = useQuery({
     queryKey: ['question', id],
@@ -157,10 +159,27 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
               <SmallButton icon="fa-solid fa-cloud-arrow-up" onClick={() => setDialog('key')}>
                 Upload Answer Key
               </SmallButton>
+              <SmallButton icon="fa-solid fa-trash" tone="gray" onClick={() => setDeleting(true)}>
+                Delete
+              </SmallButton>
             </>
           )}
         </div>
       </GlassPanel>
+      {deleting && (
+        <DeleteContentDialog
+          kind="question"
+          id={q.id}
+          name={`${q.code}: ${q.text.slice(0, 120)}`}
+          onClose={() => setDeleting(false)}
+          onDeleted={async () => {
+            toast.show(`Question ${q.code} deleted.`)
+            queryClient.removeQueries({ queryKey: ['question', id] })
+            await queryClient.invalidateQueries({ queryKey: ['questions'] })
+            onBack()
+          }}
+        />
+      )}
 
       {!own && (
         <p

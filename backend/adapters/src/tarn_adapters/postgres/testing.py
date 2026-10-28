@@ -42,7 +42,17 @@ from tarn_core.domain.review import (
     Review,
 )
 from tarn_core.domain.scoring import SentenceVector
-from tarn_core.domain.unit import DelegationRequest, UnitTransfer
+from tarn_core.domain.unit import (
+    DelegationRequest,
+    FrozenAnswer,
+    FrozenBooklet,
+    FrozenOutcome,
+    FrozenUnit,
+    UnitSubmission,
+    UnitTransfer,
+    UnmarkedBooklet,
+    UnmarkedReason,
+)
 from tarn_core.ids import (
     AmendmentId,
     BlueprintId,
@@ -54,6 +64,8 @@ from tarn_core.ids import (
     ResultSheetId,
     ReviewId,
     StudentDiagramId,
+    SubjectId,
+    UnitSubmissionId,
     UnitTransferId,
 )
 from tarn_core.testing import FixedClock, MemoryBlobStore
@@ -359,7 +371,70 @@ def _seed(open_: Opener, college: CollegeFixture, blueprint_id: BlueprintId) -> 
                 at=s.clock.now(),
             ),
         )
+        # A submission with an unmarked booklet and a frozen record (P28). Builder rows: the
+        # unit stays open so the other tests can still change its booklets.
+        submission = UnitSubmission(
+            id=UnitSubmissionId(s.ids.new()),
+            college_id=cid,
+            unit_id=unit_id,
+            submitted_by=teacher,
+            submitted_at=s.clock.now(),
+            unmarked=(UnmarkedBooklet(booklet_id=booklet.id, reason=UnmarkedReason.ABSENT),),
+        )
+        s.units.save_submission(cid, submission)
+        s.units.save_frozen(
+            cid,
+            FrozenUnit(
+                college_id=cid,
+                unit_id=unit_id,
+                unit_code="U-0001",
+                year="2025",
+                subject_id=blueprint_subject(s, cid, blueprint_id),
+                subject_code="SYN",
+                subject_name="Synthetic",
+                submission_id=submission.id,
+                frozen_by=college.admin.id,
+                frozen_at=s.clock.now(),
+                papers=({"paper_id": str(blueprint_id), "version": 1},),
+                booklets=(
+                    FrozenBooklet(
+                        booklet_id=booklet.id,
+                        student_id=college.students[0].id,
+                        paper_id=blueprint_id,
+                        paper_version=1,
+                        outcome=FrozenOutcome.UNMARKED,
+                        reason=UnmarkedReason.ABSENT,
+                        note="",
+                        total=None,
+                        max_marks=Decimal(50),
+                        sheets=(),
+                        answers=(
+                            FrozenAnswer(
+                                booklet_id=booklet.id,
+                                answer_id=answers[0].id,
+                                slot_label="1",
+                                question_id=None,
+                                question_version=None,
+                                question_code="",
+                                max_marks=Decimal(2),
+                                ai_mark=Decimal(1),
+                                sme_mark=None,
+                                reviewer=None,
+                                reviewed_at=None,
+                                counted=False,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
     return Seeded(college=college, booklet=booklet, answers=answers, deleted_booklet_id=doomed.id)
+
+
+def blueprint_subject(
+    s: PostgresSession, college_id: CollegeId, blueprint_id: BlueprintId
+) -> SubjectId:
+    return s.content.get(college_id, ExamBlueprint, blueprint_id).subject_id
 
 
 def new_college(open_: Opener, code: str) -> CollegeFixture:

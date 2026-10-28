@@ -55,7 +55,7 @@ def build_evaluation(
             limits=limits,
         ),
         runner=LocalStageRunner(stages, mem, on_step=on_step),
-        decisions=PageDecisions(booklets=mem.booklets, runtime=rt, jobs=mem.jobs),
+        decisions=PageDecisions(booklets=mem.booklets, units=mem.units, runtime=rt, jobs=mem.jobs),
         booklets=mem.booklets,
         scores=mem.scores,
         content=mem.content,

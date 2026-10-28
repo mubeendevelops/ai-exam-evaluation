@@ -23,6 +23,7 @@ export function booklet(over: Partial<Booklet> = {}): Booklet {
     status: 'scored',
     student: { id: STUDENT.id, name: STUDENT.name, usn: STUDENT.usn },
     unit: { id: UNIT, code: 'U-0001' },
+    unit_state: 'open',
     blueprint: { id: BLUEPRINT, version: 1, title: 'Mid-term Physics' },
     uploaded_by: 'u-1',
     uploaded_at: '2026-10-06T08:00:00Z',

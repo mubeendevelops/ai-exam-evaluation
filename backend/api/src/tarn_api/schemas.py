@@ -89,6 +89,9 @@ CapabilityName = Literal[
     "upload_booklets",
     "redistribute_units",
     "request_reassignment",
+    "submit_units",
+    "return_units",
+    "freeze_units",
     "view_progress",
     "author_content",
     "evaluate",
@@ -567,6 +570,9 @@ class BookletResultOut(BaseModel):
     sheet_version: int = Field(description="The latest result sheet's version.")
 
 
+UnitStateName = Literal["open", "submitted", "frozen"]
+
+
 class BookletUnitOut(BaseModel):
     id: UUID
     code: str
@@ -577,6 +583,9 @@ class BookletOut(BaseModel):
     status: BookletStatusName
     student: BookletStudentOut
     unit: BookletUnitOut
+    unit_state: UnitStateName = Field(
+        description="Submitted or frozen: the booklet is read-only (P28, D164)."
+    )
     blueprint: BookletBlueprintOut
     uploaded_by: UUID
     uploaded_at: datetime
@@ -669,8 +678,6 @@ class BookletPageOut(BaseModel):
 
 # --- units of work (P26) -------------------------------------------------------------------------
 
-UnitStateName = Literal["open"]
-
 
 class UnitPaperOut(BaseModel):
     id: UUID
@@ -707,6 +714,30 @@ class UnitRequestRefOut(BaseModel):
     requested_at: datetime
 
 
+UnmarkedReasonName = Literal["absent", "unreadable", "other"]
+
+
+class UnmarkedOut(BaseModel):
+    booklet_id: UUID
+    reason: UnmarkedReasonName
+    note: str
+
+
+class UnitSubmissionOut(BaseModel):
+    id: UUID
+    submitted_by: UnitOwnerOut
+    submitted_at: datetime
+    unmarked: list[UnmarkedOut] = Field(description="Booklets not marked, with the reason.")
+    returned_at: datetime | None
+    returned_by: UnitOwnerOut | None
+    return_note: str = Field(description="The admin's note when the unit was returned.")
+
+
+class UnitFrozenOut(BaseModel):
+    frozen_by: UnitOwnerOut
+    frozen_at: datetime
+
+
 class UnitOut(BaseModel):
     id: UUID
     code: str = Field(description="Short readable code, U-0001, unique in the college.")
@@ -722,6 +753,12 @@ class UnitOut(BaseModel):
     pending_request: UnitRequestRefOut | None = Field(
         default=None, description="The SME's request to move this unit, while it waits (P27)."
     )
+    submission: UnitSubmissionOut | None = Field(
+        default=None,
+        description="The latest submission (P28): while submitted, or after a return (the "
+        "admin's note is shown to the SME).",
+    )
+    frozen: UnitFrozenOut | None = Field(default=None, description="Set once frozen.")
 
 
 class UnitDetailOut(UnitOut):
@@ -749,6 +786,90 @@ class TransferIn(_In):
     expected_version: int | None = Field(
         default=None, description="The unit's version as loaded (409 when it changed)."
     )
+
+
+class UnmarkedIn(_In):
+    booklet_id: UUID
+    reason: UnmarkedReasonName
+    note: str = Field(default="", max_length=500, description="Required for 'other'.")
+
+
+class SubmitIn(_In):
+    unmarked: list[UnmarkedIn] = Field(
+        default_factory=list,
+        max_length=1000,
+        description="A reason for every booklet that is not approved.",
+    )
+    expected_version: int | None = Field(
+        default=None, description="The unit's version as loaded (409 when it changed)."
+    )
+
+
+class ReturnIn(_In):
+    note: str = Reason
+    expected_version: int | None = None
+
+
+class FreezeIn(_In):
+    expected_version: int | None = None
+
+
+class FrozenSheetOut(BaseModel):
+    version: int
+    total: float
+    max_marks: float
+    issued_at: datetime
+    note: str
+
+
+class FrozenAnswerOut(BaseModel):
+    slot_label: str
+    question_id: UUID | None
+    question_version: int | None
+    question_code: str
+    max_marks: float
+    ai_mark: float | None
+    sme_mark: float | None = Field(description="None when the answer was not approved.")
+    counted: bool
+
+
+class FrozenBookletOut(BaseModel):
+    booklet_id: UUID
+    student_id: UUID
+    paper_id: UUID
+    paper_version: int
+    outcome: Literal["approved", "unmarked"]
+    reason: UnmarkedReasonName | None
+    total: float | None
+    max_marks: float
+    sheets: list[FrozenSheetOut]
+    answers: list[FrozenAnswerOut]
+
+
+class FrozenPaperOut(BaseModel):
+    paper_id: UUID
+    version: int
+    title: str
+    exam_code: str
+    course_code: str
+    total_marks: float
+
+
+class FrozenRecordOut(BaseModel):
+    unit_id: UUID
+    unit_code: str
+    year: str
+    subject_code: str
+    subject_name: str
+    frozen_by: UnitOwnerOut
+    frozen_at: datetime
+    papers: list[FrozenPaperOut]
+    booklets: list[FrozenBookletOut]
+
+
+class DeletionCheckOut(BaseModel):
+    allowed: bool
+    blockers: list[str] = Field(description="Why it cannot be deleted yet, one line each.")
 
 
 class TransferOut(BaseModel):

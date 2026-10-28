@@ -174,7 +174,9 @@ def world(stack: Stack, journey: dict[str, Any]) -> World:
 
 @pytest.mark.parametrize(
     ("method", "path"),
-    [op for op, case in CASES.items() if case.kind != "own"],
+    # The Governor's two routes (P28) need a Governor of college B, made in the in-memory sweep
+    # only; ``test_api_unit_flow_postgres`` covers them on PostgreSQL.
+    [op for op, case in CASES.items() if case.kind != "own" and not case.as_governor],
     ids=lambda v: str(v),
 )
 def test_college_b_cannot_reach_college_a_on_postgres(

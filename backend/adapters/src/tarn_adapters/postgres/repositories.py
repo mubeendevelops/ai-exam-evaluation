@@ -12,6 +12,7 @@ session's transaction usable."""
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, NoReturn
 from uuid import UUID, uuid4
@@ -68,10 +69,25 @@ from tarn_core.domain.review import (
 )
 from tarn_core.domain.scoring import AnswerFlag, AnswerScore, CriterionScore, SentenceVector
 from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
-from tarn_core.domain.unit import DelegationRequest, RequestState, Unit, UnitState, UnitTransfer
+from tarn_core.domain.unit import (
+    DelegationRequest,
+    FrozenAnswer,
+    FrozenBooklet,
+    FrozenOutcome,
+    FrozenSheet,
+    FrozenUnit,
+    RequestState,
+    Unit,
+    UnitState,
+    UnitSubmission,
+    UnitTransfer,
+    UnmarkedBooklet,
+    UnmarkedReason,
+)
 from tarn_core.errors import (
     AlreadyExistsError,
     DomainError,
+    IllegalTransitionError,
     InvariantError,
     NotFoundError,
     StaleWriteError,
@@ -101,6 +117,7 @@ from tarn_core.ids import (
     StudentId,
     SubjectId,
     UnitId,
+    UnitSubmissionId,
     UnitTransferId,
     UserId,
 )
@@ -109,6 +126,8 @@ from tarn_core.ports.repositories import ContentItem, QuestionPage, QuestionPart
 # SQLSTATEs translated into domain errors.
 INSUFFICIENT_PRIVILEGE = "42501"  # RLS refusal or missing grant
 FOREIGN_KEY_VIOLATION = "23503"
+NO_DATA_FOUND = "P0002"
+RESTRICT_VIOLATION = "23001"
 INVARIANT_STATES = frozenset({"23505", "23514", "23502", "22P02"})  # unique, check, not null
 
 
@@ -575,6 +594,43 @@ class PgContentRepository:
                 insert(spec.table).values(**spec.encode(item), **_meta_values(item.meta))
             )
 
+    # --- deletion (P28, 0016): through the database functions that enforce D166 -------------
+
+    def question_parts(
+        self, college_id: CollegeId, question_id: QuestionId
+    ) -> Sequence[QuestionPart]:
+        out: list[QuestionPart] = []
+        for kind in (ReferenceAnswer, RubricCriterion, Glossary, ReferenceDiagram, KeyFile):
+            spec = _KINDS[kind]
+            rows = self._conn.execute(
+                select(spec.table)
+                .where(
+                    spec.table.c.college_id == college_id, spec.table.c.question_id == question_id
+                )
+                .order_by(spec.table.c.seq)
+            )
+            out.extend(i for i in (spec.decode(r) for r in rows) if isinstance(i, kind))
+        return out
+
+    def delete_question(self, college_id: CollegeId, question_id: QuestionId) -> int:
+        return self._delete("tarn_delete_question", question_id, f"question {question_id}")
+
+    def delete_blueprint(self, college_id: CollegeId, blueprint_id: BlueprintId) -> int:
+        return self._delete("tarn_delete_paper", blueprint_id, f"blueprint {blueprint_id}")
+
+    def _delete(self, function: str, item_id: UUID, what: str) -> int:
+        try:
+            with self._conn.begin_nested():
+                stmt = select(getattr(func, function)(item_id))
+                return int(self._conn.execute(stmt).scalar_one())
+        except DBAPIError as exc:
+            state = getattr(exc.orig, "sqlstate", None)
+            if state == NO_DATA_FOUND:
+                raise NotFoundError(what) from exc
+            if state == RESTRICT_VIOLATION:
+                raise IllegalTransitionError(f"{what}: still in use") from exc
+            translate(exc, what, TenantViolationError)
+
 
 # --- tenants ----------------------------------------------------------------------------------
 
@@ -1000,6 +1056,250 @@ class PgUnitRepository:
             if getattr(exc.orig, "sqlstate", None) == "23505":
                 raise AlreadyExistsError("a request for this unit is waiting already") from exc
             translate(exc, f"delegation request {request.id}", TenantViolationError)
+
+    # --- submission, return, freeze (P28, 0016) ---------------------------------------------
+
+    def save_submission(self, college_id: CollegeId, submission: UnitSubmission) -> None:
+        _check_tenant(college_id, submission.college_id, "unit submission")
+        t, u = m.unit_submissions, m.unmarked_booklets
+        what = f"unit submission {submission.id}"
+        with writing(self._conn, what):
+            stored = self._conn.execute(
+                select(t.c.returned_at)
+                .where(t.c.college_id == college_id, t.c.id == submission.id)
+                .with_for_update()
+            ).first()
+            if stored is None:
+                self._conn.execute(
+                    insert(t).values(
+                        college_id=submission.college_id,
+                        id=submission.id,
+                        unit_id=submission.unit_id,
+                        submitted_by=submission.submitted_by,
+                        submitted_at=submission.submitted_at,
+                        returned_by=submission.returned_by,
+                        returned_at=submission.returned_at,
+                        return_note=submission.return_note,
+                    )
+                )
+                for item in submission.unmarked:
+                    self._conn.execute(
+                        insert(u).values(
+                            college_id=submission.college_id,
+                            submission_id=submission.id,
+                            booklet_id=item.booklet_id,
+                            reason=item.reason.value,
+                            note=item.note,
+                        )
+                    )
+                return
+            if stored.returned_at is not None:
+                raise StaleWriteError("the submission was returned already")
+            self._conn.execute(
+                t.update()
+                .where(t.c.college_id == college_id, t.c.id == submission.id)
+                .values(
+                    returned_by=submission.returned_by,
+                    returned_at=submission.returned_at,
+                    return_note=submission.return_note,
+                )
+            )
+
+    def submissions(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[UnitSubmission]:
+        t, u = m.unit_submissions, m.unmarked_booklets
+        rows = list(
+            self._conn.execute(
+                select(t)
+                .where(t.c.college_id == college_id, t.c.unit_id == unit_id)
+                .order_by(t.c.seq)
+            )
+        )
+        if not rows:
+            return []
+        reasons: dict[UUID, list[UnmarkedBooklet]] = {}
+        for r in self._conn.execute(
+            select(u)
+            .where(u.c.college_id == college_id, u.c.submission_id.in_([r.id for r in rows]))
+            .order_by(u.c.booklet_id)
+        ):
+            reasons.setdefault(r.submission_id, []).append(
+                UnmarkedBooklet(
+                    booklet_id=BookletId(r.booklet_id),
+                    reason=UnmarkedReason(r.reason),
+                    note=r.note,
+                )
+            )
+        return [
+            UnitSubmission(
+                id=UnitSubmissionId(r.id),
+                college_id=CollegeId(r.college_id),
+                unit_id=UnitId(r.unit_id),
+                submitted_by=UserId(r.submitted_by),
+                submitted_at=r.submitted_at,
+                unmarked=tuple(reasons.get(r.id, ())),
+                returned_by=None if r.returned_by is None else UserId(r.returned_by),
+                returned_at=r.returned_at,
+                return_note=r.return_note,
+            )
+            for r in rows
+        ]
+
+    def save_frozen(self, college_id: CollegeId, record: FrozenUnit) -> None:
+        _check_tenant(college_id, record.college_id, "frozen unit")
+        try:
+            with self._conn.begin_nested():
+                self._write_frozen(record)
+        except DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) == "23505":
+                raise AlreadyExistsError("the unit was frozen already") from exc
+            translate(exc, f"frozen unit {record.unit_id}", TenantViolationError)
+
+    def _write_frozen(self, record: FrozenUnit) -> None:
+        cid = record.college_id
+        self._conn.execute(
+            insert(m.frozen_units).values(
+                college_id=cid,
+                unit_id=record.unit_id,
+                unit_code=record.unit_code,
+                year=record.year,
+                subject_id=record.subject_id,
+                subject_code=record.subject_code,
+                subject_name=record.subject_name,
+                submission_id=record.submission_id,
+                frozen_by=record.frozen_by,
+                frozen_at=record.frozen_at,
+                papers=[dict(p) for p in record.papers],
+            )
+        )
+        for b in record.booklets:
+            self._conn.execute(
+                insert(m.frozen_booklets).values(
+                    college_id=cid,
+                    unit_id=record.unit_id,
+                    booklet_id=b.booklet_id,
+                    student_id=b.student_id,
+                    paper_id=b.paper_id,
+                    paper_version=b.paper_version,
+                    outcome=b.outcome.value,
+                    reason=None if b.reason is None else b.reason.value,
+                    note=b.note,
+                    total=b.total,
+                    max_marks=b.max_marks,
+                    sheets=[_sheet_json(s) for s in b.sheets],
+                )
+            )
+            for a in b.answers:
+                self._conn.execute(
+                    insert(m.frozen_answers).values(
+                        college_id=cid,
+                        booklet_id=b.booklet_id,
+                        answer_id=a.answer_id,
+                        slot_label=a.slot_label,
+                        question_id=a.question_id,
+                        question_version=a.question_version,
+                        question_code=a.question_code,
+                        max_marks=a.max_marks,
+                        ai_mark=a.ai_mark,
+                        sme_mark=a.sme_mark,
+                        reviewer=a.reviewer,
+                        reviewed_at=a.reviewed_at,
+                        counted=a.counted,
+                    )
+                )
+
+    def frozen(self, college_id: CollegeId, unit_id: UnitId) -> FrozenUnit | None:
+        fu, fb, fa = m.frozen_units, m.frozen_booklets, m.frozen_answers
+        row = self._conn.execute(
+            select(fu).where(fu.c.college_id == college_id, fu.c.unit_id == unit_id)
+        ).first()
+        if row is None:
+            return None
+        booklet_rows = list(
+            self._conn.execute(
+                select(fb)
+                .where(fb.c.college_id == college_id, fb.c.unit_id == unit_id)
+                .order_by(fb.c.seq)
+            )
+        )
+        answers: dict[UUID, list[FrozenAnswer]] = {}
+        if booklet_rows:
+            for a in self._conn.execute(
+                select(fa)
+                .where(
+                    fa.c.college_id == college_id,
+                    fa.c.booklet_id.in_([b.booklet_id for b in booklet_rows]),
+                )
+                .order_by(fa.c.seq)
+            ):
+                answers.setdefault(a.booklet_id, []).append(
+                    FrozenAnswer(
+                        booklet_id=BookletId(a.booklet_id),
+                        answer_id=AnswerId(a.answer_id),
+                        slot_label=a.slot_label,
+                        question_id=None if a.question_id is None else QuestionId(a.question_id),
+                        question_version=a.question_version,
+                        question_code=a.question_code,
+                        max_marks=a.max_marks,
+                        ai_mark=a.ai_mark,
+                        sme_mark=a.sme_mark,
+                        reviewer=None if a.reviewer is None else UserId(a.reviewer),
+                        reviewed_at=a.reviewed_at,
+                        counted=a.counted,
+                    )
+                )
+        return FrozenUnit(
+            college_id=CollegeId(row.college_id),
+            unit_id=UnitId(row.unit_id),
+            unit_code=row.unit_code,
+            year=row.year,
+            subject_id=SubjectId(row.subject_id),
+            subject_code=row.subject_code,
+            subject_name=row.subject_name,
+            submission_id=UnitSubmissionId(row.submission_id),
+            frozen_by=UserId(row.frozen_by),
+            frozen_at=row.frozen_at,
+            papers=tuple(row.papers),
+            booklets=tuple(
+                FrozenBooklet(
+                    booklet_id=BookletId(b.booklet_id),
+                    student_id=StudentId(b.student_id),
+                    paper_id=BlueprintId(b.paper_id),
+                    paper_version=b.paper_version,
+                    outcome=FrozenOutcome(b.outcome),
+                    reason=None if b.reason is None else UnmarkedReason(b.reason),
+                    note=b.note,
+                    total=b.total,
+                    max_marks=b.max_marks,
+                    sheets=tuple(_frozen_sheet(s) for s in b.sheets),
+                    answers=tuple(answers.get(b.booklet_id, ())),
+                )
+                for b in booklet_rows
+            ),
+        )
+
+
+def _sheet_json(s: FrozenSheet) -> dict[str, Any]:
+    return {
+        "version": s.version,
+        "total": str(s.total),
+        "max_marks": str(s.max_marks),
+        "issued_by": str(s.issued_by),
+        "issued_at": s.issued_at.isoformat(),
+        "note": s.note,
+        "pdf_key": s.pdf_key,
+    }
+
+
+def _frozen_sheet(j: Mapping[str, Any]) -> FrozenSheet:
+    return FrozenSheet(
+        version=int(j["version"]),
+        total=Decimal(str(j["total"])),
+        max_marks=Decimal(str(j["max_marks"])),
+        issued_by=UserId(UUID(str(j["issued_by"]))),
+        issued_at=datetime.fromisoformat(str(j["issued_at"])),
+        note=str(j["note"]),
+        pdf_key=None if j.get("pdf_key") is None else str(j["pdf_key"]),
+    )
 
 
 def _request(r: Row[Any]) -> DelegationRequest:

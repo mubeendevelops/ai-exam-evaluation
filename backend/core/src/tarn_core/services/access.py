@@ -6,7 +6,6 @@ outside their units look missing (``NotFoundError``, 404), like another college'
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import Booklet
 from tarn_core.domain.personas import CAPABILITIES, Capability
 from tarn_core.domain.tenancy import Role, User
@@ -71,12 +70,10 @@ def require(user: User, capability: Capability) -> User:
     return user
 
 
-def booklet_subject(
-    content: ContentRepository, college_id: CollegeId, booklet: Booklet
-) -> SubjectId:
-    """A booklet's subject is the subject of the paper it is pinned to."""
-    paper = content.get(college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version)
-    return paper.subject_id
+def booklet_subject(units: UnitRepository, college_id: CollegeId, booklet: Booklet) -> SubjectId:
+    """A booklet's subject is its unit's (the unit's paper cannot change subject, P26). Read
+    from the unit, not the paper, because the paper may be deleted after the freeze (P28)."""
+    return units.get(college_id, booklet.unit_id).subject_id
 
 
 class AccessService:
@@ -102,7 +99,7 @@ class AccessService:
         """The booklet, if its paper's subject and its unit are in reach; otherwise not
         found."""
         booklet = self._booklets.get(college_id, booklet_id)
-        subject = booklet_subject(self._content, college_id, booklet)
+        subject = booklet_subject(self._units, college_id, booklet)
         if not reach.sees_booklet(subject, booklet.unit_id):
             raise NotFoundError(f"booklet {booklet_id}")
         return booklet
@@ -112,13 +109,12 @@ class AccessService:
     ) -> Sequence[Booklet]:
         if reach.subjects is None and reach.units is None:
             return list(booklets)
-        papers: dict[tuple[object, int], SubjectId] = {}
+        subjects: dict[UnitId, SubjectId] = {}
         out = []
         for b in booklets:
-            key = (b.blueprint.id, b.blueprint.version)
-            if key not in papers:
-                papers[key] = booklet_subject(self._content, college_id, b)
-            if reach.sees_booklet(papers[key], b.unit_id):
+            if b.unit_id not in subjects:
+                subjects[b.unit_id] = booklet_subject(self._units, college_id, b)
+            if reach.sees_booklet(subjects[b.unit_id], b.unit_id):
                 out.append(b)
         return out
 

@@ -240,3 +240,41 @@ describe('upload & assign papers: one unit', () => {
     expect(mock.callsTo('POST /api/v1/booklets/bk-1/replace')).toHaveLength(1)
   })
 })
+
+describe('upload & assign papers: a submitted unit (P28)', () => {
+  it('shows what the SME handed over and returns it with a note', async () => {
+    const submitted = unitDetailOf([unitBooklet({ id: 'bk-2', status: 'in_review' })], {
+      state: 'submitted',
+      version: 4,
+      submission: {
+        id: 's-1',
+        submitted_by: { id: asha.id, name: asha.display_name },
+        submitted_at: '2026-10-28T10:00:00Z',
+        unmarked: [{ booklet_id: 'bk-2', reason: 'absent', note: '' }],
+        returned_at: null,
+        returned_by: null,
+        return_note: '',
+      },
+    })
+    const mock = adminSession({
+      'GET /api/v1/units/unit-1': { json: submitted },
+      'POST /api/v1/units/unit-1/return': { json: unitOf({ state: 'open' }) },
+    })
+    const user = userEvent.setup()
+    renderApp('/admin/upload/units/unit-1')
+    const panel = await screen.findByRole('region', { name: /Submission/ })
+    expect(within(panel).getByRole('list', { name: 'Booklets not marked' })).toHaveTextContent(
+      'not marked: Absent',
+    )
+    expect(screen.queryByText("Drop the students' PDFs")).toBeNull()
+    await user.click(within(panel).getByRole('button', { name: /Return to SME/ }))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Note to the SME'), 'Mark the absentee again')
+    await user.click(within(dialog).getByRole('button', { name: 'Return unit' }))
+    await waitFor(() => expect(mock.callsTo('POST /api/v1/units/unit-1/return')).toHaveLength(1))
+    expect(mock.callsTo('POST /api/v1/units/unit-1/return')[0]?.body).toEqual({
+      note: 'Mark the absentee again',
+      expected_version: 4,
+    })
+  })
+})

@@ -17,7 +17,7 @@ import { AnswerMappingPanel, type OverlayInput } from './AnswerMappingPanel'
 import { BookletSummary } from './BookletSummary'
 import { DiagnosticPanel } from './DiagnosticPanel'
 import { GradingPanel, type Decision } from './GradingPanel'
-import { FAILURE, isReviewable } from './model'
+import { FAILURE, closedNote, isReviewable } from './model'
 import {
   reviewKey,
   useBookletDetail,
@@ -75,7 +75,8 @@ export function EvaluationStep({
   const status = booklet?.status
   const reviewable = status !== undefined && isReviewable(status)
 
-  const { lock, reopen } = useBookletLock(bookletId, reviewable)
+  const closed = closedNote(booklet?.unit_state)
+  const { lock, reopen } = useBookletLock(bookletId, reviewable && closed === null)
   const review = useReview(bookletId, reviewable, false)
   const segments = useSegments(bookletId, reviewable)
   const { texts } = usePageTexts(booklet)
@@ -149,13 +150,15 @@ export function EvaluationStep({
 
   const canEdit = lock.kind === 'mine'
   const holder = lock.kind === 'other' ? lock : null
-  const readOnlyReason = holder
-    ? `${holder.holder ?? 'Another SME'} has this booklet open${holder.until ? ` until ${new Date(holder.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}. You can look, but not decide anything.`
-    : lock.kind === 'error'
-      ? lock.message
-      : lock.kind === 'idle'
-        ? 'Opening the booklet for review…'
-        : undefined
+  const readOnlyReason = closed
+    ? closed
+    : holder
+      ? `${holder.holder ?? 'Another SME'} has this booklet open${holder.until ? ` until ${new Date(holder.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}. You can look, but not decide anything.`
+      : lock.kind === 'error'
+        ? lock.message
+        : lock.kind === 'idle'
+          ? 'Opening the booklet for review…'
+          : undefined
 
   const act = async (work: () => Promise<void>) => {
     setBusy(true)

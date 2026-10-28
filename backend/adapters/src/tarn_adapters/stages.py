@@ -40,6 +40,7 @@ from tarn_core.ports.repositories import (
     ContentRepository,
     EntitlementRepository,
     ScoreRepository,
+    UnitRepository,
     UserRepository,
 )
 from tarn_core.ports.storage import BlobStore
@@ -95,6 +96,8 @@ class StageSession(Protocol):
     def calibrations(self) -> CalibrationStore: ...
     @property
     def scoring_calibrations(self) -> ScoringCalibrationStore: ...
+    @property
+    def units(self) -> UnitRepository: ...
     @property
     def runtime(self) -> Runtime: ...
 
@@ -195,6 +198,7 @@ class Stages:
             rescore=RescoreRequests(
                 booklets=session.booklets, runtime=session.runtime, rescorer=self.scorer(session)
             ),
+            units=session.units,
             policy=self.segmentation,
         )
 
@@ -211,7 +215,9 @@ class Stages:
             llm=self.llm,
             colleges=session.colleges,
         )
-        return BookletScorer(booklets=session.booklets, scoring=scoring, runtime=session.runtime)
+        return BookletScorer(
+            booklets=session.booklets, scoring=scoring, runtime=session.runtime, units=session.units
+        )
 
     def diagrams(self, session: StageSession) -> BookletDiagrams:
         return BookletDiagrams(

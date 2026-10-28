@@ -14,8 +14,9 @@ from tarn_core.domain.booklet import Booklet
 from tarn_core.domain.review import BookletLock
 from tarn_core.errors import BookletLockedError, InvariantError, StaleWriteError
 from tarn_core.ids import BookletId, CollegeId, UserId
-from tarn_core.ports.repositories import BookletRepository, UserRepository
+from tarn_core.ports.repositories import BookletRepository, UnitRepository, UserRepository
 from tarn_core.services._support import Runtime
+from tarn_core.services.unit_guard import ensure_booklet_open
 
 DEFAULT_LOCK_MINUTES = 15
 
@@ -44,18 +45,22 @@ class BookletGuard:
         *,
         booklets: BookletRepository,
         users: UserRepository,
+        units: UnitRepository,
         runtime: Runtime,
         policy: LockPolicy | None = None,
     ) -> None:
         self._booklets = booklets
+        self._units = units
         self._users = users
         self._rt = runtime
         self._policy = policy or LockPolicy()
 
     def acquire(self, college_id: CollegeId, actor: UserId, booklet_id: BookletId) -> Acquired:
         """Take the lock, or refresh it when the caller holds it. Refused while another
-        teacher's lock is live."""
+        teacher's lock is live, and once the unit is submitted or frozen (P28: opening takes
+        the lock and may move the booklet or queue re-scoring, so it is a write)."""
         self._users.get(college_id, actor)
+        ensure_booklet_open(self._booklets, self._units, college_id, booklet_id)
         current = self._booklets.lock(college_id, booklet_id)
         now = self._rt.clock.now()
         if current is not None and current.holder != actor and current.live(now):
@@ -100,8 +105,10 @@ class BookletGuard:
     ) -> Booklet:
         """The booklet, for a write by ``actor``: they must hold its lock (their own lapsed
         lock is renewed if nobody took it over), and ``expected_version`` must be the stored
-        version. The lock's expiry moves on."""
+        version. The lock's expiry moves on. Refused once the unit is submitted or frozen
+        (``UnitClosedError``, D164)."""
         self._users.get(college_id, actor)
+        ensure_booklet_open(self._booklets, self._units, college_id, booklet_id)
         current = self._booklets.lock(college_id, booklet_id)
         now = self._rt.clock.now()
         if current is None or current.holder != actor:

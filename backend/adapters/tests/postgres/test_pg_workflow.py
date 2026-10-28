@@ -79,6 +79,7 @@ def test_review_with_amendment_round_trips(session: Opener) -> None:
             content=s.content,
             sheets=s.sheets,
             blobs=s.blobs,
+            units=s.units,
         ).search(
             cid,
             reach=WHOLE_COLLEGE,

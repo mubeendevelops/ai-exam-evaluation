@@ -13,6 +13,7 @@ from tarn_adapters.stages import LocalStageRunner
 from tarn_adapters.testing import scripted_stages
 from tarn_api.app import create_app
 from tarn_api.tenancy_sweep import (
+    B_INSTITUTION,
     CASES,
     World,
     build_world,
@@ -27,9 +28,11 @@ from tarn_api.tenancy_sweep import (
 from tarn_api.testing import MemoryBackends
 from tarn_core.ids import BookletId, CollegeId
 from tarn_core.seed import DEV_PASSWORD
+from tarn_core.testing.auth_world import AuthWorld
 from tarn_core.testing.seed_world import seed_in_memory
 
 EXPECTED = {"college": {404}}
+B_GOVERNOR = "governor@demo-eng.example.test"
 
 
 @pytest.fixture(scope="module")
@@ -49,8 +52,18 @@ def sweep() -> Iterator[tuple[World, MemoryBackends]]:
             == []
         )
 
+    tenant = mem.identity.find_tenant(B_INSTITUTION)
+    assert tenant is not None
+    AuthWorld(mem).accounts.invite_governor(
+        tenant.college_id, display_name="Sweep Governor", email=B_GOVERNOR, operator="sweep"
+    )
+    AuthWorld(mem).auth.accept_invite(
+        tenant.college_id, mem.mailer.last_token(B_GOVERNOR), DEV_PASSWORD
+    )
     with TestClient(app) as client:
-        yield build_world(client, process), backends
+        world = build_world(client, process)
+        world.b_governor = login(client, B_INSTITUTION, B_GOVERNOR)
+        yield world, backends
 
 
 def test_every_published_operation_is_classified(sweep: tuple[World, MemoryBackends]) -> None:
@@ -194,7 +207,11 @@ def physics(sweep: tuple[World, MemoryBackends]) -> dict[str, str]:
 
 @pytest.mark.parametrize(
     ("method", "path"),
-    [op for op, case in CASES.items() if case.kind == "college" and not case.as_admin],
+    [
+        op
+        for op, case in CASES.items()
+        if case.kind == "college" and not (case.as_admin or case.as_governor)
+    ],
     ids=lambda v: str(v),
 )
 def test_a_physics_sme_finds_nothing_of_the_other_subjects(

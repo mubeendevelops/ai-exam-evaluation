@@ -26,7 +26,13 @@ from tarn_core.domain.unit import (
     UnitTransfer,
     normalise_reason,
 )
-from tarn_core.errors import IllegalTransitionError, InvariantError, NotFoundError, StaleWriteError
+from tarn_core.errors import (
+    IllegalTransitionError,
+    InvariantError,
+    NotFoundError,
+    StaleWriteError,
+    UnitClosedError,
+)
 from tarn_core.ids import CollegeId, SubjectId, UnitId, UnitTransferId, UserId
 from tarn_core.ports.identity import EmailMessage, Mailer
 from tarn_core.ports.repositories import (
@@ -39,6 +45,7 @@ from tarn_core.ports.repositories import (
 from tarn_core.services._support import Runtime
 from tarn_core.services.access import require
 from tarn_core.services.entitlements import EntitlementService
+from tarn_core.services.unit_guard import closed_message
 from tarn_core.services.units import NOT_ENTITLED, may_own
 
 NOT_OPEN = "Only an open unit can be moved to another SME."
@@ -161,8 +168,9 @@ class TransferService:
     def _plan(
         self, college_id: CollegeId, unit: Unit, owner_id: UserId, subject_id: SubjectId
     ) -> Transfer:
-        if unit.state is not UnitState.OPEN:
-            raise IllegalTransitionError(NOT_OPEN)
+        if not unit.open:
+            # Submitted or frozen (P28): the unit is no longer the SME's to hand on.
+            raise UnitClosedError(closed_message(unit))
         if owner_id == unit.owner_id:
             raise InvariantError(SAME_OWNER)
         try:

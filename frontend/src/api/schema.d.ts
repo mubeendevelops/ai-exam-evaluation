@@ -595,7 +595,11 @@ export interface paths {
          */
         put: operations["update_blueprint_api_v1_blueprints__blueprint_id__put"];
         post?: never;
-        delete?: never;
+        /**
+         * Delete a paper or schema for good, every version (SMEs only)
+         * @description Allowed once no unit that is not frozen uses it (D166). Frozen records and issued result sheets stay. Audited without content.
+         */
+        delete: operations["delete_blueprint_api_v1_blueprints__blueprint_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -610,6 +614,23 @@ export interface paths {
         };
         /** Every version of a blueprint, oldest first */
         get: operations["blueprint_versions_api_v1_blueprints__blueprint_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blueprints/{blueprint_id}/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Can this paper or schema be deleted yet? The reasons it cannot */
+        get: operations["blueprint_deletion_api_v1_blueprints__blueprint_id__deletion_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -671,7 +692,11 @@ export interface paths {
          */
         put: operations["update_question_api_v1_questions__question_id__put"];
         post?: never;
-        delete?: never;
+        /**
+         * Delete a question for good, with every version, key, rubric and file
+         * @description Allowed once no paper links it and no unit that is not frozen uses it (D166). Frozen records and issued result sheets stay. Audited without content.
+         */
+        delete: operations["delete_question_api_v1_questions__question_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -829,6 +854,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/questions/{question_id}/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Can this question be deleted yet? The reasons it cannot */
+        get: operations["question_deletion_api_v1_questions__question_id__deletion_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/units": {
         parameters: {
             query?: never;
@@ -836,7 +878,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Units of work, newest first: every unit for the admin, your own for an SME */
+        /** Units of work, newest first: every unit for the admin, your own for an SME, the submitted and frozen ones for the Governor */
         get: operations["list_units_api_v1_units_get"];
         put?: never;
         /**
@@ -972,6 +1014,83 @@ export interface paths {
          * @description One pending request per unit (409 while one waits). The admin picks the new SME. Audited.
          */
         post: operations["request_reassignment_api_v1_units__unit_id__delegation_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units/{unit_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit your unit to the admin (SME): final until the admin returns it
+         * @description Every booklet must be approved, or listed in `unmarked` with a reason (absent, unreadable, or other with a note). Refused while a booklet is still being processed or has an amendment in progress. Afterwards nothing in the unit can be changed. Audited (reason codes and counts only).
+         */
+        post: operations["submit_unit_api_v1_units__unit_id__submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units/{unit_id}/return": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Return a submitted unit to its SME with a note (admin), until it is frozen
+         * @description The unit is open again; the SME is emailed the note. Audited (without the note).
+         */
+        post: operations["return_unit_api_v1_units__unit_id__return_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units/{unit_id}/freeze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Freeze and sign off a submitted unit (Governor): nothing in it changes again
+         * @description Writes the frozen record (marks per booklet and answer, paper versions and slots, result sheet versions, who froze it and when). Audited.
+         */
+        post: operations["freeze_unit_api_v1_units__unit_id__freeze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units/{unit_id}/frozen-record": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The frozen record of a frozen unit (Governor); kept when content is deleted */
+        get: operations["frozen_record_api_v1_units__unit_id__frozen_record_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1781,6 +1900,12 @@ export interface components {
             status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "segmented" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress" | "approved_amended";
             student: components["schemas"]["BookletStudentOut"];
             unit: components["schemas"]["BookletUnitOut"];
+            /**
+             * Unit State
+             * @description Submitted or frozen: the booklet is read-only (P28, D164).
+             * @enum {string}
+             */
+            unit_state: "open" | "submitted" | "frozen";
             blueprint: components["schemas"]["BookletBlueprintOut"];
             /**
              * Uploaded By
@@ -1842,6 +1967,12 @@ export interface components {
             status: "uploaded" | "processing" | "needs_retake" | "pages_ready" | "reading" | "text_ready" | "segmented" | "failed" | "scored" | "in_review" | "approved" | "amendment_in_progress" | "approved_amended";
             student: components["schemas"]["BookletStudentOut"];
             unit: components["schemas"]["BookletUnitOut"];
+            /**
+             * Unit State
+             * @description Submitted or frozen: the booklet is read-only (P28, D164).
+             * @enum {string}
+             */
+            unit_state: "open" | "submitted" | "frozen";
             blueprint: components["schemas"]["BookletBlueprintOut"];
             /**
              * Uploaded By
@@ -2065,6 +2196,16 @@ export interface components {
             owner: components["schemas"]["UnitOwnerOut"];
             counts: components["schemas"]["UnitCountsOut"];
         };
+        /** DeletionCheckOut */
+        DeletionCheckOut: {
+            /** Allowed */
+            allowed: boolean;
+            /**
+             * Blockers
+             * @description Why it cannot be deleted yet, one line each.
+             */
+            blockers: string[];
+        };
         /** DeviceOut */
         DeviceOut: {
             /** Kind */
@@ -2270,6 +2411,128 @@ export interface components {
             box: number[] | null;
             /** Confidence */
             confidence: number | null;
+        };
+        /** FreezeIn */
+        FreezeIn: {
+            /** Expected Version */
+            expected_version?: number | null;
+        };
+        /** FrozenAnswerOut */
+        FrozenAnswerOut: {
+            /** Slot Label */
+            slot_label: string;
+            /** Question Id */
+            question_id: string | null;
+            /** Question Version */
+            question_version: number | null;
+            /** Question Code */
+            question_code: string;
+            /** Max Marks */
+            max_marks: number;
+            /** Ai Mark */
+            ai_mark: number | null;
+            /**
+             * Sme Mark
+             * @description None when the answer was not approved.
+             */
+            sme_mark: number | null;
+            /** Counted */
+            counted: boolean;
+        };
+        /** FrozenBookletOut */
+        FrozenBookletOut: {
+            /**
+             * Booklet Id
+             * Format: uuid
+             */
+            booklet_id: string;
+            /**
+             * Student Id
+             * Format: uuid
+             */
+            student_id: string;
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Paper Version */
+            paper_version: number;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "approved" | "unmarked";
+            /** Reason */
+            reason: ("absent" | "unreadable" | "other") | null;
+            /** Total */
+            total: number | null;
+            /** Max Marks */
+            max_marks: number;
+            /** Sheets */
+            sheets: components["schemas"]["FrozenSheetOut"][];
+            /** Answers */
+            answers: components["schemas"]["FrozenAnswerOut"][];
+        };
+        /** FrozenPaperOut */
+        FrozenPaperOut: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Version */
+            version: number;
+            /** Title */
+            title: string;
+            /** Exam Code */
+            exam_code: string;
+            /** Course Code */
+            course_code: string;
+            /** Total Marks */
+            total_marks: number;
+        };
+        /** FrozenRecordOut */
+        FrozenRecordOut: {
+            /**
+             * Unit Id
+             * Format: uuid
+             */
+            unit_id: string;
+            /** Unit Code */
+            unit_code: string;
+            /** Year */
+            year: string;
+            /** Subject Code */
+            subject_code: string;
+            /** Subject Name */
+            subject_name: string;
+            frozen_by: components["schemas"]["UnitOwnerOut"];
+            /**
+             * Frozen At
+             * Format: date-time
+             */
+            frozen_at: string;
+            /** Papers */
+            papers: components["schemas"]["FrozenPaperOut"][];
+            /** Booklets */
+            booklets: components["schemas"]["FrozenBookletOut"][];
+        };
+        /** FrozenSheetOut */
+        FrozenSheetOut: {
+            /** Version */
+            version: number;
+            /** Total */
+            total: number;
+            /** Max Marks */
+            max_marks: number;
+            /**
+             * Issued At
+             * Format: date-time
+             */
+            issued_at: string;
+            /** Note */
+            note: string;
         };
         /** GlossaryIn */
         GlossaryIn: {
@@ -2556,7 +2819,7 @@ export interface components {
              * Capabilities
              * @description What this persona may do (D177); the screens show what these allow.
              */
-            capabilities: ("manage_smes" | "manage_subjects" | "manage_students" | "assign_units" | "upload_booklets" | "redistribute_units" | "request_reassignment" | "view_progress" | "author_content" | "evaluate")[];
+            capabilities: ("manage_smes" | "manage_subjects" | "manage_students" | "assign_units" | "upload_booklets" | "redistribute_units" | "request_reassignment" | "submit_units" | "return_units" | "freeze_units" | "view_progress" | "author_content" | "evaluate")[];
         };
         /** MergeIn */
         MergeIn: {
@@ -3253,6 +3516,13 @@ export interface components {
             /** Lines */
             lines: components["schemas"]["SlotResultOut"][];
         };
+        /** ReturnIn */
+        ReturnIn: {
+            /** Note */
+            note: string;
+            /** Expected Version */
+            expected_version?: number | null;
+        };
         /** ReviewAnswerOut */
         ReviewAnswerOut: {
             /**
@@ -3705,6 +3975,19 @@ export interface components {
              */
             retired: boolean;
         };
+        /** SubmitIn */
+        SubmitIn: {
+            /**
+             * Unmarked
+             * @description A reason for every booklet that is not approved.
+             */
+            unmarked?: components["schemas"]["UnmarkedIn"][];
+            /**
+             * Expected Version
+             * @description The unit's version as loaded (409 when it changed).
+             */
+            expected_version?: number | null;
+        };
         /** SuggestionOut */
         SuggestionOut: {
             /**
@@ -3894,9 +4177,9 @@ export interface components {
             due_date: string;
             /**
              * State
-             * @constant
+             * @enum {string}
              */
-            state: "open";
+            state: "open" | "submitted" | "frozen";
             /**
              * Created At
              * Format: date-time
@@ -3907,6 +4190,10 @@ export interface components {
             counts: components["schemas"]["UnitCountsOut"];
             /** @description The SME's request to move this unit, while it waits (P27). */
             pending_request?: components["schemas"]["UnitRequestRefOut"] | null;
+            /** @description The latest submission (P28): while submitted, or after a return (the admin's note is shown to the SME). */
+            submission?: components["schemas"]["UnitSubmissionOut"] | null;
+            /** @description Set once frozen. */
+            frozen?: components["schemas"]["UnitFrozenOut"] | null;
             /**
              * Booklets
              * @description Oldest first. Processing status only: no marks, page images or text (D167).
@@ -3927,6 +4214,15 @@ export interface components {
              * @description PDFs per upload.
              */
             max_files: number;
+        };
+        /** UnitFrozenOut */
+        UnitFrozenOut: {
+            frozen_by: components["schemas"]["UnitOwnerOut"];
+            /**
+             * Frozen At
+             * Format: date-time
+             */
+            frozen_at: string;
         };
         /** UnitIn */
         UnitIn: {
@@ -3976,9 +4272,9 @@ export interface components {
             due_date: string;
             /**
              * State
-             * @constant
+             * @enum {string}
              */
-            state: "open";
+            state: "open" | "submitted" | "frozen";
             /**
              * Created At
              * Format: date-time
@@ -3989,6 +4285,10 @@ export interface components {
             counts: components["schemas"]["UnitCountsOut"];
             /** @description The SME's request to move this unit, while it waits (P27). */
             pending_request?: components["schemas"]["UnitRequestRefOut"] | null;
+            /** @description The latest submission (P28): while submitted, or after a return (the admin's note is shown to the SME). */
+            submission?: components["schemas"]["UnitSubmissionOut"] | null;
+            /** @description Set once frozen. */
+            frozen?: components["schemas"]["UnitFrozenOut"] | null;
         };
         /** UnitOwnerOut */
         UnitOwnerOut: {
@@ -4058,6 +4358,33 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** UnitSubmissionOut */
+        UnitSubmissionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            submitted_by: components["schemas"]["UnitOwnerOut"];
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /**
+             * Unmarked
+             * @description Booklets not marked, with the reason.
+             */
+            unmarked: components["schemas"]["UnmarkedOut"][];
+            /** Returned At */
+            returned_at: string | null;
+            returned_by: components["schemas"]["UnitOwnerOut"] | null;
+            /**
+             * Return Note
+             * @description The admin's note when the unit was returned.
+             */
+            return_note: string;
+        };
         /** UnitUploadOut */
         UnitUploadOut: {
             /**
@@ -4071,6 +4398,40 @@ export interface components {
             refused: number;
             /** Not Queued */
             not_queued: number;
+        };
+        /** UnmarkedIn */
+        UnmarkedIn: {
+            /**
+             * Booklet Id
+             * Format: uuid
+             */
+            booklet_id: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "absent" | "unreadable" | "other";
+            /**
+             * Note
+             * @description Required for 'other'.
+             * @default
+             */
+            note: string;
+        };
+        /** UnmarkedOut */
+        UnmarkedOut: {
+            /**
+             * Booklet Id
+             * Format: uuid
+             */
+            booklet_id: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "absent" | "unreadable" | "other";
+            /** Note */
+            note: string;
         };
         /** UploadFileOut */
         UploadFileOut: {
@@ -6160,6 +6521,71 @@ export interface operations {
             };
         };
     };
+    delete_blueprint_api_v1_blueprints__blueprint_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                blueprint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     blueprint_versions_api_v1_blueprints__blueprint_id__versions_get: {
         parameters: {
             query?: never;
@@ -6178,6 +6604,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BlueprintSummaryOut"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    blueprint_deletion_api_v1_blueprints__blueprint_id__deletion_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                blueprint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionCheckOut"];
                 };
             };
             /** @description Unauthorized */
@@ -6504,6 +6988,71 @@ export interface operations {
                 };
             };
             /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A rule is broken; the message says which. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    delete_question_api_v1_questions__question_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description SMEs only: the admin does not edit content. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Still in use */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -7099,13 +7648,71 @@ export interface operations {
             };
         };
     };
+    question_deletion_api_v1_questions__question_id__deletion_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionCheckOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_units_api_v1_units_get: {
         parameters: {
             query?: {
                 subject_id?: string | null;
                 /** @description The admin's filter by SME */
                 owner_id?: string | null;
-                state?: "open" | null;
+                state?: ("open" | "submitted" | "frozen") | null;
             };
             header?: never;
             path?: never;
@@ -7643,6 +8250,277 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    submit_unit_api_v1_units__unit_id__submit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not in a state that allows this, or stale */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    return_unit_api_v1_units__unit_id__return_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not in a state that allows this, or stale */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    freeze_unit_api_v1_units__unit_id__freeze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FreezeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not in a state that allows this, or stale */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    frozen_record_api_v1_units__unit_id__frozen_record_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrozenRecordOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

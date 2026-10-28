@@ -3,17 +3,25 @@
 College data: the admin creates it, uploads its booklets, and its owner SME marks them."""
 
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
 
-from tarn_core.errors import InvariantError
+from tarn_core.domain.common import JsonValue
+from tarn_core.errors import IllegalTransitionError, InvariantError
 from tarn_core.ids import (
+    AnswerId,
     BlueprintId,
+    BookletId,
     CollegeId,
     DelegationRequestId,
+    QuestionId,
+    StudentId,
     SubjectId,
     UnitId,
+    UnitSubmissionId,
     UnitTransferId,
     UserId,
 )
@@ -25,9 +33,22 @@ REASON_MAX = 500
 
 
 class UnitState(StrEnum):
-    """Only ``open`` for now; P28 adds submitted, returned and frozen (D164)."""
+    """D164 (P28): the SME marks an ``open`` unit and submits it whole to the admin; the admin
+    may return a ``submitted`` unit (it is ``open`` again: "returned" is that event, kept in
+    the unit's submissions); the Governor freezes a submitted unit, after which nothing in it
+    changes."""
 
     OPEN = "open"
+    SUBMITTED = "submitted"
+    FROZEN = "frozen"
+
+
+UNIT_TRANSITIONS: Mapping[UnitState, frozenset[UnitState]] = {
+    UnitState.OPEN: frozenset({UnitState.SUBMITTED}),
+    UnitState.SUBMITTED: frozenset({UnitState.OPEN, UnitState.FROZEN}),
+    UnitState.FROZEN: frozenset(),
+}
+"""Every move a unit may make: submit, return (back to open), freeze."""
 
 
 def unit_code(number: int) -> str:
@@ -74,6 +95,17 @@ class Unit:
             raise InvariantError("created_at must be timezone-aware")
         if self.version < 1:
             raise InvariantError("unit version starts at 1")
+
+    @property
+    def open(self) -> bool:
+        return self.state is UnitState.OPEN
+
+    def moved_to(self, state: UnitState) -> "Unit":
+        """The unit in its next state, one version on (``IllegalTransitionError`` for a move
+        the state machine does not allow)."""
+        if state not in UNIT_TRANSITIONS[self.state]:
+            raise IllegalTransitionError(f"a unit cannot move from {self.state} to {state}")
+        return replace(self, state=state, version=self.version + 1)
 
 
 def normalise_reason(raw: str) -> str:
@@ -159,3 +191,158 @@ class DelegationRequest:
     @property
     def pending(self) -> bool:
         return self.state is RequestState.PENDING
+
+
+# --- submission, return and freeze (P28, D164) ---------------------------------------------
+
+
+class UnmarkedReason(StrEnum):
+    """Why a booklet of a submitted unit was not marked."""
+
+    ABSENT = "absent"
+    UNREADABLE = "unreadable"
+    OTHER = "other"
+    """Needs a note."""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UnmarkedBooklet:
+    booklet_id: BookletId
+    reason: UnmarkedReason
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        if self.reason is UnmarkedReason.OTHER or self.note:
+            _check_reason("note", self.note)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UnitSubmission:
+    """The SME handed the unit to the admin. The admin may return it with a note (the unit is
+    open again; this row keeps the return); the Governor's freeze keeps the last one."""
+
+    id: UnitSubmissionId
+    college_id: CollegeId
+    unit_id: UnitId
+    submitted_by: UserId
+    submitted_at: datetime
+    unmarked: tuple[UnmarkedBooklet, ...] = ()
+    returned_by: UserId | None = None
+    returned_at: datetime | None = None
+    return_note: str = ""
+
+    def __post_init__(self) -> None:
+        if self.submitted_at.tzinfo is None:
+            raise InvariantError("submitted_at must be timezone-aware")
+        ids = [u.booklet_id for u in self.unmarked]
+        if len(set(ids)) != len(ids):
+            raise InvariantError("a booklet has one reason")
+        returned = (self.returned_by, self.returned_at)
+        if any(v is None for v in returned):
+            if any(v is not None for v in returned) or self.return_note:
+                raise InvariantError("a returned submission names who returned it and when")
+        else:
+            _check_reason("note", self.return_note)
+            if self.returned_at is not None and self.returned_at.tzinfo is None:
+                raise InvariantError("returned_at must be timezone-aware")
+
+    @property
+    def returned(self) -> bool:
+        return self.returned_at is not None
+
+
+class FrozenOutcome(StrEnum):
+    APPROVED = "approved"
+    UNMARKED = "unmarked"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FrozenSheet:
+    version: int
+    total: Decimal
+    max_marks: Decimal
+    issued_by: UserId
+    issued_at: datetime
+    note: str
+    pdf_key: str | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FrozenAnswer:
+    """One answer slot of a booklet as it stood at the freeze."""
+
+    booklet_id: BookletId
+    answer_id: AnswerId
+    slot_label: str
+    question_id: QuestionId | None
+    question_version: int | None
+    question_code: str
+    max_marks: Decimal
+    ai_mark: Decimal | None
+    sme_mark: Decimal | None
+    """None when the answer was not approved (an unmarked booklet)."""
+    reviewer: UserId | None
+    reviewed_at: datetime | None
+    counted: bool
+    """Counted on the last result sheet (best N, OR); False without a sheet."""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FrozenBooklet:
+    booklet_id: BookletId
+    student_id: StudentId
+    paper_id: BlueprintId
+    paper_version: int
+    outcome: FrozenOutcome
+    reason: UnmarkedReason | None
+    note: str
+    total: Decimal | None
+    max_marks: Decimal
+    sheets: tuple[FrozenSheet, ...]
+    answers: tuple[FrozenAnswer, ...]
+
+    def __post_init__(self) -> None:
+        if (self.outcome is FrozenOutcome.UNMARKED) != (self.reason is not None):
+            raise InvariantError("an unmarked booklet, and only one, has a reason")
+        if (self.outcome is FrozenOutcome.APPROVED) != bool(self.sheets):
+            raise InvariantError("an approved booklet, and only one, has result sheets")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FrozenUnit:
+    """What the Governor froze and signed off (D164): the record reports read (D168), kept
+    when the paper and its questions are deleted later (D166). College data, insert only."""
+
+    college_id: CollegeId
+    unit_id: UnitId
+    unit_code: str
+    year: str
+    subject_id: SubjectId
+    subject_code: str
+    subject_name: str
+    submission_id: UnitSubmissionId
+    frozen_by: UserId
+    frozen_at: datetime
+    papers: tuple[Mapping[str, JsonValue], ...]
+    """Each paper version the booklets pin: ``paper_id``, ``version``, ``title``,
+    ``exam_code``, ``course_code``, ``total_marks``, ``mark_step``, ``document`` (the
+    blueprint document with its sections, slots and choice rules) and ``questions``
+    (id, version, code of each linked question)."""
+    booklets: tuple[FrozenBooklet, ...]
+
+    def __post_init__(self) -> None:
+        if self.frozen_at.tzinfo is None:
+            raise InvariantError("frozen_at must be timezone-aware")
+
+    def paper(self, paper_id: BlueprintId, version: int | None = None) -> Mapping[str, JsonValue]:
+        """The snapshot of one paper version (the newest frozen one when ``version`` is
+        None)."""
+        found = [
+            p
+            for p in self.papers
+            if p.get("paper_id") == str(paper_id)
+            and (version is None or p.get("version") == version)
+        ]
+        if not found:
+            raise InvariantError(f"paper {paper_id} is not in the frozen record")
+        return max(found, key=lambda p: int(str(p.get("version", 0))))

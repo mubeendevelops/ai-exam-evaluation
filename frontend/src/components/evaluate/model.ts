@@ -48,6 +48,18 @@ export const RETAKE_REASON: Record<RetakeReason, string> = {
 }
 
 /** From scored on, a teacher can open the booklet; before that the machine is still at work. */
+/**
+ * Why a booklet of a submitted or frozen unit is read-only (P28, D164), or null while the
+ * unit is open. The screens then take no lock: opening a booklet is a write.
+ */
+export function closedNote(unitState: Booklet['unit_state'] | undefined): string | null {
+  if (unitState === 'submitted')
+    return 'This unit has been submitted to your admin: you can look, but nothing can be changed unless the admin returns it.'
+  if (unitState === 'frozen')
+    return 'This unit has been frozen and signed off: nothing in it can be changed.'
+  return null
+}
+
 export function isReviewable(status: BookletStatus): boolean {
   return ['scored', 'in_review', 'approved', 'amendment_in_progress', 'approved_amended'].includes(
     status,

@@ -35,13 +35,13 @@ from tarn_api.schemas import (
     RegionOut,
 )
 from tarn_api.security import BackendsDep, PrincipalDep, booklet_user, current_user
-from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import Booklet, BookletStatus, Page, Region
 from tarn_core.domain.common import BlobKey
 from tarn_core.domain.personas import CAPABILITIES, Capability
 from tarn_core.domain.tenancy import User
 from tarn_core.errors import UploadTooLargeError
-from tarn_core.ids import BookletId, CollegeId, UnitId
+from tarn_core.ids import BlueprintId, BookletId, CollegeId, UnitId
+from tarn_core.services.unit_flow import paper_summary
 
 router = APIRouter(
     prefix="/api/v1",
@@ -105,17 +105,24 @@ def booklet_out(
 ) -> tuple[BookletOut, list[Page]]:
     pages = list(unit.scope.booklets.pages(college_id, booklet.id))
     student = unit.scope.students.get(college_id, booklet.student_id)
-    blueprint = unit.scope.content.get(
-        college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
-    )
     work = unit.scope.units.get(college_id, booklet.unit_id)
+    # After the freeze the paper may be deleted: its frozen copy names it (D166).
+    blueprint = paper_summary(
+        unit.scope.content,
+        unit.scope.units,
+        college_id,
+        work.id,
+        BlueprintId(booklet.blueprint.id),
+        booklet.blueprint.version,
+    )
     out = BookletOut(
         id=booklet.id,
         status=booklet.status.value,
         student=BookletStudentOut(id=student.id, name=student.name, usn=student.usn),
         unit=BookletUnitOut(id=work.id, code=work.code),
+        unit_state=work.state.value,
         blueprint=BookletBlueprintOut(
-            id=blueprint.id, version=blueprint.meta.version, title=blueprint.title
+            id=blueprint.id, version=blueprint.version, title=blueprint.title
         ),
         uploaded_by=booklet.uploaded_by,
         uploaded_at=booklet.uploaded_at,

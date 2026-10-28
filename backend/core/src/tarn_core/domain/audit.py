@@ -80,6 +80,11 @@ class AuditAction(StrEnum):
     DELEGATION_REQUESTED = "delegation.requested"  # the SME's reason
     DELEGATION_DECLINED = "delegation.declined"  # the admin's note
     DELEGATION_WITHDRAWN = "delegation.withdrawn"
+    # Submit, return, freeze (P28): ids, counts and reason codes; never notes or marks
+    UNIT_SUBMITTED = "unit.submitted"
+    UNIT_RETURNED = "unit.returned"
+    UNIT_FROZEN = "unit.frozen"
+    CONTENT_DELETED = "content.deleted"  # kind, id and rows removed only (D166)
     # College settings (P19)
     COLLEGE_LLM_SCORING_SET = "college.llm_scoring_set"  # a Tarn operator switches the flag
 

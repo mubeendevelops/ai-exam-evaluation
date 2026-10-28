@@ -103,7 +103,9 @@ def make_world(*, max_waiting: int = 5, max_pages: int = 40, **limits: int) -> W
             jobs=mem.jobs,
             max_pages=max_pages,
         ),
-        decisions=PageDecisions(booklets=mem.booklets, runtime=mem.runtime, jobs=mem.jobs),
+        decisions=PageDecisions(
+            booklets=mem.booklets, units=mem.units, runtime=mem.runtime, jobs=mem.jobs
+        ),
     )
 
 

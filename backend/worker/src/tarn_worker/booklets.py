@@ -27,7 +27,7 @@ import structlog
 from tarn_adapters.postgres.database import PostgresDatabase, PostgresSession
 from tarn_adapters.stages import OcrKit, OcrUnavailableError, Stages, Stepper
 from tarn_core.domain.diagram import DiagramKind
-from tarn_core.errors import NotFoundError
+from tarn_core.errors import NotFoundError, UnitClosedError
 from tarn_core.ids import AnswerId, BookletId, ReferenceDiagramId, UserId
 from tarn_core.ports.engines import (
     DiagramRecognizer,
@@ -147,6 +147,13 @@ class BookletJobRunner:
             with self.db.scheduler() as queue:
                 queue.succeed(job.id)
             log.info("job.skipped", job=str(job.id), kind=job.kind, reason="gone")
+            return
+        except UnitClosedError:
+            # The unit was submitted or frozen meanwhile (P28): nothing in it changes, so the
+            # job stands down (submitting cleared the answers' waiting flags).
+            with self.db.scheduler() as queue:
+                queue.succeed(job.id)
+            log.info("job.skipped", job=str(job.id), kind=job.kind, reason="unit_closed")
             return
         except Exception as error:
             with self.db.scheduler() as queue:

@@ -29,6 +29,8 @@ from tarn_core.services._support import Runtime
 from tarn_core.services.access import require
 
 NOT_ENTITLED = "Choose an active SME who has this paper's subject."
+GOVERNOR_STATES = frozenset({UnitState.SUBMITTED, UnitState.FROZEN})
+"""What the Governor sees of the units (P28): the ones waiting for, or past, the freeze."""
 
 
 def may_own(entitlements: EntitlementRepository, user: User, subject_id: SubjectId) -> bool:
@@ -187,17 +189,35 @@ class UnitService:
         state: UnitState | None = None,
     ) -> Sequence[Unit]:
         """The admin: every unit of the college; an SME: their own (``owner_id`` is then
-        ignored). Newest first."""
-        user = require(self._users.get(college_id, actor_id), Capability.VIEW_PROGRESS)
-        if not can(user, Capability.ASSIGN_UNITS):
-            owner_id = user.id
-        units = self._units.list(college_id, subject_id=subject_id, owner_id=owner_id, state=state)
+        ignored); the Governor: the submitted and frozen units (P28). Newest first."""
+        user = self._users.get(college_id, actor_id)
+        if can(user, Capability.FREEZE_UNITS):
+            units = [
+                u
+                for u in self._units.list(
+                    college_id, subject_id=subject_id, owner_id=owner_id, state=state
+                )
+                if u.state in GOVERNOR_STATES
+            ]
+        else:
+            require(user, Capability.VIEW_PROGRESS)
+            if not can(user, Capability.ASSIGN_UNITS):
+                owner_id = user.id
+            units = list(
+                self._units.list(college_id, subject_id=subject_id, owner_id=owner_id, state=state)
+            )
         return sorted(units, key=lambda u: (u.created_at, u.code), reverse=True)
 
     def get(self, college_id: CollegeId, actor_id: UserId, unit_id: UnitId) -> Unit:
-        """Another SME's unit is not found, like another college's."""
-        user = require(self._users.get(college_id, actor_id), Capability.VIEW_PROGRESS)
+        """Another SME's unit is not found, like another college's; for the Governor, a unit
+        that is not submitted or frozen."""
+        user = self._users.get(college_id, actor_id)
         unit = self._units.get(college_id, unit_id)
+        if can(user, Capability.FREEZE_UNITS):
+            if unit.state not in GOVERNOR_STATES:
+                raise NotFoundError(f"unit {unit_id}")
+            return unit
+        require(user, Capability.VIEW_PROGRESS)
         if not can(user, Capability.ASSIGN_UNITS) and unit.owner_id != user.id:
             raise NotFoundError(f"unit {unit_id}")
         return unit

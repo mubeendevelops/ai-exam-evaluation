@@ -46,13 +46,28 @@ export type UnitPaper = components['schemas']['UnitChoicePaperOut']
 export type UnitSme = components['schemas']['UnitSmeOut']
 export type UploadedFile = components['schemas']['UploadFileOut']
 
+export type UnitState = WorkUnit['state']
+
 export interface UnitFilter {
   subject_id?: string
   owner_id?: string
-  state?: 'open'
+  state?: UnitState
 }
 
-/** Units of work (P26): every unit for the admin, the SME's own for an SME. */
+/** P28 (D164): the SME submits a unit to the admin, the Governor freezes it. */
+export const UNIT_STATE: Record<UnitState, { label: string; tone: Tone }> = {
+  open: { label: 'Open', tone: 'cyan' },
+  submitted: { label: 'Submitted', tone: 'amber' },
+  frozen: { label: 'Frozen', tone: 'emerald' },
+}
+
+/** Open again after the admin returned it: the admin's note (empty otherwise). */
+export function returnNote(unit: WorkUnit): string {
+  return unit.state === 'open' && unit.submission?.returned_at ? unit.submission.return_note : ''
+}
+
+/** Units of work (P26): every unit for the admin, the SME's own for an SME, the submitted and
+ * frozen ones for the Governor (P28). */
 export function useUnits(filter: UnitFilter = {}) {
   return useQuery({
     queryKey: ['units', filter],

@@ -42,6 +42,7 @@ from tarn_core.domain.review import (
 )
 from tarn_core.domain.scoring import AnswerScore
 from tarn_core.errors import (
+    ContentDeletedError,
     IllegalTransitionError,
     InvariantError,
     NotFoundError,
@@ -120,6 +121,12 @@ class Decision:
     amendment: Amendment | None = None
     sheet: ResultSheet | None = None
     """Issued when this decision closed the last open draft of an amended booklet."""
+
+
+CONTENT_DELETED = (
+    "This booklet's paper was deleted after the unit was frozen: its result sheets (PDF) and "
+    "the frozen record remain."
+)
 
 
 class ReviewService:
@@ -668,9 +675,13 @@ class ReviewService:
         )
 
     def _blueprint(self, booklet: Booklet) -> ExamBlueprint:
-        return self._content.get(
-            booklet.college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
-        )
+        try:
+            return self._content.get(
+                booklet.college_id, ExamBlueprint, booklet.blueprint.id, booklet.blueprint.version
+            )
+        except NotFoundError:
+            # Only possible after the freeze: the SME deleted the paper (P28, D166).
+            raise ContentDeletedError(CONTENT_DELETED) from None
 
 
 def _check_mark(mark: Decimal, max_marks: Decimal, step: Decimal) -> None:

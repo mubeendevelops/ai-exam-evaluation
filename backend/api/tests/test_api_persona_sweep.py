@@ -70,7 +70,7 @@ def test_the_sweep_table_is_the_core_capability_table() -> None:
     used = {c for access in ACCESS.values() if isinstance(access, frozenset) for c in access}
     assert used == set(Capability)
     assert set(CAPABILITIES) == set(Role)
-    assert CAPABILITIES[Role.GOVERNOR] == frozenset()  # signs in only, for now (D159)
+    assert CAPABILITIES[Role.GOVERNOR] == frozenset({Capability.FREEZE_UNITS})  # P28
 
 
 def test_the_admin_is_refused_every_marks_text_review_and_sheet_route() -> None:

@@ -5,7 +5,7 @@ import { buildSegments, indexRegions, type SegmentView } from '../../lib/segment
 import { SmallButton } from '../schema/controls'
 import { EmptyState, GlassPanel, useToast } from '../ui'
 import { DiagramPanel } from './DiagramPanel'
-import { FAILURE, STATUS, isApproved, isReviewable, type BookletDetail } from './model'
+import { FAILURE, STATUS, closedNote, isApproved, isReviewable, type BookletDetail } from './model'
 import { PagePanel } from './PagePanel'
 import {
   useBookletDetail,
@@ -77,7 +77,8 @@ export function SegmentationStep({
 
   const [resegmenting, setResegmenting] = useState<{ version: number; at: number } | null>(null)
   const [confirmResegment, setConfirmResegment] = useState(false)
-  const { lock, reopen } = useBookletLock(bookletId, reviewable)
+  const closed = closedNote(booklet?.unit_state)
+  const { lock, reopen } = useBookletLock(bookletId, reviewable && closed === null)
   const review = useReview(bookletId, reviewable, resegmenting !== null)
   const segments = useSegments(bookletId, hasSegments)
   const { texts } = usePageTexts(booklet)
@@ -327,13 +328,15 @@ export function SegmentationStep({
   }
 
   const holder = lock.kind === 'other' ? lock : null
-  const readOnlyReason = holder
-    ? `${holder.holder ?? 'Another SME'} has this booklet open${holder.until ? ` until ${new Date(holder.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}. You can look, but not change anything.`
-    : approved
-      ? leaveNote(status)
-      : lock.kind === 'error'
-        ? lock.message
-        : undefined
+  const readOnlyReason = closed
+    ? closed
+    : holder
+      ? `${holder.holder ?? 'Another SME'} has this booklet open${holder.until ? ` until ${new Date(holder.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}. You can look, but not change anything.`
+      : approved
+        ? leaveNote(status)
+        : lock.kind === 'error'
+          ? lock.message
+          : undefined
 
   return (
     <div className="space-y-6">

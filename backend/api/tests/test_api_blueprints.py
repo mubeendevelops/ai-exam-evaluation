@@ -233,10 +233,14 @@ def test_smes_author_papers_the_admin_does_not_open_them(
     assert create.status_code == 403
 
 
-def test_no_delete_endpoint_and_sign_in_required(client: TestClient, a: dict[str, str]) -> None:
+def test_unused_paper_deletes_and_sign_in_required(client: TestClient, a: dict[str, str]) -> None:
+    # P28 (D166): a paper no unit uses can be deleted for good.
     subject_id = _subject(client, "COLLEGE_A")
     made = client.post(f"{BASE}/blueprints", json=_example("ci", subject_id), headers=a).json()
-    assert client.delete(f"{BASE}/blueprints/{made['id']}", headers=a).status_code == 405
+    check = client.get(f"{BASE}/blueprints/{made['id']}/deletion", headers=a).json()
+    assert check == {"allowed": True, "blockers": []}
+    assert client.delete(f"{BASE}/blueprints/{made['id']}", headers=a).status_code == 204
+    assert client.get(f"{BASE}/blueprints/{made['id']}", headers=a).status_code == 404
     for method, path in (
         ("get", "/blueprints"),
         ("post", "/blueprints/validate"),

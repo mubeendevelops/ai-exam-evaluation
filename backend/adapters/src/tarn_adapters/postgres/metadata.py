@@ -292,6 +292,84 @@ unit_transfers = Table(
     _seq(),
 )
 
+# Submit, return, freeze (P28, migration 0016, D164).
+unit_submissions = Table(
+    "unit_submissions",
+    metadata,
+    _uuid("college_id", primary_key=True),
+    _uuid("id", primary_key=True),
+    _uuid("unit_id"),
+    _uuid("submitted_by"),
+    Column("submitted_at", DateTime(timezone=True), nullable=False),
+    _uuid("returned_by", nullable=True),
+    Column("returned_at", DateTime(timezone=True), nullable=True),
+    Column("return_note", Text(), nullable=False, server_default=""),
+    _seq(),
+)
+
+unmarked_booklets = Table(
+    "unmarked_booklets",
+    metadata,
+    _uuid("college_id", primary_key=True),
+    _uuid("submission_id", primary_key=True),
+    _uuid("booklet_id", primary_key=True),
+    _text("reason"),
+    Column("note", Text(), nullable=False, server_default=""),
+)
+
+frozen_units = Table(
+    "frozen_units",
+    metadata,
+    _uuid("college_id", primary_key=True),
+    _uuid("unit_id", primary_key=True),
+    _text("unit_code"),
+    _text("year"),
+    _uuid("subject_id"),
+    _text("subject_code"),
+    _text("subject_name"),
+    _uuid("submission_id"),
+    _uuid("frozen_by"),
+    Column("frozen_at", DateTime(timezone=True), nullable=False),
+    Column("papers", JSONB(), nullable=False),
+)
+
+frozen_booklets = Table(
+    "frozen_booklets",
+    metadata,
+    _uuid("college_id", primary_key=True),
+    _uuid("unit_id"),
+    _uuid("booklet_id", primary_key=True),
+    _uuid("student_id"),
+    _uuid("paper_id"),
+    _int("paper_version"),
+    _text("outcome"),
+    _text("reason", nullable=True),
+    Column("note", Text(), nullable=False, server_default=""),
+    _num("total", nullable=True),
+    _num("max_marks"),
+    Column("sheets", JSONB(), nullable=False),
+    _seq(),
+)
+
+frozen_answers = Table(
+    "frozen_answers",
+    metadata,
+    _uuid("college_id", primary_key=True),
+    _uuid("booklet_id"),
+    _uuid("answer_id", primary_key=True),
+    _text("slot_label"),
+    _uuid("question_id", nullable=True),
+    _int("question_version", nullable=True),
+    Column("question_code", Text(), nullable=False, server_default=""),
+    _num("max_marks"),
+    _num("ai_mark", nullable=True),
+    _num("sme_mark", nullable=True),
+    _uuid("reviewer", nullable=True),
+    Column("reviewed_at", DateTime(timezone=True), nullable=True),
+    Column("counted", Boolean(), nullable=False),
+    _seq(),
+)
+
 booklets = Table(
     "booklets",
     metadata,
@@ -630,6 +708,11 @@ COLLEGE_TABLES: tuple[Table, ...] = (
     units,
     delegation_requests,
     unit_transfers,
+    unit_submissions,
+    unmarked_booklets,
+    frozen_units,
+    frozen_booklets,
+    frozen_answers,
     booklets,
     pages,
     regions,

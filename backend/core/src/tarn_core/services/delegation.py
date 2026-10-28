@@ -9,13 +9,19 @@ from dataclasses import replace
 from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.common import JsonValue
 from tarn_core.domain.personas import Capability, can
-from tarn_core.domain.unit import DelegationRequest, RequestState, UnitState
-from tarn_core.errors import AlreadyExistsError, IllegalTransitionError, NotFoundError
+from tarn_core.domain.unit import DelegationRequest, RequestState
+from tarn_core.errors import (
+    AlreadyExistsError,
+    IllegalTransitionError,
+    NotFoundError,
+    UnitClosedError,
+)
 from tarn_core.ids import CollegeId, DelegationRequestId, UnitId, UserId
 from tarn_core.ports.repositories import UnitRepository, UserRepository
 from tarn_core.services._support import Runtime
 from tarn_core.services.access import require
 from tarn_core.services.transfers import check_reason
+from tarn_core.services.unit_guard import closed_message
 
 WAITING = "A request to move this unit is waiting for your admin already."
 CLOSED = "This request has been answered already."
@@ -30,14 +36,14 @@ class DelegationService:
     def request(
         self, college_id: CollegeId, actor_id: UserId, unit_id: UnitId, *, reason: str
     ) -> DelegationRequest:
-        """Another SME's unit is not found. Raises ``IllegalTransitionError`` for a unit that
+        """Another SME's unit is not found. Raises ``UnitClosedError`` for a unit that
         is not open, ``AlreadyExistsError`` while a request for it waits."""
         require(self._users.get(college_id, actor_id), Capability.REQUEST_REASSIGNMENT)
         unit = self._units.get(college_id, unit_id)
         if unit.owner_id != actor_id:
             raise NotFoundError(f"unit {unit_id}")
-        if unit.state is not UnitState.OPEN:
-            raise IllegalTransitionError("Only an open unit can be moved to another SME.")
+        if not unit.open:
+            raise UnitClosedError(closed_message(unit))  # submitted or frozen (P28)
         reason = check_reason(reason)
         if self._units.pending_request(college_id, unit.id) is not None:
             raise AlreadyExistsError(WAITING)

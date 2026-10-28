@@ -1,6 +1,7 @@
 """Exam blueprints (papers and schemas) as college content (D165): the college's SMEs create
 and edit them in their own subjects (each edit is a new version; D178). Blueprints are never
-deleted yet: booklets pin a version, and content rows stay append-only until P28 (D166)."""
+deleted here: booklets pin a version; a paper is deleted for good only through
+``services.content_deletion`` once every unit using it is frozen (P28, D166)."""
 
 from collections.abc import Sequence
 from dataclasses import replace

@@ -119,6 +119,7 @@ export function unitBooklet(over: Partial<Booklet> = {}): Booklet {
     status: 'uploaded',
     student: { id: students[0]!.id, name: students[0]!.name, usn: students[0]!.usn },
     unit: { id: 'unit-1', code: 'U-0001' },
+    unit_state: 'open',
     blueprint: { id: 'paper-1', version: 2, title: 'Physics mid-term' },
     uploaded_by: adminUser.id,
     uploaded_at: '2026-10-28T09:00:00Z',

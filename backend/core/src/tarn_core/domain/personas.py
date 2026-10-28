@@ -1,6 +1,6 @@
 """What each persona may do (P24, D177). The one table the API checks: routes ask for a
 capability, never for a list of roles. A capability that no route checks is not defined here;
-later prompts add theirs (the Governor: ``freeze_units``)."""
+later prompts add theirs."""
 
 from collections.abc import Mapping
 from enum import StrEnum
@@ -26,6 +26,13 @@ class Capability(StrEnum):
     (P27, D163)."""
     REQUEST_REASSIGNMENT = "request_reassignment"
     """Ask the admin to move one of the SME's own units to someone else (P27)."""
+    SUBMIT_UNITS = "submit_units"
+    """Hand one of the SME's own units, marked, to the admin (P28, D164)."""
+    RETURN_UNITS = "return_units"
+    """Send a submitted unit back to its SME with a note, until the Governor freezes it."""
+    FREEZE_UNITS = "freeze_units"
+    """List the submitted and frozen units, freeze and sign off a submitted one, read the
+    frozen record (marks are for the Governor, D167)."""
     VIEW_PROGRESS = "view_progress"
     """Booklets and their processing status, without marks, page images or text (D167)."""
     AUTHOR_CONTENT = "author_content"
@@ -45,6 +52,7 @@ CAPABILITIES: Mapping[Role, frozenset[Capability]] = MappingProxyType(
                 Capability.ASSIGN_UNITS,
                 Capability.UPLOAD_BOOKLETS,
                 Capability.REDISTRIBUTE_UNITS,
+                Capability.RETURN_UNITS,
                 Capability.VIEW_PROGRESS,
             }
         ),
@@ -54,10 +62,11 @@ CAPABILITIES: Mapping[Role, frozenset[Capability]] = MappingProxyType(
                 Capability.AUTHOR_CONTENT,
                 Capability.EVALUATE,
                 Capability.REQUEST_REASSIGNMENT,
+                Capability.SUBMIT_UNITS,
             }
         ),
-        # The Governor only signs in until its portal is built (D159).
-        Role.GOVERNOR: frozenset(),
+        # Until the Governor portal is built (D159): the freeze and sign-off only (P28).
+        Role.GOVERNOR: frozenset({Capability.FREEZE_UNITS}),
     }
 )
 

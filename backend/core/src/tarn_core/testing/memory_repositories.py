@@ -2,17 +2,33 @@
 and log every college id they are called with, so tests can prove isolation."""
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from typing import Protocol
 from uuid import UUID
 
 from tarn_core.domain.booklet import WAITING_STATUSES, Answer, Booklet, Page, Region, Segment
 from tarn_core.domain.common import EngineRef
-from tarn_core.domain.content import KeyFile, Question, ReferenceAnswer
+from tarn_core.domain.content import (
+    Glossary,
+    KeyFile,
+    Question,
+    ReferenceAnswer,
+    ReferenceDiagram,
+    RubricCriterion,
+)
 from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
 from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
-from tarn_core.domain.unit import DelegationRequest, RequestState, Unit, UnitState, UnitTransfer
+from tarn_core.domain.unit import (
+    DelegationRequest,
+    FrozenUnit,
+    RequestState,
+    Unit,
+    UnitState,
+    UnitSubmission,
+    UnitTransfer,
+)
 from tarn_core.errors import (
     AlreadyExistsError,
     InvariantError,
@@ -32,6 +48,7 @@ from tarn_core.ids import (
     StudentId,
     SubjectId,
     UnitId,
+    UnitSubmissionId,
     UnitTransferId,
     UserId,
 )
@@ -217,6 +234,38 @@ class MemoryContentRepository:
             )
         history.append(item)
 
+    def question_parts(
+        self, college_id: CollegeId, question_id: QuestionId
+    ) -> Sequence[QuestionPart]:
+        parts = (ReferenceAnswer, RubricCriterion, Glossary, ReferenceDiagram, KeyFile)
+        return [
+            item
+            for history in self._college(college_id).values()
+            for item in history
+            if isinstance(item, parts) and item.question_id == question_id
+        ]
+
+    def delete_question(self, college_id: CollegeId, question_id: QuestionId) -> int:
+        items = self._college(college_id)
+        doomed = [
+            key
+            for key, history in items.items()
+            if key == ("Question", question_id)
+            or (key[0] != "Question" and getattr(history[-1], "question_id", None) == question_id)
+        ]
+        if ("Question", question_id) not in items:
+            raise NotFoundError(f"question {question_id}")
+        count = 0
+        for key in doomed:
+            count += len(items.pop(key))
+        return count
+
+    def delete_blueprint(self, college_id: CollegeId, blueprint_id: BlueprintId) -> int:
+        history = self._college(college_id).pop(("ExamBlueprint", blueprint_id), None)
+        if not history:
+            raise NotFoundError(f"blueprint {blueprint_id}")
+        return len(history)
+
 
 class MemoryCollegeRepository:
     def __init__(self, log: TenantLog) -> None:
@@ -285,6 +334,8 @@ class MemoryUnitRepository:
         self._requests: _Table[DelegationRequestId, DelegationRequest] = _Table(
             log, "delegation request"
         )
+        self._submissions: _Table[UnitSubmissionId, UnitSubmission] = _Table(log, "unit submission")
+        self._frozen: _Table[UnitId, FrozenUnit] = _Table(log, "frozen unit")
 
     def get(self, college_id: CollegeId, unit_id: UnitId) -> Unit:
         return self._t.get(college_id, unit_id)
@@ -377,6 +428,26 @@ class MemoryUnitRepository:
             if other is not None and other.id != request.id:
                 raise AlreadyExistsError("a request for this unit is waiting already")
         self._requests.put(college_id, request.id, request)
+
+    def save_submission(self, college_id: CollegeId, submission: UnitSubmission) -> None:
+        self.get(college_id, submission.unit_id)
+        stored = self._submissions.rows(college_id).get(submission.id)
+        unreturned = replace(submission, returned_by=None, returned_at=None, return_note="")
+        if stored is not None and (stored.returned or unreturned != stored):
+            raise StaleWriteError("the submission was returned already")
+        self._submissions.put(college_id, submission.id, submission)
+
+    def submissions(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[UnitSubmission]:
+        return [x for x in self._submissions.values(college_id) if x.unit_id == unit_id]
+
+    def save_frozen(self, college_id: CollegeId, record: FrozenUnit) -> None:
+        self.get(college_id, record.unit_id)
+        if record.unit_id in self._frozen.rows(college_id):
+            raise AlreadyExistsError("the unit was frozen already")
+        self._frozen.put(college_id, record.unit_id, record)
+
+    def frozen(self, college_id: CollegeId, unit_id: UnitId) -> FrozenUnit | None:
+        return self._frozen.rows(college_id).get(unit_id)
 
 
 class MemoryStudentRepository:

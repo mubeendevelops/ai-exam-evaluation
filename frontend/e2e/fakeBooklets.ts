@@ -67,8 +67,13 @@ export class FakeBooklets {
   /** Who owns the unit now (P27: the admin may transfer it). */
   owner = SME
   unitVersion = 1
-  /** Who is looking: the SME sees only the units they own. */
-  viewer: 'admin' | 'sme' = 'sme'
+  /** Who is looking: the SME sees only the units they own; the Governor the submitted and
+   * frozen ones (P28). */
+  viewer: 'admin' | 'sme' | 'governor' = 'sme'
+  /** P28: open → submitted → (returned: open) → frozen. */
+  unitState: 'open' | 'submitted' | 'frozen' = 'open'
+  submission: Record<string, unknown> | null = null
+  submits: Record<string, unknown>[] = []
   /** Delegation requests (P27), as `DelegationRequestOut` bodies. */
   requests: Record<string, unknown>[] = []
   transfers: Record<string, unknown>[] = []
@@ -92,6 +97,12 @@ export class FakeBooklets {
         counts: unit.counts,
       },
     }
+  }
+
+  /** The booklet went through the machine long ago: it is scored. */
+  processed() {
+    this.uploaded = true
+    this.since = Date.now() - 10 * 60_000
   }
 
   /** The admin has uploaded the booklet (the SME's tests start after that, P26). */
@@ -118,7 +129,12 @@ export class FakeBooklets {
       year: '2024',
       owner: this.owner,
       due_date: '2030-01-31',
-      state: 'open',
+      state: this.unitState,
+      submission: this.submission,
+      frozen:
+        this.unitState === 'frozen'
+          ? { frozen_by: { id: 'g-1', name: 'Dr. Governor' }, frozen_at: '2026-10-28T12:00:00Z' }
+          : null,
       created_at: '2026-10-28T08:00:00Z',
       version: this.unitVersion,
       pending_request: (() => {
@@ -203,6 +219,7 @@ export class FakeBooklets {
       status,
       student: { id: STUDENT.id, name: STUDENT.name, usn: STUDENT.usn },
       unit: { id: UNIT, code: 'U-0001' },
+      unit_state: this.unitState,
       blueprint: { id: BLUEPRINT, version: 1, title: 'Mid-term Physics' },
       uploaded_by: '22222222-2222-4222-8222-222222222222',
       uploaded_at: '2026-10-06T08:00:00Z',
@@ -496,8 +513,50 @@ export class FakeBooklets {
 
     // --- units of work (P26) ---
     if (method === 'GET' && path === '/units') {
-      const visible = this.unitMade && (this.viewer === 'admin' || this.owner.id === SME.id)
+      const visible =
+        this.unitMade &&
+        (this.viewer === 'governor'
+          ? this.unitState !== 'open'
+          : this.viewer === 'admin' || this.owner.id === SME.id)
       return json(200, visible ? [this.unitOut()] : [])
+    }
+    // --- submit, return, freeze (P28) ---
+    if (method === 'POST' && path === `/units/${UNIT}/submit`) {
+      if (this.unitState !== 'open')
+        return json(409, { detail: 'This unit has been submitted to your admin.' })
+      this.submits.push(body)
+      this.unitState = 'submitted'
+      this.unitVersion++
+      this.submission = {
+        id: `sub-${this.submits.length}`,
+        submitted_by: SME,
+        submitted_at: '2026-10-28T10:00:00Z',
+        unmarked: body.unmarked,
+        returned_at: null,
+        returned_by: null,
+        return_note: '',
+      }
+      return json(200, this.unitOut())
+    }
+    if (method === 'POST' && path === `/units/${UNIT}/return`) {
+      if (this.unitState !== 'submitted')
+        return json(409, { detail: 'Only a submitted unit can be returned or frozen.' })
+      this.unitState = 'open'
+      this.unitVersion++
+      this.submission = {
+        ...this.submission,
+        returned_at: '2026-10-28T11:00:00Z',
+        returned_by: { id: 'a-1', name: 'Admin' },
+        return_note: body.note,
+      }
+      return json(200, this.unitOut())
+    }
+    if (method === 'POST' && path === `/units/${UNIT}/freeze`) {
+      if (this.unitState !== 'submitted')
+        return json(409, { detail: 'Only a submitted unit can be returned or frozen.' })
+      this.unitState = 'frozen'
+      this.unitVersion++
+      return json(200, this.unitOut())
     }
     // --- transfers and the delegation inbox (P27) ---
     if (method === 'POST' && path === `/units/${UNIT}/delegation-requests`) {
