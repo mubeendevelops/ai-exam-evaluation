@@ -314,12 +314,56 @@ class BlueprintSummaryOut(BaseModel):
     section_count: int
     question_count: int
     unlinked_count: int
+    kind: Literal["schema", "paper"] = Field(description="Blueprint 1.2 (D219).")
+    target_batch: str
+    weightage_note: str
+    description: str
+    descriptor: str
+    from_schema: UUID | None = Field(
+        description="The schema this paper was made from (it may have been deleted since)."
+    )
+    updated_at: datetime | None = Field(description="When this version was saved.")
 
 
 class BlueprintOut(BlueprintSummaryOut):
     document: dict[str, Any] = Field(
         description="The blueprint in the public form, see docs/api/blueprint.schema.json."
     )
+
+
+class SchemaCardOut(BaseModel):
+    """One card of Manage Schema (P33)."""
+
+    id: UUID
+    version: int
+    title: str
+    course_code: str
+    subject_id: UUID
+    subject_name: str | None
+    target_batch: str
+    weightage_note: str
+    description: str
+    total_marks: float
+    section_count: int
+    updated_at: datetime | None
+    used_in: int = Field(description="Papers (newest versions) made from this schema.")
+
+
+class SchemaListOut(BaseModel):
+    items: list[SchemaCardOut]
+    batches: list[str] = Field(
+        description="Target batches of every schema in reach, for the filter (not filtered)."
+    )
+
+
+class CloneIn(_In):
+    title: str | None = Field(None, max_length=200, description='Default "<title> (copy)".')
+    target_batch: str | None = Field(None, max_length=100)
+    weightage_note: str | None = Field(None, max_length=1000)
+
+
+class GeneratePaperIn(_In):
+    title: str | None = Field(None, max_length=200, description='Default "<title> paper".')
 
 
 # --- question bank ----------------------------------------------------------------------------

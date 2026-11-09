@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "title": "Synthetic paper, IPR shape",
   "course_code": "SYN-IPR",
   "exam_code": "IPR-2021-JUL",
@@ -8,6 +8,12 @@
   "total_marks": 60,
   "negative_marking": 0,
   "mark_step": 0.5,
+  "kind": "paper",
+  "target_batch": "",
+  "weightage_note": "",
+  "description": "",
+  "descriptor": "",
+  "from_schema": null,
   "sections": [
     {
       "label": "A",

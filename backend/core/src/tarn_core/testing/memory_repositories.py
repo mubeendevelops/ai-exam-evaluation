@@ -6,6 +6,13 @@ from dataclasses import replace
 from typing import Protocol
 from uuid import UUID
 
+from tarn_core.domain.blueprint import (
+    BlueprintKind,
+    BlueprintQuery,
+    BlueprintSummary,
+    ExamBlueprint,
+    blueprint_summary,
+)
 from tarn_core.domain.booklet import (
     WAITING_STATUSES,
     Answer,
@@ -273,6 +280,41 @@ class MemoryContentRepository:
         for key in doomed:
             count += len(items.pop(key))
         return count
+
+    def blueprint_summaries(
+        self, college_id: CollegeId, query: BlueprintQuery
+    ) -> Sequence[BlueprintSummary]:
+        newest = self.latest(college_id, ExamBlueprint)
+        uses: dict[BlueprintId, int] = {}
+        for b in newest:
+            if b.kind is BlueprintKind.PAPER and b.from_schema is not None:
+                uses[b.from_schema] = uses.get(b.from_schema, 0) + 1
+        title = query.title.lower()
+        batch = query.target_batch.lower()
+        return [
+            blueprint_summary(b, uses.get(b.id, 0))
+            for b in newest
+            if (query.kind is None or b.kind is query.kind)
+            and (query.subject_ids is None or b.subject_id in query.subject_ids)
+            and title in b.title.lower()
+            and (not batch or b.target_batch.lower() == batch)
+        ]
+
+    def target_batches(
+        self,
+        college_id: CollegeId,
+        kind: BlueprintKind,
+        *,
+        subject_ids: frozenset[SubjectId] | None = None,
+    ) -> Sequence[str]:
+        found = {
+            b.target_batch
+            for b in self.latest(college_id, ExamBlueprint)
+            if b.kind is kind
+            and b.target_batch
+            and (subject_ids is None or b.subject_id in subject_ids)
+        }
+        return sorted(found, key=lambda t: (t.lower(), t))
 
     def delete_blueprint(self, college_id: CollegeId, blueprint_id: BlueprintId) -> int:
         history = self._college(college_id).pop(("ExamBlueprint", blueprint_id), None)

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { uid, type FormPart, type FormQuestion, type FormStep } from '../../lib/blueprint'
 import { compactInputClass, IconButton, SmallButton } from './controls'
+import { useDesignerKind } from './kind'
 
 interface RowProps {
   question: FormQuestion
@@ -78,6 +79,7 @@ function PartsEditor({
     setParts(question.parts.map((p) => (p.key === key ? { ...p, ...patch } : p)))
   const total = sum(question.parts.map((p) => p.marks))
   const matches = total === (Number(question.marks) || 0)
+  const linked = useDesignerKind() === 'paper'
 
   function add() {
     const label = String.fromCharCode(97 + (question.parts.length % 26))
@@ -111,13 +113,17 @@ function PartsEditor({
               value={part.marks}
               onChange={(e) => update(part.key, { marks: e.target.value })}
             />
-            <input
-              aria-label={`${name} part ${i + 1} question ID`}
-              className={`${compactInputClass} grow font-mono`}
-              placeholder="Question ID (optional)"
-              value={part.questionId}
-              onChange={(e) => update(part.key, { questionId: e.target.value })}
-            />
+            {linked ? (
+              <input
+                aria-label={`${name} part ${i + 1} question ID`}
+                className={`${compactInputClass} grow font-mono`}
+                placeholder="Question ID (optional)"
+                value={part.questionId}
+                onChange={(e) => update(part.key, { questionId: e.target.value })}
+              />
+            ) : (
+              <span className="grow" />
+            )}
             <IconButton
               label={`Remove ${name} part ${i + 1}`}
               icon="fa-solid fa-trash-can"
@@ -163,11 +169,12 @@ function PartsEditor({
 export function QuestionRow({ question, onChange, onRemove, name }: RowProps) {
   const [open, setOpen] = useState(false)
   const set = (patch: Partial<FormQuestion>) => onChange({ ...question, ...patch })
+  const linked = useDesignerKind() === 'paper'
   const hasParts = question.parts.length > 0
   const notes = [
     hasParts ? `${question.parts.length} sub-parts` : '',
     question.steps.length > 0 ? `${question.steps.length} steps` : '',
-    !hasParts && question.questionId.trim() ? 'linked' : '',
+    linked && !hasParts && question.questionId.trim() ? 'linked' : '',
   ].filter(Boolean)
 
   return (
@@ -204,19 +211,21 @@ export function QuestionRow({ question, onChange, onRemove, name }: RowProps) {
       </div>
       {open && (
         <div className="mt-3 space-y-3 border-t border-gray-800 pt-3">
-          <div>
-            <p className="mb-1 text-[11px] font-semibold tracking-wider text-gray-300 uppercase">
-              Question link
-            </p>
-            <input
-              aria-label={`${name} question ID`}
-              className={`${compactInputClass} font-mono`}
-              placeholder={hasParts ? 'Link each sub-part instead' : 'Question ID (optional)'}
-              disabled={hasParts}
-              value={question.questionId}
-              onChange={(e) => set({ questionId: e.target.value })}
-            />
-          </div>
+          {linked && (
+            <div>
+              <p className="mb-1 text-[11px] font-semibold tracking-wider text-gray-300 uppercase">
+                Question link
+              </p>
+              <input
+                aria-label={`${name} question ID`}
+                className={`${compactInputClass} font-mono`}
+                placeholder={hasParts ? 'Link each sub-part instead' : 'Question ID (optional)'}
+                disabled={hasParts}
+                value={question.questionId}
+                onChange={(e) => set({ questionId: e.target.value })}
+              />
+            </div>
+          )}
           <div>
             <p className="mb-1 text-[11px] font-semibold tracking-wider text-gray-300 uppercase">
               Sub-parts with their own marks

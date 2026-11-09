@@ -16,7 +16,12 @@ from typing import Protocol
 from uuid import UUID
 
 from tarn_core.domain.assignments import AcademicYear, AssignmentCounts
-from tarn_core.domain.blueprint import ExamBlueprint
+from tarn_core.domain.blueprint import (
+    BlueprintKind,
+    BlueprintQuery,
+    BlueprintSummary,
+    ExamBlueprint,
+)
 from tarn_core.domain.booklet import Answer, Booklet, Page, Region, Segment
 from tarn_core.domain.common import EngineRef
 from tarn_core.domain.content import (
@@ -152,6 +157,25 @@ class ContentRepository(Protocol):
         self, college_id: CollegeId, question_ids: Sequence[QuestionId]
     ) -> Mapping[QuestionId, int]:
         """Live reference answers plus key files, per question (0 when none)."""
+        ...
+
+    def blueprint_summaries(
+        self, college_id: CollegeId, query: BlueprintQuery
+    ) -> Sequence[BlueprintSummary]:
+        """The newest version of each matching blueprint, without reading its sections, with
+        ``used_in`` counted over the newest versions of the college's papers (P33); in no
+        particular order."""
+        ...
+
+    def target_batches(
+        self,
+        college_id: CollegeId,
+        kind: BlueprintKind,
+        *,
+        subject_ids: frozenset[SubjectId] | None = None,
+    ) -> Sequence[str]:
+        """Distinct non-empty target batches of the newest versions of ``kind``, sorted
+        ignoring case; ``subject_ids`` None = every subject."""
         ...
 
     def save(self, college_id: CollegeId, item: ContentItem) -> None:

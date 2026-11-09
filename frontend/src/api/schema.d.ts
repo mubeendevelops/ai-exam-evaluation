@@ -569,11 +569,31 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The newest version of every blueprint of my college, by title */
+        /** The newest version of every blueprint of my subjects, by title */
         get: operations["list_blueprints_api_v1_blueprints_get"];
         put?: never;
         /** Create a blueprint of my college */
         post: operations["create_blueprint_api_v1_blueprints_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schemas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Manage Schema: the schemas of my subjects, by title, and the batches in use
+         * @description `q` matches the name anywhere and `target_batch` exactly, both ignoring case. `used_in` counts the papers (newest versions) generated from each schema.
+         */
+        get: operations["list_schemas_api_v1_schemas_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -616,6 +636,46 @@ export interface paths {
         get: operations["blueprint_versions_api_v1_blueprints__blueprint_id__versions_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blueprints/{blueprint_id}/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy a schema or paper into a new blueprint (SMEs only)
+         * @description Version 1 of a new blueprint, titled "<title> (copy)" unless a title is given; a paper's copy has no exam code. Not a version of the source.
+         */
+        post: operations["clone_blueprint_api_v1_blueprints__blueprint_id__clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blueprints/{blueprint_id}/paper": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate a paper draft from a schema (SMEs only)
+         * @description The schema's sections, rules and marks, every question unlinked, no exam code, `from_schema` naming the schema (D220). A paper as the source is 409.
+         */
+        post: operations["generate_paper_api_v1_blueprints__blueprint_id__paper_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1994,6 +2054,30 @@ export interface components {
             /** Unlinked Count */
             unlinked_count: number;
             /**
+             * Kind
+             * @description Blueprint 1.2 (D219).
+             * @enum {string}
+             */
+            kind: "schema" | "paper";
+            /** Target Batch */
+            target_batch: string;
+            /** Weightage Note */
+            weightage_note: string;
+            /** Description */
+            description: string;
+            /** Descriptor */
+            descriptor: string;
+            /**
+             * From Schema
+             * @description The schema this paper was made from (it may have been deleted since).
+             */
+            from_schema: string | null;
+            /**
+             * Updated At
+             * @description When this version was saved.
+             */
+            updated_at: string | null;
+            /**
              * Document
              * @description The blueprint in the public form, see docs/api/blueprint.schema.json.
              */
@@ -2036,6 +2120,30 @@ export interface components {
             question_count: number;
             /** Unlinked Count */
             unlinked_count: number;
+            /**
+             * Kind
+             * @description Blueprint 1.2 (D219).
+             * @enum {string}
+             */
+            kind: "schema" | "paper";
+            /** Target Batch */
+            target_batch: string;
+            /** Weightage Note */
+            weightage_note: string;
+            /** Description */
+            description: string;
+            /** Descriptor */
+            descriptor: string;
+            /**
+             * From Schema
+             * @description The schema this paper was made from (it may have been deleted since).
+             */
+            from_schema: string | null;
+            /**
+             * Updated At
+             * @description When this version was saved.
+             */
+            updated_at: string | null;
         };
         /** Body_replace_booklet_api_v1_booklets__booklet_id__replace_post */
         Body_replace_booklet_api_v1_booklets__booklet_id__replace_post: {
@@ -2274,6 +2382,18 @@ export interface components {
             current_password: string;
             /** New Password */
             new_password: string;
+        };
+        /** CloneIn */
+        CloneIn: {
+            /**
+             * Title
+             * @description Default "<title> (copy)".
+             */
+            title?: string | null;
+            /** Target Batch */
+            target_batch?: string | null;
+            /** Weightage Note */
+            weightage_note?: string | null;
         };
         /**
          * CriterionOut
@@ -2704,6 +2824,14 @@ export interface components {
             issued_at: string;
             /** Note */
             note: string;
+        };
+        /** GeneratePaperIn */
+        GeneratePaperIn: {
+            /**
+             * Title
+             * @description Default "<title> paper".
+             */
+            title?: string | null;
         };
         /** GlossaryIn */
         GlossaryIn: {
@@ -3878,6 +4006,57 @@ export interface components {
              * @description True if the weights add up to the question's marks.
              */
             complete: boolean;
+        };
+        /**
+         * SchemaCardOut
+         * @description One card of Manage Schema (P33).
+         */
+        SchemaCardOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /** Title */
+            title: string;
+            /** Course Code */
+            course_code: string;
+            /**
+             * Subject Id
+             * Format: uuid
+             */
+            subject_id: string;
+            /** Subject Name */
+            subject_name: string | null;
+            /** Target Batch */
+            target_batch: string;
+            /** Weightage Note */
+            weightage_note: string;
+            /** Description */
+            description: string;
+            /** Total Marks */
+            total_marks: number;
+            /** Section Count */
+            section_count: number;
+            /** Updated At */
+            updated_at: string | null;
+            /**
+             * Used In
+             * @description Papers (newest versions) made from this schema.
+             */
+            used_in: number;
+        };
+        /** SchemaListOut */
+        SchemaListOut: {
+            /** Items */
+            items: components["schemas"]["SchemaCardOut"][];
+            /**
+             * Batches
+             * @description Target batches of every schema in reach, for the filter (not filtered).
+             */
+            batches: string[];
         };
         /**
          * SecondOpinionOut
@@ -6656,7 +6835,9 @@ export interface operations {
     };
     list_blueprints_api_v1_blueprints_get: {
         parameters: {
-            query?: never;
+            query?: {
+                kind?: ("schema" | "paper") | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6688,6 +6869,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -6741,6 +6931,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    list_schemas_api_v1_schemas_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                target_batch?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchemaListOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -6988,6 +7228,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clone_blueprint_api_v1_blueprints__blueprint_id__clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                blueprint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CloneIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlueprintOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description The blueprint breaks a rule; every broken rule is listed in the message (use /blueprints/validate for a structured list). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    generate_paper_api_v1_blueprints__blueprint_id__paper_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                blueprint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GeneratePaperIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlueprintOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description The blueprint breaks a rule; every broken rule is listed in the message (use /blueprints/validate for a structured list). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
                 };
             };
         };

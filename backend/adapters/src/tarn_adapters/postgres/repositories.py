@@ -23,7 +23,12 @@ from sqlalchemy.exc import DBAPIError
 
 from tarn_adapters.postgres import codec
 from tarn_adapters.postgres import metadata as m
-from tarn_core.domain.blueprint import ExamBlueprint
+from tarn_core.domain.blueprint import (
+    BlueprintKind,
+    BlueprintQuery,
+    BlueprintSummary,
+    ExamBlueprint,
+)
 from tarn_core.domain.booklet import (
     WAITING_STATUSES,
     Answer,
@@ -345,6 +350,14 @@ def _blueprint_values(b: ExamBlueprint) -> dict[str, object]:
         "total_marks": b.total_marks,
         "mark_step": b.mark_step,
         "sections": codec.sections_to_json(b.sections),
+        "kind": b.kind.value,
+        "target_batch": b.target_batch,
+        "weightage_note": b.weightage_note,
+        "description": b.description,
+        "descriptor": b.descriptor,
+        "from_schema": b.from_schema,
+        # the service stamps the save time; the column's default covers callers that do not
+        **({} if b.saved_at is None else {"created_at": b.saved_at}),
     }
 
 
@@ -360,6 +373,13 @@ def _blueprint(r: Row[Any]) -> ExamBlueprint:
         total_marks=r.total_marks,
         mark_step=r.mark_step,
         sections=codec.sections_from_json(r.sections),
+        kind=BlueprintKind(r.kind),
+        target_batch=r.target_batch,
+        weightage_note=r.weightage_note,
+        description=r.description,
+        descriptor=r.descriptor,
+        from_schema=None if r.from_schema is None else BlueprintId(r.from_schema),
+        saved_at=r.created_at,
     )
 
 
@@ -615,6 +635,97 @@ class PgContentRepository:
 
     def delete_question(self, college_id: CollegeId, question_id: QuestionId) -> int:
         return self._delete("tarn_delete_question", question_id, f"question {question_id}")
+
+    # --- blueprint lists (P33): newest versions, read without their sections ---------------
+
+    def _newest_blueprints(self, college_id: CollegeId) -> Any:
+        b = m.exam_blueprints
+        return (
+            select(b)
+            .where(b.c.college_id == college_id)
+            .ext(distinct_on(b.c.id))
+            .order_by(b.c.id, b.c.version.desc())
+            .subquery("newest")
+        )
+
+    def blueprint_summaries(
+        self, college_id: CollegeId, query: BlueprintQuery
+    ) -> Sequence[BlueprintSummary]:
+        newest = self._newest_blueprints(college_id)
+        papers = self._newest_blueprints(college_id).alias("papers")
+        used_in = (
+            select(func.count())
+            .select_from(papers)
+            .where(papers.c.kind == BlueprintKind.PAPER.value, papers.c.from_schema == newest.c.id)
+            .scalar_subquery()
+        )
+        stmt = select(
+            newest.c.id,
+            newest.c.version,
+            newest.c.kind,
+            newest.c.subject_id,
+            newest.c.title,
+            newest.c.course_code,
+            newest.c.exam_code,
+            newest.c.target_batch,
+            newest.c.weightage_note,
+            newest.c.description,
+            newest.c.descriptor,
+            newest.c.from_schema,
+            newest.c.total_marks,
+            func.jsonb_array_length(newest.c.sections).label("section_count"),
+            newest.c.created_at,
+            used_in.label("used_in"),
+        )
+        if query.kind is not None:
+            stmt = stmt.where(newest.c.kind == query.kind.value)
+        if query.subject_ids is not None:
+            if not query.subject_ids:
+                return []
+            stmt = stmt.where(newest.c.subject_id.in_(sorted(query.subject_ids)))
+        if query.title:
+            stmt = stmt.where(newest.c.title.icontains(query.title, autoescape=True))
+        if query.target_batch:
+            stmt = stmt.where(func.lower(newest.c.target_batch) == query.target_batch.lower())
+        return [
+            BlueprintSummary(
+                id=BlueprintId(r.id),
+                version=r.version,
+                kind=BlueprintKind(r.kind),
+                subject_id=SubjectId(r.subject_id),
+                title=r.title,
+                course_code=r.course_code,
+                exam_code=r.exam_code,
+                target_batch=r.target_batch,
+                weightage_note=r.weightage_note,
+                description=r.description,
+                descriptor=r.descriptor,
+                from_schema=None if r.from_schema is None else BlueprintId(r.from_schema),
+                total_marks=r.total_marks,
+                section_count=r.section_count,
+                saved_at=r.created_at,
+                used_in=r.used_in,
+            )
+            for r in self._conn.execute(stmt)
+        ]
+
+    def target_batches(
+        self,
+        college_id: CollegeId,
+        kind: BlueprintKind,
+        *,
+        subject_ids: frozenset[SubjectId] | None = None,
+    ) -> Sequence[str]:
+        if subject_ids is not None and not subject_ids:
+            return []
+        newest = self._newest_blueprints(college_id)
+        stmt = select(newest.c.target_batch).where(
+            newest.c.kind == kind.value, newest.c.target_batch != ""
+        )
+        if subject_ids is not None:
+            stmt = stmt.where(newest.c.subject_id.in_(sorted(subject_ids)))
+        found = {r.target_batch for r in self._conn.execute(stmt)}
+        return sorted(found, key=lambda t: (t.lower(), t))
 
     def delete_blueprint(self, college_id: CollegeId, blueprint_id: BlueprintId) -> int:
         return self._delete("tarn_delete_paper", blueprint_id, f"blueprint {blueprint_id}")

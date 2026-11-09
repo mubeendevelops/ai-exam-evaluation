@@ -1,4 +1,5 @@
 import type { Check, CheckState } from '../../hooks/useBlueprintCheck'
+import type { Kind } from '../../lib/blueprint'
 import { Badge, GlassPanel, type Tone } from '../ui'
 import { SmallButton } from './controls'
 
@@ -8,7 +9,9 @@ interface Props {
   check: Check | undefined
   onCopy: () => void
   onDownload: () => void
-  onReset: () => void
+  /** The old designer's Reset Form; the saved-schema editor has none. */
+  onReset?: () => void
+  kind?: Kind
 }
 
 const STATUS: Record<CheckState, { tone: Tone; icon: string; text: (c?: Check) => string }> = {
@@ -30,7 +33,15 @@ const STATUS: Record<CheckState, { tone: Tone; icon: string; text: (c?: Check) =
 }
 
 /** The right column: the generated schema, its verdict, and Copy / Download / Reset. */
-export function JsonPanel({ json, state, check, onCopy, onDownload, onReset }: Props) {
+export function JsonPanel({
+  json,
+  state,
+  check,
+  onCopy,
+  onDownload,
+  onReset,
+  kind = 'paper',
+}: Props) {
   const status = STATUS[state]
   return (
     <GlassPanel as="section" aria-labelledby="schema-json-title" className="space-y-4 p-6">
@@ -88,7 +99,12 @@ export function JsonPanel({ json, state, check, onCopy, onDownload, onReset }: P
               ))}
             </ul>
           )}
-          {state === 'valid' && check.unlinked.length > 0 && (
+          {state === 'valid' && kind === 'schema' && (
+            <p className="text-gray-400">
+              A schema leaves its questions unlinked: generate a paper from it to link them.
+            </p>
+          )}
+          {state === 'valid' && kind === 'paper' && check.unlinked.length > 0 && (
             <p className="text-gray-400">
               {check.unlinked.length} of the answerable parts are not linked to a question yet
               (allowed here; link them in the question bank before registering booklets).
@@ -113,9 +129,11 @@ export function JsonPanel({ json, state, check, onCopy, onDownload, onReset }: P
         <SmallButton icon="fa-solid fa-download" onClick={onDownload}>
           Download .json
         </SmallButton>
-        <SmallButton icon="fa-solid fa-rotate-left" tone="gray" onClick={onReset}>
-          Reset Form
-        </SmallButton>
+        {onReset && (
+          <SmallButton icon="fa-solid fa-rotate-left" tone="gray" onClick={onReset}>
+            Reset Form
+          </SmallButton>
+        )}
       </div>
     </GlassPanel>
   )

@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "title": "Synthetic paper, CI shape",
   "course_code": "SYN-CI",
   "exam_code": "CIV-2021-JUN",
@@ -8,6 +8,12 @@
   "total_marks": 50,
   "negative_marking": 0,
   "mark_step": 0.5,
+  "kind": "paper",
+  "target_batch": "2021 batch",
+  "weightage_note": "",
+  "description": "Civil engineering end-semester paper, synthetic.",
+  "descriptor": "End semester",
+  "from_schema": null,
   "sections": [
     {
       "label": "A",

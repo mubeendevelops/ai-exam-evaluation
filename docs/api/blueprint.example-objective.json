@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "title": "Synthetic paper, objective, worked and diagram sections",
   "course_code": "SYN-OBJ",
   "exam_code": "",
@@ -8,6 +8,12 @@
   "total_marks": 30,
   "negative_marking": 0.25,
   "mark_step": 0.5,
+  "kind": "paper",
+  "target_batch": "",
+  "weightage_note": "",
+  "description": "",
+  "descriptor": "Quiz",
+  "from_schema": null,
   "sections": [
     {
       "label": "A",

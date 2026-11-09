@@ -1,22 +1,31 @@
 import { MARK_STEPS, NEGATIVE_MARKING, calculatedTotal, type FormState } from '../../lib/blueprint'
-import { Field, SelectInput, TextInput, inputClass, SmallButton } from './controls'
+import { useId } from 'react'
+import { Field, SelectInput, TextArea, TextInput, inputClass, SmallButton } from './controls'
 import { SubjectPicker } from './SubjectPicker'
 
 interface Props {
   form: FormState
   onChange: (patch: Partial<FormState>) => void
+  /** Batches already in use, offered while typing the target batch. */
+  batches?: string[]
 }
 
-/** Step 1 of the prototype: the examination header and marks configuration. */
-export function HeaderForm({ form, onChange }: Props) {
+/** Step 1 of the prototype: the examination header and marks configuration. A schema (D219)
+ * has a name, a target batch and a weightage description, and no exam code; a paper has an
+ * exam code, a descriptor tag and a card description. */
+export function HeaderForm({ form, onChange, batches = [] }: Props) {
   const calculated = calculatedTotal(form)
   const auto = form.totalMarks === null
+  const schema = form.kind === 'schema'
+  const batchList = useId()
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <TextInput
-        label="Exam Title / Header"
+        label={schema ? 'Schema Name' : 'Exam Title / Header'}
         value={form.title}
-        placeholder="Physics Mid-Term Assessment 2026"
+        placeholder={
+          schema ? 'Advanced Quantum Mechanics Matrix' : 'Physics Mid-Term Assessment 2026'
+        }
         maxLength={200}
         onChange={(e) => onChange({ title: e.target.value })}
       />
@@ -27,15 +36,42 @@ export function HeaderForm({ form, onChange }: Props) {
         maxLength={200}
         onChange={(e) => onChange({ courseCode: e.target.value })}
       />
-      <TextInput
-        label="Exam Code"
-        value={form.examCode}
-        placeholder="PHY-2026-MIDTERM"
-        maxLength={50}
-        hint="Names this exam in your college. A paper needs one before the admin can make a unit of it."
-        onChange={(e) => onChange({ examCode: e.target.value })}
-      />
+      {!schema && (
+        <TextInput
+          label="Exam Code"
+          value={form.examCode}
+          placeholder="PHY-2026-MIDTERM"
+          maxLength={50}
+          hint="Names this exam in your college. A paper needs one before the admin can make a unit of it."
+          onChange={(e) => onChange({ examCode: e.target.value })}
+        />
+      )}
       <SubjectPicker value={form.subjectId} onChange={(subjectId) => onChange({ subjectId })} />
+      <TextInput
+        label="Target Class / Batch"
+        value={form.targetBatch}
+        placeholder="2024 batch, Class 12…"
+        maxLength={100}
+        list={batches.length > 0 ? batchList : undefined}
+        hint="A filter for your lists only; it is not tied to a unit's year."
+        onChange={(e) => onChange({ targetBatch: e.target.value })}
+      />
+      {batches.length > 0 && (
+        <datalist id={batchList}>
+          {batches.map((b) => (
+            <option key={b} value={b} />
+          ))}
+        </datalist>
+      )}
+      {!schema && (
+        <TextInput
+          label="Descriptor"
+          value={form.descriptor}
+          placeholder="Mid-term, Quiz, End semester…"
+          maxLength={50}
+          onChange={(e) => onChange({ descriptor: e.target.value })}
+        />
+      )}
       <TextInput
         label="Duration (Minutes)"
         inputMode="numeric"
@@ -92,6 +128,28 @@ export function HeaderForm({ form, onChange }: Props) {
           </option>
         ))}
       </SelectInput>
+      <div className="md:col-span-2">
+        {schema ? (
+          <TextArea
+            label="Rubric Weightage Description"
+            value={form.weightageNote}
+            rows={2}
+            maxLength={1000}
+            placeholder="Define conceptual vs analytical weightages…"
+            hint="Shown on the schema's card; not enforced in scoring."
+            onChange={(e) => onChange({ weightageNote: e.target.value })}
+          />
+        ) : (
+          <TextArea
+            label="Description"
+            value={form.description}
+            rows={2}
+            maxLength={1000}
+            placeholder="What this paper covers"
+            onChange={(e) => onChange({ description: e.target.value })}
+          />
+        )}
+      </div>
     </div>
   )
 }

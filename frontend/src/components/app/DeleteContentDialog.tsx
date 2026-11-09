@@ -5,7 +5,7 @@ import { NETWORK_PROBLEM, problemOf } from '../../api/errors'
 import { CancelButton } from '../../pages/admin/controls'
 import { Modal } from '../ui'
 
-type Kind = 'question' | 'paper'
+type Kind = 'question' | 'paper' | 'schema'
 
 const WORDS: Record<Kind, { title: string; gone: string }> = {
   question: {
@@ -13,6 +13,10 @@ const WORDS: Record<Kind, { title: string; gone: string }> = {
     gone: 'every version of the question, its reference answers, rubric, glossary, key files and reference diagrams',
   },
   paper: { title: 'Delete this paper?', gone: 'every version of the paper' },
+  schema: {
+    title: 'Delete this schema?',
+    gone: 'every version of the schema (papers generated from it stay)',
+  },
 }
 
 async function check(kind: Kind, id: string) {

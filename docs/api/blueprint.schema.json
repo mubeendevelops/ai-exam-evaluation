@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:tarn:schema:exam-blueprint:1.1",
+  "$id": "urn:tarn:schema:exam-blueprint:1.2",
   "title": "Tarn exam blueprint",
-  "description": "The structure of one question paper: header, sections, choice rules (answer any N of M), OR pairs, sub-parts with their own marks, step marks, the evaluation method of each section and optional links to question ids. Version 1.1 (field schema_version; 1.1 adds the optional exam_code, and 1.0 documents are still accepted). A document that satisfies this schema may still be refused by the API, because some rules are arithmetic and cannot be written here: question and sub-part marks use at most 2 decimal places; sub-part marks and step marks add up to the marks of the question they belong to; the alternatives of an OR pair carry equal marks; 'any N' has N between 1 and the number of items; question numbers, sub-part labels and step labels are unique; and total_marks equals the sum over sections of the marks of the N largest items (all items when the rule is 'all'). The API explains each broken rule with a path and a sentence (POST /api/v1/blueprints/validate). Negative marking is exam-wide and applies to wrong answers in sections evaluated by exact_pattern_match or omr_bubble_scan.",
+  "description": "The structure of one question paper: header, sections, choice rules (answer any N of M), OR pairs, sub-parts with their own marks, step marks, the evaluation method of each section and optional links to question ids. Version 1.2 (field schema_version; 1.1 added the optional exam_code; 1.2 adds kind, target_batch, weightage_note, description, descriptor and from_schema, all optional; 1.0 and 1.1 documents are still accepted and read as papers). A blueprint is a schema (a reusable template) or a paper. A schema has no exam code, no from_schema and no linked question: every question_id is null (that last rule is checked by the API, not written here). from_schema must name a schema of the same college and subject (checked by the API). A document that satisfies this schema may still be refused by the API, because some rules are arithmetic and cannot be written here: question and sub-part marks use at most 2 decimal places; sub-part marks and step marks add up to the marks of the question they belong to; the alternatives of an OR pair carry equal marks; 'any N' has N between 1 and the number of items; question numbers, sub-part labels and step labels are unique; and total_marks equals the sum over sections of the marks of the N largest items (all items when the rule is 'all'). The API explains each broken rule with a path and a sentence (POST /api/v1/blueprints/validate). Negative marking is exam-wide and applies to wrong answers in sections evaluated by exact_pattern_match or omr_bubble_scan.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "title", "course_code", "subject_id", "total_marks", "sections"],
   "properties": {
-    "schema_version": { "enum": ["1.0", "1.1"] },
+    "schema_version": { "enum": ["1.0", "1.1", "1.2"] },
     "title": { "$ref": "#/$defs/text", "description": "Exam title, e.g. the header of the paper." },
     "course_code": { "$ref": "#/$defs/text", "description": "Course code printed on the paper." },
     "exam_code": {
@@ -37,11 +37,50 @@
       "default": 0.5,
       "description": "Unit that marks for an answer are rounded to."
     },
+    "kind": {
+      "enum": ["schema", "paper"],
+      "description": "Since 1.2: a schema is a reusable template whose questions stay unlinked; a paper links its questions and needs an exam code before a unit can use it. Absent: a paper when created, unchanged when updated. A blueprint's kind never changes."
+    },
+    "target_batch": {
+      "type": "string",
+      "maxLength": 100,
+      "description": "Since 1.2: the class or batch it is meant for (\"2024 batch\", \"Class 12\"); a filter only."
+    },
+    "weightage_note": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Since 1.2: the rubric weightage description (for example 40% conceptual, 60% analytical); shown, not enforced."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Since 1.2: a short text for the paper's or schema's card."
+    },
+    "descriptor": {
+      "type": "string",
+      "maxLength": 50,
+      "description": "Since 1.2: one free-text tag of a paper (Mid-term, Quiz, ...)."
+    },
+    "from_schema": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "Since 1.2: the schema a paper was generated from; null for a schema."
+    },
     "sections": {
       "type": "array",
       "minItems": 1,
       "maxItems": 20,
       "items": { "$ref": "#/$defs/section" }
+    }
+  },
+  "if": {
+    "required": ["kind"],
+    "properties": { "kind": { "const": "schema" } }
+  },
+  "then": {
+    "properties": {
+      "exam_code": { "maxLength": 0 },
+      "from_schema": { "type": "null" }
     }
   },
   "$defs": {

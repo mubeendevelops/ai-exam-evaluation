@@ -230,6 +230,7 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("POST", "/api/v1/blueprints/validate"): Case("own"),
     ("GET", "/api/v1/blueprints"): Case("own"),
     ("POST", "/api/v1/blueprints"): Case("own"),
+    ("GET", "/api/v1/schemas"): Case("own"),
     ("GET", "/api/v1/questions"): Case("own"),
     ("POST", "/api/v1/questions"): Case("own"),
     ("GET", "/api/v1/question-topics"): Case("own"),
@@ -331,6 +332,8 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("PUT", "/api/v1/blueprints/{blueprint_id}"): Case(
         "college", _json(lambda w: w.blueprint_document)
     ),
+    ("POST", "/api/v1/blueprints/{blueprint_id}/clone"): Case("college"),
+    ("POST", "/api/v1/blueprints/{blueprint_id}/paper"): Case("college"),
     ("GET", "/api/v1/questions/{question_id}"): Case("college"),
     ("GET", "/api/v1/questions/{question_id}/key-files/{file_id}/content"): Case("college"),
     ("GET", "/api/v1/questions/{question_id}/diagrams/{diagram_id}/content"): Case("college"),

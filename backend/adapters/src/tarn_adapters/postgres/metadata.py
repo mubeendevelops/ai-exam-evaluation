@@ -179,6 +179,13 @@ exam_blueprints = _versioned(
     _num("total_marks"),
     _num("mark_step"),
     Column("sections", JSONB(), nullable=False),
+    # 0019 (P33, D219): schema or paper, and the 1.2 header texts
+    Column("kind", Text(), nullable=False, server_default="paper"),
+    Column("target_batch", Text(), nullable=False, server_default=""),
+    Column("weightage_note", Text(), nullable=False, server_default=""),
+    Column("description", Text(), nullable=False, server_default=""),
+    Column("descriptor", Text(), nullable=False, server_default=""),
+    _uuid("from_schema", nullable=True),
 )
 
 # Tarn-operator content (0006): no owning college and no creating user (both NULL).

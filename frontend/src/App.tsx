@@ -22,6 +22,8 @@ import ResetPasswordPage from './pages/ResetPasswordPage'
 import SchemaPage from './pages/SchemaPage'
 import MyAssignmentsPage from './pages/sme/MyAssignmentsPage'
 import QuestionListPage from './pages/sme/QuestionListPage'
+import SchemaEditorPage from './pages/sme/SchemaEditorPage'
+import SchemasPage from './pages/sme/SchemasPage'
 import StudentListPage from './pages/sme/StudentListPage'
 import * as Sme from './pages/sme/sections'
 import VerifyEmailPage from './pages/VerifyEmailPage'
@@ -54,7 +56,9 @@ export default function App() {
               <Route path="units/:unitId" element={<StudentListPage />} />
               <Route path="units/:unitId/booklets/:bookletId" element={<QuestionListPage />} />
               <Route path="papers" element={<Sme.PapersPage />} />
-              <Route path="schema" element={<Sme.SchemaPage />} />
+              <Route path="schemas" element={<SchemasPage />} />
+              <Route path="schemas/:blueprintId" element={<SchemaEditorPage />} />
+              <Route path="schema" element={<Navigate to="/sme/schemas" replace />} />
               <Route path="profile" element={<Sme.ProfilePage />} />
               <Route path="reports" element={<Sme.ReportsPage />} />
               <Route path="*" element={<Navigate to="/sme" replace />} />

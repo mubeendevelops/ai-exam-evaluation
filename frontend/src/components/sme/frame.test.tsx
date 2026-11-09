@@ -86,7 +86,6 @@ describe('SME portal frame (P31, D215)', () => {
     const sidebar = await screen.findByRole('navigation', { name: 'SME sections' })
     const empty: [string, string][] = [
       ['Manage Question Papers', 'Question papers come next'],
-      ['Manage Schema', 'Schemas come next'],
       ['My Profile', 'Your profile page comes later'],
       ['My Reports', 'Your reports come later'],
     ]

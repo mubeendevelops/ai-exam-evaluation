@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from tarn_core.domain.audit import AuditAction
-from tarn_core.domain.blueprint import ExamBlueprint
+from tarn_core.domain.blueprint import BlueprintKind, ExamBlueprint
 from tarn_core.domain.booklet import Booklet
 from tarn_core.domain.content import Subject
 from tarn_core.domain.personas import Capability, can
@@ -52,7 +52,9 @@ class PaperChoice:
 
 
 def paper_problem(paper: ExamBlueprint, subject: Subject) -> str | None:
-    """Why a unit cannot use this paper, or None."""
+    """Why a unit cannot use this paper, or None. A schema is never a unit's paper (D186)."""
+    if paper.kind is BlueprintKind.SCHEMA:
+        return "This is a schema: generate a paper from it and use the paper."
     if paper.unlinked_leaves():
         return "Link every question of the paper before making a unit of it."
     if not paper.exam_code:

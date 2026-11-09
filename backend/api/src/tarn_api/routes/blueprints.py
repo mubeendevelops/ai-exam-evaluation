@@ -1,10 +1,11 @@
 """Subjects and exam blueprints, the college's own content (D165): ``/api/v1/subjects``,
 ``/api/v1/blueprints``. The admin keeps the subject list (D160); SMEs read and write the papers
 of their own subjects (D178). Another college's subject or blueprint, and a paper of a subject
-the SME does not have, is a 404. Blueprints are never deleted yet:
-booklets pin a version and content rows are append-only until P28."""
+the SME does not have, is a 404. Since P33 a blueprint is a schema or a paper (D219): Manage
+Schema lists schemas (``/api/v1/schemas``), clones blueprints and generates paper drafts from
+schemas (D220). Deletion follows D202."""
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Query, Response, status
@@ -13,16 +14,20 @@ from tarn_api.backends import Unit, unit_of_work
 from tarn_api.schemas import (
     BlueprintOut,
     BlueprintSummaryOut,
+    CloneIn,
     DeletionCheckOut,
     ErrorOut,
+    GeneratePaperIn,
     IssueOut,
+    SchemaCardOut,
+    SchemaListOut,
     SectionSummaryOut,
     SubjectIn,
     SubjectOut,
     ValidationOut,
 )
 from tarn_api.security import BackendsDep, PrincipalDep, current_user
-from tarn_core.domain.blueprint import ExamBlueprint
+from tarn_core.domain.blueprint import BlueprintKind, BlueprintSummary, ExamBlueprint
 from tarn_core.domain.content import Subject
 from tarn_core.domain.personas import Capability
 from tarn_core.errors import NotFoundError
@@ -39,7 +44,7 @@ Document = Annotated[
     dict[str, Any],
     Body(
         description="An exam blueprint in the public form: see docs/api/blueprint.schema.json "
-        "(version 1.1; 1.0 is still read) and the examples next to it."
+        "(version 1.2; 1.1 and 1.0 are still read) and the examples next to it."
     ),
 ]
 _INVALID: dict[int | str, dict[str, Any]] = {
@@ -76,7 +81,33 @@ def _summary(b: ExamBlueprint, subjects: dict[UUID, Subject]) -> dict[str, Any]:
         "section_count": len(b.sections),
         "question_count": sum(1 for _ in b.slots()),
         "unlinked_count": len(b.unlinked_leaves()),
+        "kind": b.kind.value,
+        "target_batch": b.target_batch,
+        "weightage_note": b.weightage_note,
+        "description": b.description,
+        "descriptor": b.descriptor,
+        "from_schema": b.from_schema,
+        "updated_at": b.saved_at,
     }
+
+
+def _card(b: BlueprintSummary, subjects: dict[UUID, Subject]) -> SchemaCardOut:
+    subject = subjects.get(b.subject_id)
+    return SchemaCardOut(
+        id=b.id,
+        version=b.version,
+        title=b.title,
+        course_code=b.course_code,
+        subject_id=b.subject_id,
+        subject_name=None if subject is None else subject.name,
+        target_batch=b.target_batch,
+        weightage_note=b.weightage_note,
+        description=b.description,
+        total_marks=float(b.total_marks),
+        section_count=b.section_count,
+        updated_at=b.saved_at,
+        used_in=b.used_in,
+    )
 
 
 def _subjects(unit: Unit, college_id: CollegeId) -> dict[UUID, Subject]:
@@ -195,14 +226,46 @@ def validate_blueprint(
 @router.get(
     "/blueprints",
     response_model=list[BlueprintSummaryOut],
-    summary="The newest version of every blueprint of my college, by title",
+    summary="The newest version of every blueprint of my subjects, by title",
 )
-def list_blueprints(who: PrincipalDep, backends: BackendsDep) -> list[BlueprintSummaryOut]:
+def list_blueprints(
+    who: PrincipalDep,
+    backends: BackendsDep,
+    kind: Annotated[Literal["schema", "paper"] | None, Query()] = None,
+) -> list[BlueprintSummaryOut]:
     with unit_of_work(backends, who.college_id) as unit:
         user = current_user(unit, who, Capability.AUTHOR_CONTENT)
         subjects = _subjects(unit, who.college_id)
-        found = unit.blueprints.list(who.college_id, reach=unit.reach(user))
+        found = unit.blueprints.list(
+            who.college_id,
+            reach=unit.reach(user),
+            kind=None if kind is None else BlueprintKind(kind),
+        )
     return [BlueprintSummaryOut(**_summary(b, subjects)) for b in found]
+
+
+@router.get(
+    "/schemas",
+    response_model=SchemaListOut,
+    summary="Manage Schema: the schemas of my subjects, by title, and the batches in use",
+    description="`q` matches the name anywhere and `target_batch` exactly, both ignoring case. "
+    "`used_in` counts the papers (newest versions) generated from each schema.",
+)
+def list_schemas(
+    who: PrincipalDep,
+    backends: BackendsDep,
+    q: Annotated[str, Query(max_length=200)] = "",
+    target_batch: Annotated[str, Query(max_length=100)] = "",
+) -> SchemaListOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
+        subjects = _subjects(unit, who.college_id)
+        listing = unit.blueprints.schemas(
+            who.college_id, reach=unit.reach(user), title=q, target_batch=target_batch
+        )
+    return SchemaListOut(
+        items=[_card(b, subjects) for b in listing.items], batches=list(listing.batches)
+    )
 
 
 @router.post(
@@ -275,6 +338,66 @@ def update_blueprint(
             who.college_id, who.user_id, BlueprintId(blueprint_id), document
         )
         return _full_out(blueprint, unit)
+
+
+@router.post(
+    "/blueprints/{blueprint_id}/clone",
+    status_code=status.HTTP_201_CREATED,
+    response_model=BlueprintOut,
+    responses={**_INVALID, 403: {"model": ErrorOut}, 404: {"model": ErrorOut}},
+    summary="Copy a schema or paper into a new blueprint (SMEs only)",
+    description='Version 1 of a new blueprint, titled "<title> (copy)" unless a title is '
+    "given; a paper's copy has no exam code. Not a version of the source.",
+)
+def clone_blueprint(
+    blueprint_id: UUID,
+    who: PrincipalDep,
+    backends: BackendsDep,
+    body: Annotated[CloneIn | None, Body()] = None,
+) -> BlueprintOut:
+    body = body or CloneIn()
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
+        blueprint = unit.blueprints.clone(
+            who.college_id,
+            who.user_id,
+            BlueprintId(blueprint_id),
+            title=body.title,
+            target_batch=body.target_batch,
+            weightage_note=body.weightage_note,
+        )
+        return _full_out(blueprint, unit)
+
+
+@router.post(
+    "/blueprints/{blueprint_id}/paper",
+    status_code=status.HTTP_201_CREATED,
+    response_model=BlueprintOut,
+    responses={
+        **_INVALID,
+        403: {"model": ErrorOut},
+        404: {"model": ErrorOut},
+        409: {"model": ErrorOut},
+    },
+    summary="Generate a paper draft from a schema (SMEs only)",
+    description="The schema's sections, rules and marks, every question unlinked, no exam code, "
+    "`from_schema` naming the schema (D220). A paper as the source is 409.",
+)
+def generate_paper(
+    blueprint_id: UUID,
+    who: PrincipalDep,
+    backends: BackendsDep,
+    body: Annotated[GeneratePaperIn | None, Body()] = None,
+) -> BlueprintOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
+        paper = unit.blueprints.generate_paper(
+            who.college_id,
+            who.user_id,
+            BlueprintId(blueprint_id),
+            title=None if body is None else body.title,
+        )
+        return _full_out(paper, unit)
 
 
 # --- permanent deletion (P28, D166) -----------------------------------------------------------

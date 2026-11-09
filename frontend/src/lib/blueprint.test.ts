@@ -15,10 +15,12 @@ import {
   renumber,
   sectionMax,
   slotsOf,
+  starterSchema,
   toDocument,
   type BlueprintDocument,
   type FormState,
 } from './blueprint'
+import { loadDraft } from './draft'
 
 const examples = {
   ci: ciExample as BlueprintDocument,
@@ -127,5 +129,63 @@ describe('editing helpers', () => {
       'mid-term-2026.blueprint.json',
     )
     expect(fileNameOf(initialForm())).toBe('exam.blueprint.json')
+  })
+})
+
+describe('document 1.2: schemas and papers (P33)', () => {
+  it('starts a schema with the dialog fields and no links or exam code', () => {
+    const doc = starterSchema({
+      title: 'Matrix',
+      subjectId: 's-1',
+      courseCode: 'PHY',
+      targetBatch: ' Class 12 ',
+      weightageNote: '40/60',
+    })
+    expect(doc).toMatchObject({
+      schema_version: '1.2',
+      kind: 'schema',
+      title: 'Matrix',
+      course_code: 'PHY',
+      exam_code: '',
+      target_batch: 'Class 12',
+      weightage_note: '40/60',
+      from_schema: null,
+      total_marks: 10,
+    })
+  })
+
+  it('writes no links, exam code or descriptor for a schema, whatever the form held', () => {
+    const form = fromDocument(ciExample as BlueprintDocument)
+    const doc = toDocument({ ...form, kind: 'schema', descriptor: 'Quiz', fromSchema: 'x' })
+    expect(doc.exam_code).toBe('')
+    expect(doc.descriptor).toBe('')
+    expect(doc.from_schema).toBeNull()
+    expect(JSON.stringify(doc.sections)).not.toMatch(/"question_id":"/)
+  })
+
+  it('reads older documents as papers and keeps a paper origin', () => {
+    const { kind, target_batch, ...older } = ciExample as BlueprintDocument
+    expect([kind, target_batch]).toEqual(['paper', '2021 batch'])
+    const form = fromDocument({ ...older, schema_version: '1.1' })
+    expect(form).toMatchObject({ kind: 'paper', targetBatch: '' })
+    const paper = toDocument({ ...form, fromSchema: 'schema-1' })
+    expect(paper).toMatchObject({
+      kind: 'paper',
+      from_schema: 'schema-1',
+      exam_code: 'CIV-2021-JUN',
+    })
+  })
+
+  it('reads a version 1 draft with the new fields filled in', () => {
+    const v1: Partial<FormState> = initialForm()
+    delete v1.kind
+    delete v1.targetBatch
+    globalThis.sessionStorage.setItem(
+      'tarn.schema-designer.draft',
+      JSON.stringify({ version: 1, form: { ...v1, title: 'Old draft' } }),
+    )
+    expect(loadDraft()).toMatchObject({ title: 'Old draft', kind: 'paper', targetBatch: '' })
+    globalThis.sessionStorage.setItem('tarn.schema-designer.draft', JSON.stringify({ version: 9 }))
+    expect(loadDraft()).toBeNull()
   })
 })

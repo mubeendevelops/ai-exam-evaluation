@@ -13,10 +13,14 @@ from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from tarn_core.domain.blueprint import (
+    MAX_DESCRIPTOR,
+    MAX_NOTE,
+    MAX_TARGET_BATCH,
     OBJECTIVE_METHODS,
     AllOf,
     AnyN,
     BlueprintItem,
+    BlueprintKind,
     ChoiceRule,
     EvaluationMethod,
     ExamBlueprint,
@@ -31,9 +35,11 @@ from tarn_core.domain.content import ContentMeta
 from tarn_core.errors import InvariantError
 from tarn_core.ids import BlueprintId, QuestionId, SubjectId
 
-SCHEMA_VERSION = "1.1"
-SCHEMA_VERSIONS = ("1.0", "1.1")
-"""1.1 (P26) adds the optional ``exam_code``; 1.0 documents are read as before (no code)."""
+SCHEMA_VERSION = "1.2"
+SCHEMA_VERSIONS = ("1.0", "1.1", "1.2")
+"""1.1 (P26) adds the optional ``exam_code``; 1.2 (P33, D219) the optional ``kind``,
+``target_batch``, ``weightage_note``, ``description``, ``descriptor`` and ``from_schema``.
+Older documents are read as before: no code, a paper (D231), empty texts."""
 MAX_EXAM_CODE = 50
 NEGATIVE_MARKING_VALUES = (Decimal(0), Decimal("0.25"), Decimal("0.5"))
 MARK_STEPS = (Decimal("0.25"), Decimal("0.5"), Decimal(1))
@@ -65,6 +71,12 @@ _TOP_KEYS = (
     "total_marks",
     "negative_marking",
     "mark_step",
+    "kind",
+    "target_batch",
+    "weightage_note",
+    "description",
+    "descriptor",
+    "from_schema",
     "sections",
 )
 _SECTION_KEYS = ("label", "title", "method", "choice", "items")
@@ -124,11 +136,27 @@ class ParsedBlueprint:
     total_marks: Decimal
     mark_step: Decimal
     sections: tuple[Section, ...]
+    kind: BlueprintKind | None = None
+    """None when the document does not say (a paper on create, the stored kind on update)."""
+    target_batch: str = ""
+    weightage_note: str = ""
+    description: str = ""
+    descriptor: str = ""
+    from_schema: BlueprintId | None = None
 
-    def build(self, *, id: BlueprintId, meta: ContentMeta) -> ExamBlueprint:
+    def build(
+        self, *, id: BlueprintId, meta: ContentMeta, kind: BlueprintKind | None = None
+    ) -> ExamBlueprint:
+        """``kind`` fills in a document that does not name one."""
         return ExamBlueprint(
             id=id,
             meta=meta,
+            kind=self.kind or kind or BlueprintKind.PAPER,
+            target_batch=self.target_batch,
+            weightage_note=self.weightage_note,
+            description=self.description,
+            descriptor=self.descriptor,
+            from_schema=self.from_schema,
             subject_id=self.subject_id,
             title=self.title,
             course_code=self.course_code,
@@ -151,6 +179,7 @@ class _Checker:
     def __init__(self) -> None:
         self.issues: list[Issue] = []
         self.warnings: list[Issue] = []
+        self.linked: list[str] = []  # paths of the question links found, for the schema rule
 
     def bad(self, path: str, message: str) -> None:
         self.issues.append(Issue(path, message))
@@ -257,7 +286,7 @@ class _Checker:
             return self.report(None, ())
         version = top.get("schema_version")
         if version not in SCHEMA_VERSIONS:
-            self.bad("schema_version", f'must be "{SCHEMA_VERSION}" (or "1.0")')
+            self.bad("schema_version", f'must be "{SCHEMA_VERSION}" (or "1.1", "1.0")')
         title = self.text(top, "title", "")
         course_code = self.text(top, "course_code", "")
         exam_code = self.text(top, "exam_code", "", required=False) or ""
@@ -268,6 +297,12 @@ class _Checker:
         total = self.total(top)
         negative = self.negative_marking(top)
         mark_step = self.mark_step(top)
+        kind = self.kind(top)
+        target_batch = self.note(top, "target_batch", MAX_TARGET_BATCH)
+        weightage_note = self.note(top, "weightage_note", MAX_NOTE)
+        description = self.note(top, "description", MAX_NOTE)
+        descriptor = self.note(top, "descriptor", MAX_DESCRIPTOR)
+        from_schema = self.from_schema(top)
 
         sections: list[Section] = []
         raw_sections = self.array(
@@ -313,6 +348,9 @@ class _Checker:
                 )
             )
 
+        if kind is BlueprintKind.SCHEMA:
+            self.schema_rules(exam_code, from_schema)
+
         parsed: ParsedBlueprint | None = None
         if (
             not self.issues
@@ -331,8 +369,30 @@ class _Checker:
                 total_marks=total,
                 mark_step=mark_step,
                 sections=tuple(sections),
+                kind=kind,
+                target_batch=target_batch,
+                weightage_note=weightage_note,
+                description=description,
+                descriptor=descriptor,
+                from_schema=from_schema,
             )
         return self.report(parsed, summaries, computed, sections)
+
+    def schema_rules(self, exam_code: str, from_schema: BlueprintId | None) -> None:
+        """A schema is a template (D219): no exam code, no links, not made from a schema."""
+        if exam_code:
+            self.bad(
+                "exam_code",
+                "A schema has no exam code: generate a paper from it and give the paper one.",
+            )
+        if from_schema is not None:
+            self.bad("from_schema", "Only a paper is made from a schema.")
+        for path in self.linked:
+            self.bad(
+                path,
+                "A schema leaves its questions unlinked: remove the link, or generate a paper "
+                "from the schema and link the questions there.",
+            )
 
     def report(
         self,
@@ -363,6 +423,42 @@ class _Checker:
             return None
         found = self.uuid(top["subject_id"], "subject_id")
         return None if found is None else SubjectId(found)
+
+    def kind(self, top: Mapping[str, object]) -> BlueprintKind | None:
+        if "kind" not in top:
+            return None
+        try:
+            return BlueprintKind(str(top["kind"]))
+        except ValueError:
+            self.bad("kind", 'must be "schema" or "paper"')
+            return None
+
+    def note(self, top: Mapping[str, object], key: str, limit: int) -> str:
+        """An optional free text of 1.2: trimmed, may be empty."""
+        if key not in top:
+            return ""
+        value = top[key]
+        if not isinstance(value, str):
+            self.bad(key, "must be text")
+            return ""
+        value = value.strip()
+        if len(value) > limit:
+            self.bad(key, f"is longer than {limit} characters")
+            return ""
+        return value
+
+    def from_schema(self, top: Mapping[str, object]) -> BlueprintId | None:
+        raw = top.get("from_schema")
+        if raw is None:
+            return None
+        if not isinstance(raw, str):
+            self.bad("from_schema", "must be a schema id (UUID) or null")
+            return None
+        try:
+            return BlueprintId(UUID(raw))
+        except ValueError:
+            self.bad("from_schema", "is not a valid id (UUID)")
+            return None
 
     def duration(self, top: Mapping[str, object]) -> int | None:
         if top.get("duration_minutes") is None:
@@ -520,6 +616,7 @@ class _Checker:
         raw = o.get("question_id")
         if raw is None:
             return None
+        self.linked.append(f"{path}.question_id")
         found = self.uuid(raw, f"{path}.question_id")
         return None if found is None else QuestionId(found)
 
@@ -695,6 +792,12 @@ def blueprint_to_document(blueprint: ExamBlueprint) -> dict[str, JsonValue]:
         "total_marks": _num(blueprint.total_marks),
         "negative_marking": _num(negative),
         "mark_step": _num(blueprint.mark_step),
+        "kind": blueprint.kind.value,
+        "target_batch": blueprint.target_batch,
+        "weightage_note": blueprint.weightage_note,
+        "description": blueprint.description,
+        "descriptor": blueprint.descriptor,
+        "from_schema": None if blueprint.from_schema is None else str(blueprint.from_schema),
         "sections": sections,
     }
 

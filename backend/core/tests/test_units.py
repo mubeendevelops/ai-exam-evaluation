@@ -265,7 +265,7 @@ def test_the_sme_sees_their_own_units_only(w: World) -> None:
 
 def test_exam_codes_are_unique_per_college_and_documents_round_trip(w: World) -> None:
     document = blueprint_to_document(w.paper)
-    assert document["schema_version"] == "1.1" and document["exam_code"] == "SYN-CI-1"
+    assert document["schema_version"] == "1.2" and document["exam_code"] == "SYN-CI-1"
     old = {**document, "schema_version": "1.0"}
     del old["exam_code"]
     report = check_document(old)

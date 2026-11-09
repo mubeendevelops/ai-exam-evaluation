@@ -2220,7 +2220,7 @@
                 "additionalProperties": true,
                 "type": "object",
                 "title": "Document",
-                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.1; 1.0 is still read) and the examples next to it."
+                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.2; 1.1 and 1.0 are still read) and the examples next to it."
               }
             }
           },
@@ -2280,49 +2280,81 @@
         "tags": [
           "blueprints"
         ],
-        "summary": "The newest version of every blueprint of my college, by title",
+        "summary": "The newest version of every blueprint of my subjects, by title",
         "operationId": "list_blueprints_api_v1_blueprints_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "schema",
+                    "paper"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/BlueprintSummaryOut"
                   },
-                  "type": "array",
                   "title": "Response List Blueprints Api V1 Blueprints Get"
                 }
               }
             }
           },
           "401": {
-            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorOut"
                 }
               }
-            }
+            },
+            "description": "Unauthorized"
           },
           "403": {
-            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorOut"
                 }
               }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
             }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       },
       "post": {
         "tags": [
@@ -2330,18 +2362,23 @@
         ],
         "summary": "Create a blueprint of my college",
         "operationId": "create_blueprint_api_v1_blueprints_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
-                "title": "Document",
-                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.1; 1.0 is still read) and the examples next to it."
+                "additionalProperties": true,
+                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.2; 1.1 and 1.0 are still read) and the examples next to it.",
+                "title": "Document"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -2355,14 +2392,14 @@
             }
           },
           "401": {
-            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorOut"
                 }
               }
-            }
+            },
+            "description": "Unauthorized"
           },
           "403": {
             "description": "SMEs only.",
@@ -2384,12 +2421,88 @@
               }
             }
           }
-        },
+        }
+      }
+    },
+    "/api/v1/schemas": {
+      "get": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Manage Schema: the schemas of my subjects, by title, and the batches in use",
+        "description": "`q` matches the name anywhere and `target_batch` exactly, both ignoring case. `used_in` counts the papers (newest versions) generated from each schema.",
+        "operationId": "list_schemas_api_v1_schemas_get",
         "security": [
           {
             "HTTPBearer": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "target_batch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": "",
+              "title": "Target Batch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaListOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/blueprints/{blueprint_id}": {
@@ -2517,7 +2630,7 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": true,
-                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.1; 1.0 is still read) and the examples next to it.",
+                "description": "An exam blueprint in the public form: see docs/api/blueprint.schema.json (version 1.2; 1.1 and 1.0 are still read) and the examples next to it.",
                 "title": "Document"
               }
             }
@@ -2735,6 +2848,208 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/blueprints/{blueprint_id}/clone": {
+      "post": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Copy a schema or paper into a new blueprint (SMEs only)",
+        "description": "Version 1 of a new blueprint, titled \"<title> (copy)\" unless a title is given; a paper's copy has no exam code. Not a version of the source.",
+        "operationId": "clone_blueprint_api_v1_blueprints__blueprint_id__clone_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blueprint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Blueprint Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CloneIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlueprintOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "The blueprint breaks a rule; every broken rule is listed in the message (use /blueprints/validate for a structured list).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/blueprints/{blueprint_id}/paper": {
+      "post": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Generate a paper draft from a schema (SMEs only)",
+        "description": "The schema's sections, rules and marks, every question unlinked, no exam code, `from_schema` naming the schema (D220). A paper as the source is 409.",
+        "operationId": "generate_paper_api_v1_blueprints__blueprint_id__paper_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blueprint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Blueprint Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/GeneratePaperIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlueprintOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "The blueprint breaks a rule; every broken rule is listed in the message (use /blueprints/validate for a structured list).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
           }
         }
       }
@@ -9601,6 +9916,57 @@
             "type": "integer",
             "title": "Unlinked Count"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "schema",
+              "paper"
+            ],
+            "title": "Kind",
+            "description": "Blueprint 1.2 (D219)."
+          },
+          "target_batch": {
+            "type": "string",
+            "title": "Target Batch"
+          },
+          "weightage_note": {
+            "type": "string",
+            "title": "Weightage Note"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "descriptor": {
+            "type": "string",
+            "title": "Descriptor"
+          },
+          "from_schema": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Schema",
+            "description": "The schema this paper was made from (it may have been deleted since)."
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At",
+            "description": "When this version was saved."
+          },
           "document": {
             "additionalProperties": true,
             "type": "object",
@@ -9622,6 +9988,13 @@
           "section_count",
           "question_count",
           "unlinked_count",
+          "kind",
+          "target_batch",
+          "weightage_note",
+          "description",
+          "descriptor",
+          "from_schema",
+          "updated_at",
           "document"
         ],
         "title": "BlueprintOut"
@@ -9692,6 +10065,57 @@
           "unlinked_count": {
             "type": "integer",
             "title": "Unlinked Count"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "schema",
+              "paper"
+            ],
+            "title": "Kind",
+            "description": "Blueprint 1.2 (D219)."
+          },
+          "target_batch": {
+            "type": "string",
+            "title": "Target Batch"
+          },
+          "weightage_note": {
+            "type": "string",
+            "title": "Weightage Note"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "descriptor": {
+            "type": "string",
+            "title": "Descriptor"
+          },
+          "from_schema": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Schema",
+            "description": "The schema this paper was made from (it may have been deleted since)."
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At",
+            "description": "When this version was saved."
           }
         },
         "type": "object",
@@ -9707,7 +10131,14 @@
           "duration_minutes",
           "section_count",
           "question_count",
-          "unlinked_count"
+          "unlinked_count",
+          "kind",
+          "target_batch",
+          "weightage_note",
+          "description",
+          "descriptor",
+          "from_schema",
+          "updated_at"
         ],
         "title": "BlueprintSummaryOut"
       },
@@ -10260,6 +10691,50 @@
           "new_password"
         ],
         "title": "ChangePasswordIn"
+      },
+      "CloneIn": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Default \"<title> (copy)\"."
+          },
+          "target_batch": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Batch"
+          },
+          "weightage_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weightage Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CloneIn"
       },
       "CriterionOut": {
         "properties": {
@@ -11338,6 +11813,26 @@
           "note"
         ],
         "title": "FrozenSheetOut"
+      },
+      "GeneratePaperIn": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Default \"<title> paper\"."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "GeneratePaperIn"
       },
       "GlossaryIn": {
         "properties": {
@@ -14269,6 +14764,123 @@
           "complete"
         ],
         "title": "RubricOut"
+      },
+      "SchemaCardOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "course_code": {
+            "type": "string",
+            "title": "Course Code"
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Subject Id"
+          },
+          "subject_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Name"
+          },
+          "target_batch": {
+            "type": "string",
+            "title": "Target Batch"
+          },
+          "weightage_note": {
+            "type": "string",
+            "title": "Weightage Note"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "total_marks": {
+            "type": "number",
+            "title": "Total Marks"
+          },
+          "section_count": {
+            "type": "integer",
+            "title": "Section Count"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "used_in": {
+            "type": "integer",
+            "title": "Used In",
+            "description": "Papers (newest versions) made from this schema."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "title",
+          "course_code",
+          "subject_id",
+          "subject_name",
+          "target_batch",
+          "weightage_note",
+          "description",
+          "total_marks",
+          "section_count",
+          "updated_at",
+          "used_in"
+        ],
+        "title": "SchemaCardOut",
+        "description": "One card of Manage Schema (P33)."
+      },
+      "SchemaListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SchemaCardOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "batches": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Batches",
+            "description": "Target batches of every schema in reach, for the filter (not filtered)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "batches"
+        ],
+        "title": "SchemaListOut"
       },
       "SecondOpinionOut": {
         "properties": {

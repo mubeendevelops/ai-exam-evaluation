@@ -160,7 +160,7 @@ export default function MyAssignmentsPage() {
               No open unit to evaluate
             </span>
           )}
-          <Link to="/sme/schema" className={action}>
+          <Link to="/sme/schemas" className={action}>
             Manage Schema
           </Link>
         </div>

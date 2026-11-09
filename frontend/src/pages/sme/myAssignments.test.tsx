@@ -151,7 +151,7 @@ describe('My Assignments (P31, D216)', () => {
     ).toHaveAttribute('href', '/sme/units/unit-1')
     expect(within(card).getByRole('link', { name: 'Manage Schema' })).toHaveAttribute(
       'href',
-      '/sme/schema',
+      '/sme/schemas',
     )
   })
 

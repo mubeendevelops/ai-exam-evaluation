@@ -1,7 +1,9 @@
-import type { FormState } from './blueprint'
+import { initialForm, type FormState } from './blueprint'
 
 const KEY = 'tarn.schema-designer.draft'
-const VERSION = 1
+const VERSION = 2
+/** Version 1 drafts (before P33) lack the 1.2 fields: they are filled with the defaults. */
+const READABLE = [1, 2]
 
 /**
  * The form is kept in the browser's session storage so a trip to another tab does not lose it.
@@ -16,10 +18,10 @@ export function loadDraft(): FormState | null {
     if (
       typeof parsed === 'object' &&
       parsed !== null &&
-      (parsed as { version?: unknown }).version === VERSION &&
+      READABLE.includes((parsed as { version?: number }).version ?? 0) &&
       Array.isArray((parsed as { form?: { sections?: unknown } }).form?.sections)
     ) {
-      return (parsed as { form: FormState }).form
+      return { ...initialForm(), ...(parsed as { form: Partial<FormState> }).form }
     }
   } catch {
     // unreadable draft: start fresh

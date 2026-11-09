@@ -33,12 +33,24 @@ def core_accepts(document: object) -> bool:
 
 def test_the_schema_is_a_valid_versioned_schema() -> None:
     Draft202012Validator.check_schema(SCHEMA)
-    assert SCHEMA["$id"].endswith(":1.1")
-    # 1.1 (P26) adds the optional exam code; 1.0 documents stay valid.
-    assert SCHEMA["properties"]["schema_version"] == {"enum": ["1.0", "1.1"]}
+    assert SCHEMA["$id"].endswith(":1.2")
+    # 1.1 (P26) adds the optional exam code, 1.2 (P33) the kind and its texts; older stay valid.
+    assert SCHEMA["properties"]["schema_version"] == {"enum": ["1.0", "1.1", "1.2"]}
 
 
-@pytest.mark.parametrize("name", ["ci", "ipr", "objective"])
+def test_older_documents_pass_both() -> None:
+    for version in ("1.0", "1.1"):
+        document = example("ci")
+        for key in ("kind", "target_batch", "weightage_note", "description", "descriptor"):
+            del document[key]
+        del document["from_schema"]
+        if version == "1.0":
+            del document["exam_code"]
+        document["schema_version"] = version
+        assert schema_accepts(document) and core_accepts(document), version
+
+
+@pytest.mark.parametrize("name", ["ci", "ipr", "objective", "schema"])
 def test_examples_pass_both(name: str) -> None:
     assert schema_accepts(example(name))
     assert core_accepts(example(name))
@@ -118,6 +130,19 @@ BREAKERS: dict[str, tuple[str, Callable[[dict[str, Any]], None]]] = {
         _set(["sections", 1, "items", 0, "steps", 0, "marks"], 0),
     ),
     "typed alternative": ("ipr", _set([*OR_ITEM, "alternatives", 0, "type"], "question")),
+    # 1.2 (P33)
+    "unknown kind": ("ci", _set(["kind"], "template")),
+    "batch as a number": ("ci", _set(["target_batch"], 2024)),
+    "batch too long": ("ci", _set(["target_batch"], "x" * 101)),
+    "descriptor too long": ("ci", _set(["descriptor"], "x" * 51)),
+    "weightage note too long": ("schema", _set(["weightage_note"], "x" * 1001)),
+    "description too long": ("ci", _set(["description"], "x" * 1001)),
+    "from_schema not a uuid": ("ci", _set(["from_schema"], "abc")),
+    "schema with an exam code": ("schema", _set(["exam_code"], "SYN-1")),
+    "schema made from a schema": (
+        "schema",
+        _set(["from_schema"], "00000000-0000-4000-8000-000000000009"),
+    ),
 }
 
 
@@ -128,6 +153,14 @@ def test_structural_mistakes_are_refused_by_both(name: str) -> None:
     apply(document)
     assert not schema_accepts(document), "the published schema accepted it"
     assert not core_accepts(document), "the core validator accepted it"
+
+
+def test_a_linked_schema_is_only_refused_by_the_core() -> None:
+    """JSON Schema cannot say "no question_id anywhere"; the core and the database do."""
+    document = example("schema")
+    document["sections"][0]["items"][0]["question_id"] = "00000000-0000-4000-8000-000000000009"
+    assert schema_accepts(document)
+    assert not core_accepts(document)
 
 
 def test_arithmetic_rules_are_only_enforced_by_the_core() -> None:

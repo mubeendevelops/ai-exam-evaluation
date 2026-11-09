@@ -1,78 +1,24 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { PageBanner } from '../components/app/PageBanner'
 import { SmallButton } from '../components/schema/controls'
-import { HeaderForm } from '../components/schema/HeaderForm'
-import { JsonPanel } from '../components/schema/JsonPanel'
+import { Designer } from '../components/schema/Designer'
 import { SavedPapers } from '../components/schema/SavedPapers'
-import { SectionCard } from '../components/schema/SectionCard'
-import { GlassPanel, Modal, useToast } from '../components/ui'
-import { useBlueprintCheck } from '../hooks/useBlueprintCheck'
-import {
-  calculatedTotal,
-  fileNameOf,
-  fillSection,
-  initialForm,
-  newSection,
-  nextNumber,
-  nextSectionLabel,
-  questionCount,
-  renumber,
-  toDocument,
-  type FormSection,
-  type FormState,
-} from '../lib/blueprint'
+import { useBlueprintEditor, useSavedBlueprint, type Blueprint } from '../components/schema/saved'
+import { Modal, useToast } from '../components/ui'
+import { initialForm } from '../lib/blueprint'
 import { clearDraft, loadDraft, saveDraft } from '../lib/draft'
 
 /**
- * `/schema`: the exam blueprint designer. Every input rebuilds the JSON on the right at once;
- * the server then says whether it is a valid blueprint (`useBlueprintCheck`).
+ * `/schema`: the older Schema Designer, kept in "Older screens" until P34 builds the papers
+ * pages (D215). Since P33 it loads a saved blueprint (`?blueprint=<id>`, closing O20) and saves
+ * (Save = the next version; Save as new = another blueprint). A form not saved yet is kept in
+ * session storage; a loaded one is the server's. Each address gets a fresh editor.
  */
 export default function SchemaPage() {
-  const toast = useToast()
-  const [form, setForm] = useState<FormState>(() => loadDraft() ?? initialForm())
-  const [confirmReset, setConfirmReset] = useState(false)
-
-  const document = useMemo(() => toDocument(form), [form])
-  const json = useMemo(() => JSON.stringify(document, null, 2), [document])
-  const { state, check } = useBlueprintCheck(document)
-
-  useEffect(() => saveDraft(form), [form])
-
-  const patch = (change: Partial<FormState>) => setForm((f) => ({ ...f, ...change }))
-  const changeSection = (key: string, next: FormSection) =>
-    setForm((f) => ({ ...f, sections: f.sections.map((s) => (s.key === key ? next : s)) }))
-
-  function addSection() {
-    setForm((f) => ({
-      ...f,
-      sections: [...f.sections, newSection(nextSectionLabel(f), nextNumber(f), 5, '2')],
-    }))
-  }
-
-  async function copyJson() {
-    try {
-      await navigator.clipboard.writeText(json)
-      toast.show('JSON copied to the clipboard.')
-    } catch {
-      toast.show('Could not copy. Select the JSON and copy it by hand.', 'red')
-    }
-  }
-
-  function downloadJson() {
-    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
-    const link = globalThis.document.createElement('a')
-    link.href = url
-    link.download = fileNameOf(form)
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
-  function reset() {
-    clearDraft()
-    setForm(initialForm())
-    setConfirmReset(false)
-    toast.show('The form was reset.')
-  }
+  const [params] = useSearchParams()
+  const id = params.get('blueprint') ?? ''
+  const saved = useSavedBlueprint(id)
 
   return (
     <div className="space-y-6">
@@ -82,101 +28,93 @@ export default function SchemaPage() {
         title="Question Paper Studio & Schema Engine"
         description="Design mark blueprints (e.g. 50-mark, 100-mark) with choice rules, OR pairs and sub-parts; the schema is generated as you type."
       />
+      {!id && <Workbench key="draft" saved={null} />}
+      {id && saved.isError && (
+        <p role="alert" className="text-xs text-red-300">
+          That blueprint was not found: it is not in your subjects, or it was deleted.
+        </p>
+      )}
+      {id && saved.isPending && <p className="text-xs text-gray-400">Loading the blueprint…</p>}
+      {id && saved.data && <Workbench key={id} saved={saved.data} />}
+      <SavedPapers openId={id} />
+    </div>
+  )
+}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        <GlassPanel
-          as="section"
-          aria-labelledby="blueprint-title"
-          className="space-y-6 p-6 lg:col-span-7"
-        >
-          <div className="flex items-center justify-between border-b border-gray-800 pb-3">
-            <h2
-              id="blueprint-title"
-              className="flex items-center gap-2 text-sm font-bold tracking-wider text-purple-400 uppercase"
-            >
-              <i className="fa-solid fa-file-pen" aria-hidden="true" /> Exam Blueprint
-            </h2>
-          </div>
+function Workbench({ saved }: { saved: Blueprint | null }) {
+  const toast = useToast()
+  const [, setParams] = useSearchParams()
+  const editor = useBlueprintEditor(saved, () => loadDraft() ?? initialForm())
+  const { form, setForm, verdict, dirty, version, busy } = editor
+  const [confirmReset, setConfirmReset] = useState(false)
 
-          <HeaderForm form={form} onChange={patch} />
+  useEffect(() => {
+    if (!saved) saveDraft(form)
+  }, [form, saved])
 
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 pb-2">
-              <h3 className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-cyan-400 uppercase">
-                <i className="fa-solid fa-list-ol" aria-hidden="true" /> Section Breakdown
-                Architecture
-              </h3>
-              <div className="flex gap-2">
-                <SmallButton
-                  icon="fa-solid fa-arrow-down-1-9"
-                  tone="gray"
-                  onClick={() => setForm((f) => renumber(f))}
-                >
-                  Renumber 1…n
-                </SmallButton>
-                <SmallButton icon="fa-solid fa-plus" onClick={addSection}>
-                  Add Section
-                </SmallButton>
-              </div>
-            </div>
+  async function save(asNew: boolean) {
+    const data = await editor.save(asNew)
+    if (data && data.id !== saved?.id) {
+      if (!saved) clearDraft()
+      setParams({ blueprint: data.id }) // opens the new blueprint
+    }
+  }
 
-            {form.sections.map((section, index) => (
-              <SectionCard
-                key={section.key}
-                section={section}
-                index={index}
-                nextNumber={nextNumber(form)}
-                onChange={(next) => changeSection(section.key, next)}
-                onRemove={() =>
-                  setForm((f) => ({
-                    ...f,
-                    sections: f.sections.filter((s) => s.key !== section.key),
-                  }))
-                }
-                onFill={(count, marks) => setForm((f) => fillSection(f, section.key, count, marks))}
-              />
-            ))}
-            {form.sections.length === 0 && (
-              <p className="text-xs text-amber-400">
-                A blueprint needs at least one section. Use Add Section.
-              </p>
-            )}
+  function reset() {
+    clearDraft()
+    setForm(initialForm())
+    setConfirmReset(false)
+    toast.show('The form was reset.')
+  }
 
-            <div className="flex items-center justify-between rounded-xl border border-purple-500/30 bg-gray-900/90 p-4">
-              <div>
-                <span className="block text-xs font-medium text-gray-400">
-                  Calculated Question Count
-                </span>
-                <span className="text-xl font-bold text-purple-400">
-                  {questionCount(form)} Questions
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="block text-xs font-medium text-gray-400">Total Paper Marks</span>
-                <span className="text-2xl font-extrabold text-emerald-400">
-                  {calculatedTotal(form)} Marks
-                </span>
-              </div>
-            </div>
-          </div>
-        </GlassPanel>
+  const ready = verdict.state === 'valid' && !busy
+  const actions = (
+    <>
+      {saved && (
+        <span className="self-center text-[11px] text-gray-400">
+          Version {version}
+          {dirty ? ' · unsaved changes' : ' · saved'}
+        </span>
+      )}
+      <SmallButton
+        icon="fa-solid fa-floppy-disk"
+        tone="purple"
+        disabled={!ready || !dirty}
+        onClick={() => void save(false)}
+      >
+        {saved ? 'Save' : 'Save blueprint'}
+      </SmallButton>
+      {saved && (
+        <>
+          <SmallButton
+            icon="fa-regular fa-copy"
+            tone="gray"
+            disabled={!ready}
+            onClick={() => void save(true)}
+          >
+            Save as new
+          </SmallButton>
+          <SmallButton
+            icon="fa-solid fa-file-circle-plus"
+            tone="gray"
+            onClick={() => setParams({})}
+          >
+            New blueprint
+          </SmallButton>
+        </>
+      )}
+    </>
+  )
 
-        <div className="lg:col-span-5">
-          <div className="lg:sticky lg:top-24">
-            <JsonPanel
-              json={json}
-              state={state}
-              check={check}
-              onCopy={() => void copyJson()}
-              onDownload={downloadJson}
-              onReset={() => setConfirmReset(true)}
-            />
-          </div>
-        </div>
-      </div>
-
-      <SavedPapers />
-
+  return (
+    <>
+      <Designer
+        form={form}
+        setForm={setForm}
+        verdict={verdict}
+        actions={actions}
+        onReset={saved ? undefined : () => setConfirmReset(true)}
+      />
       <Modal
         open={confirmReset}
         onClose={() => setConfirmReset(false)}
@@ -195,9 +133,9 @@ export default function SchemaPage() {
         }
       >
         <p className="text-xs text-gray-300">
-          Nothing is saved on the server by this page, so a reset starts a fresh blueprint.
+          The form has not been saved, so a reset starts a fresh blueprint.
         </p>
       </Modal>
-    </div>
+    </>
   )
 }

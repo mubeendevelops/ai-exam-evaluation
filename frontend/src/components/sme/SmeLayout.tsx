@@ -27,7 +27,7 @@ export const smeGroups: readonly Group[] = [
     items: [
       { to: '/sme', label: 'My Assignments', icon: 'fa-solid fa-clipboard-list', end: true },
       { to: '/sme/papers', label: 'Manage Question Papers', icon: 'fa-solid fa-box-archive' },
-      { to: '/sme/schema', label: 'Manage Schema', icon: 'fa-solid fa-table-cells-large' },
+      { to: '/sme/schemas', label: 'Manage Schema', icon: 'fa-solid fa-table-cells-large' },
     ],
   },
   {
@@ -52,7 +52,8 @@ export const smeGroups: readonly Group[] = [
 const TITLES: readonly [string, string][] = [
   ['/sme', 'My Assignments'],
   ['/sme/papers', 'Manage Question Papers'],
-  ['/sme/schema', 'Manage Schema'],
+  ['/sme/schemas', 'Manage Schema'],
+  ['/sme/schemas/:blueprintId', 'Manage Schema'],
   ['/sme/profile', 'My Profile'],
   ['/sme/reports', 'My Reports'],
   ['/qna', 'Q&A DB'],

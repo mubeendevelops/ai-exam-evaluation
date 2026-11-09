@@ -1,12 +1,15 @@
 /**
  * The exam blueprint of the Schema Designer: the public document (docs/api/blueprint.schema.json,
- * version 1.0), the editable form model it is generated from, and the arithmetic the live
+ * version 1.2), the editable form model it is generated from, and the arithmetic the live
  * panel shows before the server has answered. The server (`POST /api/v1/blueprints/validate`)
  * has the last word on validity; nothing here decides that.
  */
 
-/** 1.1 adds the exam code (P26); 1.0 documents (no exam code) still load. */
-export const SCHEMA_VERSION = '1.1'
+/** 1.1 adds the exam code (P26); 1.2 the kind and its texts (P33, D219). Older documents load. */
+export const SCHEMA_VERSION = '1.2'
+
+/** A schema is a reusable template (no exam code, no question links); a paper is an exam. */
+export type Kind = 'schema' | 'paper'
 
 export type Method =
   'exact_pattern_match' | 'omr_bubble_scan' | 'keyword_formula' | 'semantic_rubric' | 'diagram'
@@ -55,7 +58,7 @@ export interface DocSection {
   items: DocItem[]
 }
 export interface BlueprintDocument {
-  schema_version: typeof SCHEMA_VERSION | '1.0'
+  schema_version: typeof SCHEMA_VERSION | '1.1' | '1.0'
   title: string
   course_code: string
   exam_code?: string
@@ -64,6 +67,12 @@ export interface BlueprintDocument {
   total_marks: Num
   negative_marking: Num
   mark_step: Num
+  kind?: Kind
+  target_batch?: string
+  weightage_note?: string
+  description?: string
+  descriptor?: string
+  from_schema?: string | null
   sections: DocSection[]
 }
 
@@ -112,6 +121,13 @@ export interface FormState {
   totalMarks: string | null
   negativeMarking: string
   markStep: string
+  kind: Kind
+  targetBatch: string
+  weightageNote: string
+  description: string
+  descriptor: string
+  /** The schema a paper was made from; kept as it is (not edited in the form). */
+  fromSchema: string
   sections: FormSection[]
 }
 
@@ -153,7 +169,7 @@ export function uniformItems(first: number, count: number, marks: string): FormI
   }))
 }
 
-export function initialForm(): FormState {
+export function initialForm(kind: Kind = 'paper'): FormState {
   return {
     title: '',
     courseCode: '',
@@ -163,8 +179,26 @@ export function initialForm(): FormState {
     totalMarks: null,
     negativeMarking: '0',
     markStep: '0.5',
+    kind,
+    targetBatch: '',
+    weightageNote: '',
+    description: '',
+    descriptor: '',
+    fromSchema: '',
     sections: [newSection('A', 1)],
   }
+}
+
+/** What Add New Schema saves first (P33): the dialog's fields and one section of five
+ * 2-mark questions, which the SME then shapes in the designer. */
+export function starterSchema(fields: {
+  title: string
+  subjectId: string
+  courseCode: string
+  targetBatch: string
+  weightageNote: string
+}): BlueprintDocument {
+  return toDocument({ ...initialForm('schema'), ...fields })
 }
 
 // ---- form -> document ---------------------------------------------------------------------
@@ -181,17 +215,22 @@ function stepsOf(steps: FormStep[]): { steps?: DocStep[] } {
     : { steps: steps.map((s) => ({ label: s.label, marks: numberOf(s.marks) })) }
 }
 
-function questionOf(q: FormQuestion): DocQuestion {
+/** A link as typed; a schema links nothing, whatever an older form held. */
+function linkOf(id: string, linked: boolean): string | null {
+  return !linked || id.trim() === '' ? null : id.trim()
+}
+
+function questionOf(q: FormQuestion, linked: boolean): DocQuestion {
   const doc: DocQuestion = {
     label: q.label,
     marks: numberOf(q.marks),
-    question_id: q.questionId.trim() === '' ? null : q.questionId.trim(),
+    question_id: linkOf(q.questionId, linked),
   }
   if (q.parts.length > 0) {
     doc.parts = q.parts.map((p) => ({
       label: p.label,
       marks: numberOf(p.marks),
-      question_id: p.questionId.trim() === '' ? null : p.questionId.trim(),
+      question_id: linkOf(p.questionId, linked),
       ...stepsOf(p.steps),
     }))
   }
@@ -199,16 +238,24 @@ function questionOf(q: FormQuestion): DocQuestion {
 }
 
 export function toDocument(form: FormState): BlueprintDocument {
+  const paper = form.kind === 'paper'
+  const questionOfKind = (q: FormQuestion) => questionOf(q, paper)
   return {
     schema_version: SCHEMA_VERSION,
+    kind: form.kind,
     title: form.title,
     course_code: form.courseCode,
-    exam_code: form.examCode.trim(),
+    exam_code: paper ? form.examCode.trim() : '',
     subject_id: form.subjectId,
     duration_minutes: form.duration.trim() === '' ? null : numberOf(form.duration),
     total_marks: numberOf(form.totalMarks ?? String(calculatedTotal(form))),
     negative_marking: numberOf(form.negativeMarking),
     mark_step: numberOf(form.markStep),
+    target_batch: form.targetBatch.trim(),
+    weightage_note: form.weightageNote.trim(),
+    description: form.description.trim(),
+    descriptor: paper ? form.descriptor.trim() : '',
+    from_schema: paper && form.fromSchema ? form.fromSchema : null,
     sections: form.sections.map((s) => ({
       label: s.label,
       title: s.title,
@@ -216,8 +263,8 @@ export function toDocument(form: FormState): BlueprintDocument {
       choice: s.rule === 'all' ? { rule: 'all' } : { rule: 'any', n: numberOf(s.n) },
       items: s.items.map((item): DocItem =>
         item.kind === 'or'
-          ? { type: 'or', alternatives: item.alternatives.map(questionOf) }
-          : { type: 'question', ...questionOf(item.question) },
+          ? { type: 'or', alternatives: item.alternatives.map(questionOfKind) }
+          : { type: 'question', ...questionOfKind(item.question) },
       ),
     })),
   }
@@ -257,6 +304,12 @@ export function fromDocument(doc: BlueprintDocument): FormState {
     totalMarks: String(doc.total_marks),
     negativeMarking: String(doc.negative_marking),
     markStep: String(doc.mark_step),
+    kind: doc.kind ?? 'paper',
+    targetBatch: doc.target_batch ?? '',
+    weightageNote: doc.weightage_note ?? '',
+    description: doc.description ?? '',
+    descriptor: doc.descriptor ?? '',
+    fromSchema: doc.from_schema ?? '',
     sections: doc.sections.map((s) => ({
       key: uid(),
       label: s.label,

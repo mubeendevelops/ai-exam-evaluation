@@ -7,10 +7,16 @@ Step marks split a leaf's marks further (K-AI1).
 
 A slot or sub-part may be *unlinked*: the designer can lay out a paper before its questions
 exist. An unlinked blueprint is saved and checked like any other, but no booklet can be
-registered against it (``unlinked_leaves``)."""
+registered against it (``unlinked_leaves``).
+
+Since document 1.2 (P33, D219) a blueprint is one of two kinds: a **schema**, a reusable
+template whose slots stay unlinked and which has no exam code, or a **paper**, which links its
+slots and needs an exam code before a unit can use it. A paper may name the schema it was made
+from (``from_schema``)."""
 
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
@@ -18,6 +24,17 @@ from tarn_core.domain.common import ContentKind, ContentRef, check_marks, check_
 from tarn_core.domain.content import ContentMeta
 from tarn_core.errors import InvariantError
 from tarn_core.ids import BlueprintId, QuestionId, SubjectId
+
+
+class BlueprintKind(StrEnum):
+    SCHEMA = "schema"
+    PAPER = "paper"
+
+
+MAX_TARGET_BATCH = 100
+MAX_DESCRIPTOR = 50
+MAX_NOTE = 1000
+"""Limits of the 1.2 header texts: ``weightage_note`` and ``description`` share ``MAX_NOTE``."""
 
 
 class EvaluationMethod(StrEnum):
@@ -188,11 +205,36 @@ class ExamBlueprint:
     """Names this exam (P26): unique per college among blueprints that carry one; a paper
     needs it before a unit can use it. Empty on papers made before schema v1.1."""
     duration_minutes: int | None = None
+    kind: BlueprintKind = BlueprintKind.PAPER
+    target_batch: str = ""
+    """Free text ("2024 batch", "Class 12"): a filter only, not tied to a unit's year (D219)."""
+    weightage_note: str = ""
+    """The rubric weightage description: shown, not enforced."""
+    description: str = ""
+    descriptor: str = ""
+    """One free-text tag per paper (D219)."""
+    from_schema: BlueprintId | None = None
+    """The schema this paper was made from; it may since have been deleted (D231)."""
+    saved_at: datetime | None = field(default=None, compare=False)
+    """When this version was saved (the row's ``created_at``); None before it is stored."""
 
     def __post_init__(self) -> None:
         check_text("blueprint title", self.title)
         if self.exam_code != self.exam_code.strip() or len(self.exam_code) > 50:
             raise InvariantError("exam code: trimmed, at most 50 characters")
+        for name, value, limit in (
+            ("target batch", self.target_batch, MAX_TARGET_BATCH),
+            ("weightage note", self.weightage_note, MAX_NOTE),
+            ("description", self.description, MAX_NOTE),
+            ("descriptor", self.descriptor, MAX_DESCRIPTOR),
+        ):
+            if value != value.strip() or len(value) > limit:
+                raise InvariantError(f"{name}: trimmed, at most {limit} characters")
+        if self.kind is BlueprintKind.SCHEMA:
+            if self.exam_code:
+                raise InvariantError("a schema has no exam code")
+            if self.from_schema is not None:
+                raise InvariantError("a schema is not made from another schema")
         if self.duration_minutes is not None and self.duration_minutes < 1:
             raise InvariantError(f"duration must be at least 1 minute, got {self.duration_minutes}")
         check_marks("exam total", self.total_marks, allow_zero=False)
@@ -204,6 +246,10 @@ class ExamBlueprint:
         computed = sum((s.max_marks for s in self.sections), Decimal(0))
         if computed != self.total_marks:
             raise InvariantError(f"sections add up to {computed}, exam total is {self.total_marks}")
+        if self.kind is BlueprintKind.SCHEMA and len(self.unlinked_leaves()) != sum(
+            len(leaves(s)) for s in self.slots()
+        ):
+            raise InvariantError("a schema leaves every question unlinked")
 
     @property
     def ref(self) -> ContentRef:
@@ -253,3 +299,62 @@ def leaves(slot: QuestionSlot) -> tuple[tuple[str, QuestionId | None, Decimal], 
     if slot.parts:
         return tuple((leaf_label(slot, p), p.question_id, p.marks) for p in slot.parts)
     return ((leaf_label(slot), slot.question_id, slot.marks),)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BlueprintQuery:
+    """Which blueprints a list shows. ``subject_ids`` None = every subject of the college;
+    ``title`` matches anywhere and ``target_batch`` exactly, both ignoring case."""
+
+    kind: BlueprintKind | None = None
+    subject_ids: frozenset[SubjectId] | None = None
+    title: str = ""
+    target_batch: str = ""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BlueprintSummary:
+    """The newest version of a blueprint as the lists show it, read without its sections.
+    ``used_in``: the papers (newest versions) whose ``from_schema`` is this blueprint."""
+
+    id: BlueprintId
+    version: int
+    kind: BlueprintKind
+    subject_id: SubjectId
+    title: str
+    course_code: str
+    exam_code: str
+    target_batch: str
+    weightage_note: str
+    description: str
+    descriptor: str
+    from_schema: BlueprintId | None
+    total_marks: Decimal
+    section_count: int
+    saved_at: datetime | None
+    used_in: int = 0
+
+    def __post_init__(self) -> None:
+        if self.version < 1 or self.section_count < 0 or self.used_in < 0:
+            raise InvariantError("blueprint summary: version, sections and uses out of range")
+
+
+def blueprint_summary(blueprint: ExamBlueprint, used_in: int = 0) -> BlueprintSummary:
+    return BlueprintSummary(
+        id=blueprint.id,
+        version=blueprint.meta.version,
+        kind=blueprint.kind,
+        subject_id=blueprint.subject_id,
+        title=blueprint.title,
+        course_code=blueprint.course_code,
+        exam_code=blueprint.exam_code,
+        target_batch=blueprint.target_batch,
+        weightage_note=blueprint.weightage_note,
+        description=blueprint.description,
+        descriptor=blueprint.descriptor,
+        from_schema=blueprint.from_schema,
+        total_marks=blueprint.total_marks,
+        section_count=len(blueprint.sections),
+        saved_at=blueprint.saved_at,
+        used_in=used_in,
+    )
