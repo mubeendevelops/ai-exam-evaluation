@@ -23,6 +23,7 @@ from tarn_api.routes import (
     delegation,
     diagrams,
     evaluated,
+    me,
     overview,
     questions,
     registration,
@@ -120,6 +121,7 @@ def create_app(
         diagrams,
         evaluated,
         overview,
+        me,
         review,
         segments,
     ):

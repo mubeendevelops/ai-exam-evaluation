@@ -37,7 +37,8 @@ export function SignInCard() {
       navigate('/reset-password', { state: { token: result.resetToken, forced: true } })
     } else {
       const from = (location.state as { from?: string } | null)?.from
-      navigate(from ?? '/qna', { replace: true })
+      // Without a page to go back to, `/` sends each persona to its home (homeOf).
+      navigate(from ?? '/', { replace: true })
     }
   }
 

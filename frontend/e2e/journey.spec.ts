@@ -88,10 +88,12 @@ test.describe('visitor journey', () => {
     await page.getByLabel('Username / Evaluator Email').fill('admin@synthetic.test')
     await page.getByLabel('Security Access Password').fill('correct horse battery staple')
     await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
+    await expect(page).toHaveURL(/\/sme$/)
     await expect(
-      page.getByRole('heading', { name: 'Questions & Answers Repository' }),
+      page.getByRole('table', { name: 'My units' }).or(page.getByText('No units assigned to you')),
     ).toBeVisible()
-    const nav = page.getByRole('navigation', { name: 'Main' })
+    await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0) // no top bar (P31)
+    const nav = page.getByRole('navigation', { name: 'SME sections' })
     await nav.getByRole('link', { name: 'AI Evaluation' }).click()
     await expect(page).toHaveURL(/\/evaluate$/)
     await expect(
@@ -104,6 +106,8 @@ test.describe('visitor journey', () => {
     ).toBeVisible()
     await nav.getByRole('link', { name: 'Q&A DB' }).click()
     await expect(page).toHaveURL(/\/qna$/)
+    await nav.getByRole('link', { name: /My Assignments/ }).click()
+    await expect(page).toHaveURL(/\/sme$/)
   })
 
   test('forgot password, then reset with the emailed link', async ({ page }) => {
@@ -150,9 +154,7 @@ test.describe('visitor journey', () => {
     await page.getByLabel('Username / Evaluator Email').fill('admin@synthetic.test')
     await page.getByLabel('Security Access Password').fill(PASSWORD)
     await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
-    await expect(
-      page.getByRole('heading', { name: 'Questions & Answers Repository' }),
-    ).toBeVisible()
+    await expect(page).toHaveURL(/\/sme$/)
   })
 
   test('the landing page demos open as dialogs and close with Escape', async ({ page }) => {

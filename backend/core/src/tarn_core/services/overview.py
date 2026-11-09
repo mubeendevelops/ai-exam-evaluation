@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
+from tarn_core.domain.assignments import AssignmentSummary, academic_year_of
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.content import Subject
 from tarn_core.domain.overview import (
@@ -125,6 +126,15 @@ class OverviewService:
         return SystemFigures(
             queue=self._overview.queue_depth(college_id),
             storage_bytes=self._blobs.usage(college_id),
+        )
+
+    def own_work(self, college_id: CollegeId, actor_id: UserId) -> AssignmentSummary:
+        """The SME's own figures (P31, D216): their current units only, the academic year of
+        the clock's date."""
+        require(self._users.get(college_id, actor_id), Capability.VIEW_OWN_WORK)
+        year = academic_year_of(self._today())
+        return AssignmentSummary(
+            year=year, counts=self._overview.assignment_counts(college_id, actor_id, year)
         )
 
     def idle_smes(self, college_id: CollegeId, actor_id: UserId) -> frozenset[UserId]:

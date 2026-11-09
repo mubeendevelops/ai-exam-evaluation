@@ -74,7 +74,7 @@ describe('admin portal shell', () => {
     expect(await screen.findByRole('heading', { name: 'Dashboard Overview' })).toBeInTheDocument()
   })
 
-  it('keeps the SME on the SME tabs: no sidebar, /admin/smes goes to Q&A', async () => {
+  it('keeps the SME in the SME portal: no admin sidebar, /admin/smes goes to /sme', async () => {
     mockApi({
       'POST /api/v1/auth/refresh': { json: tokenOf({ role: 'sme' }) },
       'GET /api/v1/auth/me': { json: meOf({ role: 'sme' }) },
@@ -82,8 +82,9 @@ describe('admin portal shell', () => {
     })
     renderApp('/admin/smes')
     expect(
-      await screen.findByRole('heading', { name: 'Questions & Answers Repository' }),
+      await screen.findByRole('heading', { name: 'My Assignments', level: 1 }),
     ).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'SME sections' })).toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: 'Admin sections' })).toBeNull()
   })
 

@@ -94,6 +94,7 @@ CapabilityName = Literal[
     "freeze_units",
     "view_overview",
     "view_progress",
+    "view_own_work",
     "author_content",
     "evaluate",
 ]
@@ -1414,6 +1415,37 @@ class SystemOut(BaseModel):
     storage_bytes: int = Field(
         description="Bytes the college stores; no limit until D167's Provisioner."
     )
+
+
+class AcademicYearOut(BaseModel):
+    start: date = Field(description="1 July (D216), included.")
+    end: date = Field(description="The next 1 July, excluded.")
+    label: str = Field(examples=["2026-27"])
+
+
+class UnitBreakdownOut(BaseModel):
+    frozen: int
+    submitted: int
+    open: int
+
+
+class AssignmentSummaryOut(BaseModel):
+    """The SME's own figures on My Assignments (P31, D216): their current units only."""
+
+    academic_year: AcademicYearOut
+    units_lifetime: int = Field(description="Units the SME owns now, in any state.")
+    units_current_year: int = Field(description="Of those, units due in the academic year.")
+    completed: int = Field(description="Submitted or frozen.")
+    active: int = Field(description="Open.")
+    completion_rate: float | None = Field(
+        description="Completed as a percent of the units owned, one decimal; null with none."
+    )
+    breakdown: UnitBreakdownOut
+    average_turnaround_days: float | None = Field(
+        description="Days from receiving a unit (creation or the last transfer to the SME) to "
+        "its latest submission, over submitted and frozen units, one decimal; null with none."
+    )
+    turnaround_units: int = Field(description="How many units the average is over.")
 
 
 class SmeProgressOut(BaseModel):

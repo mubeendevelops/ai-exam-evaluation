@@ -17,7 +17,7 @@ async function signOut(page: Page) {
 
 async function evaluate(page: Page) {
   await page
-    .getByRole('navigation', { name: 'Main' })
+    .getByRole('navigation', { name: 'SME sections' })
     .getByRole('link', { name: 'AI Evaluation' })
     .click()
 }

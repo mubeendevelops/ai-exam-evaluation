@@ -21,6 +21,8 @@ import QnaPage from './pages/QnaPage'
 import RecoverPage from './pages/RecoverPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import SchemaPage from './pages/SchemaPage'
+import MyAssignmentsPage from './pages/sme/MyAssignmentsPage'
+import * as Sme from './pages/sme/sections'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 
 /**
@@ -44,6 +46,17 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           {/* Each persona sees what its capabilities open (D177); the server checks again. */}
+          {/* The SME portal (P31, D215); the older screens below render in its frame. */}
+          <Route element={<RequireCapability capability="view_own_work" />}>
+            <Route path="sme">
+              <Route index element={<MyAssignmentsPage />} />
+              <Route path="papers" element={<Sme.PapersPage />} />
+              <Route path="schema" element={<Sme.SchemaPage />} />
+              <Route path="profile" element={<Sme.ProfilePage />} />
+              <Route path="reports" element={<Sme.ReportsPage />} />
+              <Route path="*" element={<Navigate to="/sme" replace />} />
+            </Route>
+          </Route>
           <Route element={<RequireCapability capability="author_content" />}>
             <Route path="qna" element={<QnaPage />} />
             <Route path="schema" element={<SchemaPage />} />

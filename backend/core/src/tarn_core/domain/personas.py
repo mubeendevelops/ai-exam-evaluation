@@ -36,6 +36,9 @@ class Capability(StrEnum):
     VIEW_OVERVIEW = "view_overview"
     """The admin's dashboard and SME progress report: counts of SMEs, units and booklets by
     stage, health and storage; never marks, text or a speed metric (P29, D167)."""
+    VIEW_OWN_WORK = "view_own_work"
+    """The SME's own figures: units owned, completed and open, completion rate and turnaround
+    (My Assignments, P31; My Reports, P36; D216). Counts of their own units only."""
     VIEW_PROGRESS = "view_progress"
     """Booklets and their processing status, without marks, page images or text (D167)."""
     AUTHOR_CONTENT = "author_content"
@@ -67,6 +70,7 @@ CAPABILITIES: Mapping[Role, frozenset[Capability]] = MappingProxyType(
                 Capability.EVALUATE,
                 Capability.REQUEST_REASSIGNMENT,
                 Capability.SUBMIT_UNITS,
+                Capability.VIEW_OWN_WORK,
             }
         ),
         # Until the Governor portal is built (D159): the freeze and sign-off only (P28).

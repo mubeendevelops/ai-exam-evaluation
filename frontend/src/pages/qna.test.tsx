@@ -406,7 +406,7 @@ describe('New Question modal and the rubric editor', () => {
     expect(criteria[2]!.params).toEqual({ reference_statement: 'Short wavelengths scatter more.' })
     // after saving, the new question is open
     expect(await screen.findByText('Question saved.')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Rubric' })).toBeVisible()
+    expect(await screen.findByRole('region', { name: 'Rubric' })).toBeVisible()
   })
 
   it('shows the weight total live and shares the marks evenly', async () => {

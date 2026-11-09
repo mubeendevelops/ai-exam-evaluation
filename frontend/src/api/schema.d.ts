@@ -1471,6 +1471,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/assignments/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Assignments figures (SME)
+         * @description Units owned (lifetime and in the current academic year, 1 July start, by due date), completed (submitted or frozen), active (open), completion rate, the state breakdown and the average turnaround (D216).
+         */
+        get: operations["assignments_summary_api_v1_me_assignments_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/booklets/{booklet_id}/lock": {
         parameters: {
             query?: never;
@@ -1752,6 +1772,26 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AcademicYearOut */
+        AcademicYearOut: {
+            /**
+             * Start
+             * Format: date
+             * @description 1 July (D216), included.
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             * @description The next 1 July, excluded.
+             */
+            end: string;
+            /**
+             * Label
+             * @example 2026-27
+             */
+            label: string;
+        };
         /** AccountOut */
         AccountOut: {
             user: components["schemas"]["UserOut"];
@@ -1847,6 +1887,49 @@ export interface components {
              * @default
              */
             remarks: string;
+        };
+        /**
+         * AssignmentSummaryOut
+         * @description The SME's own figures on My Assignments (P31, D216): their current units only.
+         */
+        AssignmentSummaryOut: {
+            academic_year: components["schemas"]["AcademicYearOut"];
+            /**
+             * Units Lifetime
+             * @description Units the SME owns now, in any state.
+             */
+            units_lifetime: number;
+            /**
+             * Units Current Year
+             * @description Of those, units due in the academic year.
+             */
+            units_current_year: number;
+            /**
+             * Completed
+             * @description Submitted or frozen.
+             */
+            completed: number;
+            /**
+             * Active
+             * @description Open.
+             */
+            active: number;
+            /**
+             * Completion Rate
+             * @description Completed as a percent of the units owned, one decimal; null with none.
+             */
+            completion_rate: number | null;
+            breakdown: components["schemas"]["UnitBreakdownOut"];
+            /**
+             * Average Turnaround Days
+             * @description Days from receiving a unit (creation or the last transfer to the SME) to its latest submission, over submitted and frozen units, one decimal; null with none.
+             */
+            average_turnaround_days: number | null;
+            /**
+             * Turnaround Units
+             * @description How many units the average is over.
+             */
+            turnaround_units: number;
         };
         /** AvailabilityOut */
         AvailabilityOut: {
@@ -2910,7 +2993,7 @@ export interface components {
              * Capabilities
              * @description What this persona may do (D177); the screens show what these allow.
              */
-            capabilities: ("manage_smes" | "manage_subjects" | "manage_students" | "assign_units" | "upload_booklets" | "redistribute_units" | "request_reassignment" | "submit_units" | "return_units" | "freeze_units" | "view_overview" | "view_progress" | "author_content" | "evaluate")[];
+            capabilities: ("manage_smes" | "manage_subjects" | "manage_students" | "assign_units" | "upload_booklets" | "redistribute_units" | "request_reassignment" | "submit_units" | "return_units" | "freeze_units" | "view_overview" | "view_progress" | "view_own_work" | "author_content" | "evaluate")[];
         };
         /** MergeIn */
         MergeIn: {
@@ -4293,6 +4376,15 @@ export interface components {
              * @description The SME's request this transfer answered.
              */
             request_id: string | null;
+        };
+        /** UnitBreakdownOut */
+        UnitBreakdownOut: {
+            /** Frozen */
+            frozen: number;
+            /** Submitted */
+            submitted: number;
+            /** Open */
+            open: number;
         };
         /** UnitChoicePaperOut */
         UnitChoicePaperOut: {
@@ -9986,6 +10078,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    assignments_summary_api_v1_me_assignments_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentSummaryOut"];
                 };
             };
             /** @description Unauthorized */

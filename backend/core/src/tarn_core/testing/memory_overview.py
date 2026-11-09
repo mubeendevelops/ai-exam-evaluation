@@ -5,8 +5,16 @@ one scenario against both."""
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID
 
+from tarn_core.domain.assignments import (
+    AcademicYear,
+    AssignmentCounts,
+    latest_submission,
+    received_at,
+    turnaround,
+)
 from tarn_core.domain.audit import AuditEvent
 from tarn_core.domain.booklet import BookletStatus
 from tarn_core.domain.overview import (
@@ -189,4 +197,33 @@ class MemoryOverviewRepository:
         return QueueDepth(
             queued=sum(1 for j in mine if j.status == "queued"),
             running=sum(1 for j in mine if j.status == "running"),
+        )
+
+    def assignment_counts(
+        self, college_id: CollegeId, owner_id: UserId, year: AcademicYear
+    ) -> AssignmentCounts:
+        mine = [u for u in self._units.list(college_id) if u.owner_id == owner_id]
+        closed = [u for u in mine if u.state is not UnitState.OPEN]
+        spans = [
+            turnaround(
+                received_at(u.created_at, u.owner_id, self._units.transfers(college_id, u.id)),
+                latest_submission(self._units.submissions(college_id, u.id)),
+            )
+            for u in closed
+        ]
+        found = [s for s in spans if s is not None]
+        return AssignmentCounts(
+            lifetime=len(mine),
+            current_year=sum(1 for u in mine if u.due_date in year),
+            open=sum(1 for u in mine if u.state is UnitState.OPEN),
+            submitted=sum(1 for u in mine if u.state is UnitState.SUBMITTED),
+            frozen=sum(1 for u in mine if u.state is UnitState.FROZEN),
+            turnaround_units=len(found),
+            turnaround_seconds=sum(
+                (
+                    Decimal(s.days * 86_400 + s.seconds) + Decimal(s.microseconds) / 1_000_000
+                    for s in found
+                ),
+                Decimal(0),
+            ),
         )

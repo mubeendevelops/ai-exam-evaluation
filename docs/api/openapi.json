@@ -7435,6 +7435,53 @@
         ]
       }
     },
+    "/api/v1/me/assignments/summary": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "My Assignments figures (SME)",
+        "description": "Units owned (lifetime and in the current academic year, 1 July start, by due date), completed (submitted or frozen), active (open), completion rate, the state breakdown and the average turnaround (D216).",
+        "operationId": "assignments_summary_api_v1_me_assignments_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignmentSummaryOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/booklets/{booklet_id}/lock": {
       "post": {
         "tags": [
@@ -9078,6 +9125,36 @@
   },
   "components": {
     "schemas": {
+      "AcademicYearOut": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date",
+            "title": "Start",
+            "description": "1 July (D216), included."
+          },
+          "end": {
+            "type": "string",
+            "format": "date",
+            "title": "End",
+            "description": "The next 1 July, excluded."
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "examples": [
+              "2026-27"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "label"
+        ],
+        "title": "AcademicYearOut"
+      },
       "AccountOut": {
         "properties": {
           "user": {
@@ -9304,6 +9381,79 @@
           "expected_version"
         ],
         "title": "ApproveAnswerIn"
+      },
+      "AssignmentSummaryOut": {
+        "properties": {
+          "academic_year": {
+            "$ref": "#/components/schemas/AcademicYearOut"
+          },
+          "units_lifetime": {
+            "type": "integer",
+            "title": "Units Lifetime",
+            "description": "Units the SME owns now, in any state."
+          },
+          "units_current_year": {
+            "type": "integer",
+            "title": "Units Current Year",
+            "description": "Of those, units due in the academic year."
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed",
+            "description": "Submitted or frozen."
+          },
+          "active": {
+            "type": "integer",
+            "title": "Active",
+            "description": "Open."
+          },
+          "completion_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Rate",
+            "description": "Completed as a percent of the units owned, one decimal; null with none."
+          },
+          "breakdown": {
+            "$ref": "#/components/schemas/UnitBreakdownOut"
+          },
+          "average_turnaround_days": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Turnaround Days",
+            "description": "Days from receiving a unit (creation or the last transfer to the SME) to its latest submission, over submitted and frozen units, one decimal; null with none."
+          },
+          "turnaround_units": {
+            "type": "integer",
+            "title": "Turnaround Units",
+            "description": "How many units the average is over."
+          }
+        },
+        "type": "object",
+        "required": [
+          "academic_year",
+          "units_lifetime",
+          "units_current_year",
+          "completed",
+          "active",
+          "completion_rate",
+          "breakdown",
+          "average_turnaround_days",
+          "turnaround_units"
+        ],
+        "title": "AssignmentSummaryOut",
+        "description": "The SME's own figures on My Assignments (P31, D216): their current units only."
       },
       "AvailabilityOut": {
         "properties": {
@@ -11909,6 +12059,7 @@
                 "freeze_units",
                 "view_overview",
                 "view_progress",
+                "view_own_work",
                 "author_content",
                 "evaluate"
               ]
@@ -15112,6 +15263,29 @@
           "request_id"
         ],
         "title": "TransferOut"
+      },
+      "UnitBreakdownOut": {
+        "properties": {
+          "frozen": {
+            "type": "integer",
+            "title": "Frozen"
+          },
+          "submitted": {
+            "type": "integer",
+            "title": "Submitted"
+          },
+          "open": {
+            "type": "integer",
+            "title": "Open"
+          }
+        },
+        "type": "object",
+        "required": [
+          "frozen",
+          "submitted",
+          "open"
+        ],
+        "title": "UnitBreakdownOut"
       },
       "UnitChoicePaperOut": {
         "properties": {

@@ -10,12 +10,13 @@ export const evaluationSteps = ['Scan Upload', 'AI Segmentation', 'Evaluation Vi
 
 /**
  * `/evaluate`: the three steps of the prototype's evaluation tab. The address says where you
- * are, so Back and a reload keep the place: `/evaluate` (1, Scan Upload),
- * `/evaluate?booklet=<id>` (2, AI Segmentation) and `?booklet=<id>&step=3` (3, Evaluation View).
+ * are, so Back and a reload keep the place: `/evaluate[?unit=<id>]` (1, Scan Upload, with that
+ * unit picked), `/evaluate?booklet=<id>` (2, AI Segmentation) and `?booklet=<id>&step=3` (3, Evaluation View).
  */
 export default function EvaluatePage() {
   const [params, setParams] = useSearchParams()
   const booklet = params.get('booklet')
+  const unit = params.get('unit') ?? ''
   const step: 0 | 1 | 2 =
     params.get('step') === '3' ? 2 : booklet || params.get('step') === '2' ? 1 : 0
 
@@ -46,7 +47,9 @@ export default function EvaluatePage() {
         />
       </PageBanner>
 
-      {step === 0 && <UploadStep onOpen={toSegments} />}
+      {step === 0 && (
+        <UploadStep unit={unit} onPick={(id) => setParams({ unit: id })} onOpen={toSegments} />
+      )}
       {step === 1 &&
         (booklet ? (
           <SegmentationStep

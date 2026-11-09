@@ -24,17 +24,11 @@ import { SubmissionCard } from './SubmissionCard'
  * the SME picks a unit, sees each student's booklet and its status, and opens one. When every
  * booklet is marked (or has a reason) the SME submits the unit to the admin (P28, D164).
  */
-export function UploadStep({ onOpen }: { onOpen: (bookletId: string) => void }) {
-  const units = useUnits()
-  const [picked, setPicked] = useState('')
-  const unitId = picked || units.data?.[0]?.id || ''
-  const unit = units.data?.find((u) => u.id === unitId)
-  const [asking, setAsking] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-
-  const booklets = useQuery({
+/** The booklets of one unit, kept current while the machine works on any of them. */
+export function useUnitBooklets(unitId: string, enabled = true) {
+  return useQuery({
     queryKey: ['booklets', unitId],
-    enabled: unitId !== '',
+    enabled: enabled && unitId !== '',
     queryFn: async () => {
       const { data } = await api.GET('/api/v1/booklets', {
         params: { query: { unit_id: unitId, limit: 100 } },
@@ -42,10 +36,30 @@ export function UploadStep({ onOpen }: { onOpen: (bookletId: string) => void }) 
       if (!data) throw new Error('booklets unavailable')
       return data
     },
-    // The machine works on its own: keep the grid current while any booklet is in its hands.
     refetchInterval: (query) =>
       query.state.data?.items.some((b) => STATUS[b.status].working) ? 4000 : false,
   })
+}
+
+export function UploadStep({
+  onOpen,
+  unit: chosen = '',
+  onPick,
+}: {
+  onOpen: (bookletId: string) => void
+  /** The unit picked in the address (`?unit=`, P31: Evaluate on My Assignments). */
+  unit?: string
+  onPick: (unitId: string) => void
+}) {
+  const units = useUnits()
+  const unitId =
+    (units.data?.some((u) => u.id === chosen) ? chosen : '') || units.data?.[0]?.id || ''
+  const unit = units.data?.find((u) => u.id === unitId)
+  const [asking, setAsking] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  // The machine works on its own: the grid stays current while any booklet is in its hands.
+  const booklets = useUnitBooklets(unitId)
   const list = booklets.data
 
   return (
@@ -75,7 +89,7 @@ export function UploadStep({ onOpen }: { onOpen: (bookletId: string) => void }) 
           <SelectInput
             label="Unit"
             value={unitId}
-            onChange={(e) => setPicked(e.target.value)}
+            onChange={(e) => onPick(e.target.value)}
             hint={
               unit
                 ? `${unit.paper.title} · ${unit.subject.name} · due ${unit.due_date} · ${unit.counts.completed} of ${unit.counts.total} completed`
@@ -200,7 +214,7 @@ function Reassignment({ unit, onAsk }: { unit: WorkUnit; onAsk: () => void }) {
   )
 }
 
-function RequestDialog({ unit, onClose }: { unit: WorkUnit; onClose: () => void }) {
+export function RequestDialog({ unit, onClose }: { unit: WorkUnit; onClose: () => void }) {
   const toast = useToast()
   const queryClient = useQueryClient()
   const [reason, setReason] = useState('')
@@ -276,7 +290,7 @@ const MARKED = new Set<Booklet['status']>(['approved', 'approved_amended'])
  * it was not marked. After this the SME cannot change anything in the unit unless the admin
  * returns it, so the dialog says so before sending.
  */
-function SubmitDialog({
+export function SubmitDialog({
   unit,
   booklets,
   onClose,
@@ -326,6 +340,7 @@ function SubmitDialog({
         toast.show(`${unit.code} submitted to your admin.`)
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['units'] }),
+          queryClient.invalidateQueries({ queryKey: ['me'] }),
           queryClient.invalidateQueries({ queryKey: ['booklets'] }),
         ])
         onClose()

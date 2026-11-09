@@ -15,6 +15,7 @@ from datetime import date
 from typing import Protocol
 from uuid import UUID
 
+from tarn_core.domain.assignments import AcademicYear, AssignmentCounts
 from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import Answer, Booklet, Page, Region, Segment
 from tarn_core.domain.common import EngineRef
@@ -496,4 +497,13 @@ class OverviewRepository(Protocol):
 
     def queue_depth(self, college_id: CollegeId) -> QueueDepth:
         """The college's jobs queued and running."""
+        ...
+
+    def assignment_counts(
+        self, college_id: CollegeId, owner_id: UserId, year: AcademicYear
+    ) -> AssignmentCounts:
+        """The units ``owner_id`` owns now (P31, D216): all, those due in ``year``, by state,
+        and the turnarounds of the submitted and frozen ones (``tarn_core.domain.assignments``:
+        from the last transfer to the owner, else creation, to the latest submission). Never
+        another SME's units."""
         ...

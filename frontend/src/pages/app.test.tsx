@@ -32,11 +32,11 @@ describe('route guards', () => {
     expect(await screen.findByRole('heading', { name: /Customer Sign In/ })).toBeInTheDocument()
   })
 
-  it('keeps /admin for the admin: an SME is sent to the Q&A tab', async () => {
+  it('keeps /admin for the admin: an SME is sent to My Assignments', async () => {
     signedIn('sme')
     renderApp('/admin')
     expect(
-      await screen.findByRole('heading', { name: 'Questions & Answers Repository' }),
+      await screen.findByRole('heading', { name: 'My Assignments', level: 1 }),
     ).toBeInTheDocument()
   })
 
@@ -66,29 +66,18 @@ describe('route guards', () => {
 })
 
 describe('app shell (project_idea.html)', () => {
-  it('has the tabs, the mobile bar and the footer; tabs switch the page', async () => {
+  it('gives the SME the portal frame: older screens switch the page, footer kept', async () => {
     signedIn()
     const user = userEvent.setup()
     renderApp('/qna')
     expect(
       await screen.findByRole('heading', { name: 'Questions & Answers Repository' }),
     ).toBeInTheDocument()
-
-    const main = screen.getByRole('navigation', { name: 'Main' })
-    expect(
-      within(main)
-        .getAllByRole('link')
-        .map((a) => a.textContent),
-    ).toEqual(['Q&A DB', 'AI Evaluation', 'Evaluated', 'Schema Designer'])
-    const mobile = screen.getByRole('navigation', { name: 'Main (mobile)' })
-    expect(
-      within(mobile)
-        .getAllByRole('link')
-        .map((a) => a.textContent),
-    ).toEqual(['Q&A DB', 'AI Eval', 'Evaluated', 'Schema'])
+    expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull()
     expect(screen.getByText('TARN KNOWLEDGE SERVICES')).toBeInTheDocument()
 
-    await user.click(within(main).getByRole('link', { name: 'AI Evaluation' }))
+    const sidebar = screen.getByRole('navigation', { name: 'SME sections' })
+    await user.click(within(sidebar).getByRole('link', { name: 'AI Evaluation' }))
     expect(
       await screen.findByRole('heading', { name: 'AI Automated Answer Evaluation Pipeline' }),
     ).toBeInTheDocument()
@@ -96,12 +85,12 @@ describe('app shell (project_idea.html)', () => {
       'aria-current',
       'step',
     )
-    expect(within(main).getByRole('link', { name: 'AI Evaluation' })).toHaveAttribute(
+    expect(within(sidebar).getByRole('link', { name: 'AI Evaluation' })).toHaveAttribute(
       'aria-current',
       'page',
     )
 
-    await user.click(within(mobile).getByRole('link', { name: 'Schema' }))
+    await user.click(within(sidebar).getByRole('link', { name: 'Schema Designer' }))
     expect(
       await screen.findByRole('heading', { name: 'Question Paper Studio & Schema Engine' }),
     ).toBeInTheDocument()

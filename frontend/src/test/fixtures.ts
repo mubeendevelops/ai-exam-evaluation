@@ -29,7 +29,14 @@ export const CAPABILITIES: Record<User['role'], Me['capabilities']> = {
     'view_overview',
     'view_progress',
   ],
-  sme: ['author_content', 'evaluate', 'submit_units', 'view_progress'],
+  sme: [
+    'author_content',
+    'evaluate',
+    'request_reassignment',
+    'submit_units',
+    'view_own_work',
+    'view_progress',
+  ],
   governor: ['freeze_units'],
 }
 

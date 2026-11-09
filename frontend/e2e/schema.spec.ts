@@ -8,7 +8,7 @@ async function signIn(page: Page) {
   await page.getByLabel('Username / Evaluator Email').fill('admin@synthetic.test')
   await page.getByLabel('Security Access Password').fill('correct horse battery staple')
   await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
-  await expect(page.getByRole('heading', { name: 'Questions & Answers Repository' })).toBeVisible()
+  await expect(page).toHaveURL(/\/sme$/) // an SME lands on My Assignments (P31)
 }
 
 test('the schema designer builds QP-CI and the JSON panel follows every input', async ({

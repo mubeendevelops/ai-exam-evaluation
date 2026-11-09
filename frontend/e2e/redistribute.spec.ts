@@ -24,7 +24,7 @@ test('the SME asks to move a unit; the admin transfers it from the inbox', async
   // --- the SME asks for a reassignment from the unit list (step 1 of AI Evaluation) ---
   await signIn(page)
   await page
-    .getByRole('navigation', { name: 'Main' })
+    .getByRole('navigation', { name: 'SME sections' })
     .getByRole('link', { name: 'AI Evaluation' })
     .click()
   await page.getByRole('button', { name: 'Request reassignment' }).click()
@@ -71,7 +71,7 @@ test('the SME asks to move a unit; the admin transfers it from the inbox', async
   booklets.viewer = 'sme'
   await signIn(page)
   await page
-    .getByRole('navigation', { name: 'Main' })
+    .getByRole('navigation', { name: 'SME sections' })
     .getByRole('link', { name: 'AI Evaluation' })
     .click()
   await expect(page.getByText('No units assigned to you')).toBeVisible()
@@ -111,7 +111,7 @@ test('the admin declines a request with a note, which the SME then reads', async
   booklets.viewer = 'sme'
   await signIn(page)
   await page
-    .getByRole('navigation', { name: 'Main' })
+    .getByRole('navigation', { name: 'SME sections' })
     .getByRole('link', { name: 'AI Evaluation' })
     .click()
   const mine = page.getByRole('region', { name: 'My reassignment requests' })

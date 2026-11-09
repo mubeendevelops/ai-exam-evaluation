@@ -240,6 +240,8 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("GET", "/api/v1/overview"): Case("own"),
     ("GET", "/api/v1/overview/progress"): Case("own"),
     ("GET", "/api/v1/overview/system"): Case("own"),
+    # The SME's own figures: their own units in their own college (P31; ``test_api_assignments``).
+    ("GET", "/api/v1/me/assignments/summary"): Case("own"),
     ("GET", "/api/v1/units/papers"): Case("own"),
     # A's subject: B is offered nobody (an empty list), see ``smes_of_another_colleges_subject``
     ("GET", "/api/v1/units/smes"): Case(

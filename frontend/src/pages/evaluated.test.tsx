@@ -113,7 +113,7 @@ describe('evaluated booklets', () => {
     expect(within(first).getByRole('button', { name: 'v2 PDF' })).toBeVisible()
     expect(within(rows[1]!).getAllByRole('button', { name: /PDF/ })).toHaveLength(1)
     expect(
-      within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', {
+      within(screen.getByRole('navigation', { name: 'SME sections' })).getByRole('link', {
         name: 'Evaluated',
       }),
     ).toHaveAttribute('aria-current', 'page')

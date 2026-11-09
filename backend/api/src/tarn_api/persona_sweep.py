@@ -100,6 +100,8 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("GET", "/api/v1/overview"): _OVERVIEW,
     ("GET", "/api/v1/overview/progress"): _OVERVIEW,
     ("GET", "/api/v1/overview/system"): _OVERVIEW,
+    # --- the SME's own figures (P31, D216) ------------------------------------------------------
+    ("GET", "/api/v1/me/assignments/summary"): _needs(C.VIEW_OWN_WORK),
     # --- progress: admin and SME, no marks for the admin (D167) -------------------------------
     ("GET", "/api/v1/booklets"): _PROGRESS,
     ("GET", "/api/v1/booklets/{booklet_id}"): _PROGRESS,

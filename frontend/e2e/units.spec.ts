@@ -59,9 +59,9 @@ test('the admin creates a unit and uploads its booklets; the SME opens one', asy
   await page.getByRole('menuitem', { name: /Sign out/ }).click()
   api.role = 'sme'
   await signIn(page)
-  await expect(page.getByRole('heading', { name: 'Questions & Answers Repository' })).toBeVisible()
+  await expect(page).toHaveURL(/\/sme$/) // an SME lands on My Assignments (P31)
   await page
-    .getByRole('navigation', { name: 'Main' })
+    .getByRole('navigation', { name: 'SME sections' })
     .getByRole('link', { name: 'AI Evaluation' })
     .click()
   await expect(page.getByLabel('Unit', { exact: true })).toContainText(

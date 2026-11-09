@@ -11,7 +11,7 @@ async function signIn(page: Page) {
   await page.getByLabel('Username / Evaluator Email').fill('admin@synthetic.test')
   await page.getByLabel('Security Access Password').fill('correct horse battery staple')
   await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
-  await expect(page.getByRole('heading', { name: 'Questions & Answers Repository' })).toBeVisible()
+  await expect(page).toHaveURL(/\/sme$/) // an SME lands on My Assignments (P31)
   return booklets
 }
 
@@ -21,7 +21,7 @@ test('open an uploaded booklet, watch it being read, see its segments, correct a
   const booklets = await signIn(page)
   booklets.startUploaded()
   await page
-    .getByRole('navigation', { name: 'Main' })
+    .getByRole('navigation', { name: 'SME sections' })
     .getByRole('link', { name: 'AI Evaluation' })
     .click()
   await expect(page.getByRole('list', { name: 'Evaluation steps' })).toContainText('1. Scan Upload')
@@ -89,7 +89,7 @@ test('approve every answer, approve the booklet, reopen one, amend it and find r
   const booklets = await signIn(page)
   booklets.startScored()
   await page
-    .getByRole('navigation', { name: 'Main' })
+    .getByRole('navigation', { name: 'SME sections' })
     .getByRole('link', { name: 'AI Evaluation' })
     .click()
   await page

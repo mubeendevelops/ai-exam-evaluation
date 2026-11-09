@@ -37,6 +37,7 @@ def test_the_capability_table() -> None:
     assert {Capability.MANAGE_SMES, Capability.MANAGE_SUBJECTS} <= admin
     assert Capability.UPLOAD_BOOKLETS in admin and Capability.UPLOAD_BOOKLETS not in sme  # D162
     assert CAPABILITIES[Role.GOVERNOR] == frozenset({Capability.FREEZE_UNITS})  # P28
+    assert Capability.VIEW_OWN_WORK in sme and Capability.VIEW_OWN_WORK not in admin  # P31
     assert {c for caps in CAPABILITIES.values() for c in caps} == set(Capability)
 
 

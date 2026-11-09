@@ -1,8 +1,17 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { FakeApi } from './fakeApi'
 import { FakeBooklets } from './fakeBooklets'
 
-test('on a phone the sub-bar carries the three tabs and nothing scrolls sideways', async ({
+/** On a phone the SME sidebar is a drawer behind the menu button (P31). */
+async function go(page: Page, link: string) {
+  await page.getByRole('button', { name: 'Menu', exact: true }).click()
+  await page
+    .getByRole('navigation', { name: 'SME sections' })
+    .getByRole('link', { name: link })
+    .click()
+}
+
+test('on a phone the sidebar is a drawer behind the menu button and nothing scrolls sideways', async ({
   page,
 }) => {
   await new FakeApi().install(page)
@@ -11,20 +20,28 @@ test('on a phone the sub-bar carries the three tabs and nothing scrolls sideways
   await page.getByLabel('Username / Evaluator Email').fill('admin@synthetic.test')
   await page.getByLabel('Security Access Password').fill('correct horse battery staple')
   await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
-  await expect(page.getByRole('heading', { name: 'Questions & Answers Repository' })).toBeVisible()
+  await expect(page).toHaveURL(/\/sme$/) // an SME lands on My Assignments (P31)
 
-  const mobile = page.getByRole('navigation', { name: 'Main (mobile)' })
-  await expect(mobile).toBeVisible()
-  await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeHidden()
-  await mobile.getByRole('link', { name: 'AI Eval' }).click()
+  const sidebar = page.getByRole('navigation', { name: 'SME sections' })
+  await expect(sidebar).toBeHidden()
+  const overflow = () =>
+    page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  expect(await overflow()).toBeLessThanOrEqual(0)
+
+  const menu = page.getByRole('button', { name: 'Menu', exact: true })
+  await menu.click()
+  await expect(sidebar).toBeVisible()
+  await expect(sidebar.getByRole('link').first()).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(sidebar).toBeHidden()
+  await expect(menu).toBeFocused()
+
+  await go(page, 'AI Evaluation')
   await expect(page).toHaveURL(/\/evaluate$/)
-  await mobile.getByRole('link', { name: 'Schema' }).click()
+  await expect(sidebar).toBeHidden()
+  await go(page, 'Schema Designer')
   await expect(page).toHaveURL(/\/schema$/)
-
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - window.innerWidth,
-  )
-  expect(overflow).toBeLessThanOrEqual(0)
+  expect(await overflow()).toBeLessThanOrEqual(0)
 })
 
 test('on a phone the schema designer, with an OR pair and sub-parts open, does not scroll sideways', async ({
@@ -36,12 +53,9 @@ test('on a phone the schema designer, with an OR pair and sub-parts open, does n
   await page.getByLabel('Username / Evaluator Email').fill('admin@synthetic.test')
   await page.getByLabel('Security Access Password').fill('correct horse battery staple')
   await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
-  await expect(page.getByRole('heading', { name: 'Questions & Answers Repository' })).toBeVisible()
+  await expect(page).toHaveURL(/\/sme$/) // an SME lands on My Assignments (P31)
 
-  await page
-    .getByRole('navigation', { name: 'Main (mobile)' })
-    .getByRole('link', { name: 'Schema' })
-    .click()
+  await go(page, 'Schema Designer')
   await page.getByRole('button', { name: 'Add OR pair to section 1' }).click()
   await page.getByRole('button', { name: 'Show details of Section 1 item 6 alternative 1' }).click()
   await page.getByRole('button', { name: 'Add sub-part' }).click()
@@ -65,6 +79,8 @@ test('on a phone the question bank, a question and the New Question modal do not
   await page.getByLabel('Username / Evaluator Email').fill('admin@synthetic.test')
   await page.getByLabel('Security Access Password').fill('correct horse battery staple')
   await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
+  await expect(page).toHaveURL(/\/sme$/)
+  await go(page, 'Q&A DB')
   await expect(page.getByRole('article', { name: 'Question PHY-Q1' })).toBeVisible()
   const overflow = () =>
     page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
@@ -91,11 +107,8 @@ test('on a phone the submission list and segmentation steps do not scroll sidewa
   await page.getByLabel('Username / Evaluator Email').fill('admin@synthetic.test')
   await page.getByLabel('Security Access Password').fill('correct horse battery staple')
   await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
-  await expect(page.getByRole('heading', { name: 'Questions & Answers Repository' })).toBeVisible()
-  await page
-    .getByRole('navigation', { name: 'Main (mobile)' })
-    .getByRole('link', { name: 'AI Eval' })
-    .click()
+  await expect(page).toHaveURL(/\/sme$/) // an SME lands on My Assignments (P31)
+  await go(page, 'AI Evaluation')
 
   const sideways = () =>
     page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)

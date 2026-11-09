@@ -10,11 +10,11 @@ export function can(me: Me, capability: Capability): boolean {
   return me.capabilities.includes(capability)
 }
 
-/** Where a signed-in person lands: the admin on the admin page, an SME on the Q&A tab, the
- * Governor on its placeholder page (D159). */
+/** Where a signed-in person lands: the admin on the admin page, an SME on My Assignments
+ * (P31, D215), the Governor on its placeholder page (D159). */
 export function homeOf(me: Me): string {
   if (can(me, 'manage_smes')) return '/admin'
-  if (can(me, 'author_content')) return '/qna'
+  if (can(me, 'view_own_work')) return '/sme'
   return '/governor'
 }
 

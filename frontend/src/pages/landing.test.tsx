@@ -98,7 +98,7 @@ describe('sign-in', () => {
     await user.type(screen.getByLabelText(/Security Access Password/), 'correct horse battery')
   }
 
-  it('signs in with the typed values and lands on the Q&A tab', async () => {
+  it('signs in with the typed values and lands on My Assignments', async () => {
     const mock = mockApi({
       ...anonymous,
       'POST /api/v1/auth/login': { json: tokenOf() },
@@ -111,7 +111,7 @@ describe('sign-in', () => {
     await user.click(screen.getByRole('button', { name: /Authenticate Cloud Access/ }))
 
     expect(
-      await screen.findByRole('heading', { name: 'Questions & Answers Repository' }),
+      await screen.findByRole('heading', { name: 'My Assignments', level: 1 }),
     ).toBeInTheDocument()
     expect(mock.callsTo('POST /api/v1/auth/login')[0]?.body).toEqual({
       institution_id: 'synth_college',
@@ -187,7 +187,7 @@ describe('sign-in', () => {
     })
     renderApp('/')
     expect(
-      await screen.findByRole('heading', { name: 'Questions & Answers Repository' }),
+      await screen.findByRole('heading', { name: 'My Assignments', level: 1 }),
     ).toBeInTheDocument()
   })
 })

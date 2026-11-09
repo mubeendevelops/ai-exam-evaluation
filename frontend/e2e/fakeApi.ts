@@ -31,7 +31,14 @@ const CAPABILITIES: Record<Role, string[]> = {
     'view_overview',
     'view_progress',
   ],
-  sme: ['author_content', 'evaluate', 'request_reassignment', 'submit_units', 'view_progress'],
+  sme: [
+    'author_content',
+    'evaluate',
+    'request_reassignment',
+    'submit_units',
+    'view_own_work',
+    'view_progress',
+  ],
   governor: ['freeze_units'],
 }
 
@@ -257,6 +264,20 @@ export class FakeApi {
       case 'GET /units':
       case 'GET /delegation-requests':
         return json(200, [])
+
+      // The SME's own figures (P31): nothing handed in yet.
+      case 'GET /me/assignments/summary':
+        return json(200, {
+          academic_year: { start: '2026-07-01', end: '2027-07-01', label: '2026-27' },
+          units_lifetime: 0,
+          units_current_year: 0,
+          completed: 0,
+          active: 0,
+          completion_rate: null,
+          breakdown: { frozen: 0, submitted: 0, open: 0 },
+          average_turnaround_days: null,
+          turnaround_units: 0,
+        })
 
       // The admin's figures (P29): nothing has happened in the browser tests' college.
       case 'GET /overview':

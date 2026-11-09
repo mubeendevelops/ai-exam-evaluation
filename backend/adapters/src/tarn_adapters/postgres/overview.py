@@ -6,11 +6,13 @@ core's table is the only definition."""
 
 from collections.abc import Sequence
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import ColumnElement, Connection, Text, and_, cast, exists, func, not_, select
 
 from tarn_adapters.postgres import metadata as m
+from tarn_core.domain.assignments import AcademicYear, AssignmentCounts
 from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.booklet import APPROVED_STATUSES
 from tarn_core.domain.overview import (
@@ -264,3 +266,65 @@ class PgOverviewRepository:
             ).where(j.c.college_id == college_id)
         ).one()
         return QueueDepth(queued=row.queued, running=row.running)
+
+    def assignment_counts(
+        self, college_id: CollegeId, owner_id: UserId, year: AcademicYear
+    ) -> AssignmentCounts:
+        n, t, s = m.units, m.unit_transfers, m.unit_submissions
+        # Per unit: when the current owner got it and when it was last handed in.
+        last_in = (
+            select(func.max(t.c.at))
+            .where(
+                t.c.college_id == n.c.college_id,
+                t.c.unit_id == n.c.id,
+                t.c.to_owner == n.c.owner_id,
+            )
+            .scalar_subquery()
+        )
+        last_out = (
+            select(func.max(s.c.submitted_at))
+            .where(s.c.college_id == n.c.college_id, s.c.unit_id == n.c.id)
+            .scalar_subquery()
+        )
+        mine = (
+            select(
+                n.c.state,
+                n.c.due_date,
+                func.coalesce(last_in, n.c.created_at).label("received"),
+                last_out.label("submitted_at"),
+            )
+            .where(n.c.college_id == college_id, n.c.owner_id == owner_id)
+            .subquery("mine")
+        )
+        timed = and_(
+            mine.c.state != UnitState.OPEN.value,
+            mine.c.submitted_at.is_not(None),
+            mine.c.submitted_at >= mine.c.received,
+        )
+        row = self._conn.execute(
+            select(
+                func.count().label("lifetime"),
+                func.count()
+                .filter(and_(mine.c.due_date >= year.start, mine.c.due_date < year.end))
+                .label("current_year"),
+                func.count().filter(mine.c.state == UnitState.OPEN.value).label("open"),
+                func.count().filter(mine.c.state == UnitState.SUBMITTED.value).label("submitted"),
+                func.count().filter(mine.c.state == UnitState.FROZEN.value).label("frozen"),
+                func.count().filter(timed).label("turnaround_units"),
+                func.coalesce(
+                    func.sum(func.extract("epoch", mine.c.submitted_at - mine.c.received)).filter(
+                        timed
+                    ),
+                    0,
+                ).label("turnaround_seconds"),
+            )
+        ).one()
+        return AssignmentCounts(
+            lifetime=row.lifetime,
+            current_year=row.current_year,
+            open=row.open,
+            submitted=row.submitted,
+            frozen=row.frozen,
+            turnaround_units=row.turnaround_units,
+            turnaround_seconds=Decimal(row.turnaround_seconds),
+        )

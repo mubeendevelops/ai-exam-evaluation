@@ -3,6 +3,7 @@ import { Outlet } from 'react-router'
 import { useMe } from '../../auth/AuthProvider'
 import { can, type Capability } from '../../auth/capabilities'
 import { brand } from '../../content/landing'
+import { SmeLayout } from '../sme/SmeLayout'
 import { Badge, TabNav, ToastProvider, type TabItem } from '../ui'
 import { AppFooter } from './AppFooter'
 import { ProfileModal } from './ProfileModal'
@@ -31,12 +32,34 @@ export const appTabs: readonly (TabItem & { capability: Capability })[] = [
   },
 ]
 
-/** The signed-in frame of project_idea.html: top bar with the tabs, mobile sub-bar, footer. */
+/** The signed-in frame of project_idea.html: top bar with the tabs, mobile sub-bar, footer.
+ * An SME gets the SME portal frame instead (P31, D215): sidebar and header, no top bar. */
 export function AppShell() {
   const [dialog, setDialog] = useState<'profile' | 'codes' | null>(null)
   const me = useMe()
-  // The SME's tabs. The admin has none: its sidebar (AdminLayout) replaces them (P25), and the
-  // Governor's screens come later (D159).
+  const dialogs = (
+    <>
+      <ProfileModal open={dialog === 'profile'} onClose={() => setDialog(null)} />
+      <RecoveryCodesModal open={dialog === 'codes'} onClose={() => setDialog(null)} />
+    </>
+  )
+  if (can(me, 'view_own_work')) {
+    return (
+      <ToastProvider>
+        <div className="theme-app selection:bg-purple-500 selection:text-white">
+          <SmeLayout
+            onProfile={() => setDialog('profile')}
+            onRecoveryCodes={() => setDialog('codes')}
+          >
+            <Outlet />
+          </SmeLayout>
+          {dialogs}
+        </div>
+      </ToastProvider>
+    )
+  }
+  // The admin has no tabs: its sidebar (AdminLayout) replaces them (P25), and the Governor's
+  // screens come later (D159). The SME's sidebar replaced them in P31.
   const tabs = appTabs.filter((tab) => can(me, tab.capability))
   return (
     <ToastProvider>
@@ -91,8 +114,7 @@ export function AppShell() {
         </main>
 
         <AppFooter />
-        <ProfileModal open={dialog === 'profile'} onClose={() => setDialog(null)} />
-        <RecoveryCodesModal open={dialog === 'codes'} onClose={() => setDialog(null)} />
+        {dialogs}
       </div>
     </ToastProvider>
   )
