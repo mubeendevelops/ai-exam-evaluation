@@ -875,10 +875,19 @@ describe('step 3: evaluation view', () => {
     ).toBeVisible()
   })
 
-  it('asks for a booklet when step 3 is opened without one', async () => {
+  it('shows a breadcrumb back to the question list and the student list', async () => {
     mockApi(base())
-    renderApp('/evaluate?step=3')
-    expect(await screen.findByText('Choose a booklet first')).toBeVisible()
+    renderApp(`/evaluate?booklet=${BOOKLET}&step=3&answer=2&from=${encodeURIComponent('?q=one')}`)
+    const crumbs = await screen.findByRole('navigation', { name: 'Breadcrumb' })
+    expect(await within(crumbs).findByRole('link', { name: 'U-0001' })).toHaveAttribute(
+      'href',
+      '/sme/units/unit-1?q=one',
+    )
+    expect(within(crumbs).getByRole('link', { name: 'Test Student One' })).toHaveAttribute(
+      'href',
+      `/sme/units/unit-1/booklets/${BOOKLET}?from=${encodeURIComponent('?q=one')}`,
+    )
+    expect(crumbs).toHaveTextContent('Q2')
   })
 
   it('says so when the booklet is still being read', async () => {

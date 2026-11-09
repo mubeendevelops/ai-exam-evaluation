@@ -77,15 +77,7 @@ describe('app shell (project_idea.html)', () => {
     expect(screen.getByText('TARN KNOWLEDGE SERVICES')).toBeInTheDocument()
 
     const sidebar = screen.getByRole('navigation', { name: 'SME sections' })
-    await user.click(within(sidebar).getByRole('link', { name: 'AI Evaluation' }))
-    expect(
-      await screen.findByRole('heading', { name: 'AI Automated Answer Evaluation Pipeline' }),
-    ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '1. Scan Upload' })).toHaveAttribute(
-      'aria-current',
-      'step',
-    )
-    expect(within(sidebar).getByRole('link', { name: 'AI Evaluation' })).toHaveAttribute(
+    expect(within(sidebar).getByRole('link', { name: 'Q&A DB' })).toHaveAttribute(
       'aria-current',
       'page',
     )

@@ -1,7 +1,12 @@
 """The delegation inbox (P27, D163): an SME asks the admin to move one of their open units to
 someone else, with a reason; one pending request per unit. The admin transfers the unit (the
 request closes as done, ``TransferService``) or declines it with a note; the SME may withdraw a
-pending request (user, 2026-10-28). The admin sees every request; an SME sees their own."""
+pending request (user, 2026-10-28). The admin sees every request; an SME sees their own.
+
+The SME may suggest a replacement (P32, D218) among the active SMEs entitled to the unit's
+subject; the admin still decides, and a suggestion that can no longer take the unit is shown as
+unavailable. The audit records who was suggested and how long the reason was, never its text
+(D230)."""
 
 from collections.abc import Sequence
 from dataclasses import replace
@@ -9,42 +14,60 @@ from dataclasses import replace
 from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.common import JsonValue
 from tarn_core.domain.personas import Capability, can
-from tarn_core.domain.unit import DelegationRequest, RequestState
+from tarn_core.domain.tenancy import User
+from tarn_core.domain.unit import DelegationRequest, RequestState, Unit
 from tarn_core.errors import (
     AlreadyExistsError,
     IllegalTransitionError,
+    InvariantError,
     NotFoundError,
     UnitClosedError,
 )
 from tarn_core.ids import CollegeId, DelegationRequestId, UnitId, UserId
-from tarn_core.ports.repositories import UnitRepository, UserRepository
+from tarn_core.ports.repositories import EntitlementRepository, UnitRepository, UserRepository
 from tarn_core.services._support import Runtime
 from tarn_core.services.access import require
 from tarn_core.services.transfers import check_reason
 from tarn_core.services.unit_guard import closed_message
+from tarn_core.services.units import may_own
 
 WAITING = "A request to move this unit is waiting for your admin already."
 CLOSED = "This request has been answered already."
+NOT_A_CANDIDATE = "The suggested SME cannot take this unit: choose an active SME with its subject."
 
 
 class DelegationService:
-    def __init__(self, *, units: UnitRepository, users: UserRepository, runtime: Runtime) -> None:
+    def __init__(
+        self,
+        *,
+        units: UnitRepository,
+        users: UserRepository,
+        entitlements: EntitlementRepository,
+        runtime: Runtime,
+    ) -> None:
         self._units = units
         self._users = users
+        self._entitlements = entitlements
         self._rt = runtime
 
     def request(
-        self, college_id: CollegeId, actor_id: UserId, unit_id: UnitId, *, reason: str
+        self,
+        college_id: CollegeId,
+        actor_id: UserId,
+        unit_id: UnitId,
+        *,
+        reason: str,
+        suggested_to: UserId | None = None,
     ) -> DelegationRequest:
         """Another SME's unit is not found. Raises ``UnitClosedError`` for a unit that
-        is not open, ``AlreadyExistsError`` while a request for it waits."""
-        require(self._users.get(college_id, actor_id), Capability.REQUEST_REASSIGNMENT)
-        unit = self._units.get(college_id, unit_id)
-        if unit.owner_id != actor_id:
-            raise NotFoundError(f"unit {unit_id}")
-        if not unit.open:
-            raise UnitClosedError(closed_message(unit))  # submitted or frozen (P28)
+        is not open, ``AlreadyExistsError`` while a request for it waits and
+        ``InvariantError`` for a suggestion that is not one of ``candidates``."""
+        unit = self._own_open_unit(college_id, actor_id, unit_id)
         reason = check_reason(reason)
+        if suggested_to is not None and suggested_to not in {
+            u.id for u in self._candidates(college_id, unit)
+        }:
+            raise InvariantError(NOT_A_CANDIDATE)
         if self._units.pending_request(college_id, unit.id) is not None:
             raise AlreadyExistsError(WAITING)
         made = DelegationRequest(
@@ -54,15 +77,59 @@ class DelegationService:
             requested_by=actor_id,
             reason=reason,
             requested_at=self._rt.clock.now(),
+            suggested_to=suggested_to,
         )
         self._units.save_request(college_id, made)
         self._rt.record(
             college_id,
             actor_id,
             AuditAction.DELEGATION_REQUESTED,
-            after={"request_id": str(made.id), "unit_id": str(unit.id), "reason": reason},
+            after={
+                "request_id": str(made.id),
+                "unit_id": str(unit.id),
+                "suggested_to": None if suggested_to is None else str(suggested_to),
+                "reason_length": len(reason),
+            },
         )
         return made
+
+    def candidates(self, college_id: CollegeId, actor_id: UserId, unit_id: UnitId) -> list[User]:
+        """Who the owner of an open unit may suggest: the other active SMEs entitled to its
+        subject, by name."""
+        return self._candidates(college_id, self._own_open_unit(college_id, actor_id, unit_id))
+
+    def available(self, college_id: CollegeId, request: DelegationRequest) -> bool:
+        """Whether the suggested SME could still be sent the unit: active, entitled to its
+        subject and not its owner now."""
+        if request.suggested_to is None:
+            return False
+        unit = self._units.get(college_id, request.unit_id)
+        if request.suggested_to == unit.owner_id:
+            return False
+        try:
+            user = self._users.get(college_id, request.suggested_to)
+        except NotFoundError:
+            return False
+        return may_own(self._entitlements, user, unit.subject_id)
+
+    def _own_open_unit(self, college_id: CollegeId, actor_id: UserId, unit_id: UnitId) -> Unit:
+        require(self._users.get(college_id, actor_id), Capability.REQUEST_REASSIGNMENT)
+        unit = self._units.get(college_id, unit_id)
+        if unit.owner_id != actor_id:
+            raise NotFoundError(f"unit {unit_id}")
+        if not unit.open:
+            raise UnitClosedError(closed_message(unit))  # submitted or frozen (P28)
+        return unit
+
+    def _candidates(self, college_id: CollegeId, unit: Unit) -> list[User]:
+        return sorted(
+            (
+                u
+                for u in self._users.list(college_id)
+                if u.id != unit.owner_id and may_own(self._entitlements, u, unit.subject_id)
+            ),
+            key=lambda u: (u.display_name.casefold(), str(u.id)),
+        )
 
     def withdraw(
         self, college_id: CollegeId, actor_id: UserId, request_id: DelegationRequestId

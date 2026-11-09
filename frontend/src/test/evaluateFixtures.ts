@@ -36,6 +36,8 @@ export function booklet(over: Partial<Booklet> = {}): Booklet {
     failure_reason: null,
     duplicate_of: [],
     result: null,
+    row_status: 'ready',
+    answers: null,
     ...over,
   }
 }
@@ -173,6 +175,8 @@ export function answer(
     },
     approval: null,
     draft: null,
+    question_id: `q-${label}`,
+    question_code: `Q-${label}`,
     ...over,
   }
 }

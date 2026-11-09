@@ -15,30 +15,39 @@ async function signIn(page: Page) {
   return booklets
 }
 
+/** My Assignments → the unit's student list → the student's question list (P32, D217). */
+async function openStudent(page: Page) {
+  await page.getByRole('link', { name: 'Evaluate U-0001' }).click()
+  await expect(page).toHaveURL(/\/sme\/units\//)
+  await page
+    .getByRole('link', {
+      name: /(Open the booklet|Review questions|View final) of Test Student One/,
+    })
+    .click()
+  await expect(page.getByRole('heading', { name: 'Test Student One' })).toBeVisible()
+}
+
 test('open an uploaded booklet, watch it being read, see its segments, correct a line and see the re-score', async ({
   page,
 }) => {
   const booklets = await signIn(page)
   booklets.startUploaded()
-  await page
-    .getByRole('navigation', { name: 'SME sections' })
-    .getByRole('link', { name: 'AI Evaluation' })
-    .click()
-  await expect(page.getByRole('list', { name: 'Evaluation steps' })).toContainText('1. Scan Upload')
-
-  // --- step 1: the admin has uploaded the booklet into the SME's unit (P26) ---
-  await expect(page.getByLabel('Unit', { exact: true })).toHaveValue(/8888/)
+  // --- the student list: the admin has uploaded the booklet into the SME's unit (P26) ---
+  await page.getByRole('link', { name: 'Evaluate U-0001' }).click()
+  const row = page.getByRole('row', { name: /Test Student One/ })
+  await expect(row).toContainText('TST001')
+  await expect(row).toContainText('Processing')
   await expect(page.getByText(/Drag & Drop/)).toHaveCount(0)
-  const card = page.getByRole('article', { name: 'Submission Test Student One' })
-  await expect(card).toContainText('USN: TST001')
 
   // --- step 2: the machine is still working: the beam sweeps the page ---
-  await card.getByRole('button', { name: 'Run AI Eval' }).click()
+  await row.getByRole('link', { name: 'Open the booklet of Test Student One' }).click()
+  await expect(page.getByText(/still reading this booklet/)).toBeVisible()
+  await page.getByRole('link', { name: /Pages and segments/ }).click()
   await expect(page).toHaveURL(/\/evaluate\?booklet=/)
   await expect(
     page
       .getByRole('list', { name: 'Evaluation steps' })
-      .getByRole('button', { name: '2. AI Segmentation' }),
+      .getByRole('button', { name: '1. AI Segmentation' }),
   ).toHaveAttribute('aria-current', 'step')
   await expect(page.getByTestId('scan-beam')).toBeVisible()
 
@@ -88,20 +97,14 @@ test('approve every answer, approve the booklet, reopen one, amend it and find r
 }) => {
   const booklets = await signIn(page)
   booklets.startScored()
-  await page
-    .getByRole('navigation', { name: 'SME sections' })
-    .getByRole('link', { name: 'AI Evaluation' })
-    .click()
-  await page
-    .getByRole('article', { name: 'Submission Test Student One' })
-    .getByRole('button', { name: 'Open' })
-    .click()
+  await openStudent(page)
+  await page.getByRole('link', { name: /Pages and segments/ }).click()
   await page.getByRole('button', { name: 'Proceed to Evaluation' }).click()
   await expect(page).toHaveURL(/step=3/)
   await expect(
     page
       .getByRole('list', { name: 'Evaluation steps' })
-      .getByRole('button', { name: '3. Evaluation View' }),
+      .getByRole('button', { name: '2. Evaluation View' }),
   ).toHaveAttribute('aria-current', 'step')
   await expect(page.getByText(/Evaluating Student:/)).toContainText(
     'Test Student One (USN: TST001)',

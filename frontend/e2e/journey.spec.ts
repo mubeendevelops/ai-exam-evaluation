@@ -94,11 +94,8 @@ test.describe('visitor journey', () => {
     ).toBeVisible()
     await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0) // no top bar (P31)
     const nav = page.getByRole('navigation', { name: 'SME sections' })
-    await nav.getByRole('link', { name: 'AI Evaluation' }).click()
-    await expect(page).toHaveURL(/\/evaluate$/)
-    await expect(
-      page.getByRole('heading', { name: 'AI Automated Answer Evaluation Pipeline' }),
-    ).toBeVisible()
+    await page.goto('/evaluate') // step 1 is gone: My Assignments is the way in (P32)
+    await expect(page).toHaveURL(/\/sme$/)
     await nav.getByRole('link', { name: 'Schema Designer' }).click()
     await expect(page).toHaveURL(/\/schema$/)
     await expect(

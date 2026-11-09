@@ -60,21 +60,19 @@ test('the admin creates a unit and uploads its booklets; the SME opens one', asy
   api.role = 'sme'
   await signIn(page)
   await expect(page).toHaveURL(/\/sme$/) // an SME lands on My Assignments (P31)
-  await page
-    .getByRole('navigation', { name: 'SME sections' })
-    .getByRole('link', { name: 'AI Evaluation' })
+  await page.getByRole('link', { name: 'Evaluate U-0001' }).click()
+  await expect(page.getByText('U-0001 · PHY-2026-MID · 2024')).toBeVisible()
+  const row = page.getByRole('row', { name: /Test Student One/ })
+  await expect(row).toContainText('TST001')
+  await row
+    .getByRole('link', { name: /(Open the booklet|Review questions) of Test Student One/ })
     .click()
-  await expect(page.getByLabel('Unit', { exact: true })).toContainText(
-    'U-0001 · PHY-2026-MID · 2024',
-  )
-  const card = page.getByRole('article', { name: 'Submission Test Student One' })
-  await expect(card).toContainText('USN: TST001')
-  await card.getByRole('button', { name: /Run AI Eval|Open/ }).click()
+  await page.getByRole('link', { name: /Pages and segments/ }).click()
   await expect(page).toHaveURL(/\/evaluate\?booklet=/)
   await expect(
     page
       .getByRole('list', { name: 'Evaluation steps' })
-      .getByRole('button', { name: '2. AI Segmentation' }),
+      .getByRole('button', { name: '1. AI Segmentation' }),
   ).toHaveAttribute('aria-current', 'step')
   await expect(page.getByRole('article', { name: /Question 1 Answer Clip/ })).toBeVisible({
     timeout: 20_000,

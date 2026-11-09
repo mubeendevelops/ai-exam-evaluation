@@ -36,8 +36,8 @@ test('on a phone the sidebar is a drawer behind the menu button and nothing scro
   await expect(sidebar).toBeHidden()
   await expect(menu).toBeFocused()
 
-  await go(page, 'AI Evaluation')
-  await expect(page).toHaveURL(/\/evaluate$/)
+  await go(page, 'Q&A DB')
+  await expect(page).toHaveURL(/\/qna$/)
   await expect(sidebar).toBeHidden()
   await go(page, 'Schema Designer')
   await expect(page).toHaveURL(/\/schema$/)
@@ -108,14 +108,17 @@ test('on a phone the submission list and segmentation steps do not scroll sidewa
   await page.getByLabel('Security Access Password').fill('correct horse battery staple')
   await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
   await expect(page).toHaveURL(/\/sme$/) // an SME lands on My Assignments (P31)
-  await go(page, 'AI Evaluation')
+  await page.getByRole('link', { name: 'Evaluate U-0001' }).click()
 
   const sideways = () =>
     page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
-  await expect(page.getByRole('article', { name: 'Submission Test Student One' })).toBeVisible()
+  await expect(page.getByRole('row', { name: /Test Student One/ })).toBeVisible()
   expect(await sideways()).toBeLessThanOrEqual(0)
 
-  await page.getByRole('button', { name: 'Run AI Eval' }).click()
+  await page.getByRole('link', { name: 'Open the booklet of Test Student One' }).click()
+  await expect(page.getByRole('heading', { name: 'Test Student One' })).toBeVisible()
+  expect(await sideways()).toBeLessThanOrEqual(0)
+  await page.getByRole('link', { name: /Pages and segments/ }).click()
   const one = page.getByRole('article', { name: /Question 1 Answer Clip/ })
   await expect(one).toBeVisible({ timeout: 20_000 })
   await one.getByRole('button', { name: /Line 2, low OCR confidence/ }).click()

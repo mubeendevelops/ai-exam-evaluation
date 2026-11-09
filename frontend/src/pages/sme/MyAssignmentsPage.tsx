@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { RequestDialog, SubmitDialog, useUnitBooklets } from '../../components/evaluate/UploadStep'
+import { DelegateDialog, MyRequests, PendingRequest } from '../../components/sme/DelegateDialog'
+import { SubmitUnit } from '../../components/sme/SubmitDialog'
 import { SelectInput } from '../../components/schema/controls'
 import { Badge, EmptyState, GlassPanel } from '../../components/ui'
 import { RowButton } from '../admin/controls'
@@ -35,8 +36,8 @@ const action =
 /**
  * My Assignments (P31, D216): the SME's landing page. Two cards of figures (the server counts
  * them), the units table from `GET /units` with sort and state filter kept in the address, and
- * the mock's guidelines card without its imagery. Evaluate opens step 1 of `/evaluate` with the
- * unit picked; Delegate and Submit are the existing dialogs (P32 replaces them).
+ * the mock's guidelines card without its imagery. Evaluate opens the unit's student list (P32);
+ * Delegate asks the admin, perhaps naming a replacement (D218); Submit is the P28 dialog.
  */
 export default function MyAssignmentsPage() {
   const [params, setParams] = useSearchParams()
@@ -139,6 +140,7 @@ export default function MyAssignmentsPage() {
         </GlassPanel>
       </div>
 
+      <MyRequests />
       <GlassPanel as="section" aria-labelledby="guidelines-heading" className="space-y-3 p-5">
         <h2 id="guidelines-heading" className="text-base font-semibold text-white">
           AI-assisted evaluation and question schema blueprinting
@@ -150,7 +152,7 @@ export default function MyAssignmentsPage() {
         </p>
         <div className="flex flex-wrap gap-2">
           {start ? (
-            <Link to={`/evaluate?unit=${start.id}`} className={action}>
+            <Link to={`/sme/units/${start.id}`} className={action}>
               Start evaluating {start.code} &rarr;
             </Link>
           ) : (
@@ -358,7 +360,7 @@ function UnitsTable({ units }: { units: WorkUnit[] }) {
                 <td className="px-3 py-3">
                   <div className="flex flex-wrap gap-1.5">
                     <Link
-                      to={`/evaluate?unit=${u.id}`}
+                      to={`/sme/units/${u.id}`}
                       className={action}
                       aria-label={`Evaluate ${u.code}`}
                     >
@@ -366,7 +368,7 @@ function UnitsTable({ units }: { units: WorkUnit[] }) {
                     </Link>
                     {u.state === 'open' &&
                       (u.pending_request ? (
-                        <Badge tone="amber">Reassignment requested</Badge>
+                        <PendingRequest unit={u} />
                       ) : (
                         <RowButton aria-label={`Delegate ${u.code}`} onClick={() => setAsking(u)}>
                           Delegate
@@ -388,22 +390,8 @@ function UnitsTable({ units }: { units: WorkUnit[] }) {
           })}
         </tbody>
       </table>
-      {asking && <RequestDialog unit={asking} onClose={() => setAsking(null)} />}
+      {asking && <DelegateDialog unit={asking} onClose={() => setAsking(null)} />}
       {submitting && <SubmitUnit unit={submitting} onClose={() => setSubmitting(null)} />}
     </div>
   )
-}
-
-/** Submit needs the unit's booklets (which to give a reason for): load them, then the dialog. */
-function SubmitUnit({ unit, onClose }: { unit: WorkUnit; onClose: () => void }) {
-  const booklets = useUnitBooklets(unit.id)
-  if (booklets.isError) {
-    return (
-      <p role="alert" className="mt-2 text-xs text-red-300">
-        The booklets of {unit.code} could not be loaded.
-      </p>
-    )
-  }
-  if (!booklets.data) return null
-  return <SubmitDialog unit={unit} booklets={booklets.data.items} onClose={onClose} />
 }

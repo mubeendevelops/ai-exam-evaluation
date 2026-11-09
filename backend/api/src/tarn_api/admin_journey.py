@@ -75,7 +75,7 @@ ADMIN_BANNED = ("mark", "score", "credit", "suggest", "grade", "review", "sheet"
 ADMIN_ALLOWED = frozenset(
     {"total_marks", "in_review", "needs_text_pages", "text_read", "needs_text", "unmarked"}
 )
-ADMIN_EMPTY = frozenset({"text_url", "image_url", "original_url", "pdf_url"})
+ADMIN_EMPTY = frozenset({"text_url", "image_url", "original_url", "pdf_url", "answers"})
 
 
 def _items(value: Any) -> Iterator[tuple[str, Any]]:
@@ -546,10 +546,11 @@ class AdminJourney:
         assert all(b["outcome"] == "approved" and b["sheets"] for b in record["booklets"])
         amended = next(b for b in record["booklets"] if b["booklet_id"] == target)
         assert [s["version"] for s in amended["sheets"]] == [1, 2]
-        evaluated = self.ok(c.get(f"{BASE}/evaluated-booklets", headers=sme2))["items"]
-        assert {e["id"] for e in evaluated} == set(booklets)
-        for item in evaluated:
-            for sheet in item["sheets"]:
+        listed = self.ok(c.get(f"{BASE}/units/{uid}", headers=sme2))["booklets"]
+        assert {b["id"] for b in listed} == set(booklets)
+        for booklet_id in booklets:
+            sheets = self.ok(c.get(f"{BASE}/booklets/{booklet_id}/result-sheets", headers=sme2))
+            for sheet in sheets:
                 pdf = c.get(sheet["pdf_url"], headers=sme2)
                 assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
         assert self.admin_get(admin, f"/units/{uid}")["state"] == "frozen"

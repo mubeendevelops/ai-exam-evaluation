@@ -6,7 +6,15 @@ from dataclasses import replace
 from typing import Protocol
 from uuid import UUID
 
-from tarn_core.domain.booklet import WAITING_STATUSES, Answer, Booklet, Page, Region, Segment
+from tarn_core.domain.booklet import (
+    WAITING_STATUSES,
+    Answer,
+    AnswerStatus,
+    Booklet,
+    Page,
+    Region,
+    Segment,
+)
 from tarn_core.domain.common import EngineRef
 from tarn_core.domain.content import (
     Glossary,
@@ -19,6 +27,12 @@ from tarn_core.domain.content import (
 from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
+from tarn_core.domain.student_list import (
+    ROW_STATUS_OF,
+    AnswerTally,
+    UnitRowQuery,
+    UnitRows,
+)
 from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
 from tarn_core.domain.unit import (
     DelegationRequest,
@@ -478,7 +492,8 @@ class MemoryStudentRepository:
 
 
 class MemoryBookletRepository:
-    def __init__(self, log: TenantLog) -> None:
+    def __init__(self, log: TenantLog, *, students: MemoryStudentRepository) -> None:
+        self._students = students
         self._booklets: _Table[BookletId, Booklet] = _Table(log, "booklet")
         self._pages: _Table[PageId, Page] = _Table(log, "page")
         self._regions: _Table[UUID, Region] = _Table(log, "region")
@@ -500,6 +515,29 @@ class MemoryBookletRepository:
 
     def in_unit(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[Booklet]:
         return [b for b in self._booklets.values(college_id) if b.unit_id == unit_id]
+
+    def unit_rows(self, college_id: CollegeId, unit_id: UnitId, query: UnitRowQuery) -> UnitRows:
+        needle = query.needle
+        usn = "".join(needle.split()).upper()
+        found: list[tuple[str, str, Booklet]] = []
+        for b in self.in_unit(college_id, unit_id):
+            student = self._students.get(college_id, b.student_id)
+            if query.rows and ROW_STATUS_OF[b.status] not in query.rows:
+                continue
+            if needle and not (student.usn.startswith(usn) or needle in student.name.lower()):
+                continue
+            found.append((student.usn, str(b.id), b))
+        found.sort(key=lambda t: (t[0], t[1]))
+        end = None if query.limit is None else query.offset + query.limit
+        page = [b for _, _, b in found[query.offset : end]]
+        tallies: dict[BookletId, AnswerTally] = {}
+        for b in page:
+            attempted = [a for a in self.answers(college_id, b.id) if a.segment_ids]
+            tallies[b.id] = AnswerTally(
+                attempted=len(attempted),
+                approved=sum(1 for a in attempted if a.status is AnswerStatus.APPROVED),
+            )
+        return UnitRows(booklets=page, tallies=tallies, matching=len(found))
 
     def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:
         return sum(

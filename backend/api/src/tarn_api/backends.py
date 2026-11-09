@@ -226,7 +226,10 @@ class Unit:
     @property
     def delegation(self) -> DelegationService:
         return DelegationService(
-            units=self.scope.units, users=self.scope.users, runtime=self.scope.runtime
+            units=self.scope.units,
+            users=self.scope.users,
+            entitlements=self.scope.entitlements,
+            runtime=self.scope.runtime,
         )
 
     @property

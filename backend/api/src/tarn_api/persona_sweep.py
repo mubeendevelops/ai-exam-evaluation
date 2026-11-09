@@ -89,6 +89,7 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("GET", "/api/v1/units/{unit_id}/transfers"): _REDISTRIBUTE,
     ("POST", "/api/v1/delegation-requests/{request_id}/decline"): _REDISTRIBUTE,
     ("POST", "/api/v1/units/{unit_id}/delegation-requests"): _REQUEST,
+    ("GET", "/api/v1/units/{unit_id}/delegates"): _REQUEST,
     ("POST", "/api/v1/delegation-requests/{request_id}/withdraw"): _REQUEST,
     ("GET", "/api/v1/delegation-requests"): _needs(C.REDISTRIBUTE_UNITS, C.REQUEST_REASSIGNMENT),
     # --- submit, return, freeze (P28, D164) ---------------------------------------------------
@@ -145,7 +146,6 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("GET", "/api/v1/booklets/{booklet_id}/diagrams"): _EVALUATE,
     ("POST", "/api/v1/booklets/{booklet_id}/diagrams/{diagram_id}/edits"): _EVALUATE,
     ("GET", "/api/v1/booklets/{booklet_id}/answers/{answer_id}/diagram-comparisons"): _EVALUATE,
-    ("GET", "/api/v1/evaluated-booklets"): _EVALUATE,
     ("GET", "/api/v1/booklets/{booklet_id}/result-sheets/{version}/pdf"): _EVALUATE,
     ("POST", "/api/v1/booklets/{booklet_id}/lock"): _EVALUATE,
     ("DELETE", "/api/v1/booklets/{booklet_id}/lock"): _EVALUATE,

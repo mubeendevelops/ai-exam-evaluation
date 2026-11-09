@@ -275,6 +275,7 @@ delegation_requests = Table(
     Column("closed_at", DateTime(timezone=True), nullable=True),
     Column("note", Text(), nullable=False, server_default=""),
     _seq(),
+    _uuid("suggested_to", nullable=True),  # 0018
 )
 
 unit_transfers = Table(

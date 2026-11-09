@@ -12,6 +12,7 @@ from fastapi import APIRouter, File, Query, Request, UploadFile, status
 from tarn_api.backends import Unit, unit_of_work
 from tarn_api.routes.booklets import booklet_out, is_evaluator, read_capped
 from tarn_api.schemas import (
+    DelegateOut,
     DelegationRequestIn,
     DelegationRequestOut,
     DelegationUnitOut,
@@ -23,7 +24,9 @@ from tarn_api.schemas import (
     FrozenRecordOut,
     FrozenSheetOut,
     ReturnIn,
+    RowStatusName,
     SubmitIn,
+    SuggestedSmeOut,
     TransferIn,
     TransferOut,
     UnitChoicePaperOut,
@@ -48,6 +51,12 @@ from tarn_core.domain.blueprint import ExamBlueprint
 from tarn_core.domain.booklet import APPROVED_STATUSES, Booklet, BookletStatus
 from tarn_core.domain.content import Subject
 from tarn_core.domain.personas import Capability
+from tarn_core.domain.student_list import (
+    MAX_ROW_LIMIT,
+    MAX_ROW_TEXT,
+    RowStatus,
+    UnitRowQuery,
+)
 from tarn_core.domain.unit import DelegationRequest, UnitState, UnmarkedBooklet, UnmarkedReason
 from tarn_core.domain.unit import Unit as WorkUnit
 from tarn_core.ids import BlueprintId, BookletId, CollegeId, SubjectId, UnitId, UserId
@@ -191,6 +200,12 @@ def delegation_out(
         state=request.state.value,
         closed_at=request.closed_at,
         note=request.note,
+        suggested=None
+        if request.suggested_to is None
+        else SuggestedSmeOut(
+            **owner_out(unit, college_id, request.suggested_to).model_dump(),
+            available=unit.delegation.available(college_id, request),
+        ),
     )
 
 
@@ -287,22 +302,46 @@ def create_unit(body: UnitIn, who: PrincipalDep, backends: BackendsDep) -> UnitO
 @router.get(
     "/units/{unit_id}",
     response_model=UnitDetailOut,
-    responses={404: {"model": ErrorOut}},
-    summary="One unit with each booklet's processing status (no marks for the admin, D167)",
+    responses={404: {"model": ErrorOut}, 422: {"model": ErrorOut}},
+    summary="One unit with its booklets by roll number: the admin's processing view (no marks, "
+    "D167) and the SME's student list (P32)",
+    description="`q` matches a roll number from its start or a student's name anywhere in it; "
+    "`status` (repeatable) keeps those row statuses; `offset` and `limit` page the booklets "
+    "(without `limit`, every one). `matching` counts the booklets that match. For the SME each "
+    "booklet carries its approved and attempted answers.",
 )
-def get_unit(unit_id: UUID, who: PrincipalDep, backends: BackendsDep) -> UnitDetailOut:
+def get_unit(
+    unit_id: UUID,
+    who: PrincipalDep,
+    backends: BackendsDep,
+    q: Annotated[str, Query(max_length=MAX_ROW_TEXT)] = "",
+    row_status: Annotated[list[RowStatusName] | None, Query(alias="status")] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int | None, Query(ge=1, le=MAX_ROW_LIMIT)] = None,
+) -> UnitDetailOut:
     with unit_of_work(backends, who.college_id) as unit:
         user = current_user(unit, who, Capability.VIEW_PROGRESS)
         work = unit.units.get(who.college_id, who.user_id, UnitId(unit_id))
         evaluator = is_evaluator(user)
+        rows = unit.scope.booklets.unit_rows(
+            who.college_id,
+            work.id,
+            UnitRowQuery(
+                text=q,
+                rows=frozenset(RowStatus(r) for r in row_status or ()),
+                offset=offset,
+                limit=limit,
+            ),
+        )
         booklets = [
-            booklet_out(unit, who.college_id, b, evaluator=evaluator)[0]
-            for b in unit.scope.booklets.in_unit(who.college_id, work.id)
+            booklet_out(unit, who.college_id, b, evaluator=evaluator, tally=rows.tally(b.id))[0]
+            for b in rows.booklets
         ]
         limits = backends.upload_limits
         return UnitDetailOut(
             **unit_out(unit, who.college_id, work).model_dump(),
             booklets=booklets,
+            matching=rows.matching,
             waiting=unit.scope.booklets.count_waiting(who.college_id, who.user_id),
             max_waiting=limits.max_waiting,
             max_files=limits.max_batch_files,
@@ -418,9 +457,27 @@ def request_reassignment(
     with unit_of_work(backends, who.college_id) as unit:
         current_user(unit, who, Capability.REQUEST_REASSIGNMENT)
         made = unit.delegation.request(
-            who.college_id, who.user_id, UnitId(unit_id), reason=body.reason
+            who.college_id,
+            who.user_id,
+            UnitId(unit_id),
+            reason=body.reason,
+            suggested_to=None if body.suggested_to is None else UserId(body.suggested_to),
         )
         return delegation_out(unit, who.college_id, made)
+
+
+@router.get(
+    "/units/{unit_id}/delegates",
+    response_model=list[DelegateOut],
+    responses={404: {"model": ErrorOut}, 409: {"model": ErrorOut}},
+    summary="Who you may suggest when asking to move your open unit (SME): names only",
+    description="The other active SMEs entitled to the unit's subject, by name. Never you.",
+)
+def unit_delegates(unit_id: UUID, who: PrincipalDep, backends: BackendsDep) -> list[DelegateOut]:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.REQUEST_REASSIGNMENT)
+        found = unit.delegation.candidates(who.college_id, who.user_id, UnitId(unit_id))
+        return [DelegateOut(id=u.id, name=u.display_name) for u in found]
 
 
 # --- submit, return, freeze (P28, D164) --------------------------------------------------------

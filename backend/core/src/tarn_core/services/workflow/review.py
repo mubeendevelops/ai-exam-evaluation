@@ -54,6 +54,7 @@ from tarn_core.ids import (
     AnswerId,
     BookletId,
     CollegeId,
+    QuestionId,
     ResultSheetId,
     ReviewId,
     UserId,
@@ -85,6 +86,8 @@ class Opened:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AnswerReview:
     answer: Answer
+    question_id: QuestionId
+    """The question the answer's slot is marked against (P32: the question list)."""
     max_marks: Decimal
     score: AnswerScore | None
     """The latest AI suggestion."""
@@ -226,10 +229,11 @@ class ReviewService:
         ):
             scores = self._scores.scores(college_id, answer.id)
             reviews = self._scores.reviews(college_id, answer.id)
-            _, _, max_marks = blueprint.leaf(answer.slot_label)
+            _, question_id, max_marks = blueprint.leaf(answer.slot_label)
             answers.append(
                 AnswerReview(
                     answer=answer,
+                    question_id=question_id,
                     max_marks=max_marks,
                     score=scores[-1] if scores else None,
                     review=reviews[-1] if reviews else None,

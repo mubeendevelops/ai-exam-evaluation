@@ -1,93 +1,90 @@
-import { useSearchParams } from 'react-router'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router'
 import { PageBanner } from '../components/app/PageBanner'
 import { EvaluationStep } from '../components/evaluate/EvaluationStep'
+import { useBookletDetail } from '../components/evaluate/queries'
 import { SegmentationStep } from '../components/evaluate/SegmentationStep'
-import { UploadStep } from '../components/evaluate/UploadStep'
-import { EmptyState, Stepper } from '../components/ui'
-import { SmallButton } from '../components/schema/controls'
+import { Stepper } from '../components/ui'
+import { questionListPath } from './sme/StudentListPage'
 
-export const evaluationSteps = ['Scan Upload', 'AI Segmentation', 'Evaluation View'] as const
+export const evaluationSteps = ['AI Segmentation', 'Evaluation View'] as const
 
 /**
- * `/evaluate`: the three steps of the prototype's evaluation tab. The address says where you
- * are, so Back and a reload keep the place: `/evaluate[?unit=<id>]` (1, Scan Upload, with that
- * unit picked), `/evaluate?booklet=<id>` (2, AI Segmentation) and `?booklet=<id>&step=3` (3, Evaluation View).
+ * `/evaluate`: the evaluation screens of one booklet inside the SME frame. The address says
+ * where you are, so Back and a reload keep the place: `?booklet=<id>` (AI Segmentation) and
+ * `?booklet=<id>&step=3[&answer=<label>][&view=summary]` (Evaluation View). `&from=` carries
+ * the student list's filter for the breadcrumb. The SME reaches a booklet from a unit's student
+ * and question lists (P32, D217); without a booklet the page sends them to My Assignments.
  */
 export default function EvaluatePage() {
   const [params, setParams] = useSearchParams()
+  const navigate = useNavigate()
   const booklet = params.get('booklet')
-  const unit = params.get('unit') ?? ''
-  const step: 0 | 1 | 2 =
-    params.get('step') === '3' ? 2 : booklet || params.get('step') === '2' ? 1 : 0
+  const from = params.get('from') ?? ''
+  const step: 0 | 1 = params.get('step') === '3' ? 1 : 0
+  const detail = useBookletDetail(booklet ?? '')
+  if (!booklet) return <Navigate to="/sme" replace />
 
-  const toUploads = () => setParams({})
-  const toSegments = (id: string) => setParams({ booklet: id })
-  const toEvaluation = (id: string) => setParams({ booklet: id, step: '3' })
-
-  const select = (index: number) => {
-    if (index === 0) toUploads()
-    else if (index === 1) setParams(booklet ? { booklet } : { step: '2' })
-    else if (booklet) toEvaluation(booklet)
-    else setParams({ step: '3' })
-  }
+  const keep: Record<string, string> = from ? { from } : {}
+  const toSegments = () => setParams({ booklet, ...keep })
+  const toEvaluation = () => setParams({ booklet, step: '3', ...keep })
+  const unit = detail.data?.unit
+  const students = unit ? `/sme/units/${unit.id}${from}` : '/sme'
+  const questions = unit ? questionListPath(unit.id, booklet, from) : '/sme'
+  const label = step === 1 ? params.get('answer') : null
 
   return (
     <div className="space-y-6">
+      <nav aria-label="Breadcrumb" className="text-xs text-gray-400">
+        <Link to="/sme" className="hover:text-white">
+          My Assignments
+        </Link>
+        {unit && detail.data && (
+          <>
+            {' › '}
+            <Link to={students} className="hover:text-white">
+              {unit.code}
+            </Link>
+            {' › '}
+            <Link to={questions} className="hover:text-white">
+              {detail.data.student.name}
+            </Link>
+          </>
+        )}
+        {' › '}
+        <span className="text-gray-200">
+          {step === 0 ? 'Pages and segments' : label ? `Q${label}` : 'Evaluation'}
+        </span>
+      </nav>
       <PageBanner
         icon="fa-solid fa-microchip"
         iconTone="text-cyan-400"
         title="AI Automated Answer Evaluation Pipeline"
-        description="Bulk uploaded handwritten answer sheets undergo instant AI question segmentation, keyword mapping & rubric grading."
+        description="Handwritten answer sheets are split into answers by the AI, mapped to the key and graded against the rubric; you decide every mark."
       >
         <Stepper
           steps={evaluationSteps}
           current={step}
-          onSelect={select}
+          onSelect={(index) => (index === 0 ? toSegments() : toEvaluation())}
           label="Evaluation steps"
         />
       </PageBanner>
 
       {step === 0 && (
-        <UploadStep unit={unit} onPick={(id) => setParams({ unit: id })} onOpen={toSegments} />
+        <SegmentationStep
+          key={booklet}
+          bookletId={booklet}
+          onBack={() => void navigate(questions)}
+          onProceed={toEvaluation}
+        />
       )}
-      {step === 1 &&
-        (booklet ? (
-          <SegmentationStep
-            key={booklet}
-            bookletId={booklet}
-            onBack={toUploads}
-            onProceed={() => toEvaluation(booklet)}
-          />
-        ) : (
-          <ChooseBooklet onBack={toUploads} what="see how it was split into answers" />
-        ))}
-      {step === 2 &&
-        (booklet ? (
-          <EvaluationStep
-            key={booklet}
-            bookletId={booklet}
-            onBack={() => toSegments(booklet)}
-            onSubmissions={toUploads}
-          />
-        ) : (
-          <ChooseBooklet onBack={toUploads} what="decide its marks" />
-        ))}
+      {step === 1 && (
+        <EvaluationStep
+          key={booklet}
+          bookletId={booklet}
+          onBack={toSegments}
+          onStudents={() => void navigate(students)}
+        />
+      )}
     </div>
-  )
-}
-
-function ChooseBooklet({ onBack, what }: { onBack: () => void; what: string }) {
-  return (
-    <EmptyState
-      icon="fa-solid fa-file-circle-question"
-      title="Choose a booklet first"
-      action={
-        <SmallButton icon="fa-solid fa-arrow-left" onClick={onBack}>
-          Go to the submissions
-        </SmallButton>
-      }
-    >
-      Press Run AI Eval or Open on one of the uploaded submissions to {what}.
-    </EmptyState>
   )
 }

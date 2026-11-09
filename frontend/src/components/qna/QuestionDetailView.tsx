@@ -145,7 +145,7 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
         {back}
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            to="/evaluate"
+            to="/sme"
             className="inline-flex items-center gap-1.5 rounded-xl border border-gray-700 bg-gray-800 px-4 py-1.5 text-xs font-semibold text-gray-200 hover:bg-gray-700"
           >
             <i className="fa-solid fa-flask-vial text-purple-400" aria-hidden="true" />

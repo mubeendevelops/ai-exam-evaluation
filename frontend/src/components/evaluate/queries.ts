@@ -17,6 +17,7 @@ export const reviewKey = (id: string) => ['review', id] as const
 export function useBookletDetail(id: string) {
   return useQuery({
     queryKey: ['booklet', id],
+    enabled: id !== '',
     queryFn: async () => {
       const { data } = await api.GET('/api/v1/booklets/{booklet_id}', {
         params: { path: { booklet_id: id } },

@@ -29,6 +29,14 @@ const PNG = Buffer.from(
 )
 
 const STAGES = ['uploaded', 'processing', 'reading', 'text_ready', 'segmented', 'scored'] as const
+
+/** The student list's badge of a booklet status (P32). */
+function rowStatus(status: string): string {
+  if (status === 'scored') return 'ready'
+  if (status === 'in_review') return 'in_review'
+  if (['approved', 'amendment_in_progress', 'approved_amended'].includes(status)) return 'completed'
+  return 'processing'
+}
 type Stage =
   (typeof STAGES)[number] | 'in_review' | 'approved' | 'amendment_in_progress' | 'approved_amended'
 
@@ -84,8 +92,10 @@ export class FakeBooklets {
 
   private requestOut(r: Record<string, unknown>) {
     const unit = this.unitOut()
+    const suggested = [SME, KIRAN].find((s) => s.id === r.suggested_to)
     return {
       ...r,
+      suggested: suggested ? { ...suggested, available: suggested.id !== this.owner.id } : null,
       unit: {
         id: unit.id,
         code: unit.code,
@@ -231,6 +241,14 @@ export class FakeBooklets {
       needs_text_pages: [],
       failure_reason: null,
       duplicate_of: [],
+      row_status: rowStatus(status),
+      answers:
+        this.viewer === 'sme'
+          ? {
+              attempted: 2,
+              approved: Object.values(this.decisions).filter((d) => d.status === 'approved').length,
+            }
+          : null,
       result: this.final?.startsWith('approved')
         ? {
             total: this.total(),
@@ -309,6 +327,8 @@ export class FakeBooklets {
       rescore_pending: pending,
       attempted: true,
       max_marks: 3,
+      question_id: `q-${label}`,
+      question_code: `PHY-Q${label}`,
       suggestion: {
         id: `${id}-${mark}`,
         mark,
@@ -570,6 +590,7 @@ export class FakeBooklets {
         state: 'pending',
         closed_at: null,
         note: '',
+        suggested_to: body.suggested_to ?? null,
       }
       this.requests.push(made)
       return json(201, this.requestOut(made))
@@ -622,11 +643,26 @@ export class FakeBooklets {
       this.unitMade = true
       return json(201, this.unitOut())
     }
+    if (method === 'GET' && path === `/units/${UNIT}/delegates`) {
+      return json(
+        200,
+        [SME, KIRAN].filter((s) => s.id !== this.owner.id),
+      )
+    }
     if (method === 'GET' && path === `/units/${UNIT}`) {
-      const b = this.uploaded ? [this.bookletOut()] : []
+      const q = (url.searchParams.get('q') ?? '').toLowerCase()
+      const statuses = url.searchParams.getAll('status')
+      const b = (this.uploaded ? [this.bookletOut()] : []).filter(
+        (x) =>
+          (!q ||
+            x.student.name.toLowerCase().includes(q) ||
+            x.student.usn.toLowerCase().startsWith(q)) &&
+          (statuses.length === 0 || statuses.includes(x.row_status)),
+      )
       return json(200, {
         ...this.unitOut(),
         booklets: b,
+        matching: b.length,
         waiting: 0,
         max_waiting: 5,
         max_files: 20,

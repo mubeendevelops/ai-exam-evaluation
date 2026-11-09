@@ -7,9 +7,9 @@ The demo seed's commerce college (``DEMO_COM``, exam QP-CI) is the stage: the ad
 five booklets (the sixth is refused; uploads are the admin's since P24, D162), the queue drains
 one booklet at a time to ``scored``, the SME opens each booklet, approves its answers (one
 overridden with tags and remarks) and the booklet (sheet v1, PDF downloaded); a second SME
-meets the lock; one booklet is
-amended (sheet v2); the evaluated list shows the five; one booklet is deleted. Every write is
-checked for its audit event, and the audit log for secrets and student text."""
+meets the lock; one booklet is amended (sheet v2); the unit's student list shows the five
+completed; one booklet is deleted. Every write is checked for its audit event, and the audit
+log for secrets and student text."""
 
 import json
 from collections.abc import Callable, Sequence
@@ -231,11 +231,13 @@ class Journey:
             lambda: c.delete(f"{BASE}/booklets/{target}/lock", headers=t1),
         )
 
-        # 5. The evaluated list holds all five for the unit's SME, none for the other (P26).
-        evaluated = c.get(f"{BASE}/evaluated-booklets", headers=t1).json()
-        assert {b["id"] for b in evaluated["items"]} == set(booklets)
-        assert c.get(f"{BASE}/evaluated-booklets", headers=t2).json()["items"] == []
-        statuses = {b["id"]: b["status"] for b in evaluated["items"]}
+        # 5. The student list holds all five, completed, for the unit's SME (P32); the other
+        # SME cannot open the unit (P26).
+        listed = c.get(f"{BASE}/units/{unit['id']}", headers=t1).json()["booklets"]
+        assert {b["id"] for b in listed} == set(booklets)
+        assert {b["row_status"] for b in listed} == {"completed"}
+        assert c.get(f"{BASE}/units/{unit['id']}", headers=t2).status_code == 404
+        statuses = {b["id"]: b["status"] for b in listed}
         assert statuses[target] == "approved_amended"
 
         # 6. Deletion: the booklet and its files go; one content-free record stays.

@@ -386,7 +386,9 @@ def make_services(
             mailer=mailer,
             runtime=rt,
         ),
-        delegation=DelegationService(units=mem.units, users=mem.users, runtime=rt),
+        delegation=DelegationService(
+            units=mem.units, users=mem.users, entitlements=mem.entitlements, runtime=rt
+        ),
         unit_flow=UnitFlowService(
             units=mem.units,
             users=mem.users,

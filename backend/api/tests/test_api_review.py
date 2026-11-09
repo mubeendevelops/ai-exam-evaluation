@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from tarn_api.testing import MemoryBackends
 from tarn_core.domain.booklet import Booklet
+from tarn_core.domain.content import Question
 from tarn_core.domain.tenancy import Role, Student
 from tarn_core.ids import AnswerId, AnswerScoreId, CollegeId, StudentId, UserId
 from tarn_core.ports.jobs import JOB_RESCORE_ANSWERS, JOB_RESEGMENT_BOOKLET
@@ -415,49 +416,25 @@ def test_the_pdf_is_the_colleges_own(s: Setup) -> None:
     c = s.client
     _approve_booklet(s)
     assert c.get(f"{s.url}/result-sheets/1/pdf", headers=s.other).status_code == 404
-    other = c.get(f"{BASE}/evaluated-booklets", headers=s.other).json()
-    assert other["items"] == [] and other["total"] == 0
+    assert c.get(f"{s.url}/result-sheets", headers=s.other).status_code == 404
 
 
-def test_the_evaluated_list_searches_and_pages(s: Setup) -> None:
-    c = s.client
-    listing = f"{BASE}/evaluated-booklets"
-    assert c.get(listing, headers=s.teacher).json()["total"] == 0  # nothing approved yet
-    _approve_booklet(s)
-
-    def found(**params: str) -> list[dict[str, Any]]:
-        response = c.get(listing, params=params, headers=s.teacher)
-        assert response.status_code == 200, response.text
-        items: list[dict[str, Any]] = response.json()["items"]
-        return items
-
-    (item,) = found()
-    assert item["id"] == str(s.booklet.id) and item["status"] == "approved"
-    assert item["student"]["name"] == "S One" and item["student"]["usn"] == "TST001"
-    assert item["exam"] == "Synthetic paper, CI shape" and item["sheet_version"] == 1
-    assert item["max_marks"] == 50.0 and item["sheets"][0]["pdf_url"].endswith("/1/pdf")
-    assert [i["id"] for i in found(exam="ci shape")] == [item["id"]] and found(exam="physics") == []
-    assert found(student="one") and found(student="two") == []
-    assert found(usn="tst0") and found(usn="999") == []
-    assert found(status="approved") and found(status="approved_amended") == []
-    assert found(student="one", usn="999") == []
-    assert found(limit="1", offset="1") == []
-    assert c.get(listing, params={"status": "scored"}, headers=s.teacher).status_code == 422
-    assert c.get(listing).status_code == 401
-
-    _amend_two(s)
-    (amended,) = found(status="approved_amended")
-    assert amended["sheet_version"] == 2 and [x["version"] for x in amended["sheets"]] == [1, 2]
+def test_each_answer_names_its_question_for_the_question_list(s: Setup) -> None:
+    review = s.client.get(f"{s.url}/review", headers=s.teacher).json()
+    questions = {q.id: q.code for q in s.mem.content.latest(s.college_id, Question)}
+    assert review["answers"]
+    for answer in review["answers"]:
+        assert questions[UUID(answer["question_id"])] == answer["question_code"]
 
 
-def test_deleting_from_the_list_removes_every_sheet_and_leaves_a_bare_record(s: Setup) -> None:
+def test_deleting_a_booklet_removes_every_sheet_and_leaves_a_bare_record(s: Setup) -> None:
     c = s.client
     _approve_booklet(s)
     _amend_two(s)
     assert [k for k in s.mem.blobs.keys if "/sheets/" in k.value]  # two PDFs stored
     assert c.delete(s.url, headers=s.teacher).status_code == 204
     assert not [k for k in s.mem.blobs.keys if "/sheets/" in k.value]
-    assert c.get(f"{BASE}/evaluated-booklets", headers=s.teacher).json()["items"] == []
+    assert c.get(f"{s.url}/result-sheets", headers=s.teacher).status_code == 404
     assert c.get(f"{s.url}/result-sheets/1/pdf", headers=s.teacher).status_code == 404
     event = s.mem.audit.events[-1]
     assert event.action.value == "booklet.deleted" and event.before is None and event.after is None

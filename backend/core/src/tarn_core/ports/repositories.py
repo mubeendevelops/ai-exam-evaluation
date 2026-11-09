@@ -41,6 +41,7 @@ from tarn_core.domain.overview import (
 )
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
+from tarn_core.domain.student_list import UnitRowQuery, UnitRows
 from tarn_core.domain.tenancy import College, Student, SubjectGrant, User
 from tarn_core.domain.unit import (
     DelegationRequest,
@@ -324,6 +325,12 @@ class BookletRepository(Protocol):
 
     def in_unit(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[Booklet]:
         """The unit's booklets, oldest first."""
+        ...
+
+    def unit_rows(self, college_id: CollegeId, unit_id: UnitId, query: UnitRowQuery) -> UnitRows:
+        """The SME's student list (P32, D217): the unit's booklets that match ``query``, by the
+        student's roll number, one page of them, the tally of each one's answers and how many
+        match in all. One query for the store, never one per booklet."""
         ...
 
     def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:

@@ -15,11 +15,10 @@ async function signOut(page: Page) {
   await page.getByRole('menuitem', { name: /Sign out/ }).click()
 }
 
+/** My Assignments → the unit's student list (P32), where Submit is. */
 async function evaluate(page: Page) {
-  await page
-    .getByRole('navigation', { name: 'SME sections' })
-    .getByRole('link', { name: 'AI Evaluation' })
-    .click()
+  await page.getByRole('link', { name: 'Evaluate U-0001' }).click()
+  await expect(page).toHaveURL(/\/sme\/units\//)
 }
 
 test('the SME submits, the admin returns, the SME resubmits, the Governor freezes', async ({

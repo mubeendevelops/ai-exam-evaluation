@@ -933,7 +933,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** One unit with each booklet's processing status (no marks for the admin, D167) */
+        /**
+         * One unit with its booklets by roll number: the admin's processing view (no marks, D167) and the SME's student list (P32)
+         * @description `q` matches a roll number from its start or a student's name anywhere in it; `status` (repeatable) keeps those row statuses; `offset` and `limit` page the booklets (without `limit`, every one). `matching` counts the booklets that match. For the SME each booklet carries its approved and attempted answers.
+         */
         get: operations["get_unit_api_v1_units__unit_id__get"];
         put?: never;
         post?: never;
@@ -1014,6 +1017,26 @@ export interface paths {
          * @description One pending request per unit (409 while one waits). The admin picks the new SME. Audited.
          */
         post: operations["request_reassignment_api_v1_units__unit_id__delegation_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units/{unit_id}/delegates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Who you may suggest when asking to move your open unit (SME): names only
+         * @description The other active SMEs entitled to the unit's subject, by name. Never you.
+         */
+        get: operations["unit_delegates_api_v1_units__unit_id__delegates_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1369,26 +1392,6 @@ export interface paths {
          * @description One per diagram criterion that was compared; criteria left to the teacher (no reference graph, no drawing) have none.
          */
         get: operations["diagram_comparisons_api_v1_booklets__booklet_id__answers__answer_id__diagram_comparisons_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/evaluated-booklets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Approved booklets with their result sheet versions, newest first
-         * @description `exam` matches the exam title or course code, `student` the name and `usn` the USN, each as a case-insensitive part of it. `status` is `approved`, `amendment_in_progress` (a result sheet stands while an answer is being amended) or `approved_amended`.
-         */
-        get: operations["list_evaluated_api_v1_evaluated_booklets_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1843,6 +1846,19 @@ export interface components {
             /** Unit Code */
             unit_code: string | null;
         };
+        /** AnswerTallyOut */
+        AnswerTallyOut: {
+            /**
+             * Attempted
+             * @description Answers with text: each needs a decision.
+             */
+            attempted: number;
+            /**
+             * Approved
+             * @description Those approved.
+             */
+            approved: number;
+        };
         /** ApprovalOut */
         ApprovalOut: {
             /**
@@ -2113,6 +2129,14 @@ export interface components {
             duplicate_of: string[];
             /** @description The latest result sheet's total, once the booklet is approved. */
             result?: components["schemas"]["BookletResultOut"] | null;
+            /**
+             * Row Status
+             * @description The student list's badge: processing, needs_retake, failed, ready (scored), in_review or completed (a result sheet stands).
+             * @enum {string}
+             */
+            row_status: "processing" | "needs_retake" | "failed" | "ready" | "in_review" | "completed";
+            /** @description Approved of attempted answers; for the SME only (in a unit's list). */
+            answers?: components["schemas"]["AnswerTallyOut"] | null;
             /** Pages */
             pages: components["schemas"]["PageOut"][];
         };
@@ -2180,6 +2204,14 @@ export interface components {
             duplicate_of: string[];
             /** @description The latest result sheet's total, once the booklet is approved. */
             result?: components["schemas"]["BookletResultOut"] | null;
+            /**
+             * Row Status
+             * @description The student list's badge: processing, needs_retake, failed, ready (scored), in_review or completed (a result sheet stands).
+             * @enum {string}
+             */
+            row_status: "processing" | "needs_retake" | "failed" | "ready" | "in_review" | "completed";
+            /** @description Approved of attempted answers; for the SME only (in a unit's list). */
+            answers?: components["schemas"]["AnswerTallyOut"] | null;
         };
         /** BookletPageOut */
         BookletPageOut: {
@@ -2313,10 +2345,28 @@ export interface components {
             /** Note */
             note: string;
         };
+        /**
+         * DelegateOut
+         * @description An SME the unit's owner may suggest: a name only.
+         */
+        DelegateOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** DelegationRequestIn */
         DelegationRequestIn: {
             /** Reason */
             reason: string;
+            /**
+             * Suggested To
+             * @description An SME you suggest (one of `GET /units/{id}/delegates`); the admin decides.
+             */
+            suggested_to?: string | null;
         };
         /** DelegationRequestOut */
         DelegationRequestOut: {
@@ -2346,6 +2396,8 @@ export interface components {
              * @description The admin's note when declining.
              */
             note: string;
+            /** @description The SME the requester suggested, if any. */
+            suggested: components["schemas"]["SuggestedSmeOut"] | null;
         };
         /** DelegationUnitOut */
         DelegationUnitOut: {
@@ -2506,61 +2558,6 @@ export interface components {
         ErrorOut: {
             /** Detail */
             detail: string;
-        };
-        /** EvaluatedBookletOut */
-        EvaluatedBookletOut: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "approved" | "amendment_in_progress" | "approved_amended";
-            student: components["schemas"]["BookletStudentOut"];
-            /**
-             * Exam
-             * @description Title of the exam blueprint the booklet was marked against.
-             */
-            exam: string;
-            /** Course Code */
-            course_code: string;
-            /**
-             * Total
-             * @description Total of the latest result sheet.
-             */
-            total: number;
-            /** Max Marks */
-            max_marks: number;
-            /**
-             * Sheet Version
-             * @description The latest result sheet's version.
-             */
-            sheet_version: number;
-            /**
-             * Evaluated At
-             * Format: date-time
-             * @description When the latest result sheet was issued.
-             */
-            evaluated_at: string;
-            /**
-             * Sheets
-             * @description Every version, oldest first.
-             */
-            sheets: components["schemas"]["SheetVersionOut"][];
-        };
-        /** EvaluatedPageOut */
-        EvaluatedPageOut: {
-            /** Items */
-            items: components["schemas"]["EvaluatedBookletOut"][];
-            /** Total */
-            total: number;
-            /** Limit */
-            limit: number;
-            /** Offset */
-            offset: number;
         };
         /** ExpectedVersionIn */
         ExpectedVersionIn: {
@@ -3741,6 +3738,17 @@ export interface components {
             approval: components["schemas"]["ApprovalOut"] | null;
             /** @description Set while the answer is an amendment draft. */
             draft: components["schemas"]["DraftOut"] | null;
+            /**
+             * Question Id
+             * Format: uuid
+             * @description The question the answer's slot is marked against.
+             */
+            question_id: string;
+            /**
+             * Question Code
+             * @description That question's code; null once the question has been deleted (D166).
+             */
+            question_code: string | null;
         };
         /** ReviewOut */
         ReviewOut: {
@@ -3989,30 +3997,6 @@ export interface components {
             /** Reference Statement */
             reference_statement: string;
         };
-        /** SheetVersionOut */
-        SheetVersionOut: {
-            /** Version */
-            version: number;
-            /** Total */
-            total: number;
-            /** Max Marks */
-            max_marks: number;
-            /**
-             * Issued At
-             * Format: date-time
-             */
-            issued_at: string;
-            /**
-             * Note
-             * @description What this version amended (empty on version 1).
-             */
-            note: string;
-            /**
-             * Pdf Url
-             * @description Where to download the PDF (with the bearer token); null for a sheet that was issued before PDFs were stored.
-             */
-            pdf_url: string | null;
-        };
         /** SlotResultOut */
         SlotResultOut: {
             /** Section Label */
@@ -4254,6 +4238,21 @@ export interface components {
              */
             expected_version?: number | null;
         };
+        /** SuggestedSmeOut */
+        SuggestedSmeOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Available
+             * @description Still active, entitled to the unit's subject and not its owner: the transfer can go to them.
+             */
+            available: boolean;
+        };
         /** SuggestionOut */
         SuggestionOut: {
             /**
@@ -4489,6 +4488,11 @@ export interface components {
              * @description Oldest first. Processing status only: no marks, page images or text (D167).
              */
             booklets: components["schemas"]["BookletOut"][];
+            /**
+             * Matching
+             * @description Booklets that match the filter (all of the unit's without one); `booklets` holds the requested page of them.
+             */
+            matching: number;
             /**
              * Waiting
              * @description Your booklets that are queued or being processed.
@@ -8271,7 +8275,12 @@ export interface operations {
     };
     get_unit_api_v1_units__unit_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                q?: string;
+                status?: ("processing" | "needs_retake" | "failed" | "ready" | "in_review" | "completed")[] | null;
+                offset?: number;
+                limit?: number | null;
+            };
             header?: never;
             path: {
                 unit_id: string;
@@ -8316,13 +8325,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorOut"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Entity */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorOut"];
                 };
             };
         };
@@ -8594,6 +8603,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    unit_delegates_api_v1_units__unit_id__delegates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DelegateOut"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -9854,60 +9930,6 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_evaluated_api_v1_evaluated_booklets_get: {
-        parameters: {
-            query?: {
-                exam?: string;
-                student?: string;
-                usn?: string;
-                status?: ("approved" | "amendment_in_progress" | "approved_amended") | null;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EvaluatedPageOut"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorOut"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };

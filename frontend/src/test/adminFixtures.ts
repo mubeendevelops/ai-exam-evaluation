@@ -144,6 +144,8 @@ export function unitBooklet(over: Partial<Booklet> = {}): Booklet {
     failure_reason: null,
     duplicate_of: [],
     result: null,
+    row_status: 'processing',
+    answers: null,
     ...over,
   }
 }
@@ -155,6 +157,7 @@ export function unitDetailOf(
   return {
     ...unitOf({ counts: { ...COUNTS, total: booklets.length } }),
     booklets,
+    matching: booklets.length,
     waiting: 0,
     max_waiting: 5,
     max_files: 20,
@@ -210,6 +213,7 @@ export function requestOf(over: Partial<DelegationRequest> = {}): DelegationRequ
     state: 'pending',
     closed_at: null,
     note: '',
+    suggested: null,
     ...over,
   }
 }

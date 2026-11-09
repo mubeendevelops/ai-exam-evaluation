@@ -121,4 +121,3 @@ def test_the_unit_detail_shows_progress_and_no_marks(demo: Demo) -> None:
     assert c.get(f"{BASE}/booklets/{booklet}", headers=demo.anita).status_code == 404
     for path in ("review", "result-sheets", "segments"):
         assert c.get(f"{BASE}/booklets/{booklet}/{path}", headers=demo.admin).status_code == 403
-    assert c.get(f"{BASE}/evaluated-booklets", headers=demo.admin).status_code == 403

@@ -13,25 +13,31 @@ export const REASON_MAX = 500
 /**
  * Move an open unit to another SME (P27, D163): only active SMEs entitled to its subject are
  * offered (D160); the reason is required and audited, never emailed. A pending delegation
- * request for the unit closes as done.
+ * request for the unit closes as done. From a request, the SME's suggestion (D218) is picked
+ * first while that SME can still take the unit; the admin may choose someone else.
  */
 export function TransferDialog({
   unit,
   initialReason = '',
+  suggested,
   onClose,
 }: {
   unit: WorkUnit
   initialReason?: string
+  /** The SME the requester suggested. */
+  suggested?: { id: string; name: string } | null
   onClose: () => void
 }) {
   const toast = useToast()
   const queryClient = useQueryClient()
   const smes = useEntitledSmes(unit.subject.id)
-  const [ownerId, setOwnerId] = useState('')
+  const [picked, setPicked] = useState<string | null>(null)
   const [reason, setReason] = useState(initialReason)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const targets = (smes.data ?? []).filter((s) => s.id !== unit.owner.id)
+  const suggestion = suggested && targets.some((t) => t.id === suggested.id) ? suggested : null
+  const ownerId = picked ?? suggestion?.id ?? ''
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -83,9 +89,11 @@ export function TransferDialog({
           hint={
             none
               ? 'No other active SME has this subject: grant it in the SME Directory first.'
-              : 'Only active SMEs who have this subject are offered. Both SMEs are emailed.'
+              : suggestion
+                ? `${suggestion.name} was suggested by ${unit.owner.name}; you may choose someone else. Both SMEs are emailed.`
+                : 'Only active SMEs who have this subject are offered. Both SMEs are emailed.'
           }
-          onChange={(e) => setOwnerId(e.target.value)}
+          onChange={(e) => setPicked(e.target.value)}
         >
           <option value="">Choose an SME…</option>
           {targets.map((s) => (

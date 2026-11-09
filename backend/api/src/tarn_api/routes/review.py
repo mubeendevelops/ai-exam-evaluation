@@ -37,10 +37,12 @@ from tarn_api.schemas import (
 )
 from tarn_api.security import BackendsDep, PrincipalDep, booklet_user
 from tarn_core.domain.booklet import BookletStatus
+from tarn_core.domain.content import Question
 from tarn_core.domain.personas import Capability
 from tarn_core.domain.review import BookletLock, ResultSheet
 from tarn_core.domain.scoring import DISAGREE, AnswerScore
-from tarn_core.ids import AnswerId, BookletId, CollegeId, RegionId, UserId
+from tarn_core.errors import NotFoundError
+from tarn_core.ids import AnswerId, BookletId, CollegeId, QuestionId, RegionId, UserId
 from tarn_core.services.workflow import BookletReview
 
 router = APIRouter(
@@ -162,6 +164,7 @@ def review_out(
     notices: tuple[str, ...] = (),
 ) -> ReviewOut:
     result = view.totals.result
+    codes = _question_codes(unit, college_id, {a.question_id for a in view.answers})
     return ReviewOut(
         booklet_id=view.booklet.id,
         status=view.booklet.status.value,
@@ -201,6 +204,8 @@ def review_out(
                     opened_by=a.draft.opened_by,
                     opened_at=a.draft.opened_at,
                 ),
+                question_id=a.question_id,
+                question_code=codes.get(a.question_id),
             )
             for a in view.answers
         ],
@@ -222,6 +227,19 @@ def review_out(
         rescoring=list(rescoring),
         notices=list(notices),
     )
+
+
+def _question_codes(
+    unit: Unit, college_id: CollegeId, ids: set[QuestionId]
+) -> dict[QuestionId, str]:
+    """The codes of the questions still in the bank (a frozen unit's may be deleted, D166)."""
+    codes: dict[QuestionId, str] = {}
+    for question_id in ids:
+        try:
+            codes[question_id] = unit.scope.content.get(college_id, Question, question_id).code
+        except NotFoundError:
+            continue
+    return codes
 
 
 def _view(unit: Unit, who: PrincipalDep, booklet_id: BookletId) -> ReviewOut:

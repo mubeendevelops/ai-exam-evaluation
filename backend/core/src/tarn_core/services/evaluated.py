@@ -1,14 +1,11 @@
-"""The evaluated booklets database (P18): every approved booklet of the college with its
-student, exam and result sheet versions, searchable by exam, student, USN and status, and the
-stored PDF of any version. College data; every call takes ``college_id``."""
+"""Evaluated booklets (P18): the stored PDF of any result sheet version. The list of evaluated
+booklets went with the Evaluated tab (P32, D215): the SME's student list shows each booklet's
+sheets ("View Final"). College data; every call takes ``college_id``."""
 
-from dataclasses import dataclass
-
-from tarn_core.domain.booklet import APPROVED_STATUSES, Booklet, BookletStatus
+from tarn_core.domain.booklet import BookletStatus
 from tarn_core.domain.review import ResultSheet
-from tarn_core.domain.tenancy import Student, normalise_usn
-from tarn_core.errors import InvariantError, NotFoundError
-from tarn_core.ids import BlueprintId, BookletId, CollegeId
+from tarn_core.errors import NotFoundError
+from tarn_core.ids import BookletId, CollegeId
 from tarn_core.ports.repositories import (
     BookletRepository,
     ContentRepository,
@@ -18,27 +15,6 @@ from tarn_core.ports.repositories import (
 )
 from tarn_core.ports.storage import BlobStore
 from tarn_core.services.access import Reach
-from tarn_core.services.unit_flow import PaperSummary, paper_summary
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class EvaluatedBooklet:
-    booklet: Booklet
-    student: Student
-    exam: str
-    course_code: str
-    sheets: tuple[ResultSheet, ...]
-    """Every version, oldest first; never empty."""
-
-    @property
-    def latest(self) -> ResultSheet:
-        return self.sheets[-1]
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class EvaluatedPage:
-    items: tuple[EvaluatedBooklet, ...]
-    total: int
 
 
 class EvaluatedBooklets:
@@ -58,68 +34,6 @@ class EvaluatedBooklets:
         self._content = content
         self._sheets = sheets
         self._blobs = blobs
-
-    def search(
-        self,
-        college_id: CollegeId,
-        *,
-        reach: Reach,
-        exam: str = "",
-        student: str = "",
-        usn: str = "",
-        status: BookletStatus | None = None,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> EvaluatedPage:
-        """Case-insensitive "contains" on the exam title or course code, the student's name and
-        the USN; ``status`` is one of the approved states. Newest result sheet first."""
-        if status is not None and status not in APPROVED_STATUSES:
-            raise InvariantError(f"an evaluated booklet is {_names(APPROVED_STATUSES)}")
-        exam_q, student_q, usn_q = exam.strip().lower(), student.strip().lower(), normalise_usn(usn)
-        students = {s.id: s for s in self._students.list(college_id)}
-        blueprints: dict[tuple[object, int], PaperSummary] = {}
-        units = {u.id: u for u in self._units.list(college_id)}
-        found: list[EvaluatedBooklet] = []
-        for booklet in self._booklets.list(college_id):
-            if booklet.status not in APPROVED_STATUSES or status not in (None, booklet.status):
-                continue
-            owner = students.get(booklet.student_id)
-            if owner is None:
-                continue
-            if student_q and student_q not in owner.name.lower():
-                continue
-            if usn_q and usn_q not in owner.usn:
-                continue
-            if not reach.sees_booklet(units[booklet.unit_id].subject_id, booklet.unit_id):
-                continue
-            ref = booklet.blueprint
-            blueprint = blueprints.get((ref.id, ref.version))
-            if blueprint is None:
-                # After the freeze the paper may be deleted: its frozen copy names it (D166).
-                blueprint = blueprints[(ref.id, ref.version)] = paper_summary(
-                    self._content,
-                    self._units,
-                    college_id,
-                    booklet.unit_id,
-                    BlueprintId(ref.id),
-                    ref.version,
-                )
-            if exam_q and exam_q not in f"{blueprint.title} {blueprint.course_code}".lower():
-                continue
-            versions = tuple(self._sheets.versions(college_id, booklet.id))
-            if not versions:
-                continue
-            found.append(
-                EvaluatedBooklet(
-                    booklet=booklet,
-                    student=owner,
-                    exam=blueprint.title,
-                    course_code=blueprint.course_code,
-                    sheets=versions,
-                )
-            )
-        found.sort(key=lambda e: (e.latest.issued_at, str(e.booklet.id)), reverse=True)
-        return EvaluatedPage(items=tuple(found[offset : offset + limit]), total=len(found))
 
     def pdf(
         self, college_id: CollegeId, booklet_id: BookletId, version: int, *, reach: Reach

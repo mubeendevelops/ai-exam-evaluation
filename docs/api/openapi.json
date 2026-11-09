@@ -4726,7 +4726,8 @@
         "tags": [
           "units"
         ],
-        "summary": "One unit with each booklet's processing status (no marks for the admin, D167)",
+        "summary": "One unit with its booklets by roll number: the admin's processing view (no marks, D167) and the SME's student list (P32)",
+        "description": "`q` matches a roll number from its start or a student's name anywhere in it; `status` (repeatable) keeps those row statuses; `offset` and `limit` page the booklets (without `limit`, every one). `matching` counts the booklets that match. For the SME each booklet carries its approved and attempted answers.",
         "operationId": "get_unit_api_v1_units__unit_id__get",
         "security": [
           {
@@ -4742,6 +4743,73 @@
               "type": "string",
               "format": "uuid",
               "title": "Unit Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "processing",
+                      "needs_retake",
+                      "failed",
+                      "ready",
+                      "in_review",
+                      "completed"
+                    ],
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 100,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
             }
           }
         ],
@@ -4787,14 +4855,14 @@
             "description": "Not Found"
           },
           "422": {
-            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorOut"
                 }
               }
-            }
+            },
+            "description": "Unprocessable Entity"
           }
         }
       }
@@ -5174,6 +5242,99 @@
               }
             },
             "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/v1/units/{unit_id}/delegates": {
+      "get": {
+        "tags": [
+          "units"
+        ],
+        "summary": "Who you may suggest when asking to move your open unit (SME): names only",
+        "description": "The other active SMEs entitled to the unit's subject, by name. Never you.",
+        "operationId": "unit_delegates_api_v1_units__unit_id__delegates_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "unit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Unit Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DelegateOut"
+                  },
+                  "title": "Response Unit Delegates Api V1 Units  Unit Id  Delegates Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       }
@@ -7059,142 +7220,6 @@
               }
             },
             "description": "Not Found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/evaluated-booklets": {
-      "get": {
-        "tags": [
-          "evaluated booklets"
-        ],
-        "summary": "Approved booklets with their result sheet versions, newest first",
-        "description": "`exam` matches the exam title or course code, `student` the name and `usn` the USN, each as a case-insensitive part of it. `status` is `approved`, `amendment_in_progress` (a result sheet stands while an answer is being amended) or `approved_amended`.",
-        "operationId": "list_evaluated_api_v1_evaluated_booklets_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "exam",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 200,
-              "default": "",
-              "title": "Exam"
-            }
-          },
-          {
-            "name": "student",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 200,
-              "default": "",
-              "title": "Student"
-            }
-          },
-          {
-            "name": "usn",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 40,
-              "default": "",
-              "title": "Usn"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "enum": [
-                    "approved",
-                    "amendment_in_progress",
-                    "approved_amended"
-                  ],
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100,
-              "minimum": 1,
-              "default": 50,
-              "title": "Limit"
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "Offset"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EvaluatedPageOut"
-                }
-              }
-            }
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Forbidden"
           },
           "422": {
             "description": "Validation Error",
@@ -9277,6 +9302,26 @@
         ],
         "title": "ActivityOut"
       },
+      "AnswerTallyOut": {
+        "properties": {
+          "attempted": {
+            "type": "integer",
+            "title": "Attempted",
+            "description": "Answers with text: each needs a decision."
+          },
+          "approved": {
+            "type": "integer",
+            "title": "Approved",
+            "description": "Those approved."
+          }
+        },
+        "type": "object",
+        "required": [
+          "attempted",
+          "approved"
+        ],
+        "title": "AnswerTallyOut"
+      },
       "ApprovalOut": {
         "properties": {
           "id": {
@@ -9852,6 +9897,30 @@
             ],
             "description": "The latest result sheet's total, once the booklet is approved."
           },
+          "row_status": {
+            "type": "string",
+            "enum": [
+              "processing",
+              "needs_retake",
+              "failed",
+              "ready",
+              "in_review",
+              "completed"
+            ],
+            "title": "Row Status",
+            "description": "The student list's badge: processing, needs_retake, failed, ready (scored), in_review or completed (a result sheet stands)."
+          },
+          "answers": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnswerTallyOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Approved of attempted answers; for the SME only (in a unit's list)."
+          },
           "pages": {
             "items": {
               "$ref": "#/components/schemas/PageOut"
@@ -9878,6 +9947,7 @@
           "needs_text_pages",
           "failure_reason",
           "duplicate_of",
+          "row_status",
           "pages"
         ],
         "title": "BookletDetailOut"
@@ -10010,6 +10080,30 @@
               }
             ],
             "description": "The latest result sheet's total, once the booklet is approved."
+          },
+          "row_status": {
+            "type": "string",
+            "enum": [
+              "processing",
+              "needs_retake",
+              "failed",
+              "ready",
+              "in_review",
+              "completed"
+            ],
+            "title": "Row Status",
+            "description": "The student list's badge: processing, needs_retake, failed, ready (scored), in_review or completed (a result sheet stands)."
+          },
+          "answers": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnswerTallyOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Approved of attempted answers; for the SME only (in a unit's list)."
           }
         },
         "type": "object",
@@ -10029,7 +10123,8 @@
           "pages_read",
           "needs_text_pages",
           "failure_reason",
-          "duplicate_of"
+          "duplicate_of",
+          "row_status"
         ],
         "title": "BookletOut"
       },
@@ -10369,6 +10464,26 @@
         ],
         "title": "DeclineIn"
       },
+      "DelegateOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DelegateOut",
+        "description": "An SME the unit's owner may suggest: a name only."
+      },
       "DelegationRequestIn": {
         "properties": {
           "reason": {
@@ -10376,6 +10491,19 @@
             "maxLength": 500,
             "minLength": 1,
             "title": "Reason"
+          },
+          "suggested_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested To",
+            "description": "An SME you suggest (one of `GET /units/{id}/delegates`); the admin decides."
           }
         },
         "additionalProperties": false,
@@ -10433,6 +10561,17 @@
             "type": "string",
             "title": "Note",
             "description": "The admin's note when declining."
+          },
+          "suggested": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestedSmeOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The SME the requester suggested, if any."
           }
         },
         "type": "object",
@@ -10444,7 +10583,8 @@
           "requested_at",
           "state",
           "closed_at",
-          "note"
+          "note",
+          "suggested"
         ],
         "title": "DelegationRequestOut"
       },
@@ -10798,109 +10938,6 @@
           "detail"
         ],
         "title": "ErrorOut"
-      },
-      "EvaluatedBookletOut": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "approved",
-              "amendment_in_progress",
-              "approved_amended"
-            ],
-            "title": "Status"
-          },
-          "student": {
-            "$ref": "#/components/schemas/BookletStudentOut"
-          },
-          "exam": {
-            "type": "string",
-            "title": "Exam",
-            "description": "Title of the exam blueprint the booklet was marked against."
-          },
-          "course_code": {
-            "type": "string",
-            "title": "Course Code"
-          },
-          "total": {
-            "type": "number",
-            "title": "Total",
-            "description": "Total of the latest result sheet."
-          },
-          "max_marks": {
-            "type": "number",
-            "title": "Max Marks"
-          },
-          "sheet_version": {
-            "type": "integer",
-            "title": "Sheet Version",
-            "description": "The latest result sheet's version."
-          },
-          "evaluated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Evaluated At",
-            "description": "When the latest result sheet was issued."
-          },
-          "sheets": {
-            "items": {
-              "$ref": "#/components/schemas/SheetVersionOut"
-            },
-            "type": "array",
-            "title": "Sheets",
-            "description": "Every version, oldest first."
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "status",
-          "student",
-          "exam",
-          "course_code",
-          "total",
-          "max_marks",
-          "sheet_version",
-          "evaluated_at",
-          "sheets"
-        ],
-        "title": "EvaluatedBookletOut"
-      },
-      "EvaluatedPageOut": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/EvaluatedBookletOut"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          },
-          "limit": {
-            "type": "integer",
-            "title": "Limit"
-          },
-          "offset": {
-            "type": "integer",
-            "title": "Offset"
-          }
-        },
-        "type": "object",
-        "required": [
-          "items",
-          "total",
-          "limit",
-          "offset"
-        ],
-        "title": "EvaluatedPageOut"
       },
       "ExpectedVersionIn": {
         "properties": {
@@ -13898,6 +13935,24 @@
               }
             ],
             "description": "Set while the answer is an amendment draft."
+          },
+          "question_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Question Id",
+            "description": "The question the answer's slot is marked against."
+          },
+          "question_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Code",
+            "description": "That question's code; null once the question has been deleted (D166)."
           }
         },
         "type": "object",
@@ -13911,7 +13966,9 @@
           "max_marks",
           "suggestion",
           "approval",
-          "draft"
+          "draft",
+          "question_id",
+          "question_code"
         ],
         "title": "ReviewAnswerOut"
       },
@@ -14478,54 +14535,6 @@
         ],
         "title": "SemanticParamsBody"
       },
-      "SheetVersionOut": {
-        "properties": {
-          "version": {
-            "type": "integer",
-            "title": "Version"
-          },
-          "total": {
-            "type": "number",
-            "title": "Total"
-          },
-          "max_marks": {
-            "type": "number",
-            "title": "Max Marks"
-          },
-          "issued_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Issued At"
-          },
-          "note": {
-            "type": "string",
-            "title": "Note",
-            "description": "What this version amended (empty on version 1)."
-          },
-          "pdf_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pdf Url",
-            "description": "Where to download the PDF (with the bearer token); null for a sheet that was issued before PDFs were stored."
-          }
-        },
-        "type": "object",
-        "required": [
-          "version",
-          "total",
-          "max_marks",
-          "issued_at",
-          "note",
-          "pdf_url"
-        ],
-        "title": "SheetVersionOut"
-      },
       "SlotResultOut": {
         "properties": {
           "section_label": {
@@ -15003,6 +15012,31 @@
         "type": "object",
         "title": "SubmitIn"
       },
+      "SuggestedSmeOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "description": "Still active, entitled to the unit's subject and not its owner: the transfer can go to them."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "available"
+        ],
+        "title": "SuggestedSmeOut"
+      },
       "SuggestionOut": {
         "properties": {
           "id": {
@@ -15472,6 +15506,11 @@
             "title": "Booklets",
             "description": "Oldest first. Processing status only: no marks, page images or text (D167)."
           },
+          "matching": {
+            "type": "integer",
+            "title": "Matching",
+            "description": "Booklets that match the filter (all of the unit's without one); `booklets` holds the requested page of them."
+          },
           "waiting": {
             "type": "integer",
             "title": "Waiting",
@@ -15502,6 +15541,7 @@
           "version",
           "counts",
           "booklets",
+          "matching",
           "waiting",
           "max_waiting",
           "max_files"

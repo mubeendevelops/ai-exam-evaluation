@@ -44,8 +44,6 @@ export const smeGroups: readonly Group[] = [
     items: [
       { to: '/qna', label: 'Q&A DB', icon: 'fa-solid fa-database' },
       { to: '/schema', label: 'Schema Designer', icon: 'fa-solid fa-file-signature' },
-      { to: '/evaluated', label: 'Evaluated', icon: 'fa-solid fa-box-archive' },
-      { to: '/evaluate', label: 'AI Evaluation', icon: 'fa-solid fa-microchip' },
     ],
   },
 ]
@@ -59,8 +57,9 @@ const TITLES: readonly [string, string][] = [
   ['/sme/reports', 'My Reports'],
   ['/qna', 'Q&A DB'],
   ['/schema', 'Schema Designer'],
-  ['/evaluated', 'Evaluated'],
-  ['/evaluate', 'AI Evaluation'],
+  ['/sme/units/:unitId', 'My Assignments'],
+  ['/sme/units/:unitId/booklets/:bookletId', 'My Assignments'],
+  ['/evaluate', 'Evaluation'],
 ]
 
 export function titleOf(pathname: string): string {

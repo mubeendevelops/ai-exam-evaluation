@@ -11,18 +11,10 @@ import { RecoveryCodesModal } from './RecoveryCodesModal'
 import { StatusPill } from './StatusPill'
 import { UserMenu } from './UserMenu'
 
-/** Tab names follow the build plan (D51); the icons are the prototype's. Evaluated (P18) is the
- * evaluated booklets list the build plan asks for: the prototype has no screen for it (D128). */
+/** Tab names follow the build plan (D51); the icons are the prototype's. AI Evaluation and
+ * Evaluated went in P32 (the SME's student and question lists replace them, D215). */
 export const appTabs: readonly (TabItem & { capability: Capability })[] = [
   { to: '/qna', label: 'Q&A DB', icon: 'fa-solid fa-database', capability: 'author_content' },
-  {
-    to: '/evaluate',
-    label: 'AI Evaluation',
-    shortLabel: 'AI Eval',
-    icon: 'fa-solid fa-microchip',
-    capability: 'evaluate',
-  },
-  { to: '/evaluated', label: 'Evaluated', icon: 'fa-solid fa-box-archive', capability: 'evaluate' },
   {
     to: '/schema',
     label: 'Schema Designer',

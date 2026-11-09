@@ -141,9 +141,7 @@ def test_the_frozen_record_and_sheets_outlive_the_paper(w: World) -> None:
     record = w.svc.unit_flow.frozen_record(w.cid, w.governor.id, w.unit_id())
     assert record.papers[0]["title"] == w.paper.title
     assert record.booklets[0].total == sheet.total
-    # The evaluated list names the paper from the frozen record; the PDF still downloads.
-    found = w.evaluated().search(w.cid, reach=WHOLE_COLLEGE)
-    assert [(e.booklet.id, e.exam) for e in found.items] == [(w.booklet.id, w.paper.title)]
+    # The PDF still downloads.
     stored, pdf = w.evaluated().pdf(w.cid, w.booklet.id, sheet.version, reach=WHOLE_COLLEGE)
     assert stored.version == sheet.version and pdf
     # The units list still shows the paper; the review says the content is gone.

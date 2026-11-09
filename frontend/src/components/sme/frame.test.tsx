@@ -10,7 +10,7 @@ afterEach(() => vi.unstubAllGlobals())
 const GROUPS: [string, string[]][] = [
   ['Workspace', ['My Assignments', 'Manage Question Papers', 'Manage Schema']],
   ['Account & Insights', ['My Profile', 'My Reports']],
-  ['Older screens', ['Q&A DB', 'Schema Designer', 'Evaluated', 'AI Evaluation']],
+  ['Older screens', ['Q&A DB', 'Schema Designer']],
 ]
 
 function linksOf(group: HTMLElement): string[] {
@@ -56,7 +56,7 @@ describe('SME portal frame (P31, D215)', () => {
       within(older)
         .getAllByRole('link')
         .map((l) => l.getAttribute('href')),
-    ).toEqual(['/qna', '/schema', '/evaluated', '/evaluate'])
+    ).toEqual(['/qna', '/schema']) // Evaluated and AI Evaluation went in P32
   })
 
   it('has a header with the tab title, a placeholder search and bell, and the user menu', async () => {
@@ -133,11 +133,11 @@ describe('SME portal frame (P31, D215)', () => {
   })
 
   it('renders the evaluation steps inside the SME frame', async () => {
-    smeSession()
-    renderApp('/evaluate?step=3')
-    expect(await screen.findByRole('heading', { name: 'Choose a booklet first' })).toBeVisible()
+    smeSession({ 'GET /api/v1/booklets/b-1': { status: 404, json: { detail: 'Not found.' } } })
+    renderApp('/evaluate?booklet=b-1')
+    expect(await screen.findByText('This booklet could not be opened')).toBeVisible()
     expect(screen.getByRole('navigation', { name: 'SME sections' })).toBeInTheDocument()
-    expect(within(screen.getByRole('banner')).getByText('AI Evaluation')).toBeInTheDocument()
+    expect(within(screen.getByRole('banner')).getByText('Evaluation')).toBeInTheDocument()
   })
 
   it('leaves the admin unchanged: admin sidebar, no SME frame', async () => {

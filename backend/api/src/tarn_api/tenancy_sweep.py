@@ -234,7 +234,6 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("POST", "/api/v1/questions"): Case("own"),
     ("GET", "/api/v1/question-topics"): Case("own"),
     ("GET", "/api/v1/booklets"): Case("own"),
-    ("GET", "/api/v1/evaluated-booklets"): Case("own"),
     ("GET", "/api/v1/units"): Case("own"),
     # The admin's figures count only the caller's college (P29; ``test_api_overview``).
     ("GET", "/api/v1/overview"): Case("own"),
@@ -269,6 +268,8 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("POST", "/api/v1/units/{unit_id}/delegation-requests"): Case(
         "college", _json(lambda w: {"reason": "Mine now?"})
     ),
+    # The suggestion list of another college's unit (P32).
+    ("GET", "/api/v1/units/{unit_id}/delegates"): Case("college"),
     ("GET", "/api/v1/delegation-requests"): Case("own"),
     ("POST", "/api/v1/delegation-requests/{request_id}/decline"): Case(
         "college", _json(lambda w: {"note": "No"}), as_admin=True

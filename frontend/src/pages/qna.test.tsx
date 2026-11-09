@@ -173,7 +173,7 @@ describe('question detail', () => {
     expect(within(files).getByText('0 nodes · 0 edges')).toBeVisible()
     expect(screen.getByRole('link', { name: /Test in AI Evaluator/ })).toHaveAttribute(
       'href',
-      '/evaluate',
+      '/sme',
     )
   })
 

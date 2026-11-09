@@ -287,7 +287,7 @@ export function SegmentationStep({
         title="This booklet could not be opened"
         action={
           <SmallButton icon="fa-solid fa-arrow-left" onClick={onBack}>
-            Back to the submissions
+            Back to the questions
           </SmallButton>
         }
       >
@@ -343,7 +343,7 @@ export function SegmentationStep({
       <GlassPanel className="flex flex-wrap items-center justify-between gap-3 p-3 text-xs">
         <div className="flex flex-wrap items-center gap-3">
           <SmallButton icon="fa-solid fa-arrow-left" tone="gray" onClick={onBack}>
-            Submissions
+            Questions
           </SmallButton>
           <span className="text-gray-400">
             Booklet of{' '}

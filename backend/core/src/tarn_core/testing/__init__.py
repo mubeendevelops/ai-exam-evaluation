@@ -84,7 +84,7 @@ class InMemory:
         self.entitlements = MemoryEntitlementRepository(self.log)
         self.students = MemoryStudentRepository(self.log)
         self.units = MemoryUnitRepository(self.log)
-        self.booklets = MemoryBookletRepository(self.log)
+        self.booklets = MemoryBookletRepository(self.log, students=self.students)
         self.scores = MemoryScoreRepository(self.log)
         self.sheets = MemoryResultSheetRepository(self.log)
         self.overview = MemoryOverviewRepository(

@@ -131,7 +131,6 @@ def test_lists_show_only_the_callers_college(sweep: tuple[World, MemoryBackends]
     c, b = world.client, world.b
     a_booklet = world.ids["booklet_id"]
     assert a_booklet not in c.get("/api/v1/booklets", headers=b).text
-    assert a_booklet not in c.get("/api/v1/evaluated-booklets", headers=b).text
     a_student = world.ids["student_id"]
     a_students = c.get("/api/v1/students", params={"limit": 50}, headers=world.a_admin).json()
     names = {s["name"] for s in a_students}
@@ -234,6 +233,5 @@ def test_a_physics_sme_lists_nothing_of_the_other_subjects(
     assert c.get("/api/v1/questions", headers=physics).json()["total"] == 0
     assert c.get("/api/v1/blueprints", headers=physics).json() == []
     assert c.get("/api/v1/booklets", headers=physics).json()["total"] == 0
-    assert c.get("/api/v1/evaluated-booklets", headers=physics).json()["total"] == 0
     assert c.get("/api/v1/question-topics", headers=physics).json() == []
     assert [s["code"] for s in c.get("/api/v1/subjects", headers=physics).json()] == ["PHY"]

@@ -18,7 +18,12 @@ import {
 import { REASON_MAX, TransferDialog } from './TransferDialog'
 
 type Dialog =
-  | { kind: 'transfer'; unit: WorkUnit; reason?: string }
+  | {
+      kind: 'transfer'
+      unit: WorkUnit
+      reason?: string
+      suggested?: DelegationRequest['suggested']
+    }
   | { kind: 'decline'; request: DelegationRequest }
   | null
 
@@ -172,6 +177,13 @@ function Inbox({
                 {r.unit.owner.name} · {r.unit.counts.completed} of {r.unit.counts.total} completed
               </p>
               <p className="text-xs whitespace-pre-line text-gray-200">{r.reason}</p>
+              {r.suggested && (
+                <p className="text-xs text-cyan-200">
+                  <i className="fa-solid fa-user-check mr-1.5" aria-hidden="true" />
+                  Suggested: {r.suggested.name}
+                  {!r.suggested.available && ' (can no longer take this unit)'}
+                </p>
+              )}
               {r.note && <p className="text-xs text-red-300">Your note: {r.note}</p>}
               {r.state === 'pending' && (
                 <div className="flex gap-2">
@@ -262,7 +274,12 @@ export default function RedistributePage() {
       toast.show('That unit is not open any more.', 'red')
       return
     }
-    setDialog({ kind: 'transfer', unit, reason: request.reason })
+    setDialog({
+      kind: 'transfer',
+      unit,
+      reason: request.reason,
+      suggested: request.suggested?.available ? request.suggested : null,
+    })
   }
 
   return (
@@ -282,6 +299,7 @@ export default function RedistributePage() {
         <TransferDialog
           unit={dialog.unit}
           initialReason={dialog.reason}
+          suggested={dialog.suggested}
           onClose={() => setDialog(null)}
         />
       )}

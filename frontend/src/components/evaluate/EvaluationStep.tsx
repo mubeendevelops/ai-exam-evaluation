@@ -61,11 +61,11 @@ const CHIP: Record<Stage, { label: string; tone: Tone; dot: string }> = {
 export function EvaluationStep({
   bookletId,
   onBack,
-  onSubmissions,
+  onStudents,
 }: {
   bookletId: string
   onBack: () => void
-  onSubmissions: () => void
+  onStudents: () => void
 }) {
   const toast = useToast()
   const queryClient = useQueryClient()
@@ -288,8 +288,8 @@ export function EvaluationStep({
         icon="fa-solid fa-file-circle-question"
         title="This booklet could not be opened"
         action={
-          <SmallButton icon="fa-solid fa-arrow-left" onClick={onSubmissions}>
-            Back to the submissions
+          <SmallButton icon="fa-solid fa-arrow-left" onClick={onStudents}>
+            Back to the students
           </SmallButton>
         }
       >

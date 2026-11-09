@@ -13,7 +13,7 @@ from tarn_core.domain.audit import AuditAction
 from tarn_core.domain.booklet import AnswerStatus, Booklet, BookletStatus
 from tarn_core.domain.identity import IdentityStatus
 from tarn_core.domain.tenancy import Role, User
-from tarn_core.domain.unit import DelegationRequest, RequestState, Unit, UnitTransfer
+from tarn_core.domain.unit import DelegationRequest, RequestState, Unit, UnitState, UnitTransfer
 from tarn_core.errors import (
     AlreadyExistsError,
     BookletLockedError,
@@ -22,6 +22,7 @@ from tarn_core.errors import (
     NotFoundError,
     PermissionDeniedError,
     StaleWriteError,
+    UnitClosedError,
 )
 from tarn_core.ids import (
     BlueprintId,
@@ -482,3 +483,67 @@ def test_the_inbox_lifecycle(w: World) -> None:
         AuditAction.DELEGATION_WITHDRAWN,
         AuditAction.DELEGATION_REQUESTED,
     ]
+
+
+# --- the suggested replacement (P32, D218) ------------------------------------------------
+
+
+def test_the_sme_may_suggest_an_active_entitled_colleague(w: World) -> None:
+    unit = w.unit()
+    ask = w.svc.delegation
+    third = w.add_sme("Third SME")
+    stranger = w.add_sme("Not Entitled", entitled=False)
+    off = _saved(w, replace(w.add_sme("Off Duty"), active=False))
+    # The list: the other active entitled SMEs, by name, never the owner.
+    names = [u.display_name for u in ask.candidates(w.cid, w.first.id, unit.id)]
+    assert names == ["Second SME", "Third SME"]
+    with pytest.raises(NotFoundError):  # another SME's unit
+        ask.candidates(w.cid, w.second.id, unit.id)
+    with pytest.raises(NotFoundError):  # another college
+        ask.candidates(w.other.id, w.other.teacher.id, unit.id)
+    with pytest.raises(PermissionDeniedError):
+        ask.candidates(w.cid, w.admin, unit.id)
+    # Anyone else is refused, the owner and unknown ids included; nothing is stored.
+    for who in (stranger.id, off.id, w.first.id, w.admin, w.other.teacher.id, UserId(uuid4())):
+        with pytest.raises(InvariantError):
+            ask.request(w.cid, w.first.id, unit.id, reason=REASON, suggested_to=who)
+    assert w.mem.units.pending_request(w.cid, unit.id) is None
+
+    made = ask.request(w.cid, w.first.id, unit.id, reason=REASON, suggested_to=third.id)
+    assert made.suggested_to == third.id and ask.available(w.cid, made)
+    event = next(e for e in w.mem.audit.events if e.action is AuditAction.DELEGATION_REQUESTED)
+    assert event.after == {
+        "request_id": str(made.id),
+        "unit_id": str(unit.id),
+        "suggested_to": str(third.id),
+        "reason_length": len(REASON),
+    }
+    assert REASON not in repr(event)  # never the reason's text (D230)
+
+    # No longer entitled: the suggestion stays on record, shown as unavailable.
+    w.grant(third, w.spare.id)  # an SME keeps one subject
+    w.svc.entitlements.revoke(w.cid, w.admin, third.id, w.subject)
+    assert not ask.available(w.cid, w.mem.units.get_request(w.cid, made.id))
+    plain = DelegationRequest(
+        id=made.id,
+        college_id=w.cid,
+        unit_id=unit.id,
+        requested_by=w.first.id,
+        reason=REASON,
+        requested_at=made.requested_at,
+    )
+    assert not ask.available(w.cid, plain)
+    with pytest.raises(InvariantError):  # never the requester (also a database CHECK)
+        replace(plain, suggested_to=w.first.id)
+
+
+def test_a_suggestion_is_unavailable_once_that_sme_owns_the_unit(w: World) -> None:
+    unit = w.unit()
+    ask = w.svc.delegation
+    made = ask.request(w.cid, w.first.id, unit.id, reason=REASON, suggested_to=w.second.id)
+    w.move(unit, w.second)
+    assert not ask.available(w.cid, w.mem.units.get_request(w.cid, made.id))
+    with pytest.raises(UnitClosedError):  # a submitted unit offers nobody
+        submitted = replace(w.unit("2026"), state=UnitState.SUBMITTED)
+        w.mem.units.save(w.cid, replace(submitted, version=submitted.version + 1))
+        ask.candidates(w.cid, w.first.id, submitted.id)

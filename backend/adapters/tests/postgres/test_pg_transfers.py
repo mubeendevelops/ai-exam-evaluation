@@ -144,3 +144,54 @@ def test_a_request_must_be_the_colleges_own_unit(session: Opener) -> None:
                 requested_at=s.clock.now(),
             ),
         )
+
+
+def test_a_suggested_replacement_round_trips_and_stays_in_the_college(
+    session: Opener, test_database: TestDatabase
+) -> None:
+    """Migration 0018 (P32, D218): ``suggested_to`` is a user of the same college (composite
+    foreign key) and never the requester (CHECK)."""
+    a = new_college(session, "TRS")
+    b = new_college(session, "TRT")
+    with session(a.id) as s:
+        svc = make_services(s)
+        paper = ci_shaped_blueprint(s, a)
+        unit_id = unit_for(s, a.id, paper.id)
+        second = User(
+            id=UserId(uuid4()),
+            college_id=a.id,
+            display_name="Second SME",
+            email="second@trs.example",
+            role=Role.SME,
+        )
+        s.users.save(a.id, second)
+        svc.entitlements.grant(a.id, a.admin.id, second.id, paper.subject_id)
+        asked = svc.delegation.request(
+            a.id, a.teacher.id, unit_id, reason="On leave", suggested_to=second.id
+        )
+    with session(a.id) as s:
+        stored = s.units.get_request(a.id, asked.id)
+        assert stored.suggested_to == second.id and stored == asked
+        assert make_services(s).delegation.available(a.id, stored)
+    # Another college's user cannot be named, whatever the service checks.
+    with session(a.id) as s, pytest.raises(NotFoundError):
+        other_unit = unit_for(s, a.id, paper.id, year="2025")
+        s.units.save_request(
+            a.id,
+            replace(
+                asked,
+                id=DelegationRequestId(uuid4()),
+                unit_id=other_unit,
+                suggested_to=b.teacher.id,
+                state=RequestState.PENDING,
+            ),
+        )
+    with (
+        test_database.app(a.id) as conn,
+        pytest.raises(errors.CheckViolation),
+        conn.transaction(),
+    ):
+        conn.execute(
+            "UPDATE delegation_requests SET suggested_to = requested_by WHERE id = %s",
+            (asked.id,),
+        )

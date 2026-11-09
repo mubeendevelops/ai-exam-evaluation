@@ -578,6 +578,12 @@ class BookletResultOut(BaseModel):
 
 
 UnitStateName = Literal["open", "submitted", "frozen"]
+RowStatusName = Literal["processing", "needs_retake", "failed", "ready", "in_review", "completed"]
+
+
+class AnswerTallyOut(BaseModel):
+    attempted: int = Field(description="Answers with text: each needs a decision.")
+    approved: int = Field(description="Those approved.")
 
 
 class BookletUnitOut(BaseModel):
@@ -623,6 +629,13 @@ class BookletOut(BaseModel):
     )
     result: BookletResultOut | None = Field(
         None, description="The latest result sheet's total, once the booklet is approved."
+    )
+    row_status: RowStatusName = Field(
+        description="The student list's badge: processing, needs_retake, failed, ready (scored), "
+        "in_review or completed (a result sheet stands)."
+    )
+    answers: AnswerTallyOut | None = Field(
+        None, description="Approved of attempted answers; for the SME only (in a unit's list)."
     )
 
 
@@ -772,6 +785,10 @@ class UnitDetailOut(UnitOut):
     booklets: list[BookletOut] = Field(
         description="Oldest first. Processing status only: no marks, page images or text (D167)."
     )
+    matching: int = Field(
+        description="Booklets that match the filter (all of the unit's without one); "
+        "`booklets` holds the requested page of them."
+    )
     waiting: int = Field(description="Your booklets that are queued or being processed.")
     max_waiting: int = Field(description="How many you may have waiting at once.")
     max_files: int = Field(description="PDFs per upload.")
@@ -908,6 +925,10 @@ DelegationStateName = Literal["pending", "done", "declined", "withdrawn"]
 
 class DelegationRequestIn(_In):
     reason: str = Reason
+    suggested_to: UUID | None = Field(
+        None,
+        description="An SME you suggest (one of `GET /units/{id}/delegates`); the admin decides.",
+    )
 
 
 class DeclineIn(_In):
@@ -925,6 +946,22 @@ class DelegationUnitOut(BaseModel):
     counts: UnitCountsOut
 
 
+class SuggestedSmeOut(BaseModel):
+    id: UUID
+    name: str
+    available: bool = Field(
+        description="Still active, entitled to the unit's subject and not its owner: the "
+        "transfer can go to them."
+    )
+
+
+class DelegateOut(BaseModel):
+    """An SME the unit's owner may suggest: a name only."""
+
+    id: UUID
+    name: str
+
+
 class DelegationRequestOut(BaseModel):
     id: UUID
     unit: DelegationUnitOut
@@ -934,6 +971,9 @@ class DelegationRequestOut(BaseModel):
     state: DelegationStateName
     closed_at: datetime | None
     note: str = Field(description="The admin's note when declining.")
+    suggested: SuggestedSmeOut | None = Field(
+        description="The SME the requester suggested, if any."
+    )
 
 
 class UnitChoicePaperOut(UnitPaperOut):
@@ -1195,6 +1235,10 @@ class ReviewAnswerOut(BaseModel):
         description="The latest approval (the amended one while the answer is a draft)."
     )
     draft: DraftOut | None = Field(description="Set while the answer is an amendment draft.")
+    question_id: UUID = Field(description="The question the answer's slot is marked against.")
+    question_code: str | None = Field(
+        description="That question's code; null once the question has been deleted (D166)."
+    )
 
 
 class SlotResultOut(BaseModel):
@@ -1230,26 +1274,6 @@ class ResultSheetOut(SheetVersionOut):
     id: UUID
     issued_by: UUID
     lines: list[SlotResultOut]
-
-
-class EvaluatedBookletOut(BaseModel):
-    id: UUID
-    status: Literal["approved", "amendment_in_progress", "approved_amended"]
-    student: BookletStudentOut
-    exam: str = Field(description="Title of the exam blueprint the booklet was marked against.")
-    course_code: str
-    total: float = Field(description="Total of the latest result sheet.")
-    max_marks: float
-    sheet_version: int = Field(description="The latest result sheet's version.")
-    evaluated_at: datetime = Field(description="When the latest result sheet was issued.")
-    sheets: list[SheetVersionOut] = Field(description="Every version, oldest first.")
-
-
-class EvaluatedPageOut(BaseModel):
-    items: list[EvaluatedBookletOut]
-    total: int
-    limit: int
-    offset: int
 
 
 class ReviewOut(BaseModel):

@@ -118,6 +118,40 @@ describe('Redistribute Workload', () => {
     })
   })
 
+  it("pre-fills the transfer with the SME's suggestion while that SME can take the unit", async () => {
+    const suggested = { id: kiran.id, name: kiran.display_name, available: true }
+    session({
+      'GET /api/v1/delegation-requests': { json: [requestOf({ suggested })] },
+    })
+    const user = userEvent.setup()
+    renderApp('/admin/redistribute')
+    const request = await screen.findByRole('listitem', { name: 'Request for U-0001' })
+    expect(within(request).getByText(/Suggested: Kiran Shah/)).toBeInTheDocument()
+    await user.click(within(request).getByRole('button', { name: 'Transfer' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Transfer U-0001' })
+    const target = within(dialog).getByLabelText('New SME')
+    await within(target).findByRole('option', { name: /Kiran Shah/ })
+    expect(target).toHaveValue(kiran.id)
+    expect(dialog).toHaveTextContent('Kiran Shah was suggested by Asha Rao')
+    await user.selectOptions(target, '') // the admin may change it
+    expect(target).toHaveValue('')
+  })
+
+  it('shows a suggestion that can no longer take the unit, and picks nobody', async () => {
+    const suggested = { id: kiran.id, name: kiran.display_name, available: false }
+    session({
+      'GET /api/v1/delegation-requests': { json: [requestOf({ suggested })] },
+    })
+    const user = userEvent.setup()
+    renderApp('/admin/redistribute')
+    const request = await screen.findByRole('listitem', { name: 'Request for U-0001' })
+    expect(within(request).getByText(/can no longer take this unit/)).toBeInTheDocument()
+    await user.click(within(request).getByRole('button', { name: 'Transfer' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Transfer U-0001' })
+    await within(dialog).findByRole('option', { name: /Kiran Shah/ })
+    expect(within(dialog).getByLabelText('New SME')).toHaveValue('')
+  })
+
   it('filters the inbox by state', async () => {
     const mock = session({
       'GET /api/v1/delegation-requests': (call) => ({

@@ -9,15 +9,15 @@ import {
   SEGMENTS,
   UNIT,
   answer,
-  booklet,
   detail,
   graph,
   page,
   region,
   review,
 } from '../test/evaluateFixtures'
-import { requestOf, unitOf } from '../test/adminFixtures'
+import { unitOf } from '../test/adminFixtures'
 import { mockApi } from '../test/mockApi'
+import { summaryOf } from '../test/smeFixtures'
 import { detail as qnaDetail } from '../test/qnaFixtures'
 import { renderApp } from '../test/render'
 
@@ -49,10 +49,6 @@ const exam = {
   unlinked_count: 0,
 }
 
-const listOf = (items = [booklet()], extra: Record<string, unknown> = {}) => ({
-  json: { items, total: items.length, limit: 100, offset: 0, waiting: 0, max_waiting: 5, ...extra },
-})
-
 /** The SME's open units (P26): step 1 lists the booklets of the one picked. */
 const UNITS = [
   unitOf({ id: UNIT, code: 'U-0001' }),
@@ -71,249 +67,11 @@ function signedIn(extra: Parameters<typeof mockApi>[0] = {}, me = meOf()) {
     'GET /api/v1/health': { json: healthy },
     'GET /api/v1/blueprints': { json: [exam] },
     'GET /api/v1/units': { json: UNITS },
-    'GET /api/v1/booklets': listOf(),
+    'GET /api/v1/me/assignments/summary': { json: summaryOf() },
     'GET /api/v1/delegation-requests': { json: [] },
     ...extra,
   })
 }
-
-// ---------------------------------------------------------------------------------------------
-// Step 1: Scan Upload
-// ---------------------------------------------------------------------------------------------
-
-describe('step 1: submitting a unit (P28)', () => {
-  it('asks a reason for each booklet not marked, then submits the whole unit', async () => {
-    const marked = booklet({ id: 'b-ok', status: 'approved' })
-    const absent = booklet({
-      id: 'b-no',
-      status: 'in_review',
-      student: { id: 'st-2', name: 'Test Student Two', usn: 'TST002' },
-    })
-    const mock = signedIn({
-      'GET /api/v1/booklets': listOf([marked, absent]),
-      [`POST /api/v1/units/${UNIT}/submit`]: { json: unitOf({ id: UNIT, state: 'submitted' }) },
-    })
-    const user = userEvent.setup()
-    renderApp('/evaluate')
-    await screen.findByRole('article', { name: 'Submission Test Student Two' })
-    await user.click(screen.getByRole('button', { name: 'Submit unit' }))
-    const dialog = await screen.findByRole('dialog')
-    expect(dialog).toHaveTextContent('1 of 2 booklets are marked.')
-    const send = within(dialog).getByRole('button', { name: 'Submit unit' })
-    expect(send).toBeDisabled()
-    await user.selectOptions(within(dialog).getByLabelText('Reason for TST002'), 'other')
-    expect(send).toBeDisabled() // "other" needs a note
-    await user.type(within(dialog).getByLabelText('Note for TST002'), 'Left the hall')
-    await user.click(send)
-    await waitFor(() => expect(mock.callsTo(`POST /api/v1/units/${UNIT}/submit`)).toHaveLength(1))
-    expect(mock.callsTo(`POST /api/v1/units/${UNIT}/submit`)[0]?.body).toEqual({
-      expected_version: 1,
-      unmarked: [{ booklet_id: 'b-no', reason: 'other', note: 'Left the hall' }],
-    })
-  })
-
-  it('shows a submitted unit as handed over, and a returned one with the admin note', async () => {
-    const submitted = unitOf({ id: UNIT, code: 'U-0001', state: 'submitted' })
-    const returned = unitOf({
-      id: 'unit-2',
-      code: 'U-0002',
-      submission: {
-        id: 's-1',
-        submitted_by: { id: 't-1', name: 'Me' },
-        submitted_at: '2026-10-28T08:00:00Z',
-        unmarked: [],
-        returned_at: '2026-10-28T09:00:00Z',
-        returned_by: { id: 'a-1', name: 'Admin' },
-        return_note: 'Recheck question 3',
-      },
-    })
-    signedIn({ 'GET /api/v1/units': { json: [submitted, returned] } })
-    const user = userEvent.setup()
-    renderApp('/evaluate')
-    expect(await screen.findByText('Submitted to your admin')).toBeVisible()
-    expect(screen.queryByRole('button', { name: 'Submit unit' })).toBeNull()
-    await user.selectOptions(screen.getByLabelText('Unit'), 'unit-2')
-    expect(
-      await screen.findByText(/Your admin returned this unit: Recheck question 3/),
-    ).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Submit unit' })).toBeVisible()
-  })
-})
-
-describe('step 1: the booklets of my units', () => {
-  it('shows the three steps, my first unit and its booklets, and no upload controls', async () => {
-    const mock = signedIn()
-    renderApp('/evaluate')
-    expect(
-      await screen.findByText(/uploaded by your admin into the units assigned to you/),
-    ).toBeVisible()
-    const steps = screen.getByRole('list', { name: 'Evaluation steps' })
-    expect(within(steps).getByRole('button', { name: '1. Scan Upload' })).toHaveAttribute(
-      'aria-current',
-      'step',
-    )
-    const picker = await screen.findByLabelText('Unit')
-    expect(picker).toHaveValue(UNIT)
-    expect(
-      within(picker)
-        .getAllByRole('option')
-        .map((o) => o.textContent),
-    ).toEqual(['U-0001 · PHY-2026-MID · 2024', 'U-0002 · PHY-2026-END · 2025'])
-    expect(
-      await screen.findByRole('article', { name: 'Submission Test Student One' }),
-    ).toBeVisible()
-    expect(screen.queryByText('Drag & Drop Scanned Student Answer Sheets')).toBeNull()
-    // Every state: a submitted or frozen unit stays readable (P28).
-    expect(mock.callsTo('GET /api/v1/units')[0]?.query.get('state')).toBeNull()
-    expect(mock.callsTo('GET /api/v1/booklets')[0]?.query.get('unit_id')).toBe(UNIT)
-  })
-
-  it('lists the booklets of the unit picked', async () => {
-    const mock = signedIn({
-      'GET /api/v1/booklets': (call) =>
-        call.query.get('unit_id') === 'unit-2'
-          ? listOf([
-              booklet({
-                id: 'b-2',
-                student: { id: 's-2', name: 'Test Student Two', usn: 'TST002' },
-                unit: { id: 'unit-2', code: 'U-0002' },
-              }),
-            ])
-          : listOf(),
-    })
-    const user = userEvent.setup()
-    renderApp('/evaluate')
-    await screen.findByRole('article', { name: 'Submission Test Student One' })
-    await user.selectOptions(screen.getByLabelText('Unit'), 'unit-2')
-    expect(
-      await screen.findByRole('article', { name: 'Submission Test Student Two' }),
-    ).toBeVisible()
-    expect(screen.queryByRole('article', { name: 'Submission Test Student One' })).toBeNull()
-    expect(mock.callsTo('GET /api/v1/booklets').at(-1)?.query.get('unit_id')).toBe('unit-2')
-  })
-
-  it('lists the submissions with name, USN, pages, status and result, and the right button', async () => {
-    signedIn({
-      'GET /api/v1/booklets': listOf([
-        booklet({ id: 'b-ready', status: 'scored' }),
-        booklet({
-          id: 'b-working',
-          status: 'reading',
-          student: { id: 's-2', name: 'Test Student Two', usn: 'TST002' },
-          pages_read: 1,
-        }),
-        booklet({
-          id: 'b-done',
-          status: 'approved',
-          student: { id: 's-3', name: 'Test Student Three', usn: 'TST003' },
-          result: { total: 4.5, max_marks: 6, sheet_version: 1 },
-        }),
-        booklet({
-          id: 'b-failed',
-          status: 'failed',
-          failure_reason: 'unreadable_file',
-          student: { id: 's-4', name: 'Test Student Four', usn: 'TST004' },
-          page_count: 0,
-        }),
-        booklet({
-          id: 'b-retake',
-          status: 'needs_retake',
-          flagged_pages: [2],
-          student: { id: 's-5', name: 'Test Student Five', usn: 'TST005' },
-        }),
-      ]),
-    })
-    renderApp('/evaluate')
-    const ready = await screen.findByRole('article', { name: 'Submission Test Student One' })
-    expect(within(ready).getByText('USN: TST001')).toBeVisible()
-    expect(within(ready).getByText('Ready for review')).toBeVisible()
-    expect(within(ready).getByText('2')).toBeVisible()
-    expect(within(ready).getByText('Awaiting approval')).toBeVisible()
-    expect(within(ready).getByRole('button', { name: 'Open' })).toBeVisible()
-
-    const working = screen.getByRole('article', { name: 'Submission Test Student Two' })
-    expect(within(working).getByText('Reading handwriting')).toBeVisible()
-    expect(within(working).getByRole('button', { name: 'Run AI Eval' })).toBeVisible()
-
-    const done = screen.getByRole('article', { name: 'Submission Test Student Three' })
-    expect(within(done).getByText('4.5 / 6')).toBeVisible()
-
-    const failed = screen.getByRole('article', { name: 'Submission Test Student Four' })
-    expect(within(failed).getByRole('alert')).toHaveTextContent('The file could not be read.')
-    expect(within(failed).queryByRole('button', { name: /Open|Run AI Eval/ })).toBeNull()
-
-    // Retakes are the admin's (P26): the SME is told, and offered no page decisions.
-    const retake = screen.getByRole('article', { name: 'Submission Test Student Five' })
-    expect(within(retake).getByText('Waiting for a retake by your admin')).toBeVisible()
-    expect(within(retake).queryByRole('button', { name: /anyway|flagged/ })).toBeNull()
-    expect(screen.getByText(/Student Answer Submissions \(5\)/)).toBeVisible()
-  })
-
-  it('deletes a booklet after asking', async () => {
-    const mock = signedIn({ [`DELETE ${B}`]: { status: 204 } })
-    const user = userEvent.setup()
-    renderApp('/evaluate')
-    await user.click(
-      await screen.findByRole('button', { name: 'Delete the booklet of Test Student One' }),
-    )
-    expect(mock.callsTo(`DELETE ${B}`)).toHaveLength(0)
-    await user.click(screen.getByRole('button', { name: 'Yes' }))
-    await waitFor(() => expect(mock.callsTo(`DELETE ${B}`)).toHaveLength(1))
-  })
-
-  it('explains an empty unit', async () => {
-    signedIn({ 'GET /api/v1/booklets': listOf([]) })
-    renderApp('/evaluate')
-    expect(await screen.findByText('No submissions yet')).toBeVisible()
-  })
-
-  it('says so when no unit is assigned to me', async () => {
-    const mock = signedIn({ 'GET /api/v1/units': { json: [] } })
-    renderApp('/evaluate')
-    expect(await screen.findByText('No units assigned to you')).toBeVisible()
-    expect(mock.callsTo('GET /api/v1/booklets')).toHaveLength(0)
-  })
-
-  it('asks the admin to move my unit, with a reason, and lists my requests', async () => {
-    let asked = false
-    const mine = requestOf({ id: 'req-9', reason: 'Exams clash' })
-    const mock = signedIn({
-      'GET /api/v1/units': () => ({
-        json: asked
-          ? [{ ...UNITS[0]!, pending_request: { id: 'req-9', requested_at: mine.requested_at } }]
-          : UNITS,
-      }),
-      'GET /api/v1/delegation-requests': () => ({ json: asked ? [mine] : [] }),
-      [`POST /api/v1/units/${UNIT}/delegation-requests`]: () => {
-        asked = true
-        return { status: 201, json: mine }
-      },
-      'POST /api/v1/delegation-requests/req-9/withdraw': () => {
-        asked = false
-        return { json: { ...mine, state: 'withdrawn' } }
-      },
-    })
-    const user = userEvent.setup()
-    renderApp('/evaluate')
-    await user.click(await screen.findByRole('button', { name: 'Request reassignment' }))
-    const dialog = await screen.findByRole('dialog')
-    const send = within(dialog).getByRole('button', { name: 'Send request' })
-    expect(send).toBeDisabled()
-    await user.type(within(dialog).getByLabelText('Reason'), 'Exams clash')
-    await user.click(send)
-    expect(await screen.findByText(/your admin decides who takes U-0001/)).toBeVisible()
-    expect(mock.callsTo(`POST /api/v1/units/${UNIT}/delegation-requests`)[0]?.body).toEqual({
-      reason: 'Exams clash',
-    })
-    expect(await screen.findByText('Reassignment requested')).toBeVisible()
-    const list = await screen.findByRole('region', { name: 'My reassignment requests' })
-    expect(within(list).getByText('Pending')).toBeVisible()
-
-    await user.click(screen.getByRole('button', { name: 'Withdraw request' }))
-    expect(await screen.findByText('Request for U-0001 withdrawn.')).toBeVisible()
-    expect(await screen.findByRole('button', { name: 'Request reassignment' })).toBeVisible()
-  })
-})
 
 // ---------------------------------------------------------------------------------------------
 // Step 2: AI Segmentation
@@ -828,18 +586,26 @@ describe('step 2: AI segmentation', () => {
     })
   })
 
-  it('goes back to the submissions, and a stepper click to step 1 does too', async () => {
+  it('goes back to the question list, with a breadcrumb to the student list', async () => {
     const { user } = await openSegments()
-    await user.click(screen.getByRole('button', { name: /Submissions/ }))
-    expect(await screen.findByText(/Student Answer Submissions/)).toBeVisible()
+    const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    expect(within(crumbs).getByRole('link', { name: 'U-0001' })).toHaveAttribute(
+      'href',
+      `/sme/units/${UNIT}`,
+    )
+    expect(within(crumbs).getByRole('link', { name: 'Test Student One' })).toHaveAttribute(
+      'href',
+      `/sme/units/${UNIT}/booklets/${BOOKLET}`,
+    )
+    await user.click(screen.getByRole('button', { name: /Questions/ }))
+    expect(await screen.findByRole('heading', { name: 'Student Questions Overview' })).toBeVisible()
   })
 
-  it('asks for a booklet when step 2 is opened without one', async () => {
+  it('sends /evaluate without a booklet to My Assignments (step 1 is gone, D215)', async () => {
     signedIn()
-    const user = userEvent.setup()
     renderApp('/evaluate')
-    await user.click(await screen.findByRole('button', { name: '2. AI Segmentation' }))
-    expect(await screen.findByText('Choose a booklet first')).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'My Assignments' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Scan Upload/ })).toBeNull()
   })
 
   it('says so for a booklet that does not exist', async () => {
@@ -850,7 +616,7 @@ describe('step 2: AI segmentation', () => {
 
   it('releases the lock on leaving the screen', async () => {
     const { mock, user } = await openSegments()
-    await user.click(screen.getByRole('button', { name: /Submissions/ }))
+    await user.click(screen.getByRole('button', { name: /Questions/ }))
     await waitFor(() => expect(mock.callsTo(`DELETE ${B}/lock`)).toHaveLength(1), { timeout: 2000 })
   })
 })

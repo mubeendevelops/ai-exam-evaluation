@@ -13,7 +13,6 @@ import StudentsPage from './pages/admin/StudentsPage'
 import UnitDetailPage from './pages/admin/UnitDetailPage'
 import UnitsPage from './pages/admin/UnitsPage'
 import EvaluatePage from './pages/EvaluatePage'
-import EvaluatedPage from './pages/EvaluatedPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import GovernorPage from './pages/GovernorPage'
 import LandingPage from './pages/LandingPage'
@@ -22,6 +21,8 @@ import RecoverPage from './pages/RecoverPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import SchemaPage from './pages/SchemaPage'
 import MyAssignmentsPage from './pages/sme/MyAssignmentsPage'
+import QuestionListPage from './pages/sme/QuestionListPage'
+import StudentListPage from './pages/sme/StudentListPage'
 import * as Sme from './pages/sme/sections'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 
@@ -50,6 +51,8 @@ export default function App() {
           <Route element={<RequireCapability capability="view_own_work" />}>
             <Route path="sme">
               <Route index element={<MyAssignmentsPage />} />
+              <Route path="units/:unitId" element={<StudentListPage />} />
+              <Route path="units/:unitId/booklets/:bookletId" element={<QuestionListPage />} />
               <Route path="papers" element={<Sme.PapersPage />} />
               <Route path="schema" element={<Sme.SchemaPage />} />
               <Route path="profile" element={<Sme.ProfilePage />} />
@@ -63,7 +66,6 @@ export default function App() {
           </Route>
           <Route element={<RequireCapability capability="evaluate" />}>
             <Route path="evaluate" element={<EvaluatePage />} />
-            <Route path="evaluated" element={<EvaluatedPage />} />
           </Route>
           <Route element={<RequireCapability capability="manage_smes" />}>
             <Route path="admin" element={<AdminLayout />}>

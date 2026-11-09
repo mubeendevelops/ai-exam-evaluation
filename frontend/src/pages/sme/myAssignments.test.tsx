@@ -1,7 +1,7 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { unitBooklet } from '../../test/adminFixtures'
+import { unitBooklet, unitDetailOf } from '../../test/adminFixtures'
 import { renderApp } from '../../test/render'
 import { myUnits, smeSession, summaryOf } from '../../test/smeFixtures'
 
@@ -84,7 +84,7 @@ describe('My Assignments (P31, D216)', () => {
     expect(within(submitted).queryByRole('button', { name: /Delegate|Submit/ })).toBeNull()
     expect(within(submitted).getByRole('link', { name: 'Evaluate U-0003' })).toHaveAttribute(
       'href',
-      '/evaluate?unit=unit-3',
+      '/sme/units/unit-3',
     )
   })
 
@@ -130,14 +130,14 @@ describe('My Assignments (P31, D216)', () => {
     expect(await codes()).toEqual(['U-0003'])
   })
 
-  it('opens /evaluate with the unit picked', async () => {
-    smeSession({
-      'GET /api/v1/booklets': { json: { items: [], total: 0, limit: 100, offset: 0 } },
-    })
+  it('opens the student list of the unit (P32)', async () => {
+    const empty = { ...myUnits[1]!, counts: { ...myUnits[1]!.counts, total: 0, completed: 0 } }
+    smeSession({ 'GET /api/v1/units/unit-2': { json: unitDetailOf([], empty) } })
     const user = userEvent.setup()
     renderApp('/sme')
     await user.click(await screen.findByRole('link', { name: 'Evaluate U-0002' }))
-    expect(await screen.findByLabelText('Unit')).toHaveValue('unit-2')
+    expect(await screen.findByRole('heading', { name: 'Algebra final' })).toBeVisible()
+    expect(screen.getByText('No booklets yet')).toBeVisible()
   })
 
   it('starts evaluating the open unit due first from the guidelines card', async () => {
@@ -148,26 +148,79 @@ describe('My Assignments (P31, D216)', () => {
     })
     expect(
       await within(card).findByRole('link', { name: /Start evaluating U-0001/ }),
-    ).toHaveAttribute('href', '/evaluate?unit=unit-1')
+    ).toHaveAttribute('href', '/sme/units/unit-1')
     expect(within(card).getByRole('link', { name: 'Manage Schema' })).toHaveAttribute(
       'href',
       '/sme/schema',
     )
   })
 
-  it('asks to delegate with a reason through the existing request', async () => {
+  it('delegates with a suggested replacement and a reason (D218)', async () => {
     const mock = smeSession({
+      'GET /api/v1/units/unit-2/delegates': { json: [{ id: 't-3', name: 'Kiran Shah' }] },
       'POST /api/v1/units/unit-2/delegation-requests': { json: { id: 'req-1' } },
     })
     const user = userEvent.setup()
     renderApp('/sme')
     await user.click(await screen.findByRole('button', { name: 'Delegate U-0002' }))
-    const dialog = screen.getByRole('dialog', { name: /Ask to move U-0002/ })
-    await user.type(within(dialog).getByLabelText('Reason'), 'On leave')
-    await user.click(within(dialog).getByRole('button', { name: 'Send request' }))
-    expect(mock.callsTo('POST /api/v1/units/unit-2/delegation-requests')[0]?.body).toEqual({
-      reason: 'On leave',
+    const dialog = screen.getByRole('dialog', { name: /Delegate U-0002/ })
+    expect(dialog).toHaveTextContent('U-0002')
+    const pick = within(dialog).getByLabelText('Suggested replacement (optional)')
+    await within(dialog).findByRole('option', { name: 'Kiran Shah' })
+    expect(
+      within(pick)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['No suggestion', 'Kiran Shah'])
+    const send = within(dialog).getByRole('button', { name: 'Submit request to admin' })
+    expect(send).toBeDisabled() // the reason is required
+    await user.selectOptions(pick, 't-3')
+    await user.type(within(dialog).getByLabelText('Reason for transfer'), 'On leave')
+    await user.click(send)
+    await waitFor(() =>
+      expect(mock.callsTo('POST /api/v1/units/unit-2/delegation-requests')[0]?.body).toEqual({
+        reason: 'On leave',
+        suggested_to: 't-3',
+      }),
+    )
+  })
+
+  it('sends a request without a suggestion when nobody else has the subject', async () => {
+    const mock = smeSession({
+      'GET /api/v1/units/unit-2/delegates': { json: [] },
+      'POST /api/v1/units/unit-2/delegation-requests': { json: { id: 'req-1' } },
     })
+    const user = userEvent.setup()
+    renderApp('/sme')
+    await user.click(await screen.findByRole('button', { name: 'Delegate U-0002' }))
+    const dialog = screen.getByRole('dialog', { name: /Delegate U-0002/ })
+    expect(await within(dialog).findByText(/No other active SME has Mathematics/)).toBeVisible()
+    await user.type(within(dialog).getByLabelText('Reason for transfer'), 'On leave')
+    await user.click(within(dialog).getByRole('button', { name: 'Submit request to admin' }))
+    await waitFor(() =>
+      expect(mock.callsTo('POST /api/v1/units/unit-2/delegation-requests')[0]?.body).toEqual({
+        reason: 'On leave',
+      }),
+    )
+  })
+
+  it('withdraws a waiting request from the table', async () => {
+    const waiting = {
+      ...myUnits[1]!,
+      pending_request: { id: 'req-9', requested_at: '2026-11-01T08:00:00Z' },
+    }
+    const mock = smeSession({
+      'GET /api/v1/units': { json: [myUnits[0]!, waiting, myUnits[2]!] },
+      'POST /api/v1/delegation-requests/req-9/withdraw': { json: { id: 'req-9' } },
+    })
+    const user = userEvent.setup()
+    renderApp('/sme')
+    expect(await screen.findByText('Reassignment requested')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Delegate U-0002' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Withdraw the request for U-0002' }))
+    await waitFor(() =>
+      expect(mock.callsTo('POST /api/v1/delegation-requests/req-9/withdraw')).toHaveLength(1),
+    )
   })
 
   it('shows a pending request instead of Delegate', async () => {
@@ -183,13 +236,10 @@ describe('My Assignments (P31, D216)', () => {
 
   it('opens the submit dialog with the unit’s booklets', async () => {
     const mock = smeSession({
-      'GET /api/v1/booklets': {
-        json: {
-          items: [unitBooklet({ id: 'bk-1', status: 'approved' })],
-          total: 1,
-          limit: 100,
-          offset: 0,
-        },
+      'GET /api/v1/units/unit-2': {
+        json: unitDetailOf([unitBooklet({ id: 'bk-1', status: 'approved' })], {
+          ...myUnits[1]!,
+        }),
       },
     })
     const user = userEvent.setup()
@@ -197,6 +247,6 @@ describe('My Assignments (P31, D216)', () => {
     await user.click(await screen.findByRole('button', { name: 'Submit U-0002' }))
     const dialog = await screen.findByRole('dialog', { name: /Submit U-0002/ })
     expect(within(dialog).getByText(/1 of 1/)).toBeInTheDocument()
-    expect(mock.callsTo('GET /api/v1/booklets')[0]?.query.get('unit_id')).toBe('unit-2')
+    expect(mock.callsTo('GET /api/v1/units/unit-2')[0]?.query.get('limit')).toBeNull() // all
   })
 })

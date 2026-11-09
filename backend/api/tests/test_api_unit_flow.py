@@ -283,11 +283,10 @@ def lifecycle(flow: Flow) -> None:
     if still["allowed"]:  # no other paper links it
         assert c.delete(f"{BASE}/questions/{question}", headers=w.a).status_code == 204
 
-    # What outlives the paper: the frozen record, the evaluated list, the PDF, the unit list.
+    # What outlives the paper: the frozen record, the sheets and their PDF, the unit list.
     assert c.get(f"{BASE}/units/{unit}/frozen-record", headers=flow.governor).status_code == 200
-    evaluated = c.get(f"{BASE}/evaluated-booklets", headers=w.a).json()["items"]
-    found = next(e for e in evaluated if e["id"] == w.ids["booklet_id"])
-    pdf = c.get(found["sheets"][-1]["pdf_url"], headers=w.a)
+    sheets = c.get(f"{BASE}/booklets/{w.ids['booklet_id']}/result-sheets", headers=w.a).json()
+    pdf = c.get(sheets[-1]["pdf_url"], headers=w.a)
     assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
     assert c.get(f"{BASE}/units/{unit}", headers=w.a).json()["paper"]["id"] == paper
     gone = c.get(f"{BASE}/booklets/{w.ids['booklet_id']}/review", headers=w.a)

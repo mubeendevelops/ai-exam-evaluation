@@ -20,6 +20,7 @@ from fastapi import (
 
 from tarn_api.backends import Unit, unit_of_work
 from tarn_api.schemas import (
+    AnswerTallyOut,
     BookletBlueprintOut,
     BookletDetailOut,
     BookletOut,
@@ -38,6 +39,7 @@ from tarn_api.security import BackendsDep, PrincipalDep, booklet_user, current_u
 from tarn_core.domain.booklet import Booklet, BookletStatus, Page, Region
 from tarn_core.domain.common import BlobKey
 from tarn_core.domain.personas import CAPABILITIES, Capability
+from tarn_core.domain.student_list import ROW_STATUS_OF, AnswerTally
 from tarn_core.domain.tenancy import User
 from tarn_core.errors import UploadTooLargeError
 from tarn_core.ids import BlueprintId, BookletId, CollegeId, UnitId
@@ -102,6 +104,7 @@ def booklet_out(
     *,
     duplicates: tuple[UUID, ...] = (),
     evaluator: bool = True,
+    tally: AnswerTally | None = None,
 ) -> tuple[BookletOut, list[Page]]:
     pages = list(unit.scope.booklets.pages(college_id, booklet.id))
     student = unit.scope.students.get(college_id, booklet.student_id)
@@ -134,6 +137,10 @@ def booklet_out(
         needs_text_pages=[p.index + 1 for p in pages if p.needs_text],
         failure_reason=booklet.failure_reason,
         duplicate_of=list(duplicates),
+        row_status=ROW_STATUS_OF[booklet.status].value,
+        answers=None
+        if tally is None or not evaluator
+        else AnswerTallyOut(attempted=tally.attempted, approved=tally.approved),
     )
     if booklet.approved and evaluator:
         sheets = unit.scope.sheets.versions(college_id, booklet.id)

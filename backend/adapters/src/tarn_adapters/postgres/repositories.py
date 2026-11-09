@@ -68,6 +68,7 @@ from tarn_core.domain.review import (
     Review,
 )
 from tarn_core.domain.scoring import AnswerFlag, AnswerScore, CriterionScore, SentenceVector
+from tarn_core.domain.student_list import AnswerTally, UnitRowQuery, UnitRows, statuses_of
 from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
 from tarn_core.domain.unit import (
     DelegationRequest,
@@ -1041,6 +1042,7 @@ class PgUnitRepository:
                             requested_by=request.requested_by,
                             reason=request.reason,
                             requested_at=request.requested_at,
+                            suggested_to=request.suggested_to,
                             **closing,
                         )
                     )
@@ -1314,6 +1316,7 @@ def _request(r: Row[Any]) -> DelegationRequest:
         closed_by=None if r.closed_by is None else UserId(r.closed_by),
         closed_at=r.closed_at,
         note=r.note,
+        suggested_to=None if r.suggested_to is None else UserId(r.suggested_to),
     )
 
 
@@ -1473,6 +1476,66 @@ class PgBookletRepository:
 
     def in_unit(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[Booklet]:
         return [_booklet(r) for r in self._rows(m.booklets, college_id, unit_id=unit_id)]
+
+    def unit_rows(self, college_id: CollegeId, unit_id: UnitId, query: UnitRowQuery) -> UnitRows:
+        b, s = m.booklets, m.students
+        where = [b.c.college_id == college_id, b.c.unit_id == unit_id]
+        if query.rows:
+            where.append(b.c.status.in_(sorted(x.value for x in statuses_of(query.rows))))
+        if needle := query.needle:
+            where.append(
+                or_(
+                    s.c.usn.like(_like_escape("".join(needle.split()).upper()) + "%", escape="\\"),
+                    func.lower(s.c.name).like("%" + _like_escape(needle) + "%", escape="\\"),
+                )
+            )
+        joined = b.join(s, and_(s.c.college_id == b.c.college_id, s.c.id == b.c.student_id))
+        stmt = (
+            select(b, func.count().over().label("matching"))
+            .select_from(joined)
+            .where(*where)
+            .order_by(s.c.usn, b.c.id)
+            .offset(query.offset)
+        )
+        if query.limit is not None:
+            stmt = stmt.limit(query.limit)
+        rows = list(self._conn.execute(stmt))
+        if rows:
+            matching = int(rows[0].matching)
+        else:  # past the last page: the window has no row to count on
+            counted = select(func.count()).select_from(joined).where(*where)
+            matching = int(self._conn.execute(counted).scalar_one())
+        booklets = [_booklet(r) for r in rows]
+        return UnitRows(
+            booklets=booklets,
+            tallies=self._tallies(college_id, [x.id for x in booklets]),
+            matching=matching,
+        )
+
+    def _tallies(
+        self, college_id: CollegeId, booklet_ids: Sequence[BookletId]
+    ) -> dict[BookletId, AnswerTally]:
+        """One aggregate over the answers of every booklet on the page."""
+        if not booklet_ids:
+            return {}
+        a = m.answers
+        attempted = func.cardinality(a.c.segment_ids) > 0
+        stmt = (
+            select(
+                a.c.booklet_id,
+                func.count().filter(attempted).label("attempted"),
+                func.count()
+                .filter(and_(attempted, a.c.status == AnswerStatus.APPROVED.value))
+                .label("approved"),
+            )
+            .where(a.c.college_id == college_id, a.c.booklet_id.in_(booklet_ids))
+            .group_by(a.c.booklet_id)
+        )
+        found = {
+            BookletId(r.booklet_id): AnswerTally(attempted=r.attempted, approved=r.approved)
+            for r in self._conn.execute(stmt)
+        }
+        return {i: found.get(i, AnswerTally()) for i in booklet_ids}
 
     def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:
         t = m.booklets

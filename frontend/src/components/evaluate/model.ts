@@ -69,9 +69,3 @@ export function isReviewable(status: BookletStatus): boolean {
 export function isApproved(status: BookletStatus): boolean {
   return ['approved', 'amendment_in_progress', 'approved_amended'].includes(status)
 }
-
-export function resultText(b: Booklet): string {
-  if (b.result) return `${b.result.total} / ${b.result.max_marks}`
-  if (b.status === 'failed') return '—'
-  return isReviewable(b.status) ? 'Awaiting approval' : 'Pending'
-}

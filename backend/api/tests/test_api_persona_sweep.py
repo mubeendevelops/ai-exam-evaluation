@@ -79,7 +79,7 @@ def test_the_admin_is_refused_every_marks_text_review_and_sheet_route() -> None:
         access = ACCESS[op]
         assert isinstance(access, frozenset) and not access & admin, op
     names = {path for _, path in MARKS_AND_TEXT}
-    for needed in ("/review", "/result-sheets", "/pages/{number}/text", "/evaluated-booklets"):
+    for needed in ("/review", "/result-sheets", "/pages/{number}/text"):
         assert any(needed in path for path in names), needed
 
 

@@ -157,7 +157,8 @@ class RequestState(StrEnum):
 @dataclass(frozen=True, slots=True, kw_only=True)
 class DelegationRequest:
     """An SME asks the admin to move one of their units to someone else (the delegation inbox,
-    D163). One pending request per unit; the admin picks the new SME."""
+    D163). One pending request per unit; the admin picks the new SME, perhaps the suggested
+    one."""
 
     id: DelegationRequestId
     college_id: CollegeId
@@ -170,9 +171,13 @@ class DelegationRequest:
     closed_at: datetime | None = None
     note: str = ""
     """The admin's note when declining."""
+    suggested_to: UserId | None = None
+    """The SME the requester suggests (P32, D218): a hint for the admin, who still decides."""
 
     def __post_init__(self) -> None:
         _check_reason("reason", self.reason)
+        if self.suggested_to is not None and self.suggested_to == self.requested_by:
+            raise InvariantError("an SME does not suggest themselves")
         if self.requested_at.tzinfo is None:
             raise InvariantError("requested_at must be timezone-aware")
         closed = (self.closed_by, self.closed_at)
