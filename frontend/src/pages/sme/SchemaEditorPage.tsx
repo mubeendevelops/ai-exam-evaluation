@@ -49,12 +49,11 @@ export default function SchemaEditorPage() {
         title="This is a question paper"
         action={
           <Link to={paperEditorPath(saved.data.id)} className={link}>
-            Open it in the Schema Designer
+            Open it in Manage Question Papers
           </Link>
         }
       >
-        {saved.data.title} is a paper, not a schema; papers are edited in the Schema Designer for
-        now.
+        {saved.data.title} is a paper, not a schema.
       </EmptyState>
     )
   }

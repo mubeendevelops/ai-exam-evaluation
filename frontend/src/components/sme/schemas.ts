@@ -41,7 +41,7 @@ export function updatedOf(at: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? '' : month.format(date)
 }
 
-/** Where a generated paper opens until P34 builds `/sme/papers/:id` (D220). */
+/** Where a paper opens: the designer in paper mode (P34). */
 export function paperEditorPath(id: string): string {
-  return `/schema?blueprint=${id}`
+  return `/sme/papers/${id}`
 }

@@ -293,8 +293,15 @@ function formQuestion(q: DocQuestion): FormQuestion {
   }
 }
 
-/** Loads a document (an example, or a saved blueprint) into the form. */
+/** Loads a document (an example, or a saved blueprint) into the form. A total that equals
+ * what the sections add up to keeps following them (P34: reshaping a starter paper); any other
+ * total stays as typed. */
 export function fromDocument(doc: BlueprintDocument): FormState {
+  const form = formOfDocument(doc)
+  return calculatedTotal(form) === Number(doc.total_marks) ? { ...form, totalMarks: null } : form
+}
+
+function formOfDocument(doc: BlueprintDocument): FormState {
   return {
     title: doc.title,
     courseCode: doc.course_code,

@@ -8,16 +8,19 @@ interface Props {
   onChange: (patch: Partial<FormState>) => void
   /** Batches already in use, offered while typing the target batch. */
   batches?: string[]
+  /** A paper's descriptors already in use, offered while typing (P34). */
+  descriptors?: string[]
 }
 
 /** Step 1 of the prototype: the examination header and marks configuration. A schema (D219)
  * has a name, a target batch and a weightage description, and no exam code; a paper has an
  * exam code, a descriptor tag and a card description. */
-export function HeaderForm({ form, onChange, batches = [] }: Props) {
+export function HeaderForm({ form, onChange, batches = [], descriptors = [] }: Props) {
   const calculated = calculatedTotal(form)
   const auto = form.totalMarks === null
   const schema = form.kind === 'schema'
   const batchList = useId()
+  const descriptorList = useId()
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <TextInput
@@ -69,8 +72,16 @@ export function HeaderForm({ form, onChange, batches = [] }: Props) {
           value={form.descriptor}
           placeholder="Mid-term, Quiz, End semester…"
           maxLength={50}
+          list={descriptors.length > 0 ? descriptorList : undefined}
           onChange={(e) => onChange({ descriptor: e.target.value })}
         />
+      )}
+      {!schema && descriptors.length > 0 && (
+        <datalist id={descriptorList}>
+          {descriptors.map((d) => (
+            <option key={d} value={d} />
+          ))}
+        </datalist>
       )}
       <TextInput
         label="Duration (Minutes)"

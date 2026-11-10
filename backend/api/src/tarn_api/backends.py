@@ -22,12 +22,12 @@ from tarn_adapters.identity.database import IdentityDatabase
 from tarn_adapters.postgres.database import PostgresDatabase
 from tarn_adapters.postgres.jobs import JobSettings
 from tarn_adapters.runtime import SystemClock, UuidGenerator
-from tarn_adapters.sheets import PyMuPdfSheetRenderer
+from tarn_adapters.sheets import PyMuPdfPaperRenderer, PyMuPdfSheetRenderer
 from tarn_core.domain.tenancy import User
 from tarn_core.ids import BookletId, CollegeId
 from tarn_core.ports.identity import IdentityStore
 from tarn_core.ports.jobs import JobQueue
-from tarn_core.ports.rendering import SheetRenderer
+from tarn_core.ports.rendering import PaperRenderer, SheetRenderer
 from tarn_core.ports.repositories import (
     BookletRepository,
     CollegeRepository,
@@ -54,6 +54,7 @@ from tarn_core.services.diagrams.service import ReferenceDiagrams
 from tarn_core.services.entitlements import EntitlementService
 from tarn_core.services.evaluated import EvaluatedBooklets
 from tarn_core.services.overview import OverviewService
+from tarn_core.services.paper_sheet import PaperSheets
 from tarn_core.services.pipeline import PageDecisions
 from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.registration import RegistrationService
@@ -132,6 +133,7 @@ class Backends(Protocol):
     upload_limits: UploadLimits
     lock_minutes: float
     sheet_renderer: SheetRenderer
+    paper_renderer: PaperRenderer
 
     def identity(self) -> AbstractContextManager[IdentityStore]: ...
 
@@ -145,6 +147,7 @@ class Unit:
     kit: AuthKit
     limits: UploadLimits
     renderer: SheetRenderer
+    paper_renderer: PaperRenderer
     lock_minutes: float = 15.0
 
     @property
@@ -283,6 +286,12 @@ class Unit:
         )
 
     @property
+    def paper_sheets(self) -> PaperSheets:
+        return PaperSheets(
+            content=self.scope.content, colleges=self.scope.colleges, renderer=self.paper_renderer
+        )
+
+    @property
     def blueprints(self) -> BlueprintService:
         return BlueprintService(
             content=self.scope.content,
@@ -290,6 +299,7 @@ class Unit:
             entitlements=self.scope.entitlements,
             runtime=self.scope.runtime,
             units=self.scope.units,
+            booklets=self.scope.booklets,
         )
 
     @property
@@ -475,6 +485,7 @@ def unit_of_work(backends: Backends, college_id: CollegeId) -> Iterator[Unit]:
             kit=replace(backends.kit, mailer=mailer),
             limits=backends.upload_limits,
             renderer=backends.sheet_renderer,
+            paper_renderer=backends.paper_renderer,
             lock_minutes=backends.lock_minutes,
         )
     mailer.flush()
@@ -501,6 +512,7 @@ class PostgresBackends:
         )
         self.lock_minutes = settings.booklet_lock_minutes
         self.sheet_renderer: SheetRenderer = PyMuPdfSheetRenderer()
+        self.paper_renderer: PaperRenderer = PyMuPdfPaperRenderer()
         self._app = PostgresDatabase(
             settings.app_database_url,
             job_settings=JobSettings(

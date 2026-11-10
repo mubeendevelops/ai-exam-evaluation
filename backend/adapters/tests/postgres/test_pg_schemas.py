@@ -127,7 +127,7 @@ def test_0019_back_fills_kinds_on_a_seeded_database(tmp_path: Path) -> None:
                     (blueprint, version, subject_id, plain, code, created_by, college_id),
                 )
         migrate.upgrade(app_db.owner_url)
-        assert migrate.current_revision(app_db.owner_url) == "0019"
+        assert migrate.current_revision(app_db.owner_url) == "0020"
         with app_db.owner() as conn:
             kinds = {
                 (r[0], r[1]): r[2]

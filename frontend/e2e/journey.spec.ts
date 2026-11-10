@@ -96,11 +96,10 @@ test.describe('visitor journey', () => {
     const nav = page.getByRole('navigation', { name: 'SME sections' })
     await page.goto('/evaluate') // step 1 is gone: My Assignments is the way in (P32)
     await expect(page).toHaveURL(/\/sme$/)
-    await nav.getByRole('link', { name: 'Schema Designer' }).click()
-    await expect(page).toHaveURL(/\/schema$/)
-    await expect(
-      page.getByRole('heading', { name: 'Question Paper Studio & Schema Engine' }),
-    ).toBeVisible()
+    await nav.getByRole('link', { name: 'Manage Question Papers' }).click()
+    await expect(page).toHaveURL(/\/sme\/papers$/)
+    await expect(page.getByRole('heading', { name: 'No question papers yet' })).toBeVisible()
+    await expect(nav.getByRole('link', { name: 'Schema Designer' })).toHaveCount(0) // P34
     await nav.getByRole('link', { name: 'Q&A DB' }).click()
     await expect(page).toHaveURL(/\/qna$/)
     await nav.getByRole('link', { name: /My Assignments/ }).click()

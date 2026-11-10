@@ -2505,6 +2505,287 @@
         }
       }
     },
+    "/api/v1/papers": {
+      "get": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Manage Question Papers: one page of the papers of my subjects",
+        "description": "`q` matches the title or the descriptor anywhere, `descriptor` exactly (both ignoring case), `created_on` the UTC date version 1 was saved. Most recently saved first. `descriptors` lists every descriptor in use (not filtered).",
+        "operationId": "list_papers_api_v1_papers_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "descriptor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 50,
+              "default": "",
+              "title": "Descriptor"
+            }
+          },
+          {
+            "name": "created_on",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created On"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 12,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperListOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Create a question paper (SMEs only)",
+        "description": "From a schema of the same subject (as `/blueprints/{id}/paper`), or a starter paper: section A of five unlinked 2-mark questions, course code = the subject's code.",
+        "operationId": "create_paper_api_v1_papers_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaperIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlueprintOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "The blueprint breaks a rule; every broken rule is listed in the message (use /blueprints/validate for a structured list).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/blueprints/{blueprint_id}/versions/{version}/paper.pdf": {
+      "get": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "The question paper of one version as a PDF (D224)",
+        "description": "Rendered on request: header, sections with their rules, OR pairs, sub-parts, each question's text (its newest version) and marks. Never keys, rubrics or reference answers. A schema, another subject's or college's paper, or an unknown version is 404.",
+        "operationId": "paper_pdf_api_v1_blueprints__blueprint_id__versions__version__paper_pdf_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blueprint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Blueprint Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/blueprints/{blueprint_id}": {
       "get": {
         "tags": [
@@ -2604,7 +2885,7 @@
           "blueprints"
         ],
         "summary": "Save the document as the next version (SMEs only)",
-        "description": "Earlier versions stay valid for booklets pinned to them.",
+        "description": "Earlier versions stay valid for booklets pinned to them. Once a booklet is pinned to a version of a paper, only its title, descriptor, description, target batch, duration and course code may change (409 otherwise: clone it, D222).",
         "operationId": "update_blueprint_api_v1_blueprints__blueprint_id__put",
         "security": [
           {
@@ -2686,6 +2967,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
           }
         }
       },
@@ -9972,6 +10263,12 @@
             "type": "object",
             "title": "Document",
             "description": "The blueprint in the public form, see docs/api/blueprint.schema.json."
+          },
+          "structure_locked": {
+            "type": "boolean",
+            "title": "Structure Locked",
+            "description": "A booklet is pinned to a version of this paper (D222): a new version may change only the title, descriptor, description, target batch, duration and course code.",
+            "default": false
           }
         },
         "type": "object",
@@ -10730,6 +11027,19 @@
               }
             ],
             "title": "Weightage Note"
+          },
+          "descriptor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descriptor",
+            "description": "A paper's copy only; default the source's."
           }
         },
         "additionalProperties": false,
@@ -11828,6 +12138,19 @@
             ],
             "title": "Title",
             "description": "Default \"<title> paper\"."
+          },
+          "descriptor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descriptor",
+            "description": "Default the schema's."
           }
         },
         "additionalProperties": false,
@@ -13004,6 +13327,221 @@
           "regions"
         ],
         "title": "PageTextOut"
+      },
+      "PaperCardOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Subject Id"
+          },
+          "subject_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Name"
+          },
+          "descriptor": {
+            "type": "string",
+            "title": "Descriptor"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "exam_code": {
+            "type": "string",
+            "title": "Exam Code"
+          },
+          "course_code": {
+            "type": "string",
+            "title": "Course Code"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "total_marks": {
+            "type": "number",
+            "title": "Total Marks"
+          },
+          "section_count": {
+            "type": "integer",
+            "title": "Section Count"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At",
+            "description": "When version 1 was saved."
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At",
+            "description": "When the newest version was saved."
+          },
+          "in_use": {
+            "type": "boolean",
+            "title": "In Use",
+            "description": "A unit uses this paper."
+          },
+          "from_schema": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Schema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "title",
+          "subject_id",
+          "subject_name",
+          "descriptor",
+          "description",
+          "exam_code",
+          "course_code",
+          "duration_minutes",
+          "total_marks",
+          "section_count",
+          "created_at",
+          "updated_at",
+          "in_use",
+          "from_schema"
+        ],
+        "title": "PaperCardOut",
+        "description": "One card of Manage Question Papers (P34)."
+      },
+      "PaperIn": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Subject Id"
+          },
+          "descriptor": {
+            "type": "string",
+            "maxLength": 50,
+            "title": "Descriptor",
+            "default": ""
+          },
+          "schema_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Id",
+            "description": "Start from this schema of the same subject; else a starter paper."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "subject_id"
+        ],
+        "title": "PaperIn",
+        "description": "Create Question Paper (P34, modal 6)."
+      },
+      "PaperListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PaperCardOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Papers matching the filters, not just this page."
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "descriptors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Descriptors",
+            "description": "Descriptors of every paper in reach, for the filter and the suggestions."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "descriptors"
+        ],
+        "title": "PaperListOut"
       },
       "PolicyErrorOut": {
         "properties": {

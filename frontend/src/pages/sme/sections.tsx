@@ -4,26 +4,8 @@ import ComingSoonPage from '../admin/ComingSoonPage'
 const older =
   'inline-flex items-center gap-2 rounded-xl border border-gray-700 bg-gray-800 px-4 py-2 text-xs font-semibold text-gray-200 hover:bg-gray-700'
 
-/** Sections of the SME portal a later prompt builds (P34–P36): a banner and a short empty
+/** Sections of the SME portal a later prompt builds (P35–P36): a banner and a short empty
  * state, with the older screen that does the job meanwhile (D215). */
-export function PapersPage() {
-  return (
-    <ComingSoonPage
-      icon="fa-solid fa-box-archive"
-      iconTone="text-cyan-400"
-      title="Manage Question Papers"
-      description="Your subjects' question papers: create, clone, preview and download."
-      emptyTitle="Question papers come next"
-      emptyText="Until this screen is built, papers are made and saved in the Schema Designer."
-      action={
-        <Link to="/schema" className={older}>
-          Open the Schema Designer
-        </Link>
-      }
-    />
-  )
-}
-
 export function ProfilePage() {
   return (
     <ComingSoonPage

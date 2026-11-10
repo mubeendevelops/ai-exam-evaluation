@@ -231,6 +231,9 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("GET", "/api/v1/blueprints"): Case("own"),
     ("POST", "/api/v1/blueprints"): Case("own"),
     ("GET", "/api/v1/schemas"): Case("own"),
+    ("GET", "/api/v1/papers"): Case("own"),
+    # Naming another college's subject or schema: ``test_api_papers``.
+    ("POST", "/api/v1/papers"): Case("own"),
     ("GET", "/api/v1/questions"): Case("own"),
     ("POST", "/api/v1/questions"): Case("own"),
     ("GET", "/api/v1/question-topics"): Case("own"),
@@ -334,6 +337,7 @@ CASES: Mapping[tuple[str, str], Case] = {
     ),
     ("POST", "/api/v1/blueprints/{blueprint_id}/clone"): Case("college"),
     ("POST", "/api/v1/blueprints/{blueprint_id}/paper"): Case("college"),
+    ("GET", "/api/v1/blueprints/{blueprint_id}/versions/{version}/paper.pdf"): Case("college"),
     ("GET", "/api/v1/questions/{question_id}"): Case("college"),
     ("GET", "/api/v1/questions/{question_id}/key-files/{file_id}/content"): Case("college"),
     ("GET", "/api/v1/questions/{question_id}/diagrams/{diagram_id}/content"): Case("college"),

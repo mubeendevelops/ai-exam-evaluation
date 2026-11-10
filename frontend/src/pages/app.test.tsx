@@ -67,7 +67,11 @@ describe('route guards', () => {
 
 describe('app shell (project_idea.html)', () => {
   it('gives the SME the portal frame: older screens switch the page, footer kept', async () => {
-    signedIn()
+    signedIn('sme', {
+      'GET /api/v1/papers': {
+        json: { items: [], total: 0, limit: 12, offset: 0, descriptors: [] },
+      },
+    })
     const user = userEvent.setup()
     renderApp('/qna')
     expect(
@@ -82,10 +86,11 @@ describe('app shell (project_idea.html)', () => {
       'page',
     )
 
-    await user.click(within(sidebar).getByRole('link', { name: 'Schema Designer' }))
+    await user.click(within(sidebar).getByRole('link', { name: 'Manage Question Papers' }))
     expect(
-      await screen.findByRole('heading', { name: 'Question Paper Studio & Schema Engine' }),
+      await screen.findByRole('heading', { name: 'No question papers yet' }),
     ).toBeInTheDocument()
+    expect(within(sidebar).queryByRole('link', { name: 'Schema Designer' })).toBeNull() // P34
   })
 
   it("replaces the TK avatar with the signed-in user's initials and menu", async () => {

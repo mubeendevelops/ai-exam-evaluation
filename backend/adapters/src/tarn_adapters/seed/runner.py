@@ -146,6 +146,7 @@ def _content(
             entitlements=scope.entitlements,
             runtime=scope.runtime,
             units=scope.units,
+            booklets=scope.booklets,
         ),
         assets=assets,
         report=report,

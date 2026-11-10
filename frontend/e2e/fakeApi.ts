@@ -71,6 +71,10 @@ export class FakeApi {
     subject_ids: string[]
   }[] = []
   students: { id: string; name: string; usn: string; class_section: string }[] = []
+  /** Schemas and papers (P33, P34): the newest version of each, as the server returns them. */
+  blueprints = new Map<string, Blueprint>([['schema-1', blueprintOf('schema-1', MATRIX, 1)]])
+  /** The versions whose paper PDF was asked for ("paper-3 v2"). */
+  pdfRequests: string[] = []
   private nextId = 1
   /** Who signs in next: an SME by default (the screens under test are the SME's). A test may
    * change it between sign-ins (the admin, then the SME, P26). */
@@ -346,6 +350,53 @@ export class FakeApi {
         })
       }
 
+      case 'GET /schemas': {
+        const schemas = [...this.blueprints.values()].filter((b) => b.kind === 'schema')
+        return json(200, {
+          items: schemas.map((b) => ({
+            ...b,
+            used_in: [...this.blueprints.values()].filter((p) => p.from_schema === b.id).length,
+          })),
+          batches: [],
+        })
+      }
+
+      case 'GET /blueprints': {
+        const kind = url.searchParams.get('kind')
+        return json(
+          200,
+          [...this.blueprints.values()].filter((b) => !kind || b.kind === kind),
+        )
+      }
+
+      case 'GET /papers': {
+        const papers = [...this.blueprints.values()].filter((b) => b.kind === 'paper')
+        return json(200, {
+          items: papers.map((b) => ({
+            ...b,
+            created_at: b.updated_at,
+            in_use: false,
+          })),
+          total: papers.length,
+          limit: 12,
+          offset: 0,
+          descriptors: [...new Set(papers.map((b) => b.descriptor).filter(Boolean))],
+        })
+      }
+
+      case 'POST /papers': {
+        const id = this.newId('paper')
+        const document = {
+          ...STARTER,
+          title: body.title,
+          subject_id: body.subject_id,
+          descriptor: body.descriptor ?? '',
+        }
+        const made = blueprintOf(id, document, 1)
+        this.blueprints.set(id, made)
+        return json(201, made)
+      }
+
       case 'GET /question-topics':
         return json(200, ['Electromagnetism', 'Optics'])
 
@@ -408,6 +459,44 @@ export class FakeApi {
           Object.assign(found, body, { usn: String(body.usn).toUpperCase() })
           return json(200, found)
         }
+        const blueprint = /^(GET|PUT) \/blueprints\/([^/]+)$/.exec(key)
+        if (blueprint) {
+          const found = this.blueprints.get(blueprint[2] as string)
+          if (!found) return json(404, { detail: 'Not found.' })
+          if (blueprint[1] === 'GET') return json(200, found)
+          const saved = blueprintOf(found.id, { ...body, kind: found.kind }, found.version + 1)
+          this.blueprints.set(found.id, saved)
+          return json(200, saved)
+        }
+        const generate = /^POST \/blueprints\/([^/]+)\/paper$/.exec(key)
+        if (generate) {
+          const schema = this.blueprints.get(generate[1] as string)
+          if (!schema) return json(404, { detail: 'Not found.' })
+          const id = this.newId('paper')
+          const paper = blueprintOf(
+            id,
+            {
+              ...(schema.document as Doc),
+              kind: 'paper',
+              title: `${schema.title} paper`,
+              from_schema: schema.id,
+            },
+            1,
+          )
+          this.blueprints.set(id, paper)
+          return json(201, paper)
+        }
+        const pdf = /^GET \/blueprints\/([^/]+)\/versions\/(\d+)\/paper\.pdf$/.exec(key)
+        if (pdf) {
+          const found = this.blueprints.get(pdf[1] as string)
+          if (!found || found.kind !== 'paper') return json(404, { detail: 'Not found.' })
+          this.pdfRequests.push(`${found.id} v${pdf[2]}`)
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/pdf',
+            body: tinyPdf(found.title),
+          })
+        }
         const one = /^GET \/questions\/(q-\d+)$/.exec(key)
         const found = one ? QUESTIONS.find((q) => q.id === one[1]) : undefined
         if (found) return json(200, questionDetail(found))
@@ -468,4 +557,113 @@ function questionDetail(q: (typeof QUESTIONS)[number]) {
     key_files: [],
     diagrams: [],
   }
+}
+
+// --- schemas and papers (P33, P34) ------------------------------------------------------------
+
+type Doc = Record<string, unknown> & {
+  title: string
+  kind: 'schema' | 'paper'
+  sections: { items: { question_id?: string | null }[] }[]
+}
+
+export type Blueprint = ReturnType<typeof blueprintOf>
+
+function section(marks: number[]) {
+  return {
+    label: 'A',
+    title: '',
+    method: 'semantic_rubric',
+    choice: { rule: 'all' },
+    items: marks.map((m, i) => ({
+      type: 'question',
+      label: String(i + 1),
+      marks: m,
+      question_id: null,
+    })),
+  }
+}
+
+const HEADER = {
+  schema_version: '1.2',
+  course_code: 'PHY-501',
+  exam_code: '',
+  subject_id: SUBJECT,
+  duration_minutes: 180,
+  negative_marking: 0,
+  mark_step: 0.5,
+  target_batch: '',
+  weightage_note: '',
+  description: '',
+  descriptor: '',
+  from_schema: null,
+}
+
+/** A schema whose two slots fit the two bank questions (4 and 5 marks). */
+const MATRIX: Doc = {
+  ...HEADER,
+  kind: 'schema',
+  title: 'Physics Matrix',
+  total_marks: 9,
+  sections: [section([4, 5])],
+}
+
+/** The server's starter paper (P34): five unlinked 2-mark questions. */
+const STARTER: Doc = {
+  ...HEADER,
+  kind: 'paper',
+  title: '',
+  total_marks: 10,
+  sections: [section([2, 2, 2, 2, 2])],
+}
+
+function blueprintOf(id: string, document: Doc, version: number) {
+  const leaves = document.sections.flatMap((s) => s.items)
+  return {
+    id,
+    version,
+    title: document.title,
+    course_code: String(document.course_code ?? ''),
+    exam_code: String(document.exam_code ?? ''),
+    subject_id: SUBJECT,
+    subject_name: 'Physics',
+    total_marks: Number(document.total_marks),
+    duration_minutes: (document.duration_minutes as number | null) ?? null,
+    section_count: document.sections.length,
+    question_count: leaves.length,
+    unlinked_count: leaves.filter((l) => !l.question_id).length,
+    kind: document.kind,
+    target_batch: String(document.target_batch ?? ''),
+    weightage_note: String(document.weightage_note ?? ''),
+    description: String(document.description ?? ''),
+    descriptor: String(document.descriptor ?? ''),
+    from_schema: (document.from_schema as string | null) ?? null,
+    updated_at: '2026-11-09T10:00:00Z',
+    structure_locked: false,
+    document: { ...document, schema_version: '1.2' },
+  }
+}
+
+/** A real one-page PDF naming the paper, small enough to write by hand (offsets computed). */
+function tinyPdf(title: string): Buffer {
+  const text = title.replace(/[()\\]/g, ' ').replace(/[^\x20-\x7e]/g, '?')
+  const stream = `BT /F1 18 Tf 72 760 Td (${text}) Tj ET`
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+  ]
+  let out = '%PDF-1.4\n'
+  const offsets: number[] = []
+  objects.forEach((o, i) => {
+    offsets.push(out.length)
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`
+  })
+  const xref = out.length
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  for (const o of offsets) out += `${String(o).padStart(10, '0')} 00000 n \n`
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  return Buffer.from(out, 'latin1')
 }

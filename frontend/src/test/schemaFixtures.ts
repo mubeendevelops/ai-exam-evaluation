@@ -5,6 +5,7 @@ import { physics } from './adminFixtures'
 
 type Blueprint = components['schemas']['BlueprintOut']
 type Card = components['schemas']['SchemaCardOut']
+type PaperCard = components['schemas']['PaperCardOut']
 type Check = components['schemas']['ValidationOut']
 
 /** A 1.2 document of one section of five 2-mark questions. */
@@ -44,7 +45,12 @@ export function documentOf(over: Partial<BlueprintDocument> = {}): BlueprintDocu
 }
 
 /** The API's blueprint around a document. */
-export function blueprintOf(id: string, document: BlueprintDocument, version = 1): Blueprint {
+export function blueprintOf(
+  id: string,
+  document: BlueprintDocument,
+  version = 1,
+  locked = false,
+): Blueprint {
   return {
     id,
     version,
@@ -66,6 +72,7 @@ export function blueprintOf(id: string, document: BlueprintDocument, version = 1
     from_schema: document.from_schema ?? null,
     updated_at: '2026-10-20T10:00:00Z',
     document: document as unknown as Record<string, unknown>,
+    structure_locked: locked,
   }
 }
 
@@ -103,4 +110,38 @@ export function verdictOf(call: Call): Reply {
     unlinked: [],
   }
   return { json: check }
+}
+
+export function paperCardOf(over: Partial<PaperCard> = {}): PaperCard {
+  return {
+    id: 'paper-1',
+    version: 2,
+    title: 'Physics Mid Term 2026',
+    subject_id: physics.id,
+    subject_name: physics.name,
+    descriptor: 'Mid term 2026 batch',
+    description: 'Mechanics and optics.',
+    exam_code: 'PHY-MID-26',
+    course_code: 'PHY',
+    duration_minutes: 180,
+    total_marks: 100,
+    section_count: 2,
+    created_at: '2026-10-15T09:00:00Z',
+    updated_at: '2026-10-20T10:00:00Z',
+    in_use: false,
+    from_schema: null,
+    ...over,
+  }
+}
+
+/** A paper document: the schema's shape as a paper (every question unlinked). */
+export function paperDocumentOf(over: Partial<BlueprintDocument> = {}): BlueprintDocument {
+  return documentOf({
+    kind: 'paper',
+    title: 'Physics Mid Term 2026',
+    exam_code: '',
+    target_batch: '',
+    weightage_note: '',
+    ...over,
+  })
 }

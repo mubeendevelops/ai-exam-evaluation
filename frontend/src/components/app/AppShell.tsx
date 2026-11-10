@@ -12,16 +12,9 @@ import { StatusPill } from './StatusPill'
 import { UserMenu } from './UserMenu'
 
 /** Tab names follow the build plan (D51); the icons are the prototype's. AI Evaluation and
- * Evaluated went in P32 (the SME's student and question lists replace them, D215). */
+ * Evaluated went in P32, the Schema Designer in P34 (the SME portal replaces them, D215). */
 export const appTabs: readonly (TabItem & { capability: Capability })[] = [
   { to: '/qna', label: 'Q&A DB', icon: 'fa-solid fa-database', capability: 'author_content' },
-  {
-    to: '/schema',
-    label: 'Schema Designer',
-    shortLabel: 'Schema',
-    icon: 'fa-solid fa-file-signature',
-    capability: 'author_content',
-  },
 ]
 
 /** The signed-in frame of project_idea.html: top bar with the tabs, mobile sub-bar, footer.

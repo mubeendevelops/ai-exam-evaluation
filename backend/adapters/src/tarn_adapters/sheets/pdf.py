@@ -4,6 +4,7 @@ Drawings are cut from the cleaned page image (OpenCV) and shrunk to a thumbnail.
 
 import html
 import io
+from collections.abc import Callable
 from datetime import UTC
 from decimal import Decimal
 
@@ -36,6 +37,35 @@ td { padding: 2pt 4pt; }
 .gone { color: #9ca3af; }
 .tag { color: #5b21b6; }
 """
+
+
+LAYOUT_TRIES = 6
+
+
+def write_story(make_story: Callable[[], pymupdf.Story], page: pymupdf.Rect = PAGE) -> bytes:
+    """Lay a Story out on A4 pages within ``MARGINS``. MuPDF 1.28 sometimes stops at a page
+    break: it reports the last page filled far past the page's end and drops the rest of the
+    text (seen with 10 pt text). When that happens the layout is redone with the box a point
+    shorter (P34)."""
+    where = page + MARGINS
+    for shrink in range(LAYOUT_TRIES):
+        box = pymupdf.Rect(where.x0, where.y0, where.x1, where.y1 - shrink)
+        buffer = io.BytesIO()
+        writer = pymupdf.DocumentWriter(buffer)
+        story = make_story()
+        complete = True
+        more = 1
+        while more:
+            device = writer.begin_page(page)
+            more, filled = story.place(box)
+            # The bug: the last page claims to have laid out past the page's end.
+            complete = complete and (more or filled[3] <= box.y1 + 0.5)
+            story.draw(device)
+            writer.end_page()
+        writer.close()
+        if complete:
+            return buffer.getvalue()
+    raise RuntimeError("the PDF layout overflowed a page on every try")
 
 
 def mark(value: Decimal | None) -> str:
@@ -73,18 +103,8 @@ class PyMuPdfSheetRenderer:
     def render(self, document: SheetDocument) -> bytes:
         archive = pymupdf.Archive()
         body = self._html(document, archive)
-        buffer = io.BytesIO()
-        writer = pymupdf.DocumentWriter(buffer)
-        story = pymupdf.Story(body, user_css=CSS, archive=archive)
-        where = PAGE + MARGINS
-        more = 1
-        while more:
-            device = writer.begin_page(PAGE)
-            more, _ = story.place(where)
-            story.draw(device)
-            writer.end_page()
-        writer.close()
-        return self._footers(buffer.getvalue(), document)
+        pdf = write_story(lambda: pymupdf.Story(body, user_css=CSS, archive=archive))
+        return self._footers(pdf, document)
 
     # --- layout --------------------------------------------------------------------------
 

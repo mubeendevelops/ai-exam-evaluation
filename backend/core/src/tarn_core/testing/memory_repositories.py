@@ -3,11 +3,13 @@ and log every college id they are called with, so tests can prove isolation."""
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
 from tarn_core.domain.blueprint import (
     BlueprintKind,
+    BlueprintPage,
     BlueprintQuery,
     BlueprintSummary,
     ExamBlueprint,
@@ -291,14 +293,36 @@ class MemoryContentRepository:
                 uses[b.from_schema] = uses.get(b.from_schema, 0) + 1
         title = query.title.lower()
         batch = query.target_batch.lower()
-        return [
-            blueprint_summary(b, uses.get(b.id, 0))
-            for b in newest
-            if (query.kind is None or b.kind is query.kind)
-            and (query.subject_ids is None or b.subject_id in query.subject_ids)
-            and title in b.title.lower()
-            and (not batch or b.target_batch.lower() == batch)
-        ]
+        search = query.search.lower()
+        descriptor = query.descriptor.lower()
+        found = []
+        for b in newest:
+            first = self.versions(college_id, ExamBlueprint, b.id)[0].saved_at
+            if (
+                (query.kind is None or b.kind is query.kind)
+                and (query.subject_ids is None or b.subject_id in query.subject_ids)
+                and title in b.title.lower()
+                and (not batch or b.target_batch.lower() == batch)
+                and (search in b.title.lower() or search in b.descriptor.lower())
+                and (not descriptor or b.descriptor.lower() == descriptor)
+                and (
+                    query.created_on is None
+                    or (first is not None and first.astimezone(UTC).date() == query.created_on)
+                )
+            ):
+                found.append(blueprint_summary(b, uses.get(b.id, 0), first))
+        return found
+
+    def blueprint_page(
+        self, college_id: CollegeId, query: BlueprintQuery, *, limit: int, offset: int = 0
+    ) -> BlueprintPage:
+        found = sorted(
+            self.blueprint_summaries(college_id, query),
+            key=lambda b: (b.title.casefold(), str(b.id)),
+        )
+        # Most recently saved first; a stable sort keeps title order among equal times.
+        found.sort(key=lambda b: b.saved_at or datetime.min.replace(tzinfo=UTC), reverse=True)
+        return BlueprintPage(items=tuple(found[offset : offset + limit]), total=len(found))
 
     def target_batches(
         self,
@@ -307,13 +331,29 @@ class MemoryContentRepository:
         *,
         subject_ids: frozenset[SubjectId] | None = None,
     ) -> Sequence[str]:
-        found = {
-            b.target_batch
-            for b in self.latest(college_id, ExamBlueprint)
-            if b.kind is kind
-            and b.target_batch
-            and (subject_ids is None or b.subject_id in subject_ids)
-        }
+        return self._header_values(college_id, kind, "target_batch", subject_ids)
+
+    def descriptors(
+        self,
+        college_id: CollegeId,
+        kind: BlueprintKind,
+        *,
+        subject_ids: frozenset[SubjectId] | None = None,
+    ) -> Sequence[str]:
+        return self._header_values(college_id, kind, "descriptor", subject_ids)
+
+    def _header_values(
+        self,
+        college_id: CollegeId,
+        kind: BlueprintKind,
+        name: str,
+        subject_ids: frozenset[SubjectId] | None,
+    ) -> Sequence[str]:
+        found: set[str] = set()
+        for b in self.latest(college_id, ExamBlueprint):
+            value = str(getattr(b, name))
+            if b.kind is kind and value and (subject_ids is None or b.subject_id in subject_ids):
+                found.add(value)
         return sorted(found, key=lambda t: (t.lower(), t))
 
     def delete_blueprint(self, college_id: CollegeId, blueprint_id: BlueprintId) -> int:
@@ -587,6 +627,9 @@ class MemoryBookletRepository:
             for b in self._booklets.values(college_id)
             if b.uploaded_by == user_id and b.status in WAITING_STATUSES
         )
+
+    def pins_blueprint(self, college_id: CollegeId, blueprint_id: BlueprintId) -> bool:
+        return any(b.blueprint.id == blueprint_id for b in self._booklets.values(college_id))
 
     def save(self, college_id: CollegeId, booklet: Booklet) -> None:
         self._booklets.put(college_id, booklet.id, booklet)

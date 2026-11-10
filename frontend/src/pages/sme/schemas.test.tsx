@@ -191,6 +191,9 @@ describe('Manage Schema', () => {
       'POST /api/v1/blueprints/schema-1/paper': { status: 201, json: paper },
       'GET /api/v1/blueprints/paper-1': { json: paper },
       'GET /api/v1/blueprints': { json: [paper] },
+      'GET /api/v1/papers': {
+        json: { items: [], total: 0, limit: 12, offset: 0, descriptors: [] },
+      },
     })
     const user = userEvent.setup()
     renderApp('/sme/schemas')
@@ -199,6 +202,10 @@ describe('Manage Schema', () => {
       screen.getByRole('button', { name: 'Generate Question Paper from Midterm Matrix' }),
     )
     expect(await screen.findByRole('heading', { name: 'Exam Blueprint' })).toBeInTheDocument()
+    // P34: the paper opens in Manage Question Papers, not the older Schema Designer.
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent(
+      'Manage Question Papers',
+    )
     expect(mock.callsTo('POST /api/v1/blueprints/schema-1/paper')).toHaveLength(1)
     expect(screen.getByRole('textbox', { name: 'Exam Title / Header' })).toHaveValue(
       'Midterm Matrix paper',

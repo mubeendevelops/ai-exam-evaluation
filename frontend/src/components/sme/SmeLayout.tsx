@@ -41,10 +41,7 @@ export const smeGroups: readonly Group[] = [
     // Temporary (D215): each goes when the prompt that replaces it is built.
     label: 'Older screens',
     note: 'Until their replacements are built.',
-    items: [
-      { to: '/qna', label: 'Q&A DB', icon: 'fa-solid fa-database' },
-      { to: '/schema', label: 'Schema Designer', icon: 'fa-solid fa-file-signature' },
-    ],
+    items: [{ to: '/qna', label: 'Q&A DB', icon: 'fa-solid fa-database' }],
   },
 ]
 
@@ -52,12 +49,12 @@ export const smeGroups: readonly Group[] = [
 const TITLES: readonly [string, string][] = [
   ['/sme', 'My Assignments'],
   ['/sme/papers', 'Manage Question Papers'],
+  ['/sme/papers/:blueprintId', 'Manage Question Papers'],
   ['/sme/schemas', 'Manage Schema'],
   ['/sme/schemas/:blueprintId', 'Manage Schema'],
   ['/sme/profile', 'My Profile'],
   ['/sme/reports', 'My Reports'],
   ['/qna', 'Q&A DB'],
-  ['/schema', 'Schema Designer'],
   ['/sme/units/:unitId', 'My Assignments'],
   ['/sme/units/:unitId/booklets/:bookletId', 'My Assignments'],
   ['/evaluate', 'Evaluation'],

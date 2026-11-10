@@ -113,12 +113,14 @@ export function SmallButton({
   icon,
   tone = 'cyan',
   disabled,
+  'aria-label': ariaLabel,
 }: {
   children: ReactNode
   onClick: () => void
   icon?: string
   tone?: 'cyan' | 'purple' | 'gray'
   disabled?: boolean
+  'aria-label'?: string
 }) {
   const tones = {
     cyan: 'border-cyan-500/40 bg-cyan-950 text-cyan-300 hover:bg-cyan-900/50',
@@ -130,6 +132,7 @@ export function SmallButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={ariaLabel}
       className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs transition disabled:opacity-50 ${tones[tone]}`}
     >
       {icon && <i className={icon} aria-hidden="true" />}

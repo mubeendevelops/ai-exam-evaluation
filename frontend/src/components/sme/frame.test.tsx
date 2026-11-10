@@ -10,7 +10,7 @@ afterEach(() => vi.unstubAllGlobals())
 const GROUPS: [string, string[]][] = [
   ['Workspace', ['My Assignments', 'Manage Question Papers', 'Manage Schema']],
   ['Account & Insights', ['My Profile', 'My Reports']],
-  ['Older screens', ['Q&A DB', 'Schema Designer']],
+  ['Older screens', ['Q&A DB']],
 ]
 
 function linksOf(group: HTMLElement): string[] {
@@ -56,7 +56,7 @@ describe('SME portal frame (P31, D215)', () => {
       within(older)
         .getAllByRole('link')
         .map((l) => l.getAttribute('href')),
-    ).toEqual(['/qna', '/schema']) // Evaluated and AI Evaluation went in P32
+    ).toEqual(['/qna']) // Evaluated and AI Evaluation went in P32, the Schema Designer in P34
   })
 
   it('has a header with the tab title, a placeholder search and bell, and the user menu', async () => {
@@ -85,7 +85,6 @@ describe('SME portal frame (P31, D215)', () => {
     renderApp('/sme')
     const sidebar = await screen.findByRole('navigation', { name: 'SME sections' })
     const empty: [string, string][] = [
-      ['Manage Question Papers', 'Question papers come next'],
       ['My Profile', 'Your profile page comes later'],
       ['My Reports', 'Your reports come later'],
     ]

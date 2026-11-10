@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { uid, type FormPart, type FormQuestion, type FormStep } from '../../lib/blueprint'
 import { compactInputClass, IconButton, SmallButton } from './controls'
 import { useDesignerKind } from './kind'
+import { QuestionPicker } from './QuestionPicker'
 
 interface RowProps {
   question: FormQuestion
@@ -113,17 +114,7 @@ function PartsEditor({
               value={part.marks}
               onChange={(e) => update(part.key, { marks: e.target.value })}
             />
-            {linked ? (
-              <input
-                aria-label={`${name} part ${i + 1} question ID`}
-                className={`${compactInputClass} grow font-mono`}
-                placeholder="Question ID (optional)"
-                value={part.questionId}
-                onChange={(e) => update(part.key, { questionId: e.target.value })}
-              />
-            ) : (
-              <span className="grow" />
-            )}
+            <span className="grow" />
             <IconButton
               label={`Remove ${name} part ${i + 1}`}
               icon="fa-solid fa-trash-can"
@@ -131,6 +122,14 @@ function PartsEditor({
               onClick={() => setParts(question.parts.filter((p) => p.key !== part.key))}
             />
           </div>
+          {linked && (
+            <QuestionPicker
+              name={`${name} part ${i + 1}`}
+              value={part.questionId}
+              marks={part.marks}
+              onChange={(questionId) => update(part.key, { questionId })}
+            />
+          )}
           {part.steps.length > 0 && (
             <StepsEditor
               name={`${name} part ${i + 1}`}
@@ -174,7 +173,7 @@ export function QuestionRow({ question, onChange, onRemove, name }: RowProps) {
   const notes = [
     hasParts ? `${question.parts.length} sub-parts` : '',
     question.steps.length > 0 ? `${question.steps.length} steps` : '',
-    linked && !hasParts && question.questionId.trim() ? 'linked' : '',
+    linked && !hasParts ? (question.questionId.trim() ? 'linked' : 'not linked') : '',
   ].filter(Boolean)
 
   return (
@@ -216,14 +215,16 @@ export function QuestionRow({ question, onChange, onRemove, name }: RowProps) {
               <p className="mb-1 text-[11px] font-semibold tracking-wider text-gray-300 uppercase">
                 Question link
               </p>
-              <input
-                aria-label={`${name} question ID`}
-                className={`${compactInputClass} font-mono`}
-                placeholder={hasParts ? 'Link each sub-part instead' : 'Question ID (optional)'}
-                disabled={hasParts}
-                value={question.questionId}
-                onChange={(e) => set({ questionId: e.target.value })}
-              />
+              {hasParts ? (
+                <p className="text-[11px] text-gray-400">Link each sub-part instead.</p>
+              ) : (
+                <QuestionPicker
+                  name={name}
+                  value={question.questionId}
+                  marks={question.marks}
+                  onChange={(questionId) => set({ questionId })}
+                />
+              )}
             </div>
           )}
           <div>

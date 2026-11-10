@@ -26,10 +26,12 @@ interface Props {
   question?: Question
   /** Called with the saved question's id. */
   onSaved: (id: string) => void
+  /** A new question's starting subject and marks (P34: a paper slot's). */
+  initial?: { subjectId: string; marks: string }
 }
 
 /** "New Question" / "Edit question": text, subject, topic, difficulty, marks, code, key, rubric. */
-export function QuestionModal({ open, onClose, question, onSaved }: Props) {
+export function QuestionModal({ open, onClose, question, onSaved, initial }: Props) {
   // Remount the form for each question (and each opening), so it starts from the stored values.
   return (
     <Modal
@@ -45,6 +47,7 @@ export function QuestionModal({ open, onClose, question, onSaved }: Props) {
         question={question}
         onClose={onClose}
         onSaved={onSaved}
+        initial={initial}
       />
     </Modal>
   )
@@ -54,14 +57,15 @@ function QuestionForm({
   question,
   onClose,
   onSaved,
-}: Pick<Props, 'question' | 'onClose' | 'onSaved'>) {
+  initial,
+}: Pick<Props, 'question' | 'onClose' | 'onSaved' | 'initial'>) {
   const queryClient = useQueryClient()
   const editing = question !== undefined
   const [text, setText] = useState(question?.text ?? '')
-  const [subjectId, setSubjectId] = useState(question?.subject_id ?? '')
+  const [subjectId, setSubjectId] = useState(question?.subject_id ?? initial?.subjectId ?? '')
   const [category, setCategory] = useState(question?.category ?? '')
   const [difficulty, setDifficulty] = useState<Difficulty>(question?.difficulty ?? 'medium')
-  const [marks, setMarks] = useState(question ? String(question.max_marks) : '')
+  const [marks, setMarks] = useState(question ? String(question.max_marks) : (initial?.marks ?? ''))
   const [code, setCode] = useState(question?.code ?? '')
   const [answer, setAnswer] = useState('')
   const [criteria, setCriteria] = useState<CriterionForm[]>(

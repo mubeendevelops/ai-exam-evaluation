@@ -1,12 +1,12 @@
-import { cleanup, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BlueprintDocument } from '../../lib/blueprint'
 import { renderApp } from '../../test/render'
 import { blueprintOf, cardOf, documentOf, verdictOf } from '../../test/schemaFixtures'
+import { detail } from '../../test/qnaFixtures'
 import { smeSession } from '../../test/smeFixtures'
 
-beforeEach(() => globalThis.sessionStorage.clear())
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
@@ -35,6 +35,9 @@ function session(extra: Parameters<typeof smeSession>[0] = {}) {
     'GET /api/v1/blueprints': { json: [schema, paper] },
     'GET /api/v1/schemas': { json: { items: [cardOf()], batches: ['2024 batch', 'Class 12'] } },
     'POST /api/v1/blueprints/validate': verdictOf,
+    'GET /api/v1/papers': {
+      json: { items: [], total: 0, limit: 12, offset: 0, descriptors: ['Board Final', 'Mid-term'] },
+    },
     ...extra,
   })
 }
@@ -99,9 +102,9 @@ describe('the designer in schema mode (/sme/schemas/:id)', () => {
     expect(
       await screen.findByRole('heading', { name: 'This is a question paper' }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open it in the Schema Designer' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open it in Manage Question Papers' })).toHaveAttribute(
       'href',
-      '/schema?blueprint=paper-1',
+      '/sme/papers/paper-1',
     )
     cleanup()
     vi.unstubAllGlobals()
@@ -111,50 +114,49 @@ describe('the designer in schema mode (/sme/schemas/:id)', () => {
   })
 })
 
-describe('the designer in paper mode (/schema?blueprint=)', () => {
-  it('loads a saved paper with its exam code, links and 1.2 fields (O20)', async () => {
-    session()
+describe('the designer in paper mode (/sme/papers/:id, P34)', () => {
+  const linked = detail({ id: LINK, code: 'PHY-Q1', text: 'State Lenz’s law.', max_marks: 2 })
+
+  it('loads a saved paper with its exam code, linked question and 1.2 fields', async () => {
+    session({ [`GET /api/v1/questions/${LINK}`]: { json: linked } })
     const user = userEvent.setup()
-    renderApp('/schema?blueprint=paper-1')
+    renderApp('/sme/papers/paper-1')
     expect(await screen.findByRole('heading', { name: 'Exam Blueprint' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Exam Title / Header' })).toHaveValue(
       'Physics mid-term',
     )
     expect(screen.getByRole('textbox', { name: 'Exam Code' })).toHaveValue('PHY-MID')
-    expect(screen.getByRole('textbox', { name: 'Descriptor' })).toHaveValue('Mid-term')
+    expect(await screen.findByRole('combobox', { name: 'Descriptor' })).toHaveValue('Mid-term')
     expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue('Chapters 1-4')
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent(
+      'Manage Question Papers › Physics mid-term',
+    )
     await user.click(screen.getByRole('button', { name: 'Show details of Section 1 item 1' }))
-    expect(screen.getByRole('textbox', { name: 'Section 1 item 1 question ID' })).toHaveValue(LINK)
+    expect(await screen.findByText('PHY-Q1')).toBeInTheDocument()
+    expect(screen.getByText(/State Lenz’s law/)).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Change the question of Section 1 item 1' }),
+    ).toBeEnabled()
     expect(shownJson()).toMatchObject({ kind: 'paper', from_schema: 'schema-1' })
     expect(screen.getByText('Version 3 · saved')).toBeInTheDocument()
-    // The saved list marks the open one and offers Open for the others.
-    const saved = screen.getByRole('region', { name: 'Saved papers' })
-    expect(within(saved).getByText('Open above')).toBeInTheDocument()
-    expect(within(saved).getByRole('link', { name: 'Open Midterm Matrix' })).toHaveAttribute(
-      'href',
-      '/schema?blueprint=schema-1',
-    )
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeEnabled()
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 
-  it('saves the next version, or a new blueprint that it then opens', async () => {
+  it('saves the next version; Preview waits for the save', async () => {
     const mock = session({
+      [`GET /api/v1/questions/${LINK}`]: { json: linked },
       'PUT /api/v1/blueprints/paper-1': (call) => ({
         json: blueprintOf('paper-1', call.body as BlueprintDocument, 4),
       }),
-      'POST /api/v1/blueprints': (call) => ({
-        status: 201,
-        json: blueprintOf('paper-2', call.body as BlueprintDocument),
-      }),
-      'GET /api/v1/blueprints/paper-2': {
-        json: blueprintOf('paper-2', { ...paperDocument, title: 'Physics re-sit' }),
-      },
     })
     const user = userEvent.setup()
-    renderApp('/schema?blueprint=paper-1')
+    renderApp('/sme/papers/paper-1')
     const code = await screen.findByRole('textbox', { name: 'Exam Code' })
     await user.clear(code)
     await user.type(code, 'PHY-MID-2')
-    const save = screen.getByRole('button', { name: 'Save' })
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeDisabled()
+    const save = screen.getByRole('button', { name: 'Save paper' })
     await waitFor(() => expect(save).toBeEnabled())
     await user.click(save)
     await waitFor(() => expect(mock.callsTo('PUT /api/v1/blueprints/paper-1')).toHaveLength(1))
@@ -163,45 +165,44 @@ describe('the designer in paper mode (/schema?blueprint=)', () => {
       from_schema: 'schema-1',
     })
     expect(await screen.findByText('Version 4 · saved')).toBeInTheDocument()
-
-    const title = screen.getByRole('textbox', { name: 'Exam Title / Header' })
-    await user.clear(title)
-    await user.type(title, 'Physics re-sit')
-    const asNew = screen.getByRole('button', { name: 'Save as new' })
-    await waitFor(() => expect(asNew).toBeEnabled())
-    await user.click(asNew)
-    await waitFor(() => expect(mock.callsTo('POST /api/v1/blueprints')).toHaveLength(1))
-    await waitFor(() =>
-      expect(mock.callsTo('GET /api/v1/blueprints/paper-2').length).toBeGreaterThan(0),
-    )
-    expect(await screen.findByRole('textbox', { name: 'Exam Title / Header' })).toHaveValue(
-      'Physics re-sit',
-    )
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeEnabled()
   })
 
-  it('saves a new blueprint from the draft and clears the draft', async () => {
-    const mock = session({
-      'POST /api/v1/blueprints': (call) => ({
-        status: 201,
-        json: blueprintOf('paper-5', call.body as BlueprintDocument),
-      }),
-      'GET /api/v1/blueprints/paper-5': {
-        json: blueprintOf('paper-5', { ...paperDocument, title: 'Fresh paper' }),
-      },
+  it('says when the structure is locked and keeps the links read-only (D222)', async () => {
+    session({
+      'GET /api/v1/blueprints/paper-1': { json: blueprintOf('paper-1', paperDocument, 3, true) },
+      [`GET /api/v1/questions/${LINK}`]: { json: linked },
     })
     const user = userEvent.setup()
+    renderApp('/sme/papers/paper-1')
+    expect(await screen.findByRole('note')).toHaveTextContent(/structure is locked/)
+    await user.click(screen.getByRole('button', { name: 'Show details of Section 1 item 1' }))
+    expect(await screen.findByText('PHY-Q1')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Change the question of Section 1 item 1' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('sends a schema to Manage Schema and a missing paper back to the list', async () => {
+    session({ 'GET /api/v1/blueprints/gone': { status: 404, json: { detail: 'not found' } } })
+    renderApp('/sme/papers/schema-1')
+    expect(await screen.findByRole('heading', { name: 'This is a schema' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open it in Manage Schema' })).toHaveAttribute(
+      'href',
+      '/sme/schemas/schema-1',
+    )
+    cleanup()
+    vi.unstubAllGlobals()
+    session({ 'GET /api/v1/blueprints/gone': { status: 404, json: { detail: 'not found' } } })
+    renderApp('/sme/papers/gone')
+    expect(await screen.findByRole('heading', { name: 'Paper not found' })).toBeInTheDocument()
+  })
+
+  it('sends the old Schema Designer address to Manage Question Papers', async () => {
+    session()
     renderApp('/schema')
-    const title = await screen.findByRole('textbox', { name: 'Exam Title / Header' })
-    await user.type(title, 'Fresh paper')
-    const save = screen.getByRole('button', { name: 'Save blueprint' })
-    await waitFor(() => expect(save).toBeEnabled())
-    await user.click(save)
-    await waitFor(() => expect(mock.callsTo('POST /api/v1/blueprints')).toHaveLength(1))
-    expect(mock.callsTo('POST /api/v1/blueprints')[0]?.body).toMatchObject({
-      kind: 'paper',
-      title: 'Fresh paper',
-    })
-    expect(await screen.findByText('Version 1 · saved')).toBeInTheDocument()
-    expect(globalThis.sessionStorage.getItem('tarn.schema-designer.draft')).toBeNull()
+    expect(
+      await screen.findByRole('heading', { name: 'Manage Question Papers', level: 2 }),
+    ).toBeInTheDocument()
   })
 })

@@ -422,6 +422,7 @@ def make_services(
             entitlements=mem.entitlements,
             runtime=rt,
             units=mem.units,
+            booklets=mem.booklets,
         ),
         subjects=SubjectService(
             content=mem.content, users=mem.users, entitlements=mem.entitlements, runtime=rt

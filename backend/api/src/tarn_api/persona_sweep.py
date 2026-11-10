@@ -124,6 +124,9 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("GET", "/api/v1/schemas"): _AUTHOR,
     ("POST", "/api/v1/blueprints/{blueprint_id}/clone"): _AUTHOR,
     ("POST", "/api/v1/blueprints/{blueprint_id}/paper"): _AUTHOR,
+    ("GET", "/api/v1/blueprints/{blueprint_id}/versions/{version}/paper.pdf"): _AUTHOR,
+    ("GET", "/api/v1/papers"): _AUTHOR,
+    ("POST", "/api/v1/papers"): _AUTHOR,
     ("GET", "/api/v1/questions/{question_id}/deletion"): _AUTHOR,
     ("DELETE", "/api/v1/questions/{question_id}"): _AUTHOR,
     ("GET", "/api/v1/questions"): _AUTHOR,
@@ -194,6 +197,9 @@ _OWN_BODIES: Mapping[tuple[str, str], Callable[[World], dict[str, Any]]] = {
     },
     ("POST", "/api/v1/blueprints/validate"): lambda w: {"json": w.blueprint_document},
     ("POST", "/api/v1/blueprints"): lambda w: {"json": w.blueprint_document},
+    ("POST", "/api/v1/papers"): lambda w: {
+        "json": {"title": "Persona paper", "subject_id": w.ids["subject_id"]}
+    },
     ("POST", "/api/v1/questions"): lambda w: {
         "json": {
             "subject_id": w.ids["subject_id"],

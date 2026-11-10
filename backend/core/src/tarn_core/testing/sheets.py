@@ -1,6 +1,7 @@
 """A renderer that records what it was asked to draw (tests only). The adapter's real PDF is
 checked in the adapter tests."""
 
+from tarn_core.domain.paper_sheet import PaperDocument
 from tarn_core.domain.sheet import SheetDocument
 
 
@@ -11,3 +12,12 @@ class FakeSheetRenderer:
     def render(self, document: SheetDocument) -> bytes:
         self.documents.append(document)
         return f"%PDF-fake v{document.version} {document.usn}".encode()
+
+
+class FakePaperRenderer:
+    def __init__(self) -> None:
+        self.documents: list[PaperDocument] = []
+
+    def render(self, document: PaperDocument) -> bytes:
+        self.documents.append(document)
+        return f"%PDF-fake paper v{document.version}".encode()

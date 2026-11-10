@@ -20,7 +20,6 @@ import {
   type BlueprintDocument,
   type FormState,
 } from './blueprint'
-import { loadDraft } from './draft'
 
 const examples = {
   ci: ciExample as BlueprintDocument,
@@ -175,17 +174,17 @@ describe('document 1.2: schemas and papers (P33)', () => {
       exam_code: 'CIV-2021-JUN',
     })
   })
+})
 
-  it('reads a version 1 draft with the new fields filled in', () => {
-    const v1: Partial<FormState> = initialForm()
-    delete v1.kind
-    delete v1.targetBatch
-    globalThis.sessionStorage.setItem(
-      'tarn.schema-designer.draft',
-      JSON.stringify({ version: 1, form: { ...v1, title: 'Old draft' } }),
-    )
-    expect(loadDraft()).toMatchObject({ title: 'Old draft', kind: 'paper', targetBatch: '' })
-    globalThis.sessionStorage.setItem('tarn.schema-designer.draft', JSON.stringify({ version: 9 }))
-    expect(loadDraft()).toBeNull()
+describe('a loaded total (P34)', () => {
+  it('follows the sections when it equals their sum, and stays as typed otherwise', () => {
+    const loaded = fromDocument(examples.ci)
+    expect(loaded.totalMarks).toBeNull()
+    expect(toDocument(loaded).total_marks).toBe(examples.ci.total_marks)
+    // Reshaping a section moves the total with it.
+    const key = loaded.sections[0]?.key ?? ''
+    const reshaped = fillSection(loaded, key, 8, '2')
+    expect(toDocument(reshaped).total_marks).toBe(calculatedTotal(reshaped))
+    expect(fromDocument({ ...examples.ci, total_marks: 999 }).totalMarks).toBe('999')
   })
 })

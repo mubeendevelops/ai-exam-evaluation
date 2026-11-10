@@ -39,12 +39,12 @@ test('on a phone the sidebar is a drawer behind the menu button and nothing scro
   await go(page, 'Q&A DB')
   await expect(page).toHaveURL(/\/qna$/)
   await expect(sidebar).toBeHidden()
-  await go(page, 'Schema Designer')
-  await expect(page).toHaveURL(/\/schema$/)
+  await go(page, 'Manage Question Papers')
+  await expect(page).toHaveURL(/\/sme\/papers$/)
   expect(await overflow()).toBeLessThanOrEqual(0)
 })
 
-test('on a phone the schema designer, with an OR pair and sub-parts open, does not scroll sideways', async ({
+test('on a phone the paper designer, with an OR pair, sub-parts, the picker and the preview open, does not scroll sideways', async ({
   page,
 }) => {
   await new FakeApi().install(page)
@@ -55,19 +55,36 @@ test('on a phone the schema designer, with an OR pair and sub-parts open, does n
   await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
   await expect(page).toHaveURL(/\/sme$/) // an SME lands on My Assignments (P31)
 
-  await go(page, 'Schema Designer')
+  await go(page, 'Manage Schema')
+  await page.getByRole('button', { name: 'Generate Question Paper from Physics Matrix' }).click()
+  await expect(page).toHaveURL(/\/sme\/papers\/paper-\d+$/)
   await page.getByRole('button', { name: 'Add OR pair to section 1' }).click()
-  await page.getByRole('button', { name: 'Show details of Section 1 item 6 alternative 1' }).click()
+  await page.getByRole('button', { name: 'Show details of Section 1 item 3 alternative 1' }).click()
   await page.getByRole('button', { name: 'Add sub-part' }).click()
   await page.getByRole('button', { name: 'Add sub-part' }).click()
   await expect(
-    page.getByRole('textbox', { name: 'Section 1 item 6 alternative 1 part 2 marks' }),
+    page.getByRole('textbox', { name: 'Section 1 item 3 alternative 1 part 2 marks' }),
   ).toBeVisible()
+  const overflow = () =>
+    page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  expect(await overflow()).toBeLessThanOrEqual(0)
 
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - window.innerWidth,
-  )
-  expect(overflow).toBeLessThanOrEqual(0)
+  await page
+    .getByRole('button', { name: 'Link the question of Section 1 item 3 alternative 1 part 1' })
+    .click()
+  const search = page.getByRole('dialog', {
+    name: 'Question for Section 1 item 3 alternative 1 part 1',
+  })
+  await expect(search.getByRole('list', { name: 'Matching questions' })).toBeVisible()
+  expect(await overflow()).toBeLessThanOrEqual(0)
+  await page.keyboard.press('Escape')
+
+  await page.goto('/sme/papers')
+  await page.getByRole('button', { name: 'Preview Physics Matrix paper' }).click()
+  const preview = page.getByRole('dialog', { name: 'Physics Matrix paper - Preview' })
+  await expect(preview.getByRole('img', { name: 'Page 1 of 1' })).toBeVisible()
+  await preview.getByRole('button', { name: 'Zoom in' }).click()
+  expect(await overflow()).toBeLessThanOrEqual(0)
 })
 
 test('on a phone the question bank, a question and the New Question modal do not scroll sideways', async ({

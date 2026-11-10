@@ -10,12 +10,17 @@ in-memory one and PostgreSQL's query must filter, count uses and list batches al
 - two papers generated from the matrix (one edited since, still naming it) and one from the
   rubric, edited since to name no schema: the matrix is used in 2 papers, the rubric in 0.
 
+Since P34 ``check`` also covers Manage Question Papers: ``blueprint_page`` (search on the title
+or descriptor, descriptor exactly, the creation date, paging and the total) and
+``descriptors``.
+
 Test code that lives in the package so adapters can reuse it."""
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from tarn_core.domain.blueprint import BlueprintKind, BlueprintQuery, ExamBlueprint
+from tarn_core.domain.blueprint import BlueprintKind, BlueprintPage, BlueprintQuery, ExamBlueprint
 from tarn_core.ids import BlueprintId, CollegeId, SubjectId
 from tarn_core.ports.repositories import ContentRepository
 from tarn_core.services.blueprint_document import blueprint_to_document
@@ -174,9 +179,72 @@ def check(content: ContentRepository, s: Scenario) -> None:
     assert list(content.target_batches(cid, BlueprintKind.SCHEMA, subject_ids=frozenset())) == []
     # Generated papers keep the schema's batch.
     assert list(content.target_batches(cid, BlueprintKind.PAPER)) == ["Class 12", "class 12"]
+    check_pages(content, s)
+
+
+def check_pages(content: ContentRepository, s: Scenario) -> None:
+    """Manage Question Papers (P34)."""
+    cid = s.college.id
+    paper_kind = BlueprintQuery(kind=BlueprintKind.PAPER)
+    everything = content.blueprint_page(cid, paper_kind, limit=10)
+    assert everything.total == 4 and len(everything.items) == 4
+    # Most recently saved first, then by title ignoring case.
+    assert [b.id for b in everything.items] == [
+        b.id
+        for b in sorted(
+            sorted(everything.items, key=lambda b: (b.title.casefold(), str(b.id))),
+            key=lambda b: b.saved_at or datetime.min.replace(tzinfo=UTC),
+            reverse=True,
+        )
+    ]
+    first_page = content.blueprint_page(cid, paper_kind, limit=3)
+    second_page = content.blueprint_page(cid, paper_kind, limit=3, offset=3)
+    assert (first_page.total, second_page.total) == (4, 4)
+    assert [b.id for b in (*first_page.items, *second_page.items)] == [
+        b.id for b in everything.items
+    ]
+    past = content.blueprint_page(cid, paper_kind, limit=3, offset=9)
+    assert (past.items, past.total) == ((), 4)
+
+    def titles(query: BlueprintQuery) -> list[str]:
+        return sorted(b.title for b in content.blueprint_page(cid, query, limit=10).items)
+
+    # The title or the descriptor, anywhere, ignoring case.
+    assert titles(BlueprintQuery(kind=BlueprintKind.PAPER, search="MID-T")) == [
+        "Second matrix paper"
+    ]
+    assert titles(BlueprintQuery(kind=BlueprintKind.PAPER, search="rubric")) == [
+        "Board Rubric 100% paper"
+    ]
+    assert titles(BlueprintQuery(kind=BlueprintKind.PAPER, search="_")) == []
+    # The descriptor exactly, ignoring case.
+    assert titles(BlueprintQuery(kind=BlueprintKind.PAPER, descriptor="MID-TERM")) == [
+        "Second matrix paper"
+    ]
+    assert titles(BlueprintQuery(kind=BlueprintKind.PAPER, descriptor="mid")) == []
+    # The UTC date version 1 was saved: version 2 of the edited papers does not move it.
+    second = next(b for b in everything.items if b.id == s.generated[1])
+    assert second.version == 2 and second.created_at is not None and second.saved_at is not None
+    assert second.created_at <= second.saved_at
+    day = second.created_at.astimezone(UTC).date()
+    on_day = content.blueprint_page(
+        cid, BlueprintQuery(kind=BlueprintKind.PAPER, created_on=day), limit=10
+    )
+    assert s.generated[1] in {b.id for b in on_day.items}
+    later = BlueprintQuery(kind=BlueprintKind.PAPER, created_on=day + timedelta(days=1))
+    assert content.blueprint_page(cid, later, limit=10).total == 0
+    mine = frozenset({s.subject})
+    none = BlueprintQuery(kind=BlueprintKind.PAPER, subject_ids=frozenset())
+    assert content.blueprint_page(cid, none, limit=10) == BlueprintPage(items=(), total=0)
+    assert list(content.descriptors(cid, BlueprintKind.PAPER)) == ["Mid-term"]
+    assert list(content.descriptors(cid, BlueprintKind.PAPER, subject_ids=mine)) == ["Mid-term"]
+    assert list(content.descriptors(cid, BlueprintKind.PAPER, subject_ids=frozenset())) == []
+    assert list(content.descriptors(cid, BlueprintKind.SCHEMA)) == []
 
 
 def check_isolated(content: ContentRepository, own: CollegeId) -> None:
     """``content`` of college ``own`` (which has no blueprints) sees none of another's."""
     assert list(content.blueprint_summaries(own, BlueprintQuery())) == []
     assert list(content.target_batches(own, BlueprintKind.SCHEMA)) == []
+    assert content.blueprint_page(own, BlueprintQuery(), limit=10).total == 0
+    assert list(content.descriptors(own, BlueprintKind.PAPER)) == []

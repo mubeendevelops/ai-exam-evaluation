@@ -17,7 +17,20 @@ from decimal import Decimal
 from typing import Any, NoReturn
 from uuid import UUID, uuid4
 
-from sqlalchemy import Connection, Row, Select, Table, and_, delete, exists, func, or_, select
+from sqlalchemy import (
+    Connection,
+    Date,
+    Row,
+    Select,
+    Table,
+    and_,
+    cast,
+    delete,
+    exists,
+    func,
+    or_,
+    select,
+)
 from sqlalchemy.dialects.postgresql import distinct_on, insert
 from sqlalchemy.exc import DBAPIError
 
@@ -25,6 +38,7 @@ from tarn_adapters.postgres import codec
 from tarn_adapters.postgres import metadata as m
 from tarn_core.domain.blueprint import (
     BlueprintKind,
+    BlueprintPage,
     BlueprintQuery,
     BlueprintSummary,
     ExamBlueprint,
@@ -648,15 +662,21 @@ class PgContentRepository:
             .subquery("newest")
         )
 
-    def blueprint_summaries(
-        self, college_id: CollegeId, query: BlueprintQuery
-    ) -> Sequence[BlueprintSummary]:
+    def _summary_select(self, college_id: CollegeId, query: BlueprintQuery) -> Select[Any] | None:
+        """The newest version of each matching blueprint as summary columns; None when the
+        query cannot match (no subject in reach)."""
         newest = self._newest_blueprints(college_id)
         papers = self._newest_blueprints(college_id).alias("papers")
+        b = m.exam_blueprints
         used_in = (
             select(func.count())
             .select_from(papers)
             .where(papers.c.kind == BlueprintKind.PAPER.value, papers.c.from_schema == newest.c.id)
+            .scalar_subquery()
+        )
+        first_saved = (
+            select(func.min(b.c.created_at))
+            .where(b.c.college_id == college_id, b.c.id == newest.c.id)
             .scalar_subquery()
         )
         stmt = select(
@@ -673,41 +693,85 @@ class PgContentRepository:
             newest.c.descriptor,
             newest.c.from_schema,
             newest.c.total_marks,
+            newest.c.duration_minutes,
             func.jsonb_array_length(newest.c.sections).label("section_count"),
             newest.c.created_at,
+            first_saved.label("first_saved"),
             used_in.label("used_in"),
         )
         if query.kind is not None:
             stmt = stmt.where(newest.c.kind == query.kind.value)
         if query.subject_ids is not None:
             if not query.subject_ids:
-                return []
+                return None
             stmt = stmt.where(newest.c.subject_id.in_(sorted(query.subject_ids)))
         if query.title:
             stmt = stmt.where(newest.c.title.icontains(query.title, autoescape=True))
         if query.target_batch:
             stmt = stmt.where(func.lower(newest.c.target_batch) == query.target_batch.lower())
-        return [
-            BlueprintSummary(
-                id=BlueprintId(r.id),
-                version=r.version,
-                kind=BlueprintKind(r.kind),
-                subject_id=SubjectId(r.subject_id),
-                title=r.title,
-                course_code=r.course_code,
-                exam_code=r.exam_code,
-                target_batch=r.target_batch,
-                weightage_note=r.weightage_note,
-                description=r.description,
-                descriptor=r.descriptor,
-                from_schema=None if r.from_schema is None else BlueprintId(r.from_schema),
-                total_marks=r.total_marks,
-                section_count=r.section_count,
-                saved_at=r.created_at,
-                used_in=r.used_in,
+        if query.search:
+            stmt = stmt.where(
+                or_(
+                    newest.c.title.icontains(query.search, autoescape=True),
+                    newest.c.descriptor.icontains(query.search, autoescape=True),
+                )
             )
-            for r in self._conn.execute(stmt)
-        ]
+        if query.descriptor:
+            stmt = stmt.where(func.lower(newest.c.descriptor) == query.descriptor.lower())
+        if query.created_on is not None:
+            stmt = stmt.where(cast(func.timezone("UTC", first_saved), Date) == query.created_on)
+        return stmt
+
+    @staticmethod
+    def _summary(r: Row[Any]) -> BlueprintSummary:
+        return BlueprintSummary(
+            id=BlueprintId(r.id),
+            version=r.version,
+            kind=BlueprintKind(r.kind),
+            subject_id=SubjectId(r.subject_id),
+            title=r.title,
+            course_code=r.course_code,
+            exam_code=r.exam_code,
+            target_batch=r.target_batch,
+            weightage_note=r.weightage_note,
+            description=r.description,
+            descriptor=r.descriptor,
+            from_schema=None if r.from_schema is None else BlueprintId(r.from_schema),
+            total_marks=r.total_marks,
+            section_count=r.section_count,
+            saved_at=r.created_at,
+            used_in=r.used_in,
+            created_at=r.first_saved,
+            duration_minutes=r.duration_minutes,
+        )
+
+    def blueprint_summaries(
+        self, college_id: CollegeId, query: BlueprintQuery
+    ) -> Sequence[BlueprintSummary]:
+        stmt = self._summary_select(college_id, query)
+        if stmt is None:
+            return []
+        return [self._summary(r) for r in self._conn.execute(stmt)]
+
+    def blueprint_page(
+        self, college_id: CollegeId, query: BlueprintQuery, *, limit: int, offset: int = 0
+    ) -> BlueprintPage:
+        stmt = self._summary_select(college_id, query)
+        if stmt is None:
+            return BlueprintPage(items=(), total=0)
+        found = stmt.subquery("found")
+        page = (
+            select(found, func.count().over().label("matching"))
+            .order_by(found.c.created_at.desc(), func.lower(found.c.title), found.c.id)
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = list(self._conn.execute(page))
+        if rows:
+            total = int(rows[0].matching)
+        else:  # past the last page: count on its own
+            total = int(self._conn.execute(select(func.count()).select_from(found)).scalar_one())
+        return BlueprintPage(items=tuple(self._summary(r) for r in rows), total=total)
 
     def target_batches(
         self,
@@ -716,15 +780,32 @@ class PgContentRepository:
         *,
         subject_ids: frozenset[SubjectId] | None = None,
     ) -> Sequence[str]:
+        return self._header_values(college_id, kind, "target_batch", subject_ids)
+
+    def descriptors(
+        self,
+        college_id: CollegeId,
+        kind: BlueprintKind,
+        *,
+        subject_ids: frozenset[SubjectId] | None = None,
+    ) -> Sequence[str]:
+        return self._header_values(college_id, kind, "descriptor", subject_ids)
+
+    def _header_values(
+        self,
+        college_id: CollegeId,
+        kind: BlueprintKind,
+        name: str,
+        subject_ids: frozenset[SubjectId] | None,
+    ) -> Sequence[str]:
         if subject_ids is not None and not subject_ids:
             return []
         newest = self._newest_blueprints(college_id)
-        stmt = select(newest.c.target_batch).where(
-            newest.c.kind == kind.value, newest.c.target_batch != ""
-        )
+        column = newest.c[name]
+        stmt = select(column).where(newest.c.kind == kind.value, column != "")
         if subject_ids is not None:
             stmt = stmt.where(newest.c.subject_id.in_(sorted(subject_ids)))
-        found = {r.target_batch for r in self._conn.execute(stmt)}
+        found = {str(r[0]) for r in self._conn.execute(stmt)}
         return sorted(found, key=lambda t: (t.lower(), t))
 
     def delete_blueprint(self, college_id: CollegeId, blueprint_id: BlueprintId) -> int:
@@ -1647,6 +1728,13 @@ class PgBookletRepository:
             for r in self._conn.execute(stmt)
         }
         return {i: found.get(i, AnswerTally()) for i in booklet_ids}
+
+    def pins_blueprint(self, college_id: CollegeId, blueprint_id: BlueprintId) -> bool:
+        t = m.booklets
+        stmt = select(
+            exists().where(t.c.college_id == college_id, t.c.blueprint_id == blueprint_id)
+        )
+        return bool(self._conn.execute(stmt).scalar_one())
 
     def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:
         t = m.booklets

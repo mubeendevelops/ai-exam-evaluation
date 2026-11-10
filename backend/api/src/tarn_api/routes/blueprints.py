@@ -5,10 +5,12 @@ the SME does not have, is a 404. Since P33 a blueprint is a schema or a paper (D
 Schema lists schemas (``/api/v1/schemas``), clones blueprints and generates paper drafts from
 schemas (D220). Deletion follows D202."""
 
+import re
+from datetime import date
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Query, Response, status
+from fastapi import APIRouter, Body, Path, Query, Response, status
 
 from tarn_api.backends import Unit, unit_of_work
 from tarn_api.schemas import (
@@ -19,6 +21,9 @@ from tarn_api.schemas import (
     ErrorOut,
     GeneratePaperIn,
     IssueOut,
+    PaperCardOut,
+    PaperIn,
+    PaperListOut,
     SchemaCardOut,
     SchemaListOut,
     SectionSummaryOut,
@@ -110,13 +115,41 @@ def _card(b: BlueprintSummary, subjects: dict[UUID, Subject]) -> SchemaCardOut:
     )
 
 
+def _paper_card(
+    b: BlueprintSummary, subjects: dict[UUID, Subject], in_use: frozenset[BlueprintId]
+) -> PaperCardOut:
+    subject = subjects.get(b.subject_id)
+    return PaperCardOut(
+        id=b.id,
+        version=b.version,
+        title=b.title,
+        subject_id=b.subject_id,
+        subject_name=None if subject is None else subject.name,
+        descriptor=b.descriptor,
+        description=b.description,
+        exam_code=b.exam_code,
+        course_code=b.course_code,
+        duration_minutes=b.duration_minutes,
+        total_marks=float(b.total_marks),
+        section_count=b.section_count,
+        created_at=b.created_at,
+        updated_at=b.saved_at,
+        in_use=b.id in in_use,
+        from_schema=b.from_schema,
+    )
+
+
 def _subjects(unit: Unit, college_id: CollegeId) -> dict[UUID, Subject]:
     return {s.id: s for s in unit.subjects.all(college_id)}
 
 
 def _full_out(b: ExamBlueprint, unit: Unit) -> BlueprintOut:
     subjects = _subjects(unit, b.meta.college_id)
-    return BlueprintOut(**_summary(b, subjects), document=blueprint_to_document(b))
+    return BlueprintOut(
+        **_summary(b, subjects),
+        document=blueprint_to_document(b),
+        structure_locked=unit.blueprints.structure_locked(b.meta.college_id, b),
+    )
 
 
 def _validation_out(report: DocumentReport) -> ValidationOut:
@@ -268,6 +301,104 @@ def list_schemas(
     )
 
 
+@router.get(
+    "/papers",
+    response_model=PaperListOut,
+    summary="Manage Question Papers: one page of the papers of my subjects",
+    description="`q` matches the title or the descriptor anywhere, `descriptor` exactly (both "
+    "ignoring case), `created_on` the UTC date version 1 was saved. Most recently saved first. "
+    "`descriptors` lists every descriptor in use (not filtered).",
+)
+def list_papers(
+    who: PrincipalDep,
+    backends: BackendsDep,
+    q: Annotated[str, Query(max_length=200)] = "",
+    descriptor: Annotated[str, Query(max_length=50)] = "",
+    created_on: date | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 12,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> PaperListOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
+        subjects = _subjects(unit, who.college_id)
+        listing = unit.blueprints.papers(
+            who.college_id,
+            reach=unit.reach(user),
+            search=q,
+            descriptor=descriptor,
+            created_on=created_on,
+            limit=limit,
+            offset=offset,
+        )
+    return PaperListOut(
+        items=[_paper_card(b, subjects, listing.in_use) for b in listing.items],
+        total=listing.total,
+        limit=limit,
+        offset=offset,
+        descriptors=list(listing.descriptors),
+    )
+
+
+@router.post(
+    "/papers",
+    status_code=status.HTTP_201_CREATED,
+    response_model=BlueprintOut,
+    responses={**_INVALID, 403: {"model": ErrorOut}, 404: {"model": ErrorOut}},
+    summary="Create a question paper (SMEs only)",
+    description="From a schema of the same subject (as `/blueprints/{id}/paper`), or a starter "
+    "paper: section A of five unlinked 2-mark questions, course code = the subject's code.",
+)
+def create_paper(body: PaperIn, who: PrincipalDep, backends: BackendsDep) -> BlueprintOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
+        paper = unit.blueprints.create_paper(
+            who.college_id,
+            who.user_id,
+            title=body.title,
+            subject_id=SubjectId(body.subject_id),
+            descriptor=body.descriptor,
+            schema_id=None if body.schema_id is None else BlueprintId(body.schema_id),
+        )
+        return _full_out(paper, unit)
+
+
+def _file_name(exam_code: str, title: str, version: int) -> str:
+    base = re.sub(r"[^A-Za-z0-9]+", "-", exam_code or title).strip("-")[:60] or "paper"
+    return f"paper-{base}-v{version}.pdf"
+
+
+@router.get(
+    "/blueprints/{blueprint_id}/versions/{version}/paper.pdf",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}}, 404: {"model": ErrorOut}},
+    summary="The question paper of one version as a PDF (D224)",
+    description="Rendered on request: header, sections with their rules, OR pairs, sub-parts, "
+    "each question's text (its newest version) and marks. Never keys, rubrics or reference "
+    "answers. A schema, another subject's or college's paper, or an unknown version is 404.",
+)
+def paper_pdf(
+    blueprint_id: UUID,
+    version: Annotated[int, Path(ge=1)],
+    who: PrincipalDep,
+    backends: BackendsDep,
+) -> Response:
+    with unit_of_work(backends, who.college_id) as unit:
+        user = current_user(unit, who, Capability.AUTHOR_CONTENT)
+        document, pdf = unit.paper_sheets.pdf(
+            who.college_id, BlueprintId(blueprint_id), version, reach=unit.reach(user)
+        )
+    name = _file_name(document.exam_code, document.title, document.version)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{name}"',
+            # The questions' newest text is printed, so a version's PDF can change.
+            "Cache-Control": "private, no-cache",
+        },
+    )
+
+
 @router.post(
     "/blueprints",
     status_code=status.HTTP_201_CREATED,
@@ -325,9 +456,16 @@ def blueprint_versions(
 @router.put(
     "/blueprints/{blueprint_id}",
     response_model=BlueprintOut,
-    responses={**_INVALID, 403: {"model": ErrorOut}, 404: {"model": ErrorOut}},
+    responses={
+        **_INVALID,
+        403: {"model": ErrorOut},
+        404: {"model": ErrorOut},
+        409: {"model": ErrorOut},
+    },
     summary="Save the document as the next version (SMEs only)",
-    description="Earlier versions stay valid for booklets pinned to them.",
+    description="Earlier versions stay valid for booklets pinned to them. Once a booklet is "
+    "pinned to a version of a paper, only its title, descriptor, description, target batch, "
+    "duration and course code may change (409 otherwise: clone it, D222).",
 )
 def update_blueprint(
     blueprint_id: UUID, document: Document, who: PrincipalDep, backends: BackendsDep
@@ -365,6 +503,7 @@ def clone_blueprint(
             title=body.title,
             target_batch=body.target_batch,
             weightage_note=body.weightage_note,
+            descriptor=body.descriptor,
         )
         return _full_out(blueprint, unit)
 
@@ -396,6 +535,7 @@ def generate_paper(
             who.user_id,
             BlueprintId(blueprint_id),
             title=None if body is None else body.title,
+            descriptor=None if body is None else body.descriptor,
         )
         return _full_out(paper, unit)
 

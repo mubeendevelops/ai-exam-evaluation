@@ -16,7 +16,7 @@ from (``from_schema``)."""
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
@@ -304,12 +304,17 @@ def leaves(slot: QuestionSlot) -> tuple[tuple[str, QuestionId | None, Decimal], 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class BlueprintQuery:
     """Which blueprints a list shows. ``subject_ids`` None = every subject of the college;
-    ``title`` matches anywhere and ``target_batch`` exactly, both ignoring case."""
+    ``title`` matches anywhere and ``target_batch`` exactly, both ignoring case. Since P34:
+    ``search`` matches the title or the descriptor anywhere, ``descriptor`` exactly (both
+    ignoring case), ``created_on`` the UTC date version 1 was saved."""
 
     kind: BlueprintKind | None = None
     subject_ids: frozenset[SubjectId] | None = None
     title: str = ""
     target_batch: str = ""
+    search: str = ""
+    descriptor: str = ""
+    created_on: date | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -333,13 +338,26 @@ class BlueprintSummary:
     section_count: int
     saved_at: datetime | None
     used_in: int = 0
+    created_at: datetime | None = None
+    """When version 1 was saved (P34)."""
+    duration_minutes: int | None = None
 
     def __post_init__(self) -> None:
         if self.version < 1 or self.section_count < 0 or self.used_in < 0:
             raise InvariantError("blueprint summary: version, sections and uses out of range")
 
 
-def blueprint_summary(blueprint: ExamBlueprint, used_in: int = 0) -> BlueprintSummary:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BlueprintPage:
+    """One page of a blueprint list (P34) and the number of all matches."""
+
+    items: tuple[BlueprintSummary, ...]
+    total: int
+
+
+def blueprint_summary(
+    blueprint: ExamBlueprint, used_in: int = 0, created_at: datetime | None = None
+) -> BlueprintSummary:
     return BlueprintSummary(
         id=blueprint.id,
         version=blueprint.meta.version,
@@ -357,4 +375,6 @@ def blueprint_summary(blueprint: ExamBlueprint, used_in: int = 0) -> BlueprintSu
         section_count=len(blueprint.sections),
         saved_at=blueprint.saved_at,
         used_in=used_in,
+        created_at=created_at,
+        duration_minutes=blueprint.duration_minutes,
     )

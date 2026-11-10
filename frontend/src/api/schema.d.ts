@@ -600,6 +600,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/papers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Manage Question Papers: one page of the papers of my subjects
+         * @description `q` matches the title or the descriptor anywhere, `descriptor` exactly (both ignoring case), `created_on` the UTC date version 1 was saved. Most recently saved first. `descriptors` lists every descriptor in use (not filtered).
+         */
+        get: operations["list_papers_api_v1_papers_get"];
+        put?: never;
+        /**
+         * Create a question paper (SMEs only)
+         * @description From a schema of the same subject (as `/blueprints/{id}/paper`), or a starter paper: section A of five unlinked 2-mark questions, course code = the subject's code.
+         */
+        post: operations["create_paper_api_v1_papers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blueprints/{blueprint_id}/versions/{version}/paper.pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The question paper of one version as a PDF (D224)
+         * @description Rendered on request: header, sections with their rules, OR pairs, sub-parts, each question's text (its newest version) and marks. Never keys, rubrics or reference answers. A schema, another subject's or college's paper, or an unknown version is 404.
+         */
+        get: operations["paper_pdf_api_v1_blueprints__blueprint_id__versions__version__paper_pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/blueprints/{blueprint_id}": {
         parameters: {
             query?: never;
@@ -611,7 +655,7 @@ export interface paths {
         get: operations["get_blueprint_api_v1_blueprints__blueprint_id__get"];
         /**
          * Save the document as the next version (SMEs only)
-         * @description Earlier versions stay valid for booklets pinned to them.
+         * @description Earlier versions stay valid for booklets pinned to them. Once a booklet is pinned to a version of a paper, only its title, descriptor, description, target batch, duration and course code may change (409 otherwise: clone it, D222).
          */
         put: operations["update_blueprint_api_v1_blueprints__blueprint_id__put"];
         post?: never;
@@ -2084,6 +2128,12 @@ export interface components {
             document: {
                 [key: string]: unknown;
             };
+            /**
+             * Structure Locked
+             * @description A booklet is pinned to a version of this paper (D222): a new version may change only the title, descriptor, description, target batch, duration and course code.
+             * @default false
+             */
+            structure_locked: boolean;
         };
         /** BlueprintSummaryOut */
         BlueprintSummaryOut: {
@@ -2394,6 +2444,11 @@ export interface components {
             target_batch?: string | null;
             /** Weightage Note */
             weightage_note?: string | null;
+            /**
+             * Descriptor
+             * @description A paper's copy only; default the source's.
+             */
+            descriptor?: string | null;
         };
         /**
          * CriterionOut
@@ -2832,6 +2887,11 @@ export interface components {
              * @description Default "<title> paper".
              */
             title?: string | null;
+            /**
+             * Descriptor
+             * @description Default the schema's.
+             */
+            descriptor?: string | null;
         };
         /** GlossaryIn */
         GlossaryIn: {
@@ -3288,6 +3348,101 @@ export interface components {
              * @description In reading order; table cells after their table.
              */
             regions: components["schemas"]["RegionOut"][];
+        };
+        /**
+         * PaperCardOut
+         * @description One card of Manage Question Papers (P34).
+         */
+        PaperCardOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /** Title */
+            title: string;
+            /**
+             * Subject Id
+             * Format: uuid
+             */
+            subject_id: string;
+            /** Subject Name */
+            subject_name: string | null;
+            /** Descriptor */
+            descriptor: string;
+            /** Description */
+            description: string;
+            /** Exam Code */
+            exam_code: string;
+            /** Course Code */
+            course_code: string;
+            /** Duration Minutes */
+            duration_minutes: number | null;
+            /** Total Marks */
+            total_marks: number;
+            /** Section Count */
+            section_count: number;
+            /**
+             * Created At
+             * @description When version 1 was saved.
+             */
+            created_at: string | null;
+            /**
+             * Updated At
+             * @description When the newest version was saved.
+             */
+            updated_at: string | null;
+            /**
+             * In Use
+             * @description A unit uses this paper.
+             */
+            in_use: boolean;
+            /** From Schema */
+            from_schema: string | null;
+        };
+        /**
+         * PaperIn
+         * @description Create Question Paper (P34, modal 6).
+         */
+        PaperIn: {
+            /** Title */
+            title: string;
+            /**
+             * Subject Id
+             * Format: uuid
+             */
+            subject_id: string;
+            /**
+             * Descriptor
+             * @default
+             */
+            descriptor: string;
+            /**
+             * Schema Id
+             * @description Start from this schema of the same subject; else a starter paper.
+             */
+            schema_id?: string | null;
+        };
+        /** PaperListOut */
+        PaperListOut: {
+            /** Items */
+            items: components["schemas"]["PaperCardOut"][];
+            /**
+             * Total
+             * @description Papers matching the filters, not just this page.
+             */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /**
+             * Descriptors
+             * @description Descriptors of every paper in reach, for the filter and the suggestions.
+             */
+            descriptors: string[];
         };
         /** PolicyErrorOut */
         PolicyErrorOut: {
@@ -6985,6 +7140,178 @@ export interface operations {
             };
         };
     };
+    list_papers_api_v1_papers_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                descriptor?: string;
+                created_on?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperListOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_paper_api_v1_papers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaperIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlueprintOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description The blueprint breaks a rule; every broken rule is listed in the message (use /blueprints/validate for a structured list). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    paper_pdf_api_v1_blueprints__blueprint_id__versions__version__paper_pdf_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                blueprint_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_blueprint_api_v1_blueprints__blueprint_id__get: {
         parameters: {
             query?: {
@@ -7091,6 +7418,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -44,6 +44,7 @@ async function refreshLists(queryClient: ReturnType<typeof useQueryClient>) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ['blueprints'] }),
     queryClient.invalidateQueries({ queryKey: ['schemas'] }),
+    queryClient.invalidateQueries({ queryKey: ['papers'] }),
   ])
 }
 

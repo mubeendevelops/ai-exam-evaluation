@@ -19,8 +19,9 @@ import LandingPage from './pages/LandingPage'
 import QnaPage from './pages/QnaPage'
 import RecoverPage from './pages/RecoverPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
-import SchemaPage from './pages/SchemaPage'
 import MyAssignmentsPage from './pages/sme/MyAssignmentsPage'
+import PaperEditorPage from './pages/sme/PaperEditorPage'
+import PapersPage from './pages/sme/PapersPage'
 import QuestionListPage from './pages/sme/QuestionListPage'
 import SchemaEditorPage from './pages/sme/SchemaEditorPage'
 import SchemasPage from './pages/sme/SchemasPage'
@@ -55,7 +56,8 @@ export default function App() {
               <Route index element={<MyAssignmentsPage />} />
               <Route path="units/:unitId" element={<StudentListPage />} />
               <Route path="units/:unitId/booklets/:bookletId" element={<QuestionListPage />} />
-              <Route path="papers" element={<Sme.PapersPage />} />
+              <Route path="papers" element={<PapersPage />} />
+              <Route path="papers/:blueprintId" element={<PaperEditorPage />} />
               <Route path="schemas" element={<SchemasPage />} />
               <Route path="schemas/:blueprintId" element={<SchemaEditorPage />} />
               <Route path="schema" element={<Navigate to="/sme/schemas" replace />} />
@@ -66,7 +68,8 @@ export default function App() {
           </Route>
           <Route element={<RequireCapability capability="author_content" />}>
             <Route path="qna" element={<QnaPage />} />
-            <Route path="schema" element={<SchemaPage />} />
+            {/* The older Schema Designer went in P34 (D215). */}
+            <Route path="schema" element={<Navigate to="/sme/papers" replace />} />
           </Route>
           <Route element={<RequireCapability capability="evaluate" />}>
             <Route path="evaluate" element={<EvaluatePage />} />

@@ -329,6 +329,11 @@ class BlueprintOut(BlueprintSummaryOut):
     document: dict[str, Any] = Field(
         description="The blueprint in the public form, see docs/api/blueprint.schema.json."
     )
+    structure_locked: bool = Field(
+        False,
+        description="A booklet is pinned to a version of this paper (D222): a new version may "
+        "change only the title, descriptor, description, target batch, duration and course code.",
+    )
 
 
 class SchemaCardOut(BaseModel):
@@ -360,10 +365,56 @@ class CloneIn(_In):
     title: str | None = Field(None, max_length=200, description='Default "<title> (copy)".')
     target_batch: str | None = Field(None, max_length=100)
     weightage_note: str | None = Field(None, max_length=1000)
+    descriptor: str | None = Field(
+        None, max_length=50, description="A paper's copy only; default the source's."
+    )
 
 
 class GeneratePaperIn(_In):
     title: str | None = Field(None, max_length=200, description='Default "<title> paper".')
+    descriptor: str | None = Field(None, max_length=50, description="Default the schema's.")
+
+
+class PaperIn(_In):
+    """Create Question Paper (P34, modal 6)."""
+
+    title: str = Field(min_length=1, max_length=200)
+    subject_id: UUID
+    descriptor: str = Field("", max_length=50)
+    schema_id: UUID | None = Field(
+        None, description="Start from this schema of the same subject; else a starter paper."
+    )
+
+
+class PaperCardOut(BaseModel):
+    """One card of Manage Question Papers (P34)."""
+
+    id: UUID
+    version: int
+    title: str
+    subject_id: UUID
+    subject_name: str | None
+    descriptor: str
+    description: str
+    exam_code: str
+    course_code: str
+    duration_minutes: int | None
+    total_marks: float
+    section_count: int
+    created_at: datetime | None = Field(description="When version 1 was saved.")
+    updated_at: datetime | None = Field(description="When the newest version was saved.")
+    in_use: bool = Field(description="A unit uses this paper.")
+    from_schema: UUID | None
+
+
+class PaperListOut(BaseModel):
+    items: list[PaperCardOut]
+    total: int = Field(description="Papers matching the filters, not just this page.")
+    limit: int
+    offset: int
+    descriptors: list[str] = Field(
+        description="Descriptors of every paper in reach, for the filter and the suggestions."
+    )
 
 
 # --- question bank ----------------------------------------------------------------------------

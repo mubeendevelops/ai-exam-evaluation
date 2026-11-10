@@ -18,6 +18,7 @@ from uuid import UUID
 from tarn_core.domain.assignments import AcademicYear, AssignmentCounts
 from tarn_core.domain.blueprint import (
     BlueprintKind,
+    BlueprintPage,
     BlueprintQuery,
     BlueprintSummary,
     ExamBlueprint,
@@ -176,6 +177,25 @@ class ContentRepository(Protocol):
     ) -> Sequence[str]:
         """Distinct non-empty target batches of the newest versions of ``kind``, sorted
         ignoring case; ``subject_ids`` None = every subject."""
+        ...
+
+    def blueprint_page(
+        self, college_id: CollegeId, query: BlueprintQuery, *, limit: int, offset: int = 0
+    ) -> BlueprintPage:
+        """One page of ``blueprint_summaries`` (P34), most recently saved first (then title
+        ignoring case, then id), each with ``created_at`` (version 1's save time), and the
+        number of all matches."""
+        ...
+
+    def descriptors(
+        self,
+        college_id: CollegeId,
+        kind: BlueprintKind,
+        *,
+        subject_ids: frozenset[SubjectId] | None = None,
+    ) -> Sequence[str]:
+        """Distinct non-empty descriptors of the newest versions of ``kind``, sorted ignoring
+        case (P34); ``subject_ids`` None = every subject."""
         ...
 
     def save(self, college_id: CollegeId, item: ContentItem) -> None:
@@ -359,6 +379,11 @@ class BookletRepository(Protocol):
 
     def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:
         """Booklets this user uploaded that are still queued or being processed."""
+        ...
+
+    def pins_blueprint(self, college_id: CollegeId, blueprint_id: BlueprintId) -> bool:
+        """Whether any booklet of the college is pinned to a version of this blueprint (the
+        structure lock, P34, D222)."""
         ...
 
     def save(self, college_id: CollegeId, booklet: Booklet) -> None: ...
