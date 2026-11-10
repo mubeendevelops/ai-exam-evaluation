@@ -241,3 +241,28 @@ def test_another_subject_or_college_is_not_found_and_the_admin_refused(flow: Flo
     )
     assert foreign.status_code == 422  # another college's subject is "no such subject"
     assert all(p["title"] != "Elsewhere" for p in flow.papers(flow.ravi)["items"])
+
+
+def _linked_question(flow: Flow, exam_code: str) -> str:
+    sections = flow.paper(exam_code)["document"]["sections"]
+    item = sections[0]["items"][0]
+    return str(item.get("question_id") or item["alternatives"][0]["question_id"])
+
+
+def test_the_usage_of_a_question_lists_its_papers_and_open_units(flow: Flow) -> None:
+    """P35, D223: the editor's warning; another college's SME and the admin are refused."""
+    question_id = _linked_question(flow, QP_CI)
+    response = flow.client.get(f"{BASE}/questions/{question_id}/usage", headers=flow.suresh)
+    assert response.status_code == 200, response.text
+    papers = response.json()["papers"]
+    assert [p["exam_code"] for p in papers] == [QP_CI]
+    assert papers[0]["title"] and papers[0]["id"]
+    assert papers[0]["open_units"] and set(papers[0]["open_units"][0]) == {"id", "code", "year"}
+    assert (
+        flow.client.get(f"{BASE}/questions/{question_id}/usage", headers=flow.ravi).status_code
+        == 404
+    )
+    assert (
+        flow.client.get(f"{BASE}/questions/{question_id}/usage", headers=flow.admin).status_code
+        == 403
+    )

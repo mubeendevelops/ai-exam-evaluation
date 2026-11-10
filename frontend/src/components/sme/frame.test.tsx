@@ -10,7 +10,6 @@ afterEach(() => vi.unstubAllGlobals())
 const GROUPS: [string, string[]][] = [
   ['Workspace', ['My Assignments', 'Manage Question Papers', 'Manage Schema']],
   ['Account & Insights', ['My Profile', 'My Reports']],
-  ['Older screens', ['Q&A DB']],
 ]
 
 function linksOf(group: HTMLElement): string[] {
@@ -48,15 +47,12 @@ describe('SME portal frame (P31, D215)', () => {
     expect(screen.queryByRole('navigation', { name: 'Main (mobile)' })).toBeNull()
   })
 
-  it('links the older screens until their replacements are built', async () => {
+  it('has no older-screens group left: the Q&A DB went in P35', async () => {
     smeSession()
     renderApp('/sme')
-    const older = await screen.findByRole('group', { name: 'Older screens' })
-    expect(
-      within(older)
-        .getAllByRole('link')
-        .map((l) => l.getAttribute('href')),
-    ).toEqual(['/qna']) // Evaluated and AI Evaluation went in P32, the Schema Designer in P34
+    const sidebar = await screen.findByRole('navigation', { name: 'SME sections' })
+    expect(within(sidebar).queryByRole('group', { name: 'Older screens' })).toBeNull()
+    expect(within(sidebar).queryByRole('link', { name: 'Q&A DB' })).toBeNull()
   })
 
   it('has a header with the tab title, a placeholder search and bell, and the user menu', async () => {

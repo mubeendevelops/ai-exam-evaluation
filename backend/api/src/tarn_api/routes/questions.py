@@ -30,8 +30,11 @@ from tarn_api.schemas import (
     QuestionCreateIn,
     QuestionOut,
     QuestionPageOut,
+    QuestionPaperUseOut,
     QuestionSummaryOut,
+    QuestionUnitUseOut,
     QuestionUpdateIn,
+    QuestionUsageOut,
     ReferenceAnswerIn,
     ReferenceAnswerOut,
     ReferenceDiagramOut,
@@ -671,6 +674,37 @@ def _file_response(data: bytes, media_type: str, name: str) -> Response:
             "X-Content-Type-Options": "nosniff",
             "Cache-Control": "private, max-age=300",
         },
+    )
+
+
+# --- where it is used (P35, D223) -------------------------------------------------------------
+
+
+@router.get(
+    "/questions/{question_id}/usage",
+    response_model=QuestionUsageOut,
+    responses={404: {"model": ErrorOut}, 403: {"model": ErrorOut}},
+    summary="The papers that link this question and their open units",
+    description="For the editor's warning before saving (D223): a change reaches every paper "
+    "that links the question, and unapproved answers re-score when their booklet is opened. "
+    "Only papers of my subjects are listed; another subject's or college's question is a 404.",
+)
+def question_usage(question_id: UUID, who: PrincipalDep, backends: BackendsDep) -> QuestionUsageOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, Capability.AUTHOR_CONTENT)
+        usage = unit.question_usage.usage(who.college_id, who.user_id, QuestionId(question_id))
+    return QuestionUsageOut(
+        papers=[
+            QuestionPaperUseOut(
+                id=p.paper_id,
+                title=p.title,
+                exam_code=p.exam_code,
+                open_units=[
+                    QuestionUnitUseOut(id=u.unit_id, code=u.code, year=u.year) for u in p.open_units
+                ],
+            )
+            for p in usage.papers
+        ]
     )
 
 

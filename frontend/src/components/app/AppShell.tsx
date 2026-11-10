@@ -11,11 +11,10 @@ import { RecoveryCodesModal } from './RecoveryCodesModal'
 import { StatusPill } from './StatusPill'
 import { UserMenu } from './UserMenu'
 
-/** Tab names follow the build plan (D51); the icons are the prototype's. AI Evaluation and
- * Evaluated went in P32, the Schema Designer in P34 (the SME portal replaces them, D215). */
-export const appTabs: readonly (TabItem & { capability: Capability })[] = [
-  { to: '/qna', label: 'Q&A DB', icon: 'fa-solid fa-database', capability: 'author_content' },
-]
+/** The top bar's tabs: none are left (D215). The Q&A DB, AI Evaluation, Evaluated and the Schema
+ * Designer went when the SME portal replaced them (P32, P34, P35); the admin and the SME have
+ * their own sidebars, and the Governor's screens come in Stage H. */
+export const appTabs: readonly (TabItem & { capability: Capability })[] = []
 
 /** The signed-in frame of project_idea.html: top bar with the tabs, mobile sub-bar, footer.
  * An SME gets the SME portal frame instead (P31, D215): sidebar and header, no top bar. */

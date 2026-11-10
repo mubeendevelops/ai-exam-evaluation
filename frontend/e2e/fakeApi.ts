@@ -75,6 +75,8 @@ export class FakeApi {
   blueprints = new Map<string, Blueprint>([['schema-1', blueprintOf('schema-1', MATRIX, 1)]])
   /** The versions whose paper PDF was asked for ("paper-3 v2"). */
   pdfRequests: string[] = []
+  /** The question bank (P35: a new question is added here). */
+  questions: Question[] = QUESTIONS.map((q) => ({ ...q }))
   private nextId = 1
   /** Who signs in next: an SME by default (the screens under test are the SME's). A test may
    * change it between sign-ins (the admin, then the SME, P26). */
@@ -403,12 +405,30 @@ export class FakeApi {
       case 'GET /questions': {
         const level = url.searchParams.get('difficulty')
         const word = (url.searchParams.get('keyword') ?? '').toLowerCase()
-        const items = QUESTIONS.filter(
+        const items = this.questions.filter(
           (q) =>
             (!level || q.difficulty === level) &&
             (!word || `${q.text} ${q.code}`.toLowerCase().includes(word)),
         )
         return json(200, { items, total: items.length, limit: 12, offset: 0 })
+      }
+
+      case 'POST /questions': {
+        const id = `q-${this.questions.length + 1}`
+        const made = {
+          id,
+          version: 1,
+          code: String(body.code),
+          text: String(body.text),
+          max_marks: Number(body.max_marks),
+          difficulty: String(body.difficulty),
+          category: String(body.category ?? ''),
+          subject_id: String(body.subject_id),
+          subject_name: 'Physics',
+          key_count: body.reference_answer ? 1 : 0,
+        }
+        this.questions.push(made)
+        return json(201, questionDetail(made))
       }
 
       case 'GET /accounts':
@@ -497,8 +517,30 @@ export class FakeApi {
             body: tinyPdf(found.title),
           })
         }
-        const one = /^GET \/questions\/(q-\d+)$/.exec(key)
-        const found = one ? QUESTIONS.find((q) => q.id === one[1]) : undefined
+        const usage = /^GET \/questions\/(q-\d+)\/usage$/.exec(key)
+        if (usage) {
+          const papers = [...this.blueprints.values()]
+            .filter(
+              (b) =>
+                b.kind === 'paper' &&
+                JSON.stringify(b.document).includes(`"question_id":"${usage[1]}"`),
+            )
+            .map((b) => ({ id: b.id, title: b.title, exam_code: b.exam_code, open_units: [] }))
+          return json(200, { papers })
+        }
+        const one = /^(GET|PUT) \/questions\/(q-\d+)$/.exec(key)
+        const found = one ? this.questions.find((q) => q.id === one[2]) : undefined
+        if (found && one?.[1] === 'PUT') {
+          Object.assign(found, {
+            version: found.version + 1,
+            text: String(body.text),
+            code: String(body.code),
+            max_marks: Number(body.max_marks),
+            difficulty: String(body.difficulty),
+            category: String(body.category ?? ''),
+          })
+          return json(200, questionDetail(found))
+        }
         if (found) return json(200, questionDetail(found))
         return json(599, { detail: `fake API has no ${key}` })
       }
@@ -508,23 +550,36 @@ export class FakeApi {
 
 const SUBJECT = '33333333-3333-4333-8333-333333333333'
 
-const QUESTIONS = [
+interface Question {
+  id: string
+  version: number
+  code: string
+  text: string
+  max_marks: number
+  difficulty: string
+  category: string
+  subject_id: string
+  subject_name: string
+  key_count: number
+}
+
+const QUESTIONS: Question[] = [
   ['q-1', 'PHY-Q1', 'State Lenz’s law.', 'easy', 4],
   ['q-2', 'PHY-Q2', 'Define resonance in an LCR circuit.', 'hard', 5],
 ].map(([id, code, text, difficulty, marks]) => ({
-  id,
+  id: String(id),
   version: 1,
-  code,
-  text,
-  max_marks: marks,
-  difficulty,
+  code: String(code),
+  text: String(text),
+  max_marks: Number(marks),
+  difficulty: String(difficulty),
   category: 'Electromagnetism',
   subject_id: SUBJECT,
   subject_name: 'Physics',
   key_count: 1,
 }))
 
-function questionDetail(q: (typeof QUESTIONS)[number]) {
+function questionDetail(q: Question) {
   return {
     ...q,
     reference_answers: [

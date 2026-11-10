@@ -36,11 +36,9 @@ test('on a phone the sidebar is a drawer behind the menu button and nothing scro
   await expect(sidebar).toBeHidden()
   await expect(menu).toBeFocused()
 
-  await go(page, 'Q&A DB')
-  await expect(page).toHaveURL(/\/qna$/)
-  await expect(sidebar).toBeHidden()
   await go(page, 'Manage Question Papers')
   await expect(page).toHaveURL(/\/sme\/papers$/)
+  await expect(sidebar).toBeHidden()
   expect(await overflow()).toBeLessThanOrEqual(0)
 })
 
@@ -87,7 +85,7 @@ test('on a phone the paper designer, with an OR pair, sub-parts, the picker and 
   expect(await overflow()).toBeLessThanOrEqual(0)
 })
 
-test('on a phone the question bank, a question and the New Question modal do not scroll sideways', async ({
+test('on a phone the question list, the question editor with its search do not scroll sideways', async ({
   page,
 }) => {
   await new FakeApi().install(page)
@@ -97,18 +95,21 @@ test('on a phone the question bank, a question and the New Question modal do not
   await page.getByLabel('Security Access Password').fill('correct horse battery staple')
   await page.getByRole('button', { name: /Authenticate Cloud Access/ }).click()
   await expect(page).toHaveURL(/\/sme$/)
-  await go(page, 'Q&A DB')
+  await go(page, 'Manage Question Papers')
+  await page.getByRole('link', { name: 'Questions', exact: true }).click()
   await expect(page.getByRole('article', { name: 'Question PHY-Q1' })).toBeVisible()
   const overflow = () =>
     page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
   expect(await overflow()).toBeLessThanOrEqual(0)
 
   await page.getByRole('button', { name: 'Open PHY-Q1' }).click()
-  await expect(page.getByRole('region', { name: 'Rubric' })).toBeVisible()
+  await expect(page.getByRole('form', { name: 'Edit question' })).toBeVisible()
   expect(await overflow()).toBeLessThanOrEqual(0)
 
-  await page.getByRole('button', { name: 'Edit question' }).click()
-  await expect(page.getByRole('dialog', { name: 'Edit PHY-Q1' })).toBeVisible()
+  // The search beside the editor drops below it on a phone, with its results.
+  const similar = page.getByRole('complementary', { name: 'Similar questions' })
+  await similar.getByRole('searchbox').fill('resonance')
+  await expect(similar.getByRole('link', { name: 'Open PHY-Q2' })).toBeVisible()
   expect(await overflow()).toBeLessThanOrEqual(0)
 })
 

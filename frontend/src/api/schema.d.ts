@@ -958,6 +958,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/questions/{question_id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The papers that link this question and their open units
+         * @description For the editor's warning before saving (D223): a change reaches every paper that links the question, and unapproved answers re-score when their booklet is opened. Only papers of my subjects are listed; another subject's or college's question is a 404.
+         */
+        get: operations["question_usage_api_v1_questions__question_id__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/questions/{question_id}/deletion": {
         parameters: {
             query?: never;
@@ -3545,6 +3565,23 @@ export interface components {
             /** Offset */
             offset: number;
         };
+        /** QuestionPaperUseOut */
+        QuestionPaperUseOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Exam Code */
+            exam_code: string;
+            /**
+             * Open Units
+             * @description The paper's units that are open, oldest first.
+             */
+            open_units: components["schemas"]["QuestionUnitUseOut"][];
+        };
         /** QuestionSummaryOut */
         QuestionSummaryOut: {
             /**
@@ -3580,6 +3617,18 @@ export interface components {
              */
             key_count: number;
         };
+        /** QuestionUnitUseOut */
+        QuestionUnitUseOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Code */
+            code: string;
+            /** Year */
+            year: string;
+        };
         /** QuestionUpdateIn */
         QuestionUpdateIn: {
             /** Code */
@@ -3603,6 +3652,14 @@ export interface components {
              * @description Replaces the rubric. Required when the marks change and a rubric exists.
              */
             criteria?: (components["schemas"]["ListCriterion"] | components["schemas"]["NumericCriterion"] | components["schemas"]["SemanticCriterion"] | components["schemas"]["DiagramCriterion"])[] | null;
+        };
+        /** QuestionUsageOut */
+        QuestionUsageOut: {
+            /**
+             * Papers
+             * @description Papers of my subjects whose newest version links the question, by title. A change to the question reaches each of them (D223).
+             */
+            papers: components["schemas"]["QuestionPaperUseOut"][];
         };
         /** ReadingOut */
         ReadingOut: {
@@ -8665,6 +8722,64 @@ export interface operations {
                 };
                 content: {
                     "image/png": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    question_usage_api_v1_questions__question_id__usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionUsageOut"];
                 };
             };
             /** @description Unauthorized */

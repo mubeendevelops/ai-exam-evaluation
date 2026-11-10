@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { uid, type FormPart, type FormQuestion, type FormStep } from '../../lib/blueprint'
 import { compactInputClass, IconButton, SmallButton } from './controls'
-import { useDesignerKind } from './kind'
+import { useDesignerKind, useDesignerLinks } from './kind'
 import { QuestionPicker } from './QuestionPicker'
 
 interface RowProps {
@@ -124,6 +124,7 @@ function PartsEditor({
           </div>
           {linked && (
             <QuestionPicker
+              slotKey={part.key}
               name={`${name} part ${i + 1}`}
               value={part.questionId}
               marks={part.marks}
@@ -166,7 +167,12 @@ function PartsEditor({
 
 /** One numbered question: number, marks, and (behind "Details") question link, sub-parts, steps. */
 export function QuestionRow({ question, onChange, onRemove, name }: RowProps) {
-  const [open, setOpen] = useState(false)
+  const { reveal } = useDesignerLinks()
+  // Back from the question editor, the slot it was opened for is shown open (P35).
+  const [open, setOpen] = useState(
+    () =>
+      reveal != null && (question.key === reveal || question.parts.some((p) => p.key === reveal)),
+  )
   const set = (patch: Partial<FormQuestion>) => onChange({ ...question, ...patch })
   const linked = useDesignerKind() === 'paper'
   const hasParts = question.parts.length > 0
@@ -219,6 +225,7 @@ export function QuestionRow({ question, onChange, onRemove, name }: RowProps) {
                 <p className="text-[11px] text-gray-400">Link each sub-part instead.</p>
               ) : (
                 <QuestionPicker
+                  slotKey={question.key}
                   name={name}
                   value={question.questionId}
                   marks={question.marks}

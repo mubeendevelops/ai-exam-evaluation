@@ -4894,6 +4894,85 @@
         }
       }
     },
+    "/api/v1/questions/{question_id}/usage": {
+      "get": {
+        "tags": [
+          "question bank"
+        ],
+        "summary": "The papers that link this question and their open units",
+        "description": "For the editor's warning before saving (D223): a change reaches every paper that links the question, and unapproved answers re-score when their booklet is opened. Only papers of my subjects are listed; another subject's or college's question is a 404.",
+        "operationId": "question_usage_api_v1_questions__question_id__usage_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionUsageOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/questions/{question_id}/deletion": {
       "get": {
         "tags": [
@@ -13821,6 +13900,39 @@
         ],
         "title": "QuestionPageOut"
       },
+      "QuestionPaperUseOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "exam_code": {
+            "type": "string",
+            "title": "Exam Code"
+          },
+          "open_units": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionUnitUseOut"
+            },
+            "type": "array",
+            "title": "Open Units",
+            "description": "The paper's units that are open, oldest first."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "exam_code",
+          "open_units"
+        ],
+        "title": "QuestionPaperUseOut"
+      },
       "QuestionSummaryOut": {
         "properties": {
           "id": {
@@ -13893,6 +14005,30 @@
           "key_count"
         ],
         "title": "QuestionSummaryOut"
+      },
+      "QuestionUnitUseOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "year": {
+            "type": "string",
+            "title": "Year"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "year"
+        ],
+        "title": "QuestionUnitUseOut"
       },
       "QuestionUpdateIn": {
         "properties": {
@@ -13976,6 +14112,23 @@
           "difficulty"
         ],
         "title": "QuestionUpdateIn"
+      },
+      "QuestionUsageOut": {
+        "properties": {
+          "papers": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionPaperUseOut"
+            },
+            "type": "array",
+            "title": "Papers",
+            "description": "Papers of my subjects whose newest version links the question, by title. A change to the question reaches each of them (D223)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "papers"
+        ],
+        "title": "QuestionUsageOut"
       },
       "ReadingOut": {
         "properties": {

@@ -3,11 +3,9 @@ import { useState, type FormEvent } from 'react'
 import { api } from '../../api/client'
 import { NETWORK_PROBLEM, problemOf } from '../../api/errors'
 import type { components } from '../../api/schema'
-import { fromBody, toBody, type CriterionForm } from '../../lib/rubric'
 import { FormError } from '../public/fields'
 import { SmallButton, TextArea } from '../schema/controls'
 import { Modal } from '../ui'
-import { RubricEditor } from './RubricEditor'
 
 type Question = components['schemas']['QuestionOut']
 type Answer = components['schemas']['ReferenceAnswerOut']
@@ -187,66 +185,6 @@ function GlossaryForm({ question, onClose }: { question: Question; onClose: () =
       )}
       <FormError message={problem} />
       <Footer busy={busy} onClose={onClose} label="Save glossary" />
-    </form>
-  )
-}
-
-// ---- rubric ---------------------------------------------------------------------------------
-
-export function RubricModal({
-  open,
-  onClose,
-  question,
-}: {
-  open: boolean
-  onClose: () => void
-  question: Question
-}) {
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      size="max-w-3xl"
-      eyebrow={question.code}
-      title="Edit rubric"
-      description={`The weights add up to the question's ${question.max_marks} marks.`}
-    >
-      <RubricForm
-        key={`${question.id}-${question.version}`}
-        question={question}
-        onClose={onClose}
-      />
-    </Modal>
-  )
-}
-
-function RubricForm({ question, onClose }: { question: Question; onClose: () => void }) {
-  const [criteria, setCriteria] = useState<CriterionForm[]>(() =>
-    question.rubric.criteria.map((c) => fromBody(c.criterion)),
-  )
-  const { busy, problem, run } = useSaver(question.id, onClose)
-
-  function submit(event: FormEvent) {
-    event.preventDefault()
-    void run(async () => {
-      const result = await api.PUT('/api/v1/questions/{question_id}/rubric', {
-        params: { path: { question_id: question.id } },
-        body: { criteria: criteria.map(toBody) },
-      })
-      return { ok: result.response.ok, error: result.error }
-    }, 'Could not save the rubric.')
-  }
-
-  return (
-    <form onSubmit={submit} className="space-y-4" aria-label="Rubric">
-      <RubricEditor
-        criteria={criteria}
-        onChange={setCriteria}
-        maxMarks={String(question.max_marks)}
-        diagrams={question.diagrams.map((d) => ({ id: d.id, name: d.name }))}
-      />
-      <FormError message={problem} />
-      <Footer busy={busy} onClose={onClose} label="Save rubric" />
     </form>
   )
 }

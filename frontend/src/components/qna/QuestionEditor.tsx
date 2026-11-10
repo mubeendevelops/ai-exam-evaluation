@@ -1,9 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
-import { Link } from 'react-router'
 import { api } from '../../api/client'
-import { useMe } from '../../auth/AuthProvider'
-import { can } from '../../auth/capabilities'
 import { NETWORK_PROBLEM, problemOf } from '../../api/errors'
 import { fetchBlob, saveBlob } from '../../api/files'
 import type { components } from '../../api/schema'
@@ -12,32 +9,15 @@ import { Badge, EmptyState, GlassPanel, useToast } from '../ui'
 import { SmallButton } from '../schema/controls'
 import { AuthImage } from './AuthImage'
 import { DifficultyPill } from './QuestionList'
-import { QuestionModal } from './QuestionModal'
+import { QuestionForm } from './QuestionForm'
 import { ReferenceGraphModal } from './ReferenceGraphModal'
-import { AnswerModal, GlossaryModal, RubricModal } from './SmallModals'
+import { AnswerModal, GlossaryModal } from './SmallModals'
 import { UploadDiagramModal, UploadKeyModal } from './UploadModals'
 
-type Question = components['schemas']['QuestionOut']
 type Answer = components['schemas']['ReferenceAnswerOut']
-type Criterion = components['schemas']['CriterionOut']
 type RefDiagram = components['schemas']['ReferenceDiagramOut']
 
-type Dialog = 'edit' | 'rubric' | 'answer' | 'glossary' | 'key' | 'diagram' | null
-
-function describe(c: Criterion['criterion'], diagrams: Question['diagrams']): string {
-  switch (c.type) {
-    case 'list':
-      return `${c.params.items.length} items, ${c.params.required_count} required`
-    case 'numeric':
-      return `${c.params.expected} ± ${c.params.tolerance ?? 0}${c.params.unit ? ` ${c.params.unit}` : ''}`
-    case 'semantic':
-      return c.params.reference_statement
-    case 'diagram': {
-      const name = diagrams.find((d) => d.id === c.params.reference_diagram_id)?.name
-      return `${c.params.component ?? 'whole'} of ${name ?? 'a reference diagram'}`
-    }
-  }
-}
+type Dialog = 'answer' | 'glossary' | 'key' | 'diagram' | null
 
 function formatSize(bytes: number): string {
   return bytes >= 1024 * 1024
@@ -66,9 +46,21 @@ function SectionTitle({
   )
 }
 
-/** One question of the college: benchmark keys, rubric, glossary and attached files. */
-export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => void }) {
-  const me = useMe()
+/**
+ * One question of the college as one page (P35): the question form with its rubric (saving asks
+ * first when papers link it, D223), then benchmark answers, glossary and attached files, each
+ * with its own dialog. `onBack` leaves the page (also after a permanent delete).
+ * SMEs author the content of their subjects (D165, D178); the admin never reaches this page.
+ */
+export function QuestionEditor({
+  id,
+  backLabel,
+  onBack,
+}: {
+  id: string
+  backLabel: string
+  onBack: () => void
+}) {
   const toast = useToast()
   const queryClient = useQueryClient()
   const [dialog, setDialog] = useState<Dialog>(null)
@@ -115,7 +107,7 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
 
   const back = (
     <SmallButton icon="fa-solid fa-arrow-left" tone="gray" onClick={onBack}>
-      Back to Repository Browser
+      {backLabel}
     </SmallButton>
   )
 
@@ -131,9 +123,6 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
     )
   }
 
-  const rubric = q.rubric
-  // Content is the college's own (D165): the SMEs of its subject edit it (D178).
-  const own = can(me, 'author_content')
   const close = () => {
     setDialog(null)
     setAnswer(undefined)
@@ -144,26 +133,12 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
       <GlassPanel className="flex flex-wrap items-center justify-between gap-3 p-4">
         {back}
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to="/sme"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-gray-700 bg-gray-800 px-4 py-1.5 text-xs font-semibold text-gray-200 hover:bg-gray-700"
-          >
-            <i className="fa-solid fa-flask-vial text-purple-400" aria-hidden="true" />
-            Test in AI Evaluator
-          </Link>
-          {own && (
-            <>
-              <SmallButton icon="fa-solid fa-pen" tone="purple" onClick={() => setDialog('edit')}>
-                Edit question
-              </SmallButton>
-              <SmallButton icon="fa-solid fa-cloud-arrow-up" onClick={() => setDialog('key')}>
-                Upload Answer Key
-              </SmallButton>
-              <SmallButton icon="fa-solid fa-trash" tone="gray" onClick={() => setDeleting(true)}>
-                Delete
-              </SmallButton>
-            </>
-          )}
+          <SmallButton icon="fa-solid fa-cloud-arrow-up" onClick={() => setDialog('key')}>
+            Upload Answer Key
+          </SmallButton>
+          <SmallButton icon="fa-solid fa-trash" tone="gray" onClick={() => setDeleting(true)}>
+            Delete
+          </SmallButton>
         </div>
       </GlassPanel>
       {deleting && (
@@ -181,16 +156,7 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
         />
       )}
 
-      {!own && (
-        <p
-          role="note"
-          className="rounded-xl border border-purple-500/30 bg-purple-950/30 px-4 py-3 text-xs text-purple-100"
-        >
-          Teachers edit questions, keys and rubrics; the admin account reads them.
-        </p>
-      )}
-
-      <GlassPanel className="space-y-3 p-6">
+      <GlassPanel as="section" aria-label="Question" className="space-y-4 p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded border border-purple-500/30 bg-purple-950 px-2.5 py-1 font-mono text-xs font-bold text-purple-300">
@@ -199,19 +165,15 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
             <span className="rounded bg-gray-800 px-2.5 py-1 text-xs text-gray-300">
               {q.subject_name ?? 'No subject'}
             </span>
-            {q.category && (
-              <span className="rounded bg-gray-800 px-2.5 py-1 text-xs text-cyan-300">
-                {q.category}
-              </span>
-            )}
-            <span className="rounded-full border border-purple-500/30 bg-purple-950/80 px-2.5 py-1 text-xs font-bold text-purple-300">
-              {q.max_marks} {q.max_marks === 1 ? 'Mark' : 'Marks'}
-            </span>
+            <DifficultyPill level={q.difficulty} />
           </div>
-          <DifficultyPill level={q.difficulty} />
+          <p className="text-[11px] text-gray-400">Version {q.version}</p>
         </div>
-        <h2 className="text-xl leading-snug font-bold whitespace-pre-line text-white">{q.text}</h2>
-        <p className="text-[11px] text-gray-400">Version {q.version}</p>
+        <QuestionForm
+          key={`${q.id}-${q.version}`}
+          question={q}
+          onSaved={() => toast.show('Question saved.')}
+        />
       </GlassPanel>
 
       <GlassPanel as="section" aria-label="Benchmark answers" className="space-y-4 p-6">
@@ -219,17 +181,15 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
           icon="fa-solid fa-list-check"
           tone="text-purple-400"
           action={
-            own && (
-              <SmallButton
-                icon="fa-solid fa-plus"
-                onClick={() => {
-                  setAnswer(undefined)
-                  setDialog('answer')
-                }}
-              >
-                Add reference answer
-              </SmallButton>
-            )
+            <SmallButton
+              icon="fa-solid fa-plus"
+              onClick={() => {
+                setAnswer(undefined)
+                setDialog('answer')
+              }}
+            >
+              Add reference answer
+            </SmallButton>
           }
         >
           Benchmark answer keys
@@ -249,87 +209,28 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
               {a.synthetic && (
                 <Badge tone="purple">SYNTHETIC – dev only, needs teacher validation</Badge>
               )}
-              {own && (
-                <span className="ml-auto flex gap-2">
-                  <SmallButton
-                    tone="gray"
-                    onClick={() => {
-                      setAnswer(a)
-                      setDialog('answer')
-                    }}
-                  >
-                    Edit answer
-                  </SmallButton>
-                  <SmallButton
-                    tone="gray"
-                    disabled={retire.isPending}
-                    onClick={() => retire.mutate(a.id)}
-                  >
-                    Remove answer
-                  </SmallButton>
-                </span>
-              )}
+              <span className="ml-auto flex gap-2">
+                <SmallButton
+                  tone="gray"
+                  onClick={() => {
+                    setAnswer(a)
+                    setDialog('answer')
+                  }}
+                >
+                  Edit answer
+                </SmallButton>
+                <SmallButton
+                  tone="gray"
+                  disabled={retire.isPending}
+                  onClick={() => retire.mutate(a.id)}
+                >
+                  Remove answer
+                </SmallButton>
+              </span>
             </div>
             <p className="whitespace-pre-line">{a.text}</p>
           </div>
         ))}
-      </GlassPanel>
-
-      <GlassPanel as="section" aria-label="Rubric" className="space-y-4 p-6">
-        <SectionTitle
-          icon="fa-solid fa-scale-balanced"
-          tone="text-cyan-400"
-          action={
-            own && (
-              <SmallButton icon="fa-solid fa-pen" onClick={() => setDialog('rubric')}>
-                Edit rubric
-              </SmallButton>
-            )
-          }
-        >
-          Rubric
-        </SectionTitle>
-        {rubric.criteria.length === 0 ? (
-          <p className="text-xs text-gray-400">No criteria: a guidance-only key, marked by hand.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-gray-800 text-[11px] text-gray-400 uppercase">
-                  <th className="py-2 pr-3">Criterion</th>
-                  <th className="py-2 pr-3">Method</th>
-                  <th className="py-2 pr-3">Parameters</th>
-                  <th className="py-2 text-right">Marks</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800/60">
-                {rubric.criteria.map((c) => (
-                  <tr key={c.criterion.id}>
-                    <td className="py-2 pr-3 font-medium text-white">{c.criterion.label}</td>
-                    <td className="py-2 pr-3">
-                      <Badge tone="cyan">{c.criterion.type}</Badge>
-                    </td>
-                    <td className="max-w-xs truncate py-2 pr-3 text-gray-300">
-                      {describe(c.criterion, q.diagrams)}
-                    </td>
-                    <td className="py-2 text-right font-bold text-emerald-400">
-                      {c.criterion.weight}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {rubric.criteria.length > 0 && (
-          <p
-            role="status"
-            className={`text-xs ${rubric.complete ? 'text-emerald-400' : 'text-amber-400'}`}
-          >
-            Weights add up to {rubric.total} of {rubric.max_marks} marks
-            {rubric.complete ? '.' : ': the AI cannot score until they match.'}
-          </p>
-        )}
       </GlassPanel>
 
       <GlassPanel as="section" aria-label="Glossary" className="space-y-3 p-6">
@@ -337,11 +238,9 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
           icon="fa-solid fa-spell-check"
           tone="text-amber-400"
           action={
-            own && (
-              <SmallButton icon="fa-solid fa-pen" onClick={() => setDialog('glossary')}>
-                Edit glossary
-              </SmallButton>
-            )
+            <SmallButton icon="fa-solid fa-pen" onClick={() => setDialog('glossary')}>
+              Edit glossary
+            </SmallButton>
           }
         >
           Glossary
@@ -371,11 +270,9 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
           icon="fa-solid fa-paperclip"
           tone="text-emerald-400"
           action={
-            own && (
-              <SmallButton icon="fa-solid fa-diagram-project" onClick={() => setDialog('diagram')}>
-                Upload reference diagram
-              </SmallButton>
-            )
+            <SmallButton icon="fa-solid fa-diagram-project" onClick={() => setDialog('diagram')}>
+              Upload reference diagram
+            </SmallButton>
           }
         >
           Attached files
@@ -435,7 +332,7 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
                     tone="gray"
                     onClick={() => setGraphOf(d)}
                   >
-                    {own ? `Edit graph of ${d.name}` : `View graph of ${d.name}`}
+                    {`Edit graph of ${d.name}`}
                   </SmallButton>
                 </figcaption>
               </figure>
@@ -450,19 +347,9 @@ export function QuestionDetailView({ id, onBack }: { id: string; onBack: () => v
           onClose={() => setGraphOf(null)}
           questionId={q.id}
           diagram={q.diagrams.find((d) => d.id === graphOf.id) ?? graphOf}
-          editable={own}
+          editable
         />
       )}
-      <QuestionModal
-        open={dialog === 'edit'}
-        onClose={close}
-        question={q}
-        onSaved={() => {
-          close()
-          toast.show('Question saved.')
-        }}
-      />
-      <RubricModal open={dialog === 'rubric'} onClose={close} question={q} />
       <AnswerModal open={dialog === 'answer'} onClose={close} question={q} answer={answer} />
       <GlossaryModal open={dialog === 'glossary'} onClose={close} question={q} />
       <UploadKeyModal

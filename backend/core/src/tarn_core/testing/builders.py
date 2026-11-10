@@ -69,6 +69,7 @@ from tarn_core.services.content_deletion import ContentDeletion
 from tarn_core.services.delegation import DelegationService
 from tarn_core.services.entitlements import EntitlementService
 from tarn_core.services.question_bank import QuestionBankService
+from tarn_core.services.question_usage import QuestionUsageService
 from tarn_core.services.scoring import ScoringService
 from tarn_core.services.subjects import SubjectService
 from tarn_core.services.totals import TotalsService
@@ -350,6 +351,7 @@ class Services:
     delegation: DelegationService
     unit_flow: UnitFlowService
     deletion: ContentDeletion
+    usage: QuestionUsageService
 
 
 def make_services(
@@ -408,6 +410,12 @@ def make_services(
             entitlements=mem.entitlements,
             blobs=mem.blobs,
             runtime=rt,
+        ),
+        usage=QuestionUsageService(
+            content=mem.content,
+            units=mem.units,
+            users=mem.users,
+            entitlements=mem.entitlements,
         ),
         bank=QuestionBankService(
             content=mem.content,

@@ -57,6 +57,7 @@ from tarn_core.services.overview import OverviewService
 from tarn_core.services.paper_sheet import PaperSheets
 from tarn_core.services.pipeline import PageDecisions
 from tarn_core.services.question_bank import QuestionBankService
+from tarn_core.services.question_usage import QuestionUsageService
 from tarn_core.services.registration import RegistrationService
 from tarn_core.services.roster import RosterService
 from tarn_core.services.subjects import SubjectService
@@ -224,6 +225,15 @@ class Unit:
             entitlements=self.scope.entitlements,
             blobs=self.scope.blobs,
             runtime=self.scope.runtime,
+        )
+
+    @property
+    def question_usage(self) -> QuestionUsageService:
+        return QuestionUsageService(
+            content=self.scope.content,
+            units=self.scope.units,
+            users=self.scope.users,
+            entitlements=self.scope.entitlements,
         )
 
     @property

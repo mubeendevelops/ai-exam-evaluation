@@ -50,7 +50,7 @@ describe('route guards', () => {
 
   it('shows the Governor a placeholder page and nothing else', async () => {
     signedIn('governor', { 'GET /api/v1/units': { json: [] } })
-    renderApp('/qna')
+    renderApp('/sme/profile')
     expect(await screen.findByRole('heading', { name: 'Governor portal' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Schema/ })).not.toBeInTheDocument()
   })
@@ -66,22 +66,20 @@ describe('route guards', () => {
 })
 
 describe('app shell (project_idea.html)', () => {
-  it('gives the SME the portal frame: older screens switch the page, footer kept', async () => {
+  it('gives the SME the portal frame: sidebar links switch the page, footer kept', async () => {
     signedIn('sme', {
       'GET /api/v1/papers': {
         json: { items: [], total: 0, limit: 12, offset: 0, descriptors: [] },
       },
     })
     const user = userEvent.setup()
-    renderApp('/qna')
-    expect(
-      await screen.findByRole('heading', { name: 'Questions & Answers Repository' }),
-    ).toBeInTheDocument()
+    renderApp('/sme/profile')
+    expect(await screen.findByRole('heading', { name: 'My Profile' })).toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull()
     expect(screen.getByText('TARN KNOWLEDGE SERVICES')).toBeInTheDocument()
 
     const sidebar = screen.getByRole('navigation', { name: 'SME sections' })
-    expect(within(sidebar).getByRole('link', { name: 'Q&A DB' })).toHaveAttribute(
+    expect(within(sidebar).getByRole('link', { name: 'My Profile' })).toHaveAttribute(
       'aria-current',
       'page',
     )
@@ -96,7 +94,7 @@ describe('app shell (project_idea.html)', () => {
   it("replaces the TK avatar with the signed-in user's initials and menu", async () => {
     signedIn()
     const user = userEvent.setup()
-    renderApp('/qna')
+    renderApp('/sme/profile')
     const avatar = await screen.findByRole('button', { name: /Account menu for Asha Rao/ })
     expect(avatar).toHaveTextContent('AR')
     expect(screen.queryByText('TK')).toBeNull()
@@ -116,7 +114,7 @@ describe('app shell (project_idea.html)', () => {
   it('adds Administration to the menu of an administrator', async () => {
     signedIn('admin')
     const user = userEvent.setup()
-    renderApp('/qna')
+    renderApp('/sme/profile')
     await user.click(await screen.findByRole('button', { name: /Account menu/ }))
     await user.click(screen.getByRole('menuitem', { name: /Administration/ }))
     expect(await screen.findByRole('heading', { name: 'Dashboard Overview' })).toBeInTheDocument()
@@ -125,7 +123,7 @@ describe('app shell (project_idea.html)', () => {
   it('signs out: tells the server, forgets the token and returns to the landing page', async () => {
     const mock = signedIn('sme', { 'POST /api/v1/auth/logout': { status: 204 } })
     const user = userEvent.setup()
-    renderApp('/qna')
+    renderApp('/sme/profile')
     await user.click(await screen.findByRole('button', { name: /Account menu/ }))
     await user.click(screen.getByRole('menuitem', { name: /Sign out/ }))
     expect(await screen.findByRole('heading', { name: /Customer Sign In/ })).toBeInTheDocument()
@@ -138,7 +136,7 @@ describe('app shell (project_idea.html)', () => {
   it('signs out: forgets every cached answer of the server (the next user may be another college)', async () => {
     signedIn('sme', { 'POST /api/v1/auth/logout': { status: 204 } })
     const user = userEvent.setup()
-    const { queryClient } = renderApp('/qna')
+    const { queryClient } = renderApp('/sme/profile')
     await user.click(await screen.findByRole('button', { name: /Account menu/ }))
     await waitFor(() => expect(queryClient.getQueryCache().getAll().length).toBeGreaterThan(0))
     await user.click(screen.getByRole('menuitem', { name: /Sign out/ }))
@@ -162,8 +160,8 @@ describe('app shell (project_idea.html)', () => {
 describe('status pill', () => {
   async function pillFor(health: unknown, status = 200) {
     signedIn('sme', { 'GET /api/v1/health': { status, json: health } })
-    renderApp('/qna')
-    await screen.findByRole('heading', { name: 'Questions & Answers Repository' })
+    renderApp('/sme/profile')
+    await screen.findByRole('heading', { name: 'My Profile' })
   }
   const pill = () =>
     screen
@@ -211,7 +209,7 @@ describe('profile and recovery codes', () => {
       'POST /api/v1/auth/password/change': { status: 204 },
       'GET /api/v1/auth/password-bloom': { body: new ArrayBuffer(0), status: 500 },
     })
-    renderApp('/qna')
+    renderApp('/sme/profile')
     const user = await openMenuItem(/Profile/)
     const dialog = screen.getByRole('dialog', { name: 'Profile' })
     expect(within(dialog).getByText('SYNTH_COLLEGE')).toBeInTheDocument()
@@ -232,7 +230,7 @@ describe('profile and recovery codes', () => {
       'POST /api/v1/auth/password/change': { status: 403, json: { detail: 'no' } },
       'GET /api/v1/auth/password-bloom': { status: 500, json: {} },
     })
-    renderApp('/qna')
+    renderApp('/sme/profile')
     const user = await openMenuItem(/Profile/)
     const dialog = screen.getByRole('dialog', { name: 'Profile' })
     await user.type(within(dialog).getByLabelText('Current Password'), 'wrong')
@@ -250,7 +248,7 @@ describe('profile and recovery codes', () => {
       { 'POST /api/v1/auth/recovery-codes': { status: 201, json: { codes } } },
       3,
     )
-    renderApp('/qna')
+    renderApp('/sme/profile')
     const user = await openMenuItem(/Recovery codes/)
     const dialog = screen.getByRole('dialog', { name: 'Recovery codes' })
     expect(within(dialog).getByText('3 unused codes')).toBeInTheDocument()
@@ -282,7 +280,7 @@ describe('profile and recovery codes', () => {
     signedIn('sme', {
       'POST /api/v1/auth/recovery-codes': { status: 403, json: { detail: 'no' } },
     })
-    renderApp('/qna')
+    renderApp('/sme/profile')
     const user = await openMenuItem(/Recovery codes/)
     const dialog = screen.getByRole('dialog', { name: 'Recovery codes' })
     await user.type(within(dialog).getByLabelText('Current Password'), 'wrong')

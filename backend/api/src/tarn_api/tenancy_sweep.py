@@ -293,6 +293,7 @@ CASES: Mapping[tuple[str, str], Case] = {
     ),
     ("GET", "/api/v1/units/{unit_id}/frozen-record"): Case("college", as_governor=True),
     ("GET", "/api/v1/questions/{question_id}/deletion"): Case("college"),
+    ("GET", "/api/v1/questions/{question_id}/usage"): Case("college"),
     ("DELETE", "/api/v1/questions/{question_id}"): Case("college"),
     ("GET", "/api/v1/blueprints/{blueprint_id}/deletion"): Case("college"),
     ("DELETE", "/api/v1/blueprints/{blueprint_id}"): Case("college"),

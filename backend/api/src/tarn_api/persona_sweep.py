@@ -128,6 +128,7 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("GET", "/api/v1/papers"): _AUTHOR,
     ("POST", "/api/v1/papers"): _AUTHOR,
     ("GET", "/api/v1/questions/{question_id}/deletion"): _AUTHOR,
+    ("GET", "/api/v1/questions/{question_id}/usage"): _AUTHOR,
     ("DELETE", "/api/v1/questions/{question_id}"): _AUTHOR,
     ("GET", "/api/v1/questions"): _AUTHOR,
     ("POST", "/api/v1/questions"): _AUTHOR,

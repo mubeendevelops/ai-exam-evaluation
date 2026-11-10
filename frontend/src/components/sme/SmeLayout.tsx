@@ -16,7 +16,6 @@ interface Item {
 interface Group {
   label: string
   items: readonly Item[]
-  note?: string
 }
 
 /** The SME mock's sidebar (newrequirements/sme_portal.html), in its order and words; the icons
@@ -37,12 +36,6 @@ export const smeGroups: readonly Group[] = [
       { to: '/sme/reports', label: 'My Reports', icon: 'fa-solid fa-file-lines' },
     ],
   },
-  {
-    // Temporary (D215): each goes when the prompt that replaces it is built.
-    label: 'Older screens',
-    note: 'Until their replacements are built.',
-    items: [{ to: '/qna', label: 'Q&A DB', icon: 'fa-solid fa-database' }],
-  },
 ]
 
 /** The header's tab title for each screen the SME frame holds. */
@@ -54,7 +47,8 @@ const TITLES: readonly [string, string][] = [
   ['/sme/schemas/:blueprintId', 'Manage Schema'],
   ['/sme/profile', 'My Profile'],
   ['/sme/reports', 'My Reports'],
-  ['/qna', 'Q&A DB'],
+  ['/sme/questions', 'Questions'],
+  ['/sme/questions/:questionId', 'Questions'],
   ['/sme/units/:unitId', 'My Assignments'],
   ['/sme/units/:unitId/booklets/:bookletId', 'My Assignments'],
   ['/evaluate', 'Evaluation'],
@@ -160,9 +154,6 @@ export function SmeLayout({
                 <p className="mb-1.5 px-3 text-[10px] font-semibold tracking-wider text-gray-500 uppercase">
                   {group.label}
                 </p>
-                {group.note && (
-                  <p className="mb-1.5 px-3 text-[10px] text-gray-500">{group.note}</p>
-                )}
                 <ul className="space-y-1">
                   {group.items.map((item) => (
                     <li key={item.to}>

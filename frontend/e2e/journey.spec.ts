@@ -100,8 +100,7 @@ test.describe('visitor journey', () => {
     await expect(page).toHaveURL(/\/sme\/papers$/)
     await expect(page.getByRole('heading', { name: 'No question papers yet' })).toBeVisible()
     await expect(nav.getByRole('link', { name: 'Schema Designer' })).toHaveCount(0) // P34
-    await nav.getByRole('link', { name: 'Q&A DB' }).click()
-    await expect(page).toHaveURL(/\/qna$/)
+    await expect(nav.getByRole('link', { name: 'Q&A DB' })).toHaveCount(0) // P35
     await nav.getByRole('link', { name: /My Assignments/ }).click()
     await expect(page).toHaveURL(/\/sme$/)
   })

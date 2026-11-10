@@ -54,10 +54,16 @@ async function refreshLists(queryClient: ReturnType<typeof useQueryClient>) {
  * or with `asNew` another blueprint). `save` resolves to what the server saved, or null after
  * telling the user why not.
  */
-export function useBlueprintEditor(saved: Blueprint | null, initial: () => FormState) {
+export function useBlueprintEditor(
+  saved: Blueprint | null,
+  initial: () => FormState,
+  /** A form to start from instead of the saved one: unsaved edits kept while the SME was in
+   * the question editor (P35). It counts as unsaved changes. */
+  restored: FormState | null = null,
+) {
   const toast = useToast()
   const queryClient = useQueryClient()
-  const [form, setForm] = useState<FormState>(() => (saved ? formOf(saved) : initial()))
+  const [form, setForm] = useState<FormState>(() => restored ?? (saved ? formOf(saved) : initial()))
   const [savedJson, setSavedJson] = useState(() => (saved ? jsonOf(formOf(saved)) : ''))
   const [version, setVersion] = useState(saved?.version ?? 0)
   const [busy, setBusy] = useState(false)

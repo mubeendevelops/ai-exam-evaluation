@@ -13,6 +13,12 @@ export function useDesignerKind(): Kind {
 export interface PaperLinks {
   subjectId: string
   locked: boolean
+  /** Opens the question editor for a slot (P35): a new question (`questionId` null) or the
+   * linked one. The page keeps the unsaved form and links the result on the way back. Absent
+   * where the designer has no page behind it. */
+  /** The form key of a slot to show opened: the one the SME just came back to from the editor. */
+  reveal?: string | null
+  openQuestion?: (request: { slotKey: string; questionId: string | null; marks: string }) => void
 }
 
 export const DesignerLinks = createContext<PaperLinks>({ subjectId: '', locked: false })

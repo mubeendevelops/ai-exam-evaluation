@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { SmallButton } from '../../components/schema/controls'
 import { Designer } from '../../components/schema/Designer'
 import {
@@ -9,8 +9,10 @@ import {
 } from '../../components/schema/saved'
 import { PaperPreview } from '../../components/sme/PaperPreview'
 import { useDescriptors } from '../../components/sme/papers'
-import { EmptyState } from '../../components/ui'
-import { initialForm } from '../../lib/blueprint'
+import { EmptyState, useToast } from '../../components/ui'
+import { hasSlot, initialForm, linkSlot, type FormState } from '../../lib/blueprint'
+import { editorUrl } from '../../lib/editorLinks'
+import { clearDraft, loadDraft, saveDraft } from '../../lib/paperDraft'
 
 const link =
   'inline-flex items-center gap-1.5 rounded-lg border border-gray-700 bg-gray-800 px-2.5 py-1 text-[11px] font-semibold text-gray-200 hover:bg-gray-700'
@@ -60,11 +62,79 @@ export default function PaperEditorPage() {
 }
 
 function PaperEditor({ saved, locked }: { saved: Blueprint; locked: boolean }) {
-  const { form, setForm, verdict, dirty, version, busy, save } = useBlueprintEditor(saved, () =>
-    initialForm('paper'),
+  const navigate = useNavigate()
+  const toast = useToast()
+  const [params, setParams] = useSearchParams()
+  // Unsaved edits kept while the SME was in the question editor (P35).
+  const [restored] = useState<FormState | null>(() => loadDraft(saved.id, saved.version))
+  const { form, setForm, verdict, dirty, version, busy, save } = useBlueprintEditor(
+    saved,
+    () => initialForm('paper'),
+    restored,
   )
   const descriptors = useDescriptors()
   const [previewing, setPreviewing] = useState(false)
+
+  // Back from the editor: the draft is restored, so forget the stored copy; a question made
+  // for a slot comes back in `?linked=&slot=` and is linked here.
+  const linked = params.get('linked')
+  const slot = params.get('slot')
+  // The slot to show opened: the one the editor was opened for.
+  const [reveal] = useState<string | null>(() => params.get('reveal') ?? params.get('slot'))
+  const handled = useRef(false)
+  useEffect(() => {
+    if (handled.current) return
+    handled.current = true
+    if (restored) {
+      clearDraft(saved.id)
+      toast.show('Your unsaved changes were restored.')
+    }
+    if (linked && slot) {
+      if (restored && hasSlot(restored, slot)) {
+        setForm((f) => linkSlot(f, slot, linked))
+        toast.show('Question linked. Save the paper to keep the link.')
+      } else {
+        toast.show('The question was saved, but its slot is gone: link it by hand.', 'red')
+      }
+    }
+    setParams(
+      (old) => {
+        const next = new URLSearchParams(old)
+        for (const key of ['linked', 'slot', 'reveal']) next.delete(key)
+        return next
+      },
+      { replace: true },
+    )
+  }, [restored, linked, slot, saved.id, setForm, setParams, toast])
+
+  // A slot's New question / Edit question: keep the form, open the editor, come back here.
+  const openQuestion = useCallback(
+    ({
+      slotKey,
+      questionId,
+      marks,
+    }: {
+      slotKey: string
+      questionId: string | null
+      marks: string
+    }) => {
+      saveDraft(saved.id, version, form)
+      navigate(
+        editorUrl(
+          questionId,
+          questionId
+            ? { return: `/sme/papers/${saved.id}?reveal=${encodeURIComponent(slotKey)}` }
+            : {
+                return: `/sme/papers/${saved.id}`,
+                slot: slotKey,
+                subject: form.subjectId,
+                marks,
+              },
+        ),
+      )
+    },
+    [navigate, saved.id, form, version],
+  )
 
   const actions = (
     <>
@@ -118,6 +188,8 @@ function PaperEditor({ saved, locked }: { saved: Blueprint; locked: boolean }) {
         actions={actions}
         descriptors={descriptors}
         locked={locked}
+        onOpenQuestion={openQuestion}
+        reveal={reveal}
       />
       {previewing && (
         <PaperPreview

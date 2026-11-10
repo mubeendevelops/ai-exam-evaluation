@@ -1,11 +1,11 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { healthy, meOf, tokenOf } from '../test/fixtures'
-import { graph } from '../test/evaluateFixtures'
-import { mockApi, type Call } from '../test/mockApi'
-import { detail, SUBJECT_ID, summary, type Detail } from '../test/qnaFixtures'
-import { renderApp } from '../test/render'
+import { healthy, meOf, tokenOf } from '../../test/fixtures'
+import { graph } from '../../test/evaluateFixtures'
+import { mockApi, type Call } from '../../test/mockApi'
+import { detail, SUBJECT_ID, summary, type Detail } from '../../test/qnaFixtures'
+import { renderApp } from '../../test/render'
 
 beforeEach(() => globalThis.sessionStorage.clear())
 afterEach(() => vi.unstubAllGlobals())
@@ -38,16 +38,21 @@ const AS_ADMIN = {
 }
 
 function opened(question: Detail = detail(), extra: Parameters<typeof mockApi>[0] = {}) {
-  return bank({ [`GET /api/v1/questions/${question.id}`]: { json: question }, ...extra }, [
-    summary({ id: question.id }),
-  ])
+  return bank(
+    {
+      [`GET /api/v1/questions/${question.id}`]: { json: question },
+      [`GET /api/v1/questions/${question.id}/usage`]: { json: { papers: [] } },
+      ...extra,
+    },
+    [summary({ id: question.id })],
+  )
 }
 
 async function openFirst() {
   const user = userEvent.setup()
-  renderApp('/qna')
+  renderApp('/sme/questions')
   await user.click(await screen.findByRole('button', { name: 'Open PHY-Q1' }))
-  await screen.findByRole('region', { name: 'Rubric' })
+  await screen.findByRole('region', { name: 'Benchmark answers' })
   return user
 }
 
@@ -66,7 +71,7 @@ describe('repository browser', () => {
         key_count: 0,
       }),
     ])
-    renderApp('/qna')
+    renderApp('/sme/questions')
     const first = await screen.findByRole('article', { name: 'Question PHY-Q1' })
     expect(within(first).getByText('Easy')).toBeVisible()
     expect(within(first).getByText('4 Marks')).toBeVisible()
@@ -85,7 +90,7 @@ describe('repository browser', () => {
   it('sends every filter to the server', async () => {
     const mock = bank()
     const user = userEvent.setup()
-    renderApp('/qna')
+    renderApp('/sme/questions')
     await screen.findByRole('article', { name: 'Question PHY-Q1' })
     const last = (): Call['query'] => mock.callsTo('GET /api/v1/questions').at(-1)!.query
 
@@ -120,10 +125,10 @@ describe('repository browser', () => {
   it('says when nothing matches, and offers the first question when the bank is empty', async () => {
     bank({}, [])
     const user = userEvent.setup()
-    renderApp('/qna')
+    renderApp('/sme/questions')
     expect(await screen.findByText('The question bank is empty')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Add the first question' }))
-    expect(screen.getByRole('dialog', { name: 'Add New Question' })).toBeVisible()
+    expect(await screen.findByRole('form', { name: 'New question' })).toBeVisible()
   })
 
   it('pages through long results', async () => {
@@ -143,7 +148,7 @@ describe('repository browser', () => {
       }),
     })
     const user = userEvent.setup()
-    renderApp('/qna')
+    renderApp('/sme/questions')
     await screen.findByRole('article', { name: 'Question Q-0' })
     expect(screen.getByText('Page 1 of 3')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Next' }))
@@ -153,16 +158,21 @@ describe('repository browser', () => {
 })
 
 describe('question detail', () => {
-  it('shows the benchmark key, rubric, glossary and files, and the evaluator link', async () => {
+  it('shows the question form with its rubric, the benchmark key, glossary and files', async () => {
     opened()
     await openFirst()
-    expect(screen.getByRole('heading', { name: 'State Lenz’s law.' })).toBeVisible()
     const keys = screen.getByRole('region', { name: 'Benchmark answers' })
     expect(within(keys).getByText(/induced emf opposes the change of flux/)).toBeVisible()
-    const rubric = screen.getByRole('region', { name: 'Rubric' })
-    expect(within(rubric).getByText('Names the effect')).toBeVisible()
-    expect(within(rubric).getByText('1 items, 1 required')).toBeVisible()
-    expect(within(rubric).getByText('Weights add up to 4 of 4 marks.')).toBeVisible()
+    const form = screen.getByRole('form', { name: 'Edit question' })
+    expect(within(form).getByRole('textbox', { name: 'Question Title / Text' })).toHaveValue(
+      'State Lenz’s law.',
+    )
+    expect(within(form).getByRole('textbox', { name: 'Question code' })).toHaveValue('PHY-Q1')
+    const rubric = within(form).getByRole('region', { name: 'Rubric' })
+    expect(within(rubric).getByRole('textbox', { name: 'Criterion 1 label' })).toHaveValue(
+      'Names the effect',
+    )
+    expect(within(rubric).getByRole('status')).toHaveTextContent('Weights add up to 4 of 4 marks.')
     const glossary = screen.getByRole('region', { name: 'Glossary' })
     expect(within(glossary).getByText('induced emf')).toBeVisible()
     expect(within(glossary).getByText('coil')).toBeVisible()
@@ -171,10 +181,6 @@ describe('question detail', () => {
     expect(within(files).getByText('2 KB')).toBeVisible()
     expect(within(files).getByText('lenz')).toBeVisible()
     expect(within(files).getByText('0 nodes · 0 edges')).toBeVisible()
-    expect(screen.getByRole('link', { name: /Test in AI Evaluator/ })).toHaveAttribute(
-      'href',
-      '/sme',
-    )
   })
 
   it('labels a synthetic key as dev only, and leaves a faculty key unlabelled', async () => {
@@ -201,28 +207,34 @@ describe('question detail', () => {
     expect(faculty).not.toHaveTextContent('SYNTHETIC')
   })
 
-  it('offers Edit and the upload actions to a teacher, and no Copy', async () => {
+  it('offers Save and the upload actions on one page, and no modal editors for the question', async () => {
     opened()
     await openFirst()
-    expect(screen.getByRole('button', { name: 'Edit question' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Save Question' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Upload Answer Key' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Edit rubric' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Upload reference diagram' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Edit question' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Edit rubric' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Copy to my college' })).toBeNull()
     expect(screen.queryByRole('note')).toBeNull()
   })
 
   it('is not for the admin account: it is sent to the admin page (D167, P24)', async () => {
     opened(detail(), AS_ADMIN)
-    renderApp('/qna')
+    renderApp('/sme/questions')
     expect(await screen.findByRole('heading', { name: 'Dashboard Overview' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Open PHY-Q1' })).toBeNull()
   })
 
   it('flags weights that do not add up', async () => {
-    opened(detail({ rubric: { ...detail().rubric, total: 3, complete: false } }))
-    await openFirst()
-    expect(screen.getByText(/Weights add up to 3 of 4 marks: the AI cannot score/)).toBeVisible()
+    opened()
+    const user = await openFirst()
+    const weight = screen.getByRole('textbox', { name: 'Criterion 1 weight' })
+    await user.clear(weight)
+    await user.type(weight, '1')
+    expect(
+      within(screen.getByRole('region', { name: 'Rubric' })).getByRole('status'),
+    ).toHaveTextContent('Weights add up to 3 of 4 marks: they must match.')
   })
 
   it('downloads a file through the token', async () => {
@@ -252,7 +264,7 @@ describe('question detail', () => {
 
   it('says so for an unknown question', async () => {
     bank({ 'GET /api/v1/questions/nope': { status: 404, json: { detail: 'Not found.' } } })
-    renderApp('/qna?question=nope')
+    renderApp('/sme/questions/nope')
     expect(await screen.findByText('Question not found')).toBeVisible()
   })
 })
@@ -312,10 +324,9 @@ describe('reference answers and glossary', () => {
   })
 })
 
-describe('New Question modal and the rubric editor', () => {
+describe('the question form and the rubric editor', () => {
   async function fillQuestion(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(await screen.findByRole('button', { name: 'New Question' }))
-    const dialog = screen.getByRole('dialog', { name: 'Add New Question' })
+    const dialog = await screen.findByRole('form', { name: 'New question' })
     await user.type(within(dialog).getByRole('textbox', { name: 'Question Title / Text' }), 'Why?')
     await user.selectOptions(
       await within(dialog).findByRole('combobox', { name: 'Subject' }),
@@ -339,7 +350,7 @@ describe('New Question modal and the rubric editor', () => {
       'GET /api/v1/questions/q-7': { json: created },
     })
     const user = userEvent.setup()
-    renderApp('/qna')
+    renderApp('/sme/questions/new')
     const dialog = await fillQuestion(user)
 
     await user.click(within(dialog).getByRole('button', { name: 'Add list / keywords criterion' }))
@@ -404,15 +415,16 @@ describe('New Question modal and the rubric editor', () => {
     })
     expect(criteria[1]!.params).toEqual({ expected: 2.5, tolerance: 0.1, unit: 'V' })
     expect(criteria[2]!.params).toEqual({ reference_statement: 'Short wavelengths scatter more.' })
-    // after saving, the new question is open
+    // after saving, the new question is open on its own page
     expect(await screen.findByText('Question saved.')).toBeVisible()
-    expect(await screen.findByRole('region', { name: 'Rubric' })).toBeVisible()
+    expect(await screen.findByRole('region', { name: 'Benchmark answers' })).toBeVisible()
+    expect(screen.getByRole('form', { name: 'Edit question' })).toBeVisible()
   })
 
   it('shows the weight total live and shares the marks evenly', async () => {
     bank()
     const user = userEvent.setup()
-    renderApp('/qna')
+    renderApp('/sme/questions/new')
     const dialog = await fillQuestion(user)
     expect(within(dialog).getByRole('status')).toHaveTextContent(
       'No criteria: the key is guidance only',
@@ -448,7 +460,7 @@ describe('New Question modal and the rubric editor', () => {
       },
     })
     const user = userEvent.setup()
-    renderApp('/qna')
+    renderApp('/sme/questions/new')
     const dialog = await fillQuestion(user)
     await user.click(
       within(dialog).getByRole('button', { name: 'Add semantic statement criterion' }),
@@ -462,14 +474,13 @@ describe('New Question modal and the rubric editor', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       'The rubric weights add up to 5 marks, but the question carries 6.',
     )
-    expect(screen.getByRole('dialog', { name: 'Add New Question' })).toBeVisible() // kept open
+    expect(screen.getByRole('form', { name: 'New question' })).toBeVisible() // kept open
   })
 
   it('edits a question and its rubric together, keeping criterion ids', async () => {
     const mock = opened(detail(), { 'PUT /api/v1/questions/q-1': { json: detail({ version: 2 }) } })
     const user = await openFirst()
-    await user.click(screen.getByRole('button', { name: 'Edit question' }))
-    const dialog = screen.getByRole('dialog', { name: 'Edit PHY-Q1' })
+    const dialog = screen.getByRole('form', { name: 'Edit question' })
     expect(within(dialog).getByRole('textbox', { name: 'Subject' })).toBeDisabled()
     expect(within(dialog).getByRole('textbox', { name: 'Question code' })).toHaveValue('PHY-Q1')
     expect(within(dialog).getByRole('textbox', { name: 'Criterion 1 items' })).toHaveValue(
@@ -492,7 +503,7 @@ describe('New Question modal and the rubric editor', () => {
     ])
   })
 
-  it('edits just the rubric from the detail page, with diagrams to choose from', async () => {
+  it('edits the rubric in the form, with the question’s diagrams to choose from', async () => {
     const q = detail({
       rubric: {
         ...detail().rubric,
@@ -510,31 +521,29 @@ describe('New Question modal and the rubric editor', () => {
         ],
       },
     })
-    const mock = opened(q, { 'PUT /api/v1/questions/q-1/rubric': { json: q.rubric } })
+    const mock = opened(q, { 'PUT /api/v1/questions/q-1': { json: q } })
     const user = await openFirst()
-    await user.click(screen.getByRole('button', { name: 'Edit rubric' }))
-    const dialog = screen.getByRole('dialog', { name: 'Edit rubric' })
-    const diagram = within(dialog).getByRole('combobox', { name: 'Criterion 1 reference diagram' })
+    const form = screen.getByRole('form', { name: 'Edit question' })
+    const diagram = within(form).getByRole('combobox', { name: 'Criterion 1 reference diagram' })
     expect(diagram).toHaveValue('d-1')
     expect(within(diagram).getByRole('option', { name: 'coil.png' })).toBeInTheDocument()
     await user.selectOptions(
-      within(dialog).getByRole('combobox', { name: 'Criterion 1 compared part' }),
+      within(form).getByRole('combobox', { name: 'Criterion 1 compared part' }),
       'edges',
     )
-    await user.click(within(dialog).getByRole('button', { name: 'Save rubric' }))
-    await waitFor(() =>
-      expect(mock.callsTo('PUT /api/v1/questions/q-1/rubric')[0]?.body).toEqual({
-        criteria: [
-          {
-            id: 'c-9',
-            type: 'diagram',
-            label: 'Nodes',
-            weight: 4,
-            params: { reference_diagram_id: 'd-1', component: 'edges' },
-          },
-        ],
-      }),
-    )
+    await user.click(within(form).getByRole('button', { name: 'Save Question' }))
+    await waitFor(() => expect(mock.callsTo('PUT /api/v1/questions/q-1')).toHaveLength(1))
+    expect(
+      (mock.callsTo('PUT /api/v1/questions/q-1')[0]?.body as { criteria: unknown }).criteria,
+    ).toEqual([
+      {
+        id: 'c-9',
+        type: 'diagram',
+        label: 'Nodes',
+        weight: 4,
+        params: { reference_diagram_id: 'd-1', component: 'edges' },
+      },
+    ])
   })
 })
 
@@ -768,5 +777,236 @@ describe('permanent deletion (P28, D166)', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Delete permanently' }))
     await waitFor(() => expect(mock.callsTo('DELETE /api/v1/questions/q-1')).toHaveLength(1))
     expect(await screen.findByText('Question PHY-Q1 deleted.')).toBeVisible()
+  })
+})
+
+describe('the Questions page (P35, D165)', () => {
+  it('lists the SME’s questions with New question, and opens the editor from a card', async () => {
+    opened()
+    const user = userEvent.setup()
+    renderApp('/sme/questions')
+    expect(await screen.findByRole('heading', { name: 'Questions', level: 2 })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Back to Manage Question Papers' })).toHaveAttribute(
+      'href',
+      '/sme/papers',
+    )
+    await user.click(await screen.findByRole('button', { name: 'Open PHY-Q1' }))
+    expect(await screen.findByRole('form', { name: 'Edit question' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Back to Questions' }))
+    await user.click(await screen.findByRole('button', { name: 'New question' }))
+    expect(await screen.findByRole('form', { name: 'New question' })).toBeVisible()
+  })
+
+  it('is for SMEs: the admin is sent to the admin page', async () => {
+    opened(detail(), AS_ADMIN)
+    renderApp('/sme/questions')
+    expect(await screen.findByRole('heading', { name: 'Dashboard Overview' })).toBeInTheDocument()
+  })
+
+  it('does not follow a return address outside the portal', async () => {
+    opened()
+    renderApp('/sme/questions/q-1?return=https://example.test/steal')
+    expect(await screen.findByRole('button', { name: 'Back to Questions' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Back to the question paper' })).toBeNull()
+  })
+
+  it('redirects the old /qna address', async () => {
+    bank()
+    renderApp('/qna')
+    expect(await screen.findByRole('heading', { name: 'Questions', level: 2 })).toBeVisible()
+  })
+})
+
+describe('the used-in warning (D223)', () => {
+  const usage = {
+    papers: [
+      {
+        id: 'p-1',
+        title: 'Mid-term 2026',
+        exam_code: 'QP-PHY-01',
+        open_units: [{ id: 'u-1', code: 'U-0001', year: '2024' }],
+      },
+      { id: 'p-2', title: 'Re-test', exam_code: '', open_units: [] },
+    ],
+  }
+
+  async function edit(extra: Parameters<typeof mockApi>[0]) {
+    const mock = opened(detail(), {
+      'PUT /api/v1/questions/q-1': { json: detail({ version: 2 }) },
+      ...extra,
+    })
+    const user = await openFirst()
+    const text = screen.getByRole('textbox', { name: 'Question Title / Text' })
+    await user.type(text, ' Explain.')
+    await user.click(screen.getByRole('button', { name: 'Save Question' }))
+    return { mock, user }
+  }
+
+  it('lists the papers and open units, and saves only after confirming', async () => {
+    const { mock, user } = await edit({ 'GET /api/v1/questions/q-1/usage': { json: usage } })
+    const dialog = await screen.findByRole('dialog', { name: 'PHY-Q1 is used in 2 papers' })
+    const papers = within(
+      within(dialog).getByRole('list', { name: 'Papers that link this question' }),
+    )
+    expect(papers.getAllByRole('listitem')).toHaveLength(2)
+    expect(papers.getByText('Mid-term 2026')).toBeVisible()
+    expect(papers.getByText('QP-PHY-01')).toBeVisible()
+    expect(papers.getByText('Open unit: U-0001 (2024)')).toBeVisible()
+    expect(papers.getByText('No open unit uses it now.')).toBeVisible()
+    expect(dialog).toHaveTextContent('scored again with the new version')
+    expect(dialog).toHaveTextContent('Approved answers and frozen records keep')
+    expect(mock.callsTo('PUT /api/v1/questions/q-1')).toHaveLength(0) // nothing saved yet
+    await user.click(within(dialog).getByRole('button', { name: 'Save the question' }))
+    await waitFor(() => expect(mock.callsTo('PUT /api/v1/questions/q-1')).toHaveLength(1))
+    expect(await screen.findByText('Question saved.')).toBeVisible()
+  })
+
+  it('says so when the marks change under the slots that link it (O151)', async () => {
+    const mock = opened(detail(), {
+      'GET /api/v1/questions/q-1/usage': { json: usage },
+      'PUT /api/v1/questions/q-1': { json: detail({ version: 2 }) },
+    })
+    const user = await openFirst()
+    const marks = screen.getByRole('textbox', { name: 'Max marks' })
+    await user.clear(marks)
+    await user.type(marks, '5')
+    await user.click(screen.getByRole('button', { name: 'Save Question' }))
+    const dialog = await screen.findByRole('dialog', { name: 'PHY-Q1 is used in 2 papers' })
+    expect(dialog).toHaveTextContent('You are changing the marks from 4 to 5.')
+    expect(dialog).toHaveTextContent('carry 4')
+    expect(mock.callsTo('PUT /api/v1/questions/q-1')).toHaveLength(0)
+  })
+
+  it('does not mention marks when they are unchanged', async () => {
+    await edit({ 'GET /api/v1/questions/q-1/usage': { json: usage } })
+    const dialog = await screen.findByRole('dialog', { name: 'PHY-Q1 is used in 2 papers' })
+    expect(dialog).not.toHaveTextContent('changing the marks')
+  })
+
+  it('saves nothing when cancelled', async () => {
+    const { mock, user } = await edit({ 'GET /api/v1/questions/q-1/usage': { json: usage } })
+    const dialog = await screen.findByRole('dialog', { name: 'PHY-Q1 is used in 2 papers' })
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(mock.callsTo('PUT /api/v1/questions/q-1')).toHaveLength(0)
+    expect(screen.getByRole('textbox', { name: 'Question Title / Text' })).toHaveValue(
+      'State Lenz’s law. Explain.',
+    ) // the edit is kept
+  })
+
+  it('does not ask for a question no paper links', async () => {
+    const { mock } = await edit({})
+    await waitFor(() => expect(mock.callsTo('PUT /api/v1/questions/q-1')).toHaveLength(1))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('asks again each time, and never saves a new question through the check', async () => {
+    const mock = bank({
+      'POST /api/v1/questions': { status: 201, json: detail({ id: 'q-7', code: 'PHY-Q7' }) },
+      'GET /api/v1/questions/q-7': { json: detail({ id: 'q-7', code: 'PHY-Q7' }) },
+    })
+    const user = userEvent.setup()
+    renderApp('/sme/questions/new')
+    const form = await screen.findByRole('form', { name: 'New question' })
+    await user.type(within(form).getByRole('textbox', { name: 'Question Title / Text' }), 'Why?')
+    await user.selectOptions(
+      await within(form).findByRole('combobox', { name: 'Subject' }),
+      SUBJECT_ID,
+    )
+    await user.type(within(form).getByRole('textbox', { name: 'Max marks' }), '2')
+    await user.type(within(form).getByRole('textbox', { name: 'Question code' }), 'PHY-Q7')
+    await user.click(within(form).getByRole('button', { name: 'Save Question' }))
+    await waitFor(() => expect(mock.callsTo('POST /api/v1/questions')).toHaveLength(1))
+    // A new question is used nowhere: there is nothing to ask about.
+    expect(mock.calls.some((c) => c.path.endsWith('/usage'))).toBe(false)
+  })
+
+  it('does not save when it cannot tell which papers use the question', async () => {
+    const { mock } = await edit({
+      'GET /api/v1/questions/q-1/usage': { status: 500, json: { detail: 'Boom.' } },
+    })
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not check which papers use this question.',
+    )
+    expect(mock.callsTo('PUT /api/v1/questions/q-1')).toHaveLength(0)
+  })
+})
+
+describe('the similar-questions search beside the editor', () => {
+  const lens = summary({
+    id: 'q-2',
+    code: 'PHY-Q2',
+    text: 'Define the lens formula.',
+    max_marks: 3,
+  })
+
+  function withSearch(extra: Parameters<typeof mockApi>[0] = {}) {
+    return opened(detail(), {
+      'GET /api/v1/questions': (call) => {
+        const keyword = call.query.get('keyword') ?? ''
+        const items = [summary(), lens].filter((q) =>
+          q.text.toLowerCase().includes(keyword.toLowerCase()),
+        )
+        return { json: { items, total: items.length, limit: 12, offset: 0 } }
+      },
+      ...extra,
+    })
+  }
+
+  it('waits for a few letters, then lists the other questions of my subjects', async () => {
+    const mock = withSearch()
+    const user = userEvent.setup()
+    renderApp('/sme/questions/q-1')
+    const panel = await screen.findByRole('complementary', { name: 'Similar questions' })
+    expect(within(panel).getByText(/before writing it again/)).toBeVisible()
+    await user.type(within(panel).getByRole('searchbox'), 'lens')
+    const list = await within(panel).findByRole('list', { name: 'Matching questions' })
+    expect(within(list).getByText('PHY-Q2')).toBeVisible()
+    expect(within(list).getByText(/3 marks · Physics/)).toBeVisible()
+    const search = mock
+      .callsTo('GET /api/v1/questions')
+      .filter((c) => c.query.has('keyword') && c.query.get('keyword') === 'lens')
+    expect(search.length).toBeGreaterThan(0)
+    expect(search[0]?.query.has('subject_id')).toBe(false) // all of my subjects
+    // The question being edited is never offered to itself.
+    await user.clear(within(panel).getByRole('searchbox'))
+    await user.type(within(panel).getByRole('searchbox'), 'lenz')
+    await within(panel).findByText('No other question matches.')
+  })
+
+  it('opens a match, carrying the way back to the paper', async () => {
+    withSearch({ 'GET /api/v1/questions/q-2': { json: detail({ ...lens }) } })
+    const user = userEvent.setup()
+    renderApp('/sme/questions/q-1?return=/sme/papers/p-1')
+    const panel = await screen.findByRole('complementary', { name: 'Similar questions' })
+    await user.type(within(panel).getByRole('searchbox'), 'lens')
+    const open = await within(panel).findByRole('link', { name: 'Open PHY-Q2' })
+    expect(open).toHaveAttribute('href', '/sme/questions/q-2?return=%2Fsme%2Fpapers%2Fp-1')
+  })
+
+  it('clones a match as the start of a new question, without its code', async () => {
+    const source = detail({ ...lens })
+    withSearch({ 'GET /api/v1/questions/q-2': { json: source } })
+    const user = userEvent.setup()
+    renderApp('/sme/questions/new')
+    const panel = await screen.findByRole('complementary', { name: 'Similar questions' })
+    await user.type(within(panel).getByRole('searchbox'), 'lens')
+    await user.click(await within(panel).findByRole('link', { name: 'Clone PHY-Q2 as a start' }))
+    const form = await screen.findByRole('form', { name: 'New question' })
+    await waitFor(() =>
+      expect(within(form).getByRole('textbox', { name: 'Question Title / Text' })).toHaveValue(
+        'Define the lens formula.',
+      ),
+    )
+    expect(within(form).getByRole('textbox', { name: 'Question code' })).toHaveValue('')
+    expect(within(form).getByRole('textbox', { name: 'Max marks' })).toHaveValue('3')
+    expect(within(form).getByRole('textbox', { name: 'Reference answer (benchmark)' })).toHaveValue(
+      'The induced emf opposes the change of flux.',
+    )
+    expect(within(form).getByRole('textbox', { name: 'Criterion 1 label' })).toHaveValue(
+      'Names the effect',
+    )
+    // The diagram files are not copied: the form says so.
+    expect(within(form).getByRole('note')).toHaveTextContent('Started from PHY-Q2; not copied')
   })
 })

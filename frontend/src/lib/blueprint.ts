@@ -444,3 +444,35 @@ export function fileNameOf(form: FormState): string {
   const slug = base.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   return `${slug || 'exam'}.blueprint.json`
 }
+
+/** Whether a slot or sub-part with this form key is in the form. */
+export function hasSlot(form: FormState, slotKey: string): boolean {
+  const found = (q: FormQuestion): boolean =>
+    q.key === slotKey || q.parts.some((p) => p.key === slotKey)
+  return form.sections.some((section) =>
+    section.items.some((item) =>
+      item.kind === 'question' ? found(item.question) : item.alternatives.some(found),
+    ),
+  )
+}
+
+/** The form with the question `questionId` linked to the slot (or sub-part) whose key is
+ * `slotKey` (P35: the question editor hands the new question back to the paper). A key that is
+ * not in the form changes nothing. */
+export function linkSlot(form: FormState, slotKey: string, questionId: string): FormState {
+  const question = (q: FormQuestion): FormQuestion =>
+    q.key === slotKey
+      ? { ...q, questionId }
+      : { ...q, parts: q.parts.map((p) => (p.key === slotKey ? { ...p, questionId } : p)) }
+  return {
+    ...form,
+    sections: form.sections.map((section) => ({
+      ...section,
+      items: section.items.map((item) =>
+        item.kind === 'question'
+          ? { ...item, question: question(item.question) }
+          : { ...item, alternatives: item.alternatives.map(question) },
+      ),
+    })),
+  }
+}

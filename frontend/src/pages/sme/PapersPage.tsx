@@ -91,9 +91,17 @@ export default function PapersPage() {
               download them.
             </p>
           </div>
-          <PrimaryButton onClick={() => setDialog({ kind: 'create' })}>
-            <i className="fa-solid fa-plus" aria-hidden="true" /> Create Question Paper
-          </PrimaryButton>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/sme/questions"
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 text-xs font-bold tracking-wider text-gray-100 uppercase hover:bg-gray-700"
+            >
+              <i className="fa-solid fa-circle-question" aria-hidden="true" /> Questions
+            </Link>
+            <PrimaryButton onClick={() => setDialog({ kind: 'create' })}>
+              <i className="fa-solid fa-plus" aria-hidden="true" /> Create Question Paper
+            </PrimaryButton>
+          </div>
         </div>
 
         <div className="grid gap-3 rounded-xl border border-gray-800 bg-gray-950/60 p-3.5 md:grid-cols-[2fr_1fr_1fr]">

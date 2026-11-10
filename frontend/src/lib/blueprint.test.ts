@@ -7,7 +7,10 @@ import {
   fileNameOf,
   fillSection,
   fromDocument,
+  hasSlot,
   initialForm,
+  linkSlot,
+  newQuestion,
   newSection,
   nextNumber,
   numberOf,
@@ -186,5 +189,45 @@ describe('a loaded total (P34)', () => {
     const reshaped = fillSection(loaded, key, 8, '2')
     expect(toDocument(reshaped).total_marks).toBe(calculatedTotal(reshaped))
     expect(fromDocument({ ...examples.ci, total_marks: 999 }).totalMarks).toBe('999')
+  })
+})
+
+describe('linkSlot and hasSlot (P35)', () => {
+  function formWithParts() {
+    const form = initialForm('paper')
+    const first = form.sections[0]!.items[0]!
+    if (first.kind !== 'question') throw new Error('a question item')
+    first.question.parts = [{ key: 'part-a', label: 'a', marks: '2', questionId: '', steps: [] }]
+    return { form, question: first.question }
+  }
+
+  it('links a slot, or a sub-part, by its form key and nothing else', () => {
+    const { form, question } = formWithParts()
+    const second = form.sections[0]!.items[1]!
+    if (second.kind !== 'question') throw new Error('a question item')
+    const direct = linkSlot(form, second.question.key, 'q-1')
+    const items = direct.sections[0]!.items.map((i) =>
+      i.kind === 'question' ? i.question.questionId : '',
+    )
+    expect(items.slice(0, 3)).toEqual(['', 'q-1', ''])
+    const part = linkSlot(form, 'part-a', 'q-2')
+    const first = part.sections[0]!.items[0]!
+    expect(first.kind === 'question' && first.question.parts[0]?.questionId).toBe('q-2')
+    expect(first.kind === 'question' && first.question.questionId).toBe('')
+    expect(hasSlot(form, question.key)).toBe(true)
+    expect(hasSlot(form, 'part-a')).toBe(true)
+    expect(hasSlot(form, 'gone')).toBe(false)
+    expect(JSON.stringify(linkSlot(form, 'gone', 'q-3'))).toBe(JSON.stringify(form))
+  })
+
+  it('reaches the alternatives of an OR pair', () => {
+    const form = initialForm('paper')
+    const alt = { ...newQuestion('12', '5'), key: 'alt-1' }
+    form.sections[0]!.items = [
+      { key: 'or-1', kind: 'or', alternatives: [alt, newQuestion('13', '5')] },
+    ]
+    const linked = linkSlot(form, 'alt-1', 'q-5')
+    const item = linked.sections[0]!.items[0]!
+    expect(item.kind === 'or' && item.alternatives.map((a) => a.questionId)).toEqual(['q-5', ''])
   })
 })

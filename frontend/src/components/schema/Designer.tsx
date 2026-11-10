@@ -18,7 +18,7 @@ import { GlassPanel, useToast } from '../ui'
 import { SmallButton } from './controls'
 import { HeaderForm } from './HeaderForm'
 import { JsonPanel } from './JsonPanel'
-import { DesignerKind, DesignerLinks } from './kind'
+import { DesignerKind, DesignerLinks, type PaperLinks } from './kind'
 import { SectionCard } from './SectionCard'
 
 export interface Verdict {
@@ -49,6 +49,10 @@ interface Props {
   descriptors?: string[]
   /** Booklets pin a version of this paper: links are read-only (D222). */
   locked?: boolean
+  /** Opens the question editor for a slot (P35); see `PaperLinks.openQuestion`. */
+  onOpenQuestion?: PaperLinks['openQuestion']
+  /** A slot to show opened (see `PaperLinks.reveal`). */
+  reveal?: string | null
 }
 
 /**
@@ -65,10 +69,15 @@ export function Designer({
   batches,
   descriptors,
   locked = false,
+  onOpenQuestion,
+  reveal = null,
 }: Props) {
   const toast = useToast()
   const schema = form.kind === 'schema'
-  const links = useMemo(() => ({ subjectId: form.subjectId, locked }), [form.subjectId, locked])
+  const links = useMemo(
+    () => ({ subjectId: form.subjectId, locked, openQuestion: onOpenQuestion, reveal }),
+    [form.subjectId, locked, onOpenQuestion, reveal],
+  )
   const patch = (change: Partial<FormState>) => setForm((f) => ({ ...f, ...change }))
   const changeSection = (key: string, next: FormSection) =>
     setForm((f) => ({ ...f, sections: f.sections.map((s) => (s.key === key ? next : s)) }))

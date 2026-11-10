@@ -16,13 +16,14 @@ import EvaluatePage from './pages/EvaluatePage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import GovernorPage from './pages/GovernorPage'
 import LandingPage from './pages/LandingPage'
-import QnaPage from './pages/QnaPage'
 import RecoverPage from './pages/RecoverPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import MyAssignmentsPage from './pages/sme/MyAssignmentsPage'
 import PaperEditorPage from './pages/sme/PaperEditorPage'
 import PapersPage from './pages/sme/PapersPage'
+import QuestionEditorPage from './pages/sme/QuestionEditorPage'
 import QuestionListPage from './pages/sme/QuestionListPage'
+import QuestionsPage from './pages/sme/QuestionsPage'
 import SchemaEditorPage from './pages/sme/SchemaEditorPage'
 import SchemasPage from './pages/sme/SchemasPage'
 import StudentListPage from './pages/sme/StudentListPage'
@@ -58,6 +59,9 @@ export default function App() {
               <Route path="units/:unitId/booklets/:bookletId" element={<QuestionListPage />} />
               <Route path="papers" element={<PapersPage />} />
               <Route path="papers/:blueprintId" element={<PaperEditorPage />} />
+              <Route path="questions" element={<QuestionsPage />} />
+              <Route path="questions/new" element={<QuestionEditorPage />} />
+              <Route path="questions/:questionId" element={<QuestionEditorPage />} />
               <Route path="schemas" element={<SchemasPage />} />
               <Route path="schemas/:blueprintId" element={<SchemaEditorPage />} />
               <Route path="schema" element={<Navigate to="/sme/schemas" replace />} />
@@ -67,9 +71,9 @@ export default function App() {
             </Route>
           </Route>
           <Route element={<RequireCapability capability="author_content" />}>
-            <Route path="qna" element={<QnaPage />} />
-            {/* The older Schema Designer went in P34 (D215). */}
+            {/* The older Schema Designer went in P34 and the Q&A DB page in P35 (D215). */}
             <Route path="schema" element={<Navigate to="/sme/papers" replace />} />
+            <Route path="qna" element={<Navigate to="/sme/questions" replace />} />
           </Route>
           <Route element={<RequireCapability capability="evaluate" />}>
             <Route path="evaluate" element={<EvaluatePage />} />

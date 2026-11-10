@@ -76,7 +76,7 @@ describe('the slot → question picker (P34, O22/O26)', () => {
     expect(screen.getByText('Not linked yet.')).toBeInTheDocument()
   })
 
-  it('makes a new question for the slot and links it', async () => {
+  it('writes a new question for the slot in the editor and comes back with it linked', async () => {
     const made = detail({ id: 'q-new', code: 'PHY-NEW', text: 'Define work.', max_marks: 2 })
     const mock = session({
       'POST /api/v1/questions': { status: 201, json: made },
@@ -84,13 +84,18 @@ describe('the slot → question picker (P34, O22/O26)', () => {
     })
     const user = userEvent.setup()
     await openSlot(user)
+    // An unsaved edit travels there and back.
+    const title = screen.getByRole('textbox', { name: 'Exam Title / Header' })
+    await user.clear(title)
+    await user.type(title, 'Edited on the way')
     await user.click(screen.getByRole('button', { name: 'Link the question of Section 1 item 1' }))
     const search = await screen.findByRole('dialog', { name: 'Question for Section 1 item 1' })
     await user.click(within(search).getByRole('button', { name: 'New question' }))
-    const form = await screen.findByRole('dialog', { name: 'Add New Question' })
-    // The slot's subject and marks are filled in.
+    // The editor is a page, with the slot's subject and marks filled in.
+    const form = await screen.findByRole('form', { name: 'New question' })
     expect(within(form).getByRole('textbox', { name: 'Max marks' })).toHaveValue('2')
     expect(within(form).getByRole('combobox', { name: 'Subject' })).toHaveValue(physics.id)
+    expect(screen.getByText(/links the new question to its slot \(2 marks\)/)).toBeVisible()
     await user.type(
       within(form).getByRole('textbox', { name: 'Question Title / Text' }),
       'Define work.',
@@ -102,8 +107,45 @@ describe('the slot → question picker (P34, O22/O26)', () => {
       subject_id: physics.id,
       max_marks: 2,
     })
+    // Back on the paper: linked, with the unsaved edit restored and still unsaved.
     expect(await screen.findByText('PHY-NEW')).toBeInTheDocument()
     expect(shownJson().sections[0]?.items[0]).toMatchObject({ question_id: 'q-new' })
+    expect(screen.getByRole('textbox', { name: 'Exam Title / Header' })).toHaveValue(
+      'Edited on the way',
+    )
+    expect(screen.getByText(/Version 2 · unsaved changes/)).toBeInTheDocument()
+    expect(
+      await screen.findByText('Question linked. Save the paper to keep the link.'),
+    ).toBeVisible()
+    // The draft is used up: reloading the paper starts from what was saved.
+    expect(globalThis.sessionStorage.length).toBe(0)
+  })
+
+  it('edits the linked question in the editor and comes back to the paper', async () => {
+    const linked = paperDocumentOf()
+    const sections = linked.sections.map((s, i) =>
+      i === 0
+        ? {
+            ...s,
+            items: s.items.map((it, j) =>
+              j === 0 && it.type === 'question' ? { ...it, question_id: 'q-2' } : it,
+            ),
+          }
+        : s,
+    )
+    session({
+      'GET /api/v1/blueprints/paper-1': {
+        json: blueprintOf('paper-1', { ...linked, sections }, 2),
+      },
+    })
+    const user = userEvent.setup()
+    await openSlot(user)
+    await screen.findByText('PHY-002')
+    await user.click(screen.getByRole('button', { name: 'Edit the question of Section 1 item 1' }))
+    expect(await screen.findByRole('form', { name: 'Edit question' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Back to the question paper' }))
+    expect(await screen.findByRole('button', { name: 'Save paper' })).toBeVisible()
+    expect(await screen.findByText('PHY-002')).toBeInTheDocument()
   })
 
   it('needs the paper’s subject first', async () => {

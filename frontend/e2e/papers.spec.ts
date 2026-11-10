@@ -111,3 +111,65 @@ test('a new paper from the dialog, laid out section by section', async ({ page }
   await expect(json).toContainText('"rule": "any"')
   await expect(page.getByRole('status', { name: 'Schema status' })).toContainText('Valid')
 })
+
+test('from a paper slot to a new question and back, linked; then edit it with the used-in warning (P35)', async ({
+  page,
+}) => {
+  await signIn(page)
+  await page.goto('/sme/papers')
+  await page
+    .getByRole('button', { name: /Create Question Paper/ })
+    .first()
+    .click()
+  const dialog = page.getByRole('dialog', { name: 'Create / Clone Question Paper' })
+  await dialog.getByLabel('Question Paper Name').fill('Optics paper')
+  await dialog.getByLabel('Subject').selectOption({ label: 'Physics (PHY-501)' })
+  await dialog.getByRole('button', { name: 'Save & Generate Paper' }).click()
+  await expect(page).toHaveURL(/\/sme\/papers\/paper-\d+$/)
+  const paperUrl = page.url()
+
+  // An unsaved edit comes back with the SME.
+  await page.getByLabel('Exam Code').fill('PHY-OPT-26')
+  const slot = 'Section 1 item 1'
+  await page.getByRole('button', { name: `Show details of ${slot}` }).click()
+  await page.getByRole('button', { name: `Link the question of ${slot}` }).click()
+  await page
+    .getByRole('dialog', { name: `Question for ${slot}` })
+    .getByRole('button', { name: 'New question' })
+    .click()
+
+  await expect(page).toHaveURL(/\/sme\/questions\/new\?/)
+  const form = page.getByRole('form', { name: 'New question' })
+  await expect(form.getByRole('textbox', { name: 'Max marks' })).toHaveValue('2')
+  await expect(form.getByRole('combobox', { name: 'Subject' })).toHaveValue(/3333/)
+  await form.getByRole('textbox', { name: 'Question Title / Text' }).fill('Define refraction.')
+  await form.getByRole('textbox', { name: 'Question code' }).fill('PHY-OPT1')
+  await form.getByRole('button', { name: 'Save Question' }).click()
+
+  // Back on the paper: the slot is open and linked, the unsaved edit is there.
+  await expect(page).toHaveURL(paperUrl)
+  await expect(page.getByText('PHY-OPT1', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('Exam Code')).toHaveValue('PHY-OPT-26')
+  await expect(page.getByTestId('schema-json')).toContainText('"question_id": "q-3"')
+  await page.getByRole('button', { name: 'Save paper' }).click()
+  await expect(page.getByText('Version 2 · saved')).toBeVisible()
+
+  // Edit the linked question: the papers that link it are listed before saving.
+  await page.getByRole('button', { name: `Show details of ${slot}` }).click() // saving reloads the rows
+  await page.getByRole('button', { name: `Edit the question of ${slot}` }).click()
+  await expect(page).toHaveURL(/\/sme\/questions\/q-3\?/)
+  const edit = page.getByRole('form', { name: 'Edit question' })
+  await edit
+    .getByRole('textbox', { name: 'Question Title / Text' })
+    .fill('Define refraction of light.')
+  await edit.getByRole('button', { name: 'Save Question' }).click()
+  const warning = page.getByRole('dialog', { name: 'PHY-OPT1 is used in 1 paper' })
+  await expect(warning).toContainText('Optics paper')
+  await expect(warning).toContainText('scored again with the new version')
+  await warning.getByRole('button', { name: 'Save the question' }).click()
+  await expect(page.getByText('Question saved.')).toBeVisible()
+  await page.getByRole('button', { name: 'Back to the question paper' }).click()
+  await expect(page).toHaveURL(paperUrl)
+  await expect(page.getByText('PHY-OPT1', { exact: true })).toBeVisible()
+  await expect(page.getByText('Define refraction of light.')).toBeVisible()
+})

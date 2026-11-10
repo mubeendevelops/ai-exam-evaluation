@@ -3,7 +3,6 @@ import { useId, useState } from 'react'
 import { api } from '../../api/client'
 import type { components } from '../../api/schema'
 import { useDebounced } from '../../hooks/useDebounced'
-import { QuestionModal } from '../qna/QuestionModal'
 import { Modal } from '../ui'
 import { SmallButton, compactInputClass } from './controls'
 import { useDesignerLinks } from './kind'
@@ -48,17 +47,19 @@ interface PickerProps {
   onChange: (questionId: string) => void
   /** Accessible-name prefix, e.g. "Section 1 item 3" or "Section 1 item 3 part 1". */
   name: string
+  /** The form key of the slot (or sub-part): the editor links its new question to it. */
+  slotKey: string
 }
 
 /**
  * The slot → question link of a paper (P34, closes O22/O26): the linked question's code, text
- * and marks, or a search of the paper's subject, or a new question made on the spot. The
- * server checks again that the subject and the marks agree.
+ * and marks, or a search of the paper's subject, or a new question written in the question
+ * editor (P35), which brings the SME back here with it linked; Edit question opens the linked
+ * one there. The server checks again that the subject and the marks agree.
  */
-export function QuestionPicker({ value, marks, onChange, name }: PickerProps) {
-  const { subjectId, locked } = useDesignerLinks()
+export function QuestionPicker({ value, marks, onChange, name, slotKey }: PickerProps) {
+  const { subjectId, locked, openQuestion } = useDesignerLinks()
   const [searching, setSearching] = useState(false)
-  const [creating, setCreating] = useState(false)
   const linked = useLinkedQuestion(value)
   const question = linked.data
   const mismatch = question !== undefined && !sameMarks(marks, question.max_marks)
@@ -86,6 +87,18 @@ export function QuestionPicker({ value, marks, onChange, name }: PickerProps) {
         </div>
       ) : (
         <p className="text-[11px] text-gray-400">Loading the linked question…</p>
+      )}
+      {value !== '' && openQuestion && (
+        <div className="flex flex-wrap gap-2">
+          <SmallButton
+            icon="fa-solid fa-pen"
+            tone="gray"
+            onClick={() => openQuestion({ slotKey, questionId: value, marks })}
+            aria-label={`Edit the question of ${name}`}
+          >
+            Edit question
+          </SmallButton>
+        </div>
       )}
       {!locked && (
         <div className="flex flex-wrap gap-2">
@@ -122,21 +135,16 @@ export function QuestionPicker({ value, marks, onChange, name }: PickerProps) {
             onChange(id)
             setSearching(false)
           }}
-          onNew={() => {
-            setSearching(false)
-            setCreating(true)
-          }}
+          onNew={
+            openQuestion
+              ? () => {
+                  setSearching(false)
+                  openQuestion({ slotKey, questionId: null, marks })
+                }
+              : undefined
+          }
         />
       )}
-      <QuestionModal
-        open={creating}
-        onClose={() => setCreating(false)}
-        initial={{ subjectId, marks }}
-        onSaved={(id) => {
-          onChange(id)
-          setCreating(false)
-        }}
-      />
     </div>
   )
 }
@@ -155,7 +163,8 @@ export function QuestionSearchDialog({
   name: string
   onClose: () => void
   onPick: (questionId: string) => void
-  onNew: () => void
+  /** Absent where there is no editor to go to. */
+  onNew?: () => void
 }) {
   const [text, setText] = useState('')
   const [offset, setOffset] = useState(0)
@@ -192,9 +201,13 @@ export function QuestionSearchDialog({
       description={`Questions of the paper's subject. The slot carries ${marks || 0} marks; only a question with the same marks can be linked.`}
       footer={
         <div className="flex flex-wrap justify-between gap-2">
-          <SmallButton icon="fa-solid fa-plus" onClick={onNew}>
-            New question
-          </SmallButton>
+          {onNew ? (
+            <SmallButton icon="fa-solid fa-plus" onClick={onNew}>
+              New question
+            </SmallButton>
+          ) : (
+            <span />
+          )}
           <SmallButton tone="gray" onClick={onClose}>
             Cancel
           </SmallButton>

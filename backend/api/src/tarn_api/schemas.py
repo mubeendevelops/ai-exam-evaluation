@@ -991,6 +991,28 @@ class DeletionCheckOut(BaseModel):
     blockers: list[str] = Field(description="Why it cannot be deleted yet, one line each.")
 
 
+class QuestionUnitUseOut(BaseModel):
+    id: UUID
+    code: str
+    year: str
+
+
+class QuestionPaperUseOut(BaseModel):
+    id: UUID
+    title: str
+    exam_code: str
+    open_units: list[QuestionUnitUseOut] = Field(
+        description="The paper's units that are open, oldest first."
+    )
+
+
+class QuestionUsageOut(BaseModel):
+    papers: list[QuestionPaperUseOut] = Field(
+        description="Papers of my subjects whose newest version links the question, by title. "
+        "A change to the question reaches each of them (D223)."
+    )
+
+
 class TransferOut(BaseModel):
     id: UUID
     from_owner: UnitOwnerOut
