@@ -287,6 +287,21 @@ delegation_requests = Table(
     _uuid("suggested_to", nullable=True),  # 0018
 )
 
+# SME notifications (P37, migration 0022, D241).
+notifications = Table(
+    "notifications",
+    metadata,
+    _uuid("college_id", primary_key=True),
+    _uuid("id", primary_key=True),
+    _uuid("user_id"),
+    _text("kind"),
+    _uuid("unit_id"),
+    Column("day", Date(), nullable=False),
+    Column("payload", JSONB(), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("read_at", DateTime(timezone=True), nullable=True),
+)
+
 unit_transfers = Table(
     "unit_transfers",
     metadata,
@@ -718,6 +733,7 @@ COLLEGE_TABLES: tuple[Table, ...] = (
     units,
     delegation_requests,
     unit_transfers,
+    notifications,
     unit_submissions,
     unmarked_booklets,
     frozen_units,

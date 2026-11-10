@@ -42,6 +42,11 @@ JOB_RECOGNIZE_REFERENCE = "diagram.reference"
 """Read an uploaded reference diagram PNG into its graph (P14). Payload: the diagram's id and
 the uploading teacher; queued in the uploader's college."""
 
+JOB_NOTIFY_DUE = "notify.due"
+"""The daily due-date sweep of one college (P37): due-soon and overdue notices for the owners
+of its open units, and the "due in 3 days" email once. Queued once a day per college with the
+key ``notify.due:<UTC date>``; reruns add nothing. Payload: none."""
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Job:

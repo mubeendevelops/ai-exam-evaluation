@@ -11,7 +11,7 @@ Who may edit is checked by the services, not here."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -36,6 +36,7 @@ from tarn_core.domain.content import (
     Subject,
 )
 from tarn_core.domain.diagram import StudentDiagram
+from tarn_core.domain.notifications import Notification, NotificationPage
 from tarn_core.domain.overview import (
     ActivityItem,
     QueueDepth,
@@ -48,6 +49,7 @@ from tarn_core.domain.overview import (
 from tarn_core.domain.reports import Quarter, ReportCounts
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
+from tarn_core.domain.search import StudentHit
 from tarn_core.domain.student_list import UnitRowQuery, UnitRows
 from tarn_core.domain.tenancy import College, Student, SubjectGrant, User
 from tarn_core.domain.unit import (
@@ -65,6 +67,7 @@ from tarn_core.ids import (
     BookletId,
     CollegeId,
     DelegationRequestId,
+    NotificationId,
     PageId,
     QuestionId,
     SegmentId,
@@ -378,6 +381,14 @@ class BookletRepository(Protocol):
         match in all. One query for the store, never one per booklet."""
         ...
 
+    def find_students(
+        self, college_id: CollegeId, unit_ids: frozenset[UnitId], text: str, *, limit: int
+    ) -> Sequence[StudentHit]:
+        """The global search (P37): booklets of ``unit_ids`` only whose student's roll number
+        starts with ``text`` (spaces ignored, any case) or whose name contains it (any case),
+        by roll number, at most ``limit``. No unit: nothing."""
+        ...
+
     def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:
         """Booklets this user uploaded that are still queued or being processed."""
         ...
@@ -577,4 +588,33 @@ class OverviewRepository(Protocol):
         units submitted (latest submission) and booklets approved (first result sheet), the
         open units and the booklets pending in them. Never another SME's units, never a
         mark."""
+        ...
+
+
+class NotificationRepository(Protocol):
+    """In-app notices for SMEs (P37, D227). A college repository; every read and write is for
+    one user, and another user's notice is not found."""
+
+    def add(self, college_id: CollegeId, notification: Notification) -> bool:
+        """Insert. A due notice (``DUE_KINDS``) whose (unit, kind, day) is stored already is
+        left out and False is returned (the sweep's rerun adds nothing)."""
+        ...
+
+    def page(
+        self, college_id: CollegeId, user_id: UserId, *, limit: int, offset: int = 0
+    ) -> NotificationPage:
+        """The user's notices, newest first (then id), with the total and unread counts."""
+        ...
+
+    def unread(self, college_id: CollegeId, user_id: UserId) -> int: ...
+
+    def mark_read(
+        self, college_id: CollegeId, user_id: UserId, notification_id: NotificationId, at: datetime
+    ) -> Notification:
+        """Sets ``read_at`` once (a read notice keeps its time). Another user's or college's
+        notice: ``NotFoundError``."""
+        ...
+
+    def mark_all_read(self, college_id: CollegeId, user_id: UserId, at: datetime) -> int:
+        """Marks every unread notice of the user read; how many were."""
         ...

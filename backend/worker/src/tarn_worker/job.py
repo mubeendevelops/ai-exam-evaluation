@@ -9,6 +9,10 @@ job on a schedule, and the API or an event can start it when a booklet is queued
 (Cloud Run stopping the task) finishes the step in progress and exits too; the queue's leases
 hand an unfinished job to the next run, so nothing is lost.
 
+With ``--reminders`` (P37) the run first queues today's due-date sweep (one ``notify.due``
+job per college, ``tarn_worker.reminders``) and then drains as usual: a second Cloud Scheduler
+entry starts it once a day. Queuing twice on one day adds nothing.
+
 The scheduled identity backup is not run here (a job has no persistent disk): the identity
 database is backed up by Cloud SQL (daily backups with point-in-time recovery). The health
 endpoint is not served either: Cloud Run reports the task's state."""
@@ -17,7 +21,7 @@ import signal
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from types import FrameType
 
@@ -96,9 +100,28 @@ def run_job(settings: Settings, tick: Callable[[], bool], stop: threading.Event)
     return summary
 
 
-def main() -> None:
+def queue_daily_reminders(settings: Settings) -> int:
+    from tarn_adapters.blob.wiring import build_blob_store
+    from tarn_adapters.postgres.database import PostgresDatabase
+    from tarn_adapters.runtime import UuidGenerator
+    from tarn_worker.reminders import queue_reminders
+
+    db = PostgresDatabase(settings.app_database_url, pool_size=1)
+    try:
+        return queue_reminders(
+            db, clock=SystemClock(), ids=UuidGenerator(), blobs=build_blob_store(settings)
+        )
+    finally:
+        db.dispose()
+
+
+def main(argv: Sequence[str] | None = None) -> None:
     from tarn_worker.main import booklet_runner
 
+    args = list(sys.argv[1:] if argv is None else argv)
+    unknown = [a for a in args if a != "--reminders"]
+    if unknown:
+        sys.exit("usage: python -m tarn_worker.job [--reminders]")
     settings = get_settings()
     configure_logging(settings.log_level, json=settings.env == "production")
     stop = threading.Event()
@@ -108,6 +131,13 @@ def main() -> None:
 
     signal.signal(signal.SIGTERM, _request_stop)
     signal.signal(signal.SIGINT, _request_stop)
+    if "--reminders" in args:
+        try:
+            queue_daily_reminders(settings)
+        except Exception as error:  # the queue is down: the drain below reports it
+            structlog.get_logger("tarn_worker").error(
+                "reminders.queue_failed", error=type(error).__name__
+            )
     summary = run_job(settings, booklet_runner(settings, SystemClock()), stop)
     sys.exit(1 if summary.reason == "unavailable" else 0)
 

@@ -5,6 +5,8 @@ import { useAssignmentSummary, useMySubjects } from '../../pages/sme/data'
 import { AppFooter } from '../app/AppFooter'
 import { StatusPill } from '../app/StatusPill'
 import { UserMenu, initialsOf } from '../app/UserMenu'
+import { GlobalSearch } from './GlobalSearch'
+import { NotificationBell } from './NotificationBell'
 
 interface Item {
   to: string
@@ -57,8 +59,6 @@ const TITLES: readonly [string, string][] = [
 export function titleOf(pathname: string): string {
   return TITLES.find(([path]) => matchPath(path, pathname))?.[1] ?? 'My Assignments'
 }
-
-const SOON = 'Arrives with notifications and global search in a later update.'
 
 const link =
   'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-purple-400'
@@ -221,23 +221,8 @@ export function SmeLayout({
             <div className="hidden xl:block">
               <StatusPill />
             </div>
-            <input
-              type="search"
-              disabled
-              aria-label="Search assignments, schemas"
-              placeholder="Search assignments, schemas..."
-              title={SOON}
-              className="hidden w-56 rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-1.5 text-xs text-gray-400 disabled:cursor-not-allowed sm:block lg:w-72"
-            />
-            <button
-              type="button"
-              disabled
-              aria-label="Notifications"
-              title={SOON}
-              className="rounded-lg p-2 text-gray-500 disabled:cursor-not-allowed"
-            >
-              <i className="fa-solid fa-bell" aria-hidden="true" />
-            </button>
+            <GlobalSearch />
+            <NotificationBell />
             <UserMenu onProfile={onProfile} onRecoveryCodes={onRecoveryCodes} />
           </div>
         </header>

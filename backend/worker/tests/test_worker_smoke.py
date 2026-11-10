@@ -35,9 +35,15 @@ def test_periodic_job_runs_once_per_interval_and_survives_failures() -> None:
     clock.advance(hours=23)
     assert not job.run_if_due()
     assert len(calls) == 2
-    settings = Settings(_env_file=None, identity_backup_interval_hours=0)
+    settings = Settings(_env_file=None, identity_backup_interval_hours=0, reminder_interval_hours=0)
     assert scheduled_jobs(settings, clock) == []
-    assert [j.name for j in scheduled_jobs(Settings(_env_file=None), clock)] == ["identity_backup"]
+    daily = Settings(_env_file=None, identity_backup_interval_hours=0)
+    assert [j.name for j in scheduled_jobs(daily, clock)] == ["reminders"]
+    assert scheduled_jobs(daily, clock)[0].interval == timedelta(hours=24)
+    assert [j.name for j in scheduled_jobs(Settings(_env_file=None), clock)] == [
+        "identity_backup",
+        "reminders",
+    ]
 
 
 def test_run_starts_due_jobs() -> None:

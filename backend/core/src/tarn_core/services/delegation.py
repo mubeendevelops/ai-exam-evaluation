@@ -24,9 +24,15 @@ from tarn_core.errors import (
     UnitClosedError,
 )
 from tarn_core.ids import CollegeId, DelegationRequestId, UnitId, UserId
-from tarn_core.ports.repositories import EntitlementRepository, UnitRepository, UserRepository
+from tarn_core.ports.repositories import (
+    EntitlementRepository,
+    NotificationRepository,
+    UnitRepository,
+    UserRepository,
+)
 from tarn_core.services._support import Runtime
 from tarn_core.services.access import require
+from tarn_core.services.notifications import Notices
 from tarn_core.services.transfers import check_reason
 from tarn_core.services.unit_guard import closed_message
 from tarn_core.services.units import may_own
@@ -44,11 +50,13 @@ class DelegationService:
         users: UserRepository,
         entitlements: EntitlementRepository,
         runtime: Runtime,
+        notifications: NotificationRepository,
     ) -> None:
         self._units = units
         self._users = users
         self._entitlements = entitlements
         self._rt = runtime
+        self._notices = Notices(notifications, runtime)
 
     def request(
         self,
@@ -193,4 +201,6 @@ class DelegationService:
             before={"request_id": str(found.id), "state": found.state.value},
             after=after | {"state": state.value},
         )
+        if state is RequestState.DECLINED:
+            self._notices.declined(self._units.get(college_id, found.unit_id), closed)
         return closed

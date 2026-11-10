@@ -15,6 +15,7 @@ from tarn_core.ports.repositories import (
     CollegeRepository,
     ContentRepository,
     EntitlementRepository,
+    NotificationRepository,
     OverviewRepository,
     ResultSheetRepository,
     ScoreRepository,
@@ -82,6 +83,10 @@ class MemoryScope:
     @property
     def jobs(self) -> JobQueue:
         return self.mem.jobs
+
+    @property
+    def notifications(self) -> NotificationRepository:
+        return self.mem.notifications
 
     @property
     def blobs(self) -> BlobStore:

@@ -105,6 +105,12 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     # --- the SME's own figures (P31, D216) ------------------------------------------------------
     ("GET", "/api/v1/me/assignments/summary"): _needs(C.VIEW_OWN_WORK),
     ("GET", "/api/v1/me/reports"): _needs(C.VIEW_OWN_WORK),
+    # --- the SME's notifications and search (P37, D227, D228) ----------------------------------
+    ("GET", "/api/v1/notifications"): _needs(C.VIEW_OWN_WORK),
+    ("GET", "/api/v1/notifications/unread-count"): _needs(C.VIEW_OWN_WORK),
+    ("POST", "/api/v1/notifications/read-all"): _needs(C.VIEW_OWN_WORK),
+    ("POST", "/api/v1/notifications/{notification_id}/read"): _needs(C.VIEW_OWN_WORK),
+    ("GET", "/api/v1/search"): _needs(C.VIEW_OWN_WORK),
     # --- progress: admin and SME, no marks for the admin (D167) -------------------------------
     ("GET", "/api/v1/booklets"): _PROGRESS,
     ("GET", "/api/v1/booklets/{booklet_id}"): _PROGRESS,

@@ -1642,6 +1642,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My notifications (SME)
+         * @description Newest first, paged, with the total and unread counts.
+         */
+        get: operations["list_notifications_api_v1_notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/unread-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My unread notifications */
+        get: operations["unread_count_api_v1_notifications_unread_count_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/{notification_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark one notification read */
+        post: operations["mark_read_api_v1_notifications__notification_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark all my notifications read */
+        post: operations["mark_all_read_api_v1_notifications_read_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Global search (SME)
+         * @description 2 to 80 characters (after trimming). Units: code, paper title, exam code, year. Students: roll number from its start or name anywhere, in the SME's own units. Papers and schemas: title, exam code, descriptor. Questions: code, text, topic, keys. Only the SME's own units and subjects; at most 5 per group.
+         */
+        get: operations["search_api_v1_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/booklets/{booklet_id}/lock": {
         parameters: {
             query?: never;
@@ -2105,6 +2196,25 @@ export interface components {
             available: boolean;
             /** Problem */
             problem?: string | null;
+        };
+        /** BlueprintHitOut */
+        BlueprintHitOut: {
+            /**
+             * Blueprint Id
+             * Format: uuid
+             */
+            blueprint_id: string;
+            /** Title */
+            title: string;
+            /** Exam Code */
+            exam_code: string;
+            /** Descriptor */
+            descriptor: string;
+            /**
+             * Subject Id
+             * Format: uuid
+             */
+            subject_id: string;
         };
         /** BlueprintOut */
         BlueprintOut: {
@@ -3219,6 +3329,11 @@ export interface components {
              */
             remember: boolean;
         };
+        /** MarkedReadOut */
+        MarkedReadOut: {
+            /** Marked */
+            marked: number;
+        };
         /** MeOut */
         MeOut: {
             user: components["schemas"]["UserOut"];
@@ -3301,6 +3416,55 @@ export interface components {
              * @description Not approved yet, in the SME's open units.
              */
             booklets_pending: number;
+        };
+        /**
+         * NotificationOut
+         * @description One notice (D227, D241): codes, dates and ids only; ``note`` is the admin's return note.
+         */
+        NotificationOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "assigned" | "transferred_away" | "returned" | "request_done" | "request_declined" | "due_soon" | "overdue";
+            /**
+             * Unit Id
+             * Format: uuid
+             */
+            unit_id: string;
+            /** Unit Code */
+            unit_code: string;
+            /** Due Date */
+            due_date?: string | null;
+            /** Request Id */
+            request_id?: string | null;
+            /** Note */
+            note?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Read At */
+            read_at: string | null;
+        };
+        /** NotificationPageOut */
+        NotificationPageOut: {
+            /** Items */
+            items: components["schemas"]["NotificationOut"][];
+            /** Total */
+            total: number;
+            /** Unread */
+            unread: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
         /** NumericCriterion */
         NumericCriterion: {
@@ -3619,6 +3783,26 @@ export interface components {
             reference_answer?: string | null;
             /** Criteria */
             criteria?: (components["schemas"]["ListCriterion"] | components["schemas"]["NumericCriterion"] | components["schemas"]["SemanticCriterion"] | components["schemas"]["DiagramCriterion"])[];
+        };
+        /** QuestionHitOut */
+        QuestionHitOut: {
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /** Code */
+            code: string;
+            /**
+             * Text
+             * @description The first line of the question, at most 120 characters.
+             */
+            text: string;
+            /**
+             * Subject Id
+             * Format: uuid
+             */
+            subject_id: string;
         };
         /** QuestionOut */
         QuestionOut: {
@@ -4380,6 +4564,22 @@ export interface components {
             batches: string[];
         };
         /**
+         * SearchOut
+         * @description At most 5 per group, over what the SME reaches (D228, D243).
+         */
+        SearchOut: {
+            /** Units */
+            units: components["schemas"]["UnitHitOut"][];
+            /** Students */
+            students: components["schemas"]["StudentHitOut"][];
+            /** Papers */
+            papers: components["schemas"]["BlueprintHitOut"][];
+            /** Schemas */
+            schemas: components["schemas"]["BlueprintHitOut"][];
+            /** Questions */
+            questions: components["schemas"]["QuestionHitOut"][];
+        };
+        /**
          * SecondOpinionOut
          * @description The LLM's judgement of a criterion another scorer scored (P19). It never changes the
          *     mark: Panel B shows it beside the credit.
@@ -4655,6 +4855,23 @@ export interface components {
             expected_version: number;
             /** Edits */
             edits: components["schemas"]["GraphEditIn"][];
+        };
+        /** StudentHitOut */
+        StudentHitOut: {
+            /**
+             * Booklet Id
+             * Format: uuid
+             */
+            booklet_id: string;
+            /**
+             * Unit Id
+             * Format: uuid
+             */
+            unit_id: string;
+            /** Name */
+            name: string;
+            /** Usn */
+            usn: string;
         };
         /** StudentIn */
         StudentIn: {
@@ -5031,6 +5248,32 @@ export interface components {
              */
             frozen_at: string;
         };
+        /** UnitHitOut */
+        UnitHitOut: {
+            /**
+             * Unit Id
+             * Format: uuid
+             */
+            unit_id: string;
+            /** Code */
+            code: string;
+            /** Paper Title */
+            paper_title: string;
+            /** Exam Code */
+            exam_code: string;
+            /** Year */
+            year: string;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "open" | "submitted" | "frozen";
+        };
         /** UnitIn */
         UnitIn: {
             /**
@@ -5293,6 +5536,11 @@ export interface components {
             reason: "absent" | "unreadable" | "other";
             /** Note */
             note: string;
+        };
+        /** UnreadCountOut */
+        UnreadCountOut: {
+            /** Unread */
+            unread: number;
         };
         /** UploadFileOut */
         UploadFileOut: {
@@ -11207,6 +11455,249 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    list_notifications_api_v1_notifications_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPageOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unread_count_api_v1_notifications_unread_count_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnreadCountOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    mark_read_api_v1_notifications__notification_id__read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                notification_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_all_read_api_v1_notifications_read_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkedReadOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    search_api_v1_search_get: {
+        parameters: {
+            query: {
+                /** @description 2 to 80 characters, checked in the core (no echo on refusal). */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

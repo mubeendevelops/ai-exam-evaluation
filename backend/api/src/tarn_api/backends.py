@@ -33,6 +33,7 @@ from tarn_core.ports.repositories import (
     CollegeRepository,
     ContentRepository,
     EntitlementRepository,
+    NotificationRepository,
     OverviewRepository,
     ResultSheetRepository,
     ScoreRepository,
@@ -53,6 +54,7 @@ from tarn_core.services.diagrams.jobs import QueuedRescore
 from tarn_core.services.diagrams.service import ReferenceDiagrams
 from tarn_core.services.entitlements import EntitlementService
 from tarn_core.services.evaluated import EvaluatedBooklets
+from tarn_core.services.notifications import NotificationService
 from tarn_core.services.overview import OverviewService
 from tarn_core.services.paper_sheet import PaperSheets
 from tarn_core.services.pipeline import PageDecisions
@@ -60,6 +62,7 @@ from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.question_usage import QuestionUsageService
 from tarn_core.services.registration import RegistrationService
 from tarn_core.services.roster import RosterService
+from tarn_core.services.search import SearchService
 from tarn_core.services.subjects import SubjectService
 from tarn_core.services.transfers import TransferService
 from tarn_core.services.unit_flow import UnitFlowService
@@ -116,6 +119,9 @@ class CollegeScope(Protocol):
 
     @property
     def jobs(self) -> JobQueue: ...
+
+    @property
+    def notifications(self) -> NotificationRepository: ...
 
     @property
     def blobs(self) -> BlobStore: ...
@@ -189,6 +195,7 @@ class Unit:
             booklets=self.scope.booklets,
             mailer=self.kit.mailer,
             runtime=self.scope.runtime,
+            notifications=self.scope.notifications,
         )
 
     @property
@@ -212,6 +219,7 @@ class Unit:
             content=self.scope.content,
             mailer=self.kit.mailer,
             runtime=self.scope.runtime,
+            notifications=self.scope.notifications,
         )
 
     @property
@@ -243,6 +251,25 @@ class Unit:
             users=self.scope.users,
             entitlements=self.scope.entitlements,
             runtime=self.scope.runtime,
+            notifications=self.scope.notifications,
+        )
+
+    @property
+    def notifications(self) -> NotificationService:
+        return NotificationService(
+            notifications=self.scope.notifications,
+            users=self.scope.users,
+            runtime=self.scope.runtime,
+        )
+
+    @property
+    def search(self) -> SearchService:
+        return SearchService(
+            users=self.scope.users,
+            entitlements=self.scope.entitlements,
+            units=self.scope.units,
+            content=self.scope.content,
+            booklets=self.scope.booklets,
         )
 
     @property
@@ -336,6 +363,7 @@ class Unit:
             booklets=self.scope.booklets,
             mailer=self.kit.mailer,
             runtime=self.scope.runtime,
+            notifications=self.scope.notifications,
         )
 
     @property

@@ -53,6 +53,7 @@ from tarn_core.ports.repositories import (
     CollegeRepository,
     ContentRepository,
     EntitlementRepository,
+    NotificationRepository,
     ResultSheetRepository,
     ScoreRepository,
     StudentRepository,
@@ -68,9 +69,12 @@ from tarn_core.services.content import ContentService
 from tarn_core.services.content_deletion import ContentDeletion
 from tarn_core.services.delegation import DelegationService
 from tarn_core.services.entitlements import EntitlementService
+from tarn_core.services.notifications import NotificationService
 from tarn_core.services.question_bank import QuestionBankService
 from tarn_core.services.question_usage import QuestionUsageService
+from tarn_core.services.reminders import ReminderSweep
 from tarn_core.services.scoring import ScoringService
+from tarn_core.services.search import SearchService
 from tarn_core.services.subjects import SubjectService
 from tarn_core.services.totals import TotalsService
 from tarn_core.services.transfers import TransferService
@@ -106,6 +110,8 @@ class Backend(Protocol):
     def blobs(self) -> BlobStore: ...
     @property
     def jobs(self) -> JobQueue: ...
+    @property
+    def notifications(self) -> NotificationRepository: ...
     @property
     def runtime(self) -> Runtime: ...
 
@@ -352,6 +358,9 @@ class Services:
     unit_flow: UnitFlowService
     deletion: ContentDeletion
     usage: QuestionUsageService
+    notifications: NotificationService
+    search: SearchService
+    reminders: ReminderSweep
 
 
 def make_services(
@@ -377,6 +386,7 @@ def make_services(
             booklets=mem.booklets,
             mailer=mailer,
             runtime=rt,
+            notifications=mem.notifications,
         ),
         transfers=TransferService(
             units=mem.units,
@@ -387,9 +397,14 @@ def make_services(
             booklets=mem.booklets,
             mailer=mailer,
             runtime=rt,
+            notifications=mem.notifications,
         ),
         delegation=DelegationService(
-            units=mem.units, users=mem.users, entitlements=mem.entitlements, runtime=rt
+            units=mem.units,
+            users=mem.users,
+            entitlements=mem.entitlements,
+            runtime=rt,
+            notifications=mem.notifications,
         ),
         unit_flow=UnitFlowService(
             units=mem.units,
@@ -400,6 +415,7 @@ def make_services(
             content=mem.content,
             mailer=mailer,
             runtime=rt,
+            notifications=mem.notifications,
         ),
         deletion=ContentDeletion(
             content=mem.content,
@@ -416,6 +432,24 @@ def make_services(
             units=mem.units,
             users=mem.users,
             entitlements=mem.entitlements,
+        ),
+        notifications=NotificationService(
+            notifications=mem.notifications, users=mem.users, runtime=rt
+        ),
+        search=SearchService(
+            users=mem.users,
+            entitlements=mem.entitlements,
+            units=mem.units,
+            content=mem.content,
+            booklets=mem.booklets,
+        ),
+        reminders=ReminderSweep(
+            units=mem.units,
+            users=mem.users,
+            content=mem.content,
+            notifications=mem.notifications,
+            mailer=mailer,
+            runtime=rt,
         ),
         bank=QuestionBankService(
             content=mem.content,

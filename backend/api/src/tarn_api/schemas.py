@@ -1681,3 +1681,88 @@ class UnitProgressOut(BaseModel):
 class ProgressOut(BaseModel):
     smes: list[SmeProgressOut]
     units: list[UnitProgressOut]
+
+
+# --- notifications and search (P37) ---------------------------------------------------------
+
+NotificationKindName = Literal[
+    "assigned",
+    "transferred_away",
+    "returned",
+    "request_done",
+    "request_declined",
+    "due_soon",
+    "overdue",
+]
+
+
+class NotificationOut(BaseModel):
+    """One notice (D227, D241): codes, dates and ids only; ``note`` is the admin's return note."""
+
+    id: UUID
+    kind: NotificationKindName
+    unit_id: UUID
+    unit_code: str
+    due_date: date | None = None
+    request_id: UUID | None = None
+    note: str | None = None
+    created_at: datetime
+    read_at: datetime | None
+
+
+class NotificationPageOut(BaseModel):
+    items: list[NotificationOut]
+    total: int
+    unread: int
+    limit: int
+    offset: int
+
+
+class UnreadCountOut(BaseModel):
+    unread: int
+
+
+class MarkedReadOut(BaseModel):
+    marked: int
+
+
+class UnitHitOut(BaseModel):
+    unit_id: UUID
+    code: str
+    paper_title: str
+    exam_code: str
+    year: str
+    due_date: date
+    state: UnitStateName
+
+
+class StudentHitOut(BaseModel):
+    booklet_id: UUID
+    unit_id: UUID
+    name: str
+    usn: str
+
+
+class BlueprintHitOut(BaseModel):
+    blueprint_id: UUID
+    title: str
+    exam_code: str
+    descriptor: str
+    subject_id: UUID
+
+
+class QuestionHitOut(BaseModel):
+    question_id: UUID
+    code: str
+    text: str = Field(description="The first line of the question, at most 120 characters.")
+    subject_id: UUID
+
+
+class SearchOut(BaseModel):
+    """At most 5 per group, over what the SME reaches (D228, D243)."""
+
+    units: list[UnitHitOut]
+    students: list[StudentHitOut]
+    papers: list[BlueprintHitOut]
+    schemas: list[BlueprintHitOut]
+    questions: list[QuestionHitOut]

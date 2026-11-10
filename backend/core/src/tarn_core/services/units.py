@@ -22,11 +22,13 @@ from tarn_core.ports.repositories import (
     BookletRepository,
     ContentRepository,
     EntitlementRepository,
+    NotificationRepository,
     UnitRepository,
     UserRepository,
 )
 from tarn_core.services._support import Runtime
 from tarn_core.services.access import require
+from tarn_core.services.notifications import Notices
 
 NOT_ENTITLED = "Choose an active SME who has this paper's subject."
 GOVERNOR_STATES = frozenset({UnitState.SUBMITTED, UnitState.FROZEN})
@@ -75,6 +77,7 @@ class UnitService:
         booklets: BookletRepository,
         mailer: Mailer,
         runtime: Runtime,
+        notifications: NotificationRepository,
     ) -> None:
         self._units = units
         self._users = users
@@ -83,6 +86,7 @@ class UnitService:
         self._booklets = booklets
         self._mailer = mailer
         self._rt = runtime
+        self._notices = Notices(notifications, runtime)
 
     # --- what the admin picks from ------------------------------------------------------------
 
@@ -176,6 +180,7 @@ class UnitService:
                 "due_date": unit.due_date.isoformat(),
             },
         )
+        self._notices.assigned(unit)
         self._mailer.send(assignment_email(unit, owner, paper, subject))
         return unit
 

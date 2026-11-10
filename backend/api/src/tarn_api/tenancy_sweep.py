@@ -157,6 +157,9 @@ def build_world(client: "TestClient", process: Callable[[], None]) -> World:
         headers=a,
     )
     assert asked.status_code == 201, asked.text
+    # The seed's units were assigned to A's SME through the service: each left a notice (P37).
+    notices = c.get(f"{BASE}/notifications", headers=a).json()["items"]
+    assert notices, "A's SME has no notification"
     return World(
         client=c,
         a=a,
@@ -187,6 +190,7 @@ def build_world(client: "TestClient", process: Callable[[], None]) -> World:
             "segment_a": segments[0]["id"],
             "segment_b": segments[-1]["id"],
             "a_college": a_college,
+            "notification_id": notices[0]["id"],
         },
     )
 
@@ -247,6 +251,14 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("GET", "/api/v1/me/assignments/summary"): Case("own"),
     # Likewise My Reports (P36; ``test_api_reports``).
     ("GET", "/api/v1/me/reports"): Case("own"),
+    # The SME's own notices and search (P37): their own college and account only; another
+    # college's notice is 404 like a missing one, and the search never reaches it
+    # (``test_api_search``, the search contract).
+    ("GET", "/api/v1/notifications"): Case("own"),
+    ("GET", "/api/v1/notifications/unread-count"): Case("own"),
+    ("POST", "/api/v1/notifications/read-all"): Case("own"),
+    ("POST", "/api/v1/notifications/{notification_id}/read"): Case("college"),
+    ("GET", "/api/v1/search"): Case("own", lambda w: {"params": {"q": "QP"}}),
     ("GET", "/api/v1/units/papers"): Case("own"),
     # A's subject: B is offered nobody (an empty list), see ``smes_of_another_colleges_subject``
     ("GET", "/api/v1/units/smes"): Case(
@@ -507,6 +519,7 @@ def url(world: World, path: str) -> str:
         "student_id",
         "unit_id",
         "request_id",
+        "notification_id",
     ):
         out = out.replace("{" + name + "}", world.ids[name])
     assert "{" not in out, out

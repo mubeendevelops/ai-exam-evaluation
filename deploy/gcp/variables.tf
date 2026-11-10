@@ -117,6 +117,12 @@ variable "worker_schedule" {
   default     = "*/5 * * * *"
 }
 
+variable "reminder_schedule" {
+  description = "Cron schedule (Cloud Scheduler, UTC) of the daily due-date reminder sweep (P37): runs the worker job with --reminders. 00:30 UTC is 06:00 IST."
+  type        = string
+  default     = "30 0 * * *"
+}
+
 variable "worker_cpu" {
   type    = string
   default = "4"

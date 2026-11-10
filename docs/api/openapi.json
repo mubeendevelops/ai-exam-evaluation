@@ -8326,6 +8326,338 @@
         ]
       }
     },
+    "/api/v1/notifications": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "My notifications (SME)",
+        "description": "Newest first, paged, with the total and unread counts.",
+        "operationId": "list_notifications_api_v1_notifications_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPageOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/unread-count": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "My unread notifications",
+        "operationId": "unread_count_api_v1_notifications_unread_count_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadCountOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/notifications/{notification_id}/read": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Mark one notification read",
+        "operationId": "mark_read_api_v1_notifications__notification_id__read_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "notification_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Notification Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/read-all": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Mark all my notifications read",
+        "operationId": "mark_all_read_api_v1_notifications_read_all_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkedReadOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Global search (SME)",
+        "description": "2 to 80 characters (after trimming). Units: code, paper title, exam code, year. Students: roll number from its start or name anywhere, in the SME's own units. Papers and schemas: title, exam code, descriptor. Questions: code, text, topic, keys. Only the SME's own units and subjects; at most 5 per group.",
+        "operationId": "search_api_v1_search_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "2 to 80 characters, checked in the core (no echo on refusal).",
+              "title": "Q"
+            },
+            "description": "2 to 80 characters, checked in the core (no echo on refusal)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
     "/api/v1/booklets/{booklet_id}/lock": {
       "post": {
         "tags": [
@@ -10352,6 +10684,41 @@
           "available"
         ],
         "title": "AvailabilityOut"
+      },
+      "BlueprintHitOut": {
+        "properties": {
+          "blueprint_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Blueprint Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "exam_code": {
+            "type": "string",
+            "title": "Exam Code"
+          },
+          "descriptor": {
+            "type": "string",
+            "title": "Descriptor"
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Subject Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "blueprint_id",
+          "title",
+          "exam_code",
+          "descriptor",
+          "subject_id"
+        ],
+        "title": "BlueprintHitOut"
       },
       "BlueprintOut": {
         "properties": {
@@ -13120,6 +13487,19 @@
         ],
         "title": "LoginIn"
       },
+      "MarkedReadOut": {
+        "properties": {
+          "marked": {
+            "type": "integer",
+            "title": "Marked"
+          }
+        },
+        "type": "object",
+        "required": [
+          "marked"
+        ],
+        "title": "MarkedReadOut"
+      },
       "MeOut": {
         "properties": {
           "user": {
@@ -13294,6 +13674,136 @@
         ],
         "title": "MyReportOut",
         "description": "The SME's own reports (P36, D226, D239): their current units only, never a mark."
+      },
+      "NotificationOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "assigned",
+              "transferred_away",
+              "returned",
+              "request_done",
+              "request_declined",
+              "due_soon",
+              "overdue"
+            ],
+            "title": "Kind"
+          },
+          "unit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Unit Id"
+          },
+          "unit_code": {
+            "type": "string",
+            "title": "Unit Code"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "unit_id",
+          "unit_code",
+          "created_at",
+          "read_at"
+        ],
+        "title": "NotificationOut",
+        "description": "One notice (D227, D241): codes, dates and ids only; ``note`` is the admin's return note."
+      },
+      "NotificationPageOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "unread": {
+            "type": "integer",
+            "title": "Unread"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "unread",
+          "limit",
+          "offset"
+        ],
+        "title": "NotificationPageOut"
       },
       "NumericCriterion": {
         "properties": {
@@ -14069,6 +14579,37 @@
           "max_marks"
         ],
         "title": "QuestionCreateIn"
+      },
+      "QuestionHitOut": {
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Question Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "The first line of the question, at most 120 characters."
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Subject Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id",
+          "code",
+          "text",
+          "subject_id"
+        ],
+        "title": "QuestionHitOut"
       },
       "QuestionOut": {
         "properties": {
@@ -15879,6 +16420,55 @@
         ],
         "title": "SchemaListOut"
       },
+      "SearchOut": {
+        "properties": {
+          "units": {
+            "items": {
+              "$ref": "#/components/schemas/UnitHitOut"
+            },
+            "type": "array",
+            "title": "Units"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/StudentHitOut"
+            },
+            "type": "array",
+            "title": "Students"
+          },
+          "papers": {
+            "items": {
+              "$ref": "#/components/schemas/BlueprintHitOut"
+            },
+            "type": "array",
+            "title": "Papers"
+          },
+          "schemas": {
+            "items": {
+              "$ref": "#/components/schemas/BlueprintHitOut"
+            },
+            "type": "array",
+            "title": "Schemas"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionHitOut"
+            },
+            "type": "array",
+            "title": "Questions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "units",
+          "students",
+          "papers",
+          "schemas",
+          "questions"
+        ],
+        "title": "SearchOut",
+        "description": "At most 5 per group, over what the SME reaches (D228, D243)."
+      },
       "SecondOpinionOut": {
         "properties": {
           "scorer": {
@@ -16463,6 +17053,36 @@
           "edits"
         ],
         "title": "StudentGraphEditIn"
+      },
+      "StudentHitOut": {
+        "properties": {
+          "booklet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Booklet Id"
+          },
+          "unit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Unit Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "usn": {
+            "type": "string",
+            "title": "Usn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "booklet_id",
+          "unit_id",
+          "name",
+          "usn"
+        ],
+        "title": "StudentHitOut"
       },
       "StudentIn": {
         "properties": {
@@ -17202,6 +17822,56 @@
         ],
         "title": "UnitFrozenOut"
       },
+      "UnitHitOut": {
+        "properties": {
+          "unit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Unit Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "paper_title": {
+            "type": "string",
+            "title": "Paper Title"
+          },
+          "exam_code": {
+            "type": "string",
+            "title": "Exam Code"
+          },
+          "year": {
+            "type": "string",
+            "title": "Year"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Due Date"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "submitted",
+              "frozen"
+            ],
+            "title": "State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "unit_id",
+          "code",
+          "paper_title",
+          "exam_code",
+          "year",
+          "due_date",
+          "state"
+        ],
+        "title": "UnitHitOut"
+      },
       "UnitIn": {
         "properties": {
           "paper_id": {
@@ -17757,6 +18427,19 @@
           "note"
         ],
         "title": "UnmarkedOut"
+      },
+      "UnreadCountOut": {
+        "properties": {
+          "unread": {
+            "type": "integer",
+            "title": "Unread"
+          }
+        },
+        "type": "object",
+        "required": [
+          "unread"
+        ],
+        "title": "UnreadCountOut"
       },
       "UploadFileOut": {
         "properties": {

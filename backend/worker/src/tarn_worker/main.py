@@ -5,7 +5,9 @@ takes booklet jobs from the PostgreSQL queue one at a time (page cleaning, P9), 
 SIGTERM/SIGINT. A job in progress finishes its current step before the worker stops.
 
 Scheduled jobs: the encrypted identity backup of every tenant
-(``TARN_IDENTITY_BACKUP_INTERVAL_HOURS``, 0 = off)."""
+(``TARN_IDENTITY_BACKUP_INTERVAL_HOURS``, 0 = off), and the due-date reminder sweep (P37): at
+start and then every ``TARN_REMINDER_INTERVAL_HOURS`` (24; 0 = off) one ``notify.due`` job is
+queued per college, which the queue runs like any other job."""
 
 import signal
 import threading
@@ -85,15 +87,40 @@ def identity_backup_job(settings: Settings, clock: Clock) -> PeriodicJob:
     )
 
 
+def reminder_job(settings: Settings, clock: Clock) -> PeriodicJob:
+    def queue() -> None:
+        from tarn_adapters.blob.wiring import build_blob_store
+        from tarn_adapters.postgres.database import PostgresDatabase
+        from tarn_adapters.runtime import UuidGenerator
+        from tarn_worker.reminders import queue_reminders
+
+        db = PostgresDatabase(settings.app_database_url, pool_size=1)
+        try:
+            queue_reminders(db, clock=clock, ids=UuidGenerator(), blobs=build_blob_store(settings))
+        finally:
+            db.dispose()
+
+    return PeriodicJob(
+        name="reminders",
+        interval=timedelta(hours=settings.reminder_interval_hours),
+        action=queue,
+        clock=clock,
+    )
+
+
 def scheduled_jobs(settings: Settings, clock: Clock) -> list[PeriodicJob]:
     jobs = []
     if settings.identity_backup_interval_hours > 0:
         jobs.append(identity_backup_job(settings, clock))
+    if settings.reminder_interval_hours > 0:
+        jobs.append(reminder_job(settings, clock))
     return jobs
 
 
 def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
     """The queue consumer: each call processes at most one booklet job; True if it did."""
+    from tarn_adapters.auth.secrets import secret_source
+    from tarn_adapters.auth.wiring import build_mailer
     from tarn_adapters.blob.wiring import build_blob_store
     from tarn_adapters.llm.wiring import build_llm_scorer
     from tarn_adapters.postgres.database import PostgresDatabase
@@ -134,6 +161,7 @@ def booklet_runner(settings: Settings, clock: Clock) -> Callable[[], bool]:
         word_list=stages.word_list,
         recognizers=stages.recognizers,
         llm=stages.llm,
+        mailer=build_mailer(settings, secret_source(settings)),
     )
     return runner.run_one
 

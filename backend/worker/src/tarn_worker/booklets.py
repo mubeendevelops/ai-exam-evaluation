@@ -24,6 +24,7 @@ from uuid import UUID
 
 import structlog
 
+from tarn_adapters.auth.mail import DeferredMailer
 from tarn_adapters.postgres.database import PostgresDatabase, PostgresSession
 from tarn_adapters.stages import OcrKit, OcrUnavailableError, Stages, Stepper
 from tarn_core.domain.diagram import DiagramKind
@@ -35,7 +36,9 @@ from tarn_core.ports.engines import (
     SecondOpinionScorer,
     WordList,
 )
+from tarn_core.ports.identity import Mailer
 from tarn_core.ports.jobs import (
+    JOB_NOTIFY_DUE,
     JOB_RECOGNIZE_REFERENCE,
     JOB_RESCORE_ANSWERS,
     JOB_RESEGMENT_BOOKLET,
@@ -54,6 +57,11 @@ from tarn_core.services.segmentation.similarity import TrigramEmbedder
 from tarn_core.services.workflow import clear_pending
 
 __all__ = ["BookletJobRunner", "OcrKit", "OcrUnavailableError"]
+
+
+class _NoMail:
+    def send(self, message: object) -> None:
+        """No mailer configured: the notices are written, the email is not sent."""
 
 
 @dataclass
@@ -82,6 +90,8 @@ class BookletJobRunner:
     recognizers: Mapping[DiagramKind, DiagramRecognizer] = field(default_factory=dict)
     """Diagram recognizers per kind (empty: drawings are stored without a graph and their
     criteria go to the teacher)."""
+    mailer: Mailer | None = None
+    """The "due in 3 days" email of the reminder sweep (P37); None: notices only, no email."""
 
     def stages(self) -> Stages:
         """The stage wiring shared with ``tarn evaluate`` (``tarn_adapters.stages``)."""
@@ -113,6 +123,7 @@ class BookletJobRunner:
         """A job that is not a booklet stage: one transaction, retried with backoff."""
         log = structlog.get_logger("tarn_worker")
         started = time.perf_counter()
+        outbox = DeferredMailer(self.mailer) if self.mailer is not None else None
         try:
             with (
                 self._keep_alive(job),
@@ -120,7 +131,18 @@ class BookletJobRunner:
                     job.college_id, ids=self.ids, clock=self.clock, blobs=self.blobs
                 ) as session,
             ):
-                if job.kind == JOB_RESEGMENT_BOOKLET:
+                if job.kind == JOB_NOTIFY_DUE:
+                    from tarn_worker.reminders import sweep
+
+                    result = sweep(session, job.college_id, outbox or _NoMail())
+                    log.info(
+                        "reminders.swept",
+                        college=str(job.college_id),
+                        due_soon=result.due_soon,
+                        overdue=result.overdue,
+                        emails=result.emails,
+                    )
+                elif job.kind == JOB_RESEGMENT_BOOKLET:
                     self._resegmenter(session).run(
                         job.college_id,
                         UserId(UUID(str(job.payload["actor_id"]))),
@@ -169,6 +191,8 @@ class BookletJobRunner:
                 will_retry=will_retry,
             )
             return
+        if outbox is not None:
+            outbox.flush()  # after the commit: a rolled-back sweep mails nothing
         with self.db.scheduler() as queue:
             queue.succeed(job.id)
         log.info(
@@ -205,7 +229,12 @@ class BookletJobRunner:
                 self._abandon(lost, lost_stepper)
         if job is None:
             return bool(reaped)
-        if job.kind in (JOB_RECOGNIZE_REFERENCE, JOB_RESCORE_ANSWERS, JOB_RESEGMENT_BOOKLET):
+        if job.kind in (
+            JOB_RECOGNIZE_REFERENCE,
+            JOB_RESCORE_ANSWERS,
+            JOB_RESEGMENT_BOOKLET,
+            JOB_NOTIFY_DUE,
+        ):
             self._single(job)
             return True
         stepper = self._stepper(job.kind)

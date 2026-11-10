@@ -39,12 +39,14 @@ from tarn_core.ports.repositories import (
     BookletRepository,
     ContentRepository,
     EntitlementRepository,
+    NotificationRepository,
     UnitRepository,
     UserRepository,
 )
 from tarn_core.services._support import Runtime
 from tarn_core.services.access import require
 from tarn_core.services.entitlements import EntitlementService
+from tarn_core.services.notifications import Notices
 from tarn_core.services.unit_guard import closed_message
 from tarn_core.services.units import NOT_ENTITLED, may_own
 
@@ -86,6 +88,7 @@ class TransferService:
         booklets: BookletRepository,
         mailer: Mailer,
         runtime: Runtime,
+        notifications: NotificationRepository,
     ) -> None:
         self._units = units
         self._users = users
@@ -95,6 +98,7 @@ class TransferService:
         self._booklets = booklets
         self._mailer = mailer
         self._rt = runtime
+        self._notices = Notices(notifications, runtime)
 
     # --- transfer one unit ----------------------------------------------------------------
 
@@ -229,6 +233,8 @@ class TransferService:
                 "locks_released": released,
             },
         )
+        self._notices.assigned(moved)
+        self._notices.moved_away(moved, source.id, request)
         paper = self._content.get(college_id, ExamBlueprint, unit.paper_id)
         subject = self._content.get(college_id, Subject, unit.subject_id)
         booklets = len(self._booklets.in_unit(college_id, unit.id))

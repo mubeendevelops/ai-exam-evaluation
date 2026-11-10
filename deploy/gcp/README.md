@@ -27,7 +27,7 @@ checked with `terraform validate` before any Google Cloud account existed. Read 
 | `iam.tf` | One service account per workload, access granted per secret, per bucket, per key |
 | `cloudrun.tf` | API and web services (reachable only through the load balancer), worker job, migration job |
 | `worker_vm.tf` | Optional always-on GPU VM instead of the worker job (`worker_mode = "vm"`) |
-| `loadbalancer.tf`, `scheduler.tf` | Public entry point (one origin: the refresh cookie needs it) and the worker schedule |
+| `loadbalancer.tf`, `scheduler.tf` | Public entry point (one origin: the refresh cookie needs it), the worker schedule and the daily due-date reminder run (P37) |
 
 ## Before the first apply
 
@@ -78,6 +78,13 @@ migration job when the release has migrations.
 - **A booklet waits for the worker.** In `job` mode the worker starts every `worker_schedule`
   (default 5 minutes), loads the OCR models (about a minute) and works until the queue is
   empty. `gcloud run jobs execute tarn-worker --region asia-south1` starts it at once.
+- **Due-date reminders (P37).** A second Cloud Scheduler entry (`reminder_schedule`, default
+  `30 0 * * *` UTC = 06:00 IST) runs the worker job with `--reminders`: it queues one
+  `notify.due` job per college, then drains the queue. Running it twice on one day adds no
+  notice and sends no second email. By hand: `gcloud run jobs execute tarn-worker --region
+  asia-south1 --args=--reminders`. The scheduler's account has `run.jobsExecutorWithOverrides`
+  on the job for the argument; the worker reads `tarn-smtp-password` for the "due in 3 days"
+  email. In `vm` mode the always-on worker queues the sweep itself once a day.
 - **Restore.** Cloud SQL console or `gcloud sql instances clone <instance> <new> --point-in-time <UTC time>`
   (7 days) and `gcloud sql backups restore` (14 daily backups). The application and identity
   databases are separate instances: restore the one that was damaged.

@@ -33,6 +33,7 @@ from tarn_core.domain.diagram import (
     NodeShape,
     StudentDiagram,
 )
+from tarn_core.domain.notifications import Notification, NotificationKind
 from tarn_core.domain.review import (
     Amendment,
     BookletLock,
@@ -59,6 +60,7 @@ from tarn_core.ids import (
     BookletId,
     CollegeId,
     DelegationRequestId,
+    NotificationId,
     RegionEditId,
     RegionId,
     ResultSheetId,
@@ -369,6 +371,20 @@ def _seed(open_: Opener, college: CollegeFixture, blueprint_id: BlueprintId) -> 
                 reason="synthetic reason",
                 by=college.admin.id,
                 at=s.clock.now(),
+            ),
+        )
+        # A notice for the unit's SME (P37).
+        s.notifications.add(
+            cid,
+            Notification(
+                id=NotificationId(s.ids.new()),
+                college_id=cid,
+                user_id=teacher,
+                kind=NotificationKind.ASSIGNED,
+                unit_id=unit_id,
+                day=s.clock.now().date(),
+                created_at=s.clock.now(),
+                payload={"unit_code": "U-0001"},
             ),
         )
         # A submission with an unmarked booklet and a frozen record (P28). Builder rows: the

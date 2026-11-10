@@ -305,8 +305,9 @@ def leaves(slot: QuestionSlot) -> tuple[tuple[str, QuestionId | None, Decimal], 
 class BlueprintQuery:
     """Which blueprints a list shows. ``subject_ids`` None = every subject of the college;
     ``title`` matches anywhere and ``target_batch`` exactly, both ignoring case. Since P34:
-    ``search`` matches the title or the descriptor anywhere, ``descriptor`` exactly (both
-    ignoring case), ``created_on`` the UTC date version 1 was saved."""
+    ``search`` matches the title or the descriptor (since P37 also the exam code) anywhere,
+    ``descriptor`` exactly (both ignoring case), ``created_on`` the UTC date version 1 was
+    saved."""
 
     kind: BlueprintKind | None = None
     subject_ids: frozenset[SubjectId] | None = None

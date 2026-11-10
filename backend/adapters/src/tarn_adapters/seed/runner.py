@@ -171,6 +171,7 @@ def _units(
             booklets=scope.booklets,
             mailer=MailCatcher(),
             runtime=scope.runtime,
+            notifications=scope.notifications,
         ),
         runtime=scope.runtime,
         report=report,

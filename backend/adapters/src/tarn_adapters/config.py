@@ -190,6 +190,11 @@ class Settings(BaseSettings):
     identity_backup_interval_hours: float = 24.0
     identity_backup_keep: int = 14
 
+    # The due-date reminder sweep (P37): the always-on worker queues one ``notify.due`` job per
+    # college at start and then every interval (0 = off; on Google Cloud, Cloud Scheduler runs
+    # ``python -m tarn_worker.job --reminders`` instead).
+    reminder_interval_hours: float = 24.0
+
     # The worker answers GET /health on this port (0 = off); the API reports it in /api/v1/health
     # by calling ``worker_health_url`` (empty = not configured, shown as "unknown").
     worker_health_host: str = "127.0.0.1"

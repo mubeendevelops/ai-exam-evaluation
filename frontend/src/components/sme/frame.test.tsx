@@ -55,18 +55,14 @@ describe('SME portal frame (P31, D215)', () => {
     expect(within(sidebar).queryByRole('link', { name: 'Q&A DB' })).toBeNull()
   })
 
-  it('has a header with the tab title, a placeholder search and bell, and the user menu', async () => {
+  it('has a header with the tab title, the search, the bell and the user menu', async () => {
     smeSession()
     const user = userEvent.setup()
     renderApp('/sme')
     const banner = await screen.findByRole('banner')
     expect(within(banner).getByText('My Assignments')).toBeInTheDocument()
-    const search = within(banner).getByRole('searchbox', { name: /Search/ })
-    expect(search).toBeDisabled()
-    expect(search).toHaveAttribute('title', expect.stringMatching(/later update/))
-    const bell = within(banner).getByRole('button', { name: 'Notifications' })
-    expect(bell).toBeDisabled()
-    expect(bell).toHaveAttribute('title', expect.stringMatching(/later update/))
+    expect(within(banner).getByRole('combobox', { name: /Search/ })).toBeEnabled()
+    expect(within(banner).getByRole('button', { name: 'Notifications' })).toBeEnabled()
     expect(within(banner).getByRole('button', { name: /Account menu for Asha Rao/ })).toBeVisible()
 
     const sidebar = screen.getByRole('navigation', { name: 'SME sections' })

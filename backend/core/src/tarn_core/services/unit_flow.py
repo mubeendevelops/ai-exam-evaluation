@@ -57,6 +57,7 @@ from tarn_core.ports.identity import EmailMessage, Mailer
 from tarn_core.ports.repositories import (
     BookletRepository,
     ContentRepository,
+    NotificationRepository,
     ResultSheetRepository,
     ScoreRepository,
     UnitRepository,
@@ -65,6 +66,7 @@ from tarn_core.ports.repositories import (
 from tarn_core.services._support import Runtime
 from tarn_core.services.access import require
 from tarn_core.services.blueprint_document import blueprint_to_document
+from tarn_core.services.notifications import Notices
 from tarn_core.services.transfers import check_reason
 from tarn_core.services.unit_guard import closed_message
 
@@ -157,6 +159,7 @@ class UnitFlowService:
         content: ContentRepository,
         mailer: Mailer,
         runtime: Runtime,
+        notifications: NotificationRepository,
     ) -> None:
         self._units = units
         self._users = users
@@ -166,6 +169,7 @@ class UnitFlowService:
         self._content = content
         self._mailer = mailer
         self._rt = runtime
+        self._notices = Notices(notifications, runtime)
 
     # --- reading -----------------------------------------------------------------------------
 
@@ -322,6 +326,7 @@ class UnitFlowService:
                 "note_given": True,
             },
         )
+        self._notices.returned(reopened, note)
         owner = self._users.get(college_id, unit.owner_id)
         self._mailer.send(
             self._returned_email(college_id, reopened, owner.email, owner.display_name, note)

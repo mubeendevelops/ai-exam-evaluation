@@ -1,8 +1,9 @@
 # One service account per workload, each with only what it uses.
 #   api       sign-in, uploads, review: bucket, identity KMS key, its secrets
-#   worker    reads booklets: bucket, models, application database secret, optional OCR/LLM
+#   worker    reads booklets: bucket, models, application database secret, optional OCR/LLM,
+#             SMTP password (the due-date reminder email, P37)
 #   migrate   owner logins of both databases (the only one that sees them)
-#   scheduler starts the worker job
+#   scheduler starts the worker job (and the daily reminder run, with its --reminders argument)
 #   web       serves static files: no access to anything
 # The people who deploy (push images, run terraform) are outside this file.
 
@@ -38,7 +39,7 @@ locals {
       "app-database-url", "identity-app-database-url", "password-pepper",
       "password-pepper-previous", "token-signing-key", "smtp-password",
     ]
-    worker  = ["app-database-url", "groq-api-key"]
+    worker  = ["app-database-url", "groq-api-key", "smtp-password"] # SMTP: the "due in 3 days" email (P37)
     migrate = ["database-url", "app-database-url", "identity-database-url", "identity-app-database-url"]
   }
 

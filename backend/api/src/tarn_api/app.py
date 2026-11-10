@@ -24,11 +24,13 @@ from tarn_api.routes import (
     diagrams,
     evaluated,
     me,
+    notifications,
     overview,
     questions,
     registration,
     review,
     roster,
+    search,
     segments,
     units,
 )
@@ -122,6 +124,8 @@ def create_app(
         evaluated,
         overview,
         me,
+        notifications,
+        search,
         review,
         segments,
     ):

@@ -87,6 +87,7 @@ from tarn_core.domain.review import (
     Review,
 )
 from tarn_core.domain.scoring import AnswerFlag, AnswerScore, CriterionScore, SentenceVector
+from tarn_core.domain.search import StudentHit
 from tarn_core.domain.student_list import AnswerTally, UnitRowQuery, UnitRows, statuses_of
 from tarn_core.domain.tenancy import College, Role, Student, SubjectGrant, User
 from tarn_core.domain.unit import (
@@ -714,6 +715,7 @@ class PgContentRepository:
                 or_(
                     newest.c.title.icontains(query.search, autoescape=True),
                     newest.c.descriptor.icontains(query.search, autoescape=True),
+                    newest.c.exam_code.icontains(query.search, autoescape=True),
                 )
             )
         if query.descriptor:
@@ -1672,6 +1674,35 @@ class PgBookletRepository:
 
     def in_unit(self, college_id: CollegeId, unit_id: UnitId) -> Sequence[Booklet]:
         return [_booklet(r) for r in self._rows(m.booklets, college_id, unit_id=unit_id)]
+
+    def find_students(
+        self, college_id: CollegeId, unit_ids: frozenset[UnitId], text: str, *, limit: int
+    ) -> Sequence[StudentHit]:
+        needle = text.strip().lower()
+        if not unit_ids or not needle:
+            return []
+        b, s = m.booklets, m.students
+        joined = b.join(s, and_(s.c.college_id == b.c.college_id, s.c.id == b.c.student_id))
+        stmt = (
+            select(b.c.id, b.c.unit_id, s.c.name, s.c.usn)
+            .select_from(joined)
+            .where(
+                b.c.college_id == college_id,
+                b.c.unit_id.in_(sorted(unit_ids)),
+                or_(
+                    s.c.usn.like(_like_escape("".join(needle.split()).upper()) + "%", escape="\\"),
+                    func.lower(s.c.name).like("%" + _like_escape(needle) + "%", escape="\\"),
+                ),
+            )
+            .order_by(s.c.usn, b.c.id)
+            .limit(limit)
+        )
+        return [
+            StudentHit(
+                booklet_id=BookletId(r.id), unit_id=UnitId(r.unit_id), name=r.name, usn=r.usn
+            )
+            for r in self._conn.execute(stmt)
+        ]
 
     def unit_rows(self, college_id: CollegeId, unit_id: UnitId, query: UnitRowQuery) -> UnitRows:
         b, s = m.booklets, m.students

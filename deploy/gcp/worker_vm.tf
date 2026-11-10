@@ -64,6 +64,7 @@ resource "google_compute_instance" "worker" {
       -e TARN_GCP_PROJECT=${var.project_id} -e TARN_SECRETS_BACKEND=gcp \
       -e TARN_KMS_KEY_REF=gcp-kms:${google_kms_crypto_key.identity.id} \
       -e TARN_MAILER=smtp -e TARN_SMTP_HOST=${var.smtp_host} -e TARN_SMTP_FROM=${var.smtp_from} \
+      -e TARN_SMTP_PORT=${var.smtp_port} -e TARN_SMTP_USER=${var.smtp_user} \
       -e TARN_MODEL_DIR=/models -e TARN_WORKER_HEALTH_HOST=0.0.0.0 \
       -e TARN_IDENTITY_BACKUP_INTERVAL_HOURS=0 \
       -e TARN_CLOUD_OCR_ENABLED=${var.cloud_ocr_enabled} -e TARN_DOCAI_PROCESSOR=${var.docai_processor} \

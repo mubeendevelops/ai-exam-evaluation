@@ -271,6 +271,16 @@ export class FakeApi {
       case 'GET /delegation-requests':
         return json(200, [])
 
+      // The SME's bell and search (P37): nothing to tell, nothing found.
+      case 'GET /notifications/unread-count':
+        return json(200, { unread: 0 })
+      case 'GET /notifications':
+        return json(200, { items: [], total: 0, unread: 0, limit: 20, offset: 0 })
+      case 'POST /notifications/read-all':
+        return json(200, { marked: 0 })
+      case 'GET /search':
+        return json(200, { units: [], students: [], papers: [], schemas: [], questions: [] })
+
       // The SME's own figures (P31): nothing handed in yet.
       case 'GET /me/assignments/summary':
         return json(200, {

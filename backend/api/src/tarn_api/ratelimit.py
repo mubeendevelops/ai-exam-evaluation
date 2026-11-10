@@ -51,6 +51,8 @@ REGISTER_IP = Limit("register-ip", 5, timedelta(hours=1))
 LOGIN_ACCOUNT = Limit("login-account", 10, timedelta(minutes=15))
 RECOVER_ACCOUNT = Limit("recover-account", 5, timedelta(minutes=15))
 FORGOT_ACCOUNT = Limit("forgot-account", 3, timedelta(minutes=15))
+# Per signed-in user (P37): the global search box asks as the SME types (debounced).
+SEARCH_USER = Limit("search-user", 60, timedelta(minutes=1))
 
 
 class RateLimiter:
@@ -153,6 +155,7 @@ __all__ = [
     "RECOVER_ACCOUNT",
     "RECOVER_IP",
     "REGISTER_IP",
+    "SEARCH_USER",
     "TOKEN_IP",
     "Limit",
     "RateLimiter",

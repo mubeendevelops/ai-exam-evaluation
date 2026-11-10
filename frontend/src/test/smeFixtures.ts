@@ -94,6 +94,31 @@ export const myUnits = [
   }),
 ]
 
+type Notice = components['schemas']['NotificationOut']
+
+export const noResults: components['schemas']['SearchOut'] = {
+  units: [],
+  students: [],
+  papers: [],
+  schemas: [],
+  questions: [],
+}
+
+export function noticeOf(over: Partial<Notice> = {}): Notice {
+  return {
+    id: 'n-1',
+    kind: 'assigned',
+    unit_id: 'unit-1',
+    unit_code: 'U-0001',
+    due_date: '2026-11-20',
+    request_id: null,
+    note: null,
+    created_at: '2026-11-10T08:00:00Z',
+    read_at: null,
+    ...over,
+  }
+}
+
 /** An SME who is signed in, with what the SME frame and My Assignments read. */
 export function smeSession(
   extra: Record<string, Reply | ((call: Call) => Reply | Promise<Reply>)> = {},
@@ -107,6 +132,11 @@ export function smeSession(
     'GET /api/v1/me/reports': { json: reportOf() },
     'GET /api/v1/units': { json: myUnits },
     'GET /api/v1/delegation-requests': { json: [] },
+    'GET /api/v1/notifications/unread-count': { json: { unread: 0 } },
+    'GET /api/v1/notifications': {
+      json: { items: [], total: 0, unread: 0, limit: 20, offset: 0 },
+    },
+    'GET /api/v1/search': { json: noResults },
     ...extra,
   })
 }

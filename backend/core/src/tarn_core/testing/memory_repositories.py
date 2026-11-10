@@ -36,6 +36,7 @@ from tarn_core.domain.content import (
 from tarn_core.domain.diagram import StudentDiagram
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
+from tarn_core.domain.search import StudentHit
 from tarn_core.domain.student_list import (
     ROW_STATUS_OF,
     AnswerTally,
@@ -303,7 +304,11 @@ class MemoryContentRepository:
                 and (query.subject_ids is None or b.subject_id in query.subject_ids)
                 and title in b.title.lower()
                 and (not batch or b.target_batch.lower() == batch)
-                and (search in b.title.lower() or search in b.descriptor.lower())
+                and (
+                    search in b.title.lower()
+                    or search in b.descriptor.lower()
+                    or search in b.exam_code.lower()
+                )
                 and (not descriptor or b.descriptor.lower() == descriptor)
                 and (
                     query.created_on is None
@@ -620,6 +625,25 @@ class MemoryBookletRepository:
                 approved=sum(1 for a in attempted if a.status is AnswerStatus.APPROVED),
             )
         return UnitRows(booklets=page, tallies=tallies, matching=len(found))
+
+    def find_students(
+        self, college_id: CollegeId, unit_ids: frozenset[UnitId], text: str, *, limit: int
+    ) -> Sequence[StudentHit]:
+        needle = text.strip().lower()
+        usn = "".join(needle.split()).upper()
+        found: list[StudentHit] = []
+        for b in self._booklets.values(college_id):
+            if b.unit_id not in unit_ids:
+                continue
+            student = self._students.get(college_id, b.student_id)
+            if needle and (student.usn.startswith(usn) or needle in student.name.lower()):
+                found.append(
+                    StudentHit(
+                        booklet_id=b.id, unit_id=b.unit_id, name=student.name, usn=student.usn
+                    )
+                )
+        found.sort(key=lambda h: (h.usn, str(h.booklet_id)))
+        return found[:limit]
 
     def count_waiting(self, college_id: CollegeId, user_id: UserId) -> int:
         return sum(
