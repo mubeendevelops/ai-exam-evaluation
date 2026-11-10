@@ -8,7 +8,7 @@ import SmeDirectoryPage from './pages/admin/SmeDirectoryPage'
 import RedistributePage from './pages/admin/RedistributePage'
 import { OverviewPage } from './pages/admin/OverviewPage'
 import { ProgressPage } from './pages/admin/ProgressPage'
-import { ReportsPage } from './pages/admin/sections'
+import { ReportsPage as AdminReportsPage } from './pages/admin/sections'
 import StudentsPage from './pages/admin/StudentsPage'
 import UnitDetailPage from './pages/admin/UnitDetailPage'
 import UnitsPage from './pages/admin/UnitsPage'
@@ -21,13 +21,14 @@ import ResetPasswordPage from './pages/ResetPasswordPage'
 import MyAssignmentsPage from './pages/sme/MyAssignmentsPage'
 import PaperEditorPage from './pages/sme/PaperEditorPage'
 import PapersPage from './pages/sme/PapersPage'
+import ProfilePage from './pages/sme/ProfilePage'
 import QuestionEditorPage from './pages/sme/QuestionEditorPage'
 import QuestionListPage from './pages/sme/QuestionListPage'
 import QuestionsPage from './pages/sme/QuestionsPage'
+import ReportsPage from './pages/sme/ReportsPage'
 import SchemaEditorPage from './pages/sme/SchemaEditorPage'
 import SchemasPage from './pages/sme/SchemasPage'
 import StudentListPage from './pages/sme/StudentListPage'
-import * as Sme from './pages/sme/sections'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 
 /**
@@ -65,8 +66,8 @@ export default function App() {
               <Route path="schemas" element={<SchemasPage />} />
               <Route path="schemas/:blueprintId" element={<SchemaEditorPage />} />
               <Route path="schema" element={<Navigate to="/sme/schemas" replace />} />
-              <Route path="profile" element={<Sme.ProfilePage />} />
-              <Route path="reports" element={<Sme.ReportsPage />} />
+              <Route path="profile" element={<ProfilePage />} />
+              <Route path="reports" element={<ReportsPage />} />
               <Route path="*" element={<Navigate to="/sme" replace />} />
             </Route>
           </Route>
@@ -87,7 +88,7 @@ export default function App() {
               <Route path="upload/students" element={<StudentsPage />} />
               <Route path="progress" element={<ProgressPage />} />
               <Route path="redistribute" element={<RedistributePage />} />
-              <Route path="reports" element={<ReportsPage />} />
+              <Route path="reports" element={<AdminReportsPage />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Route>
           </Route>

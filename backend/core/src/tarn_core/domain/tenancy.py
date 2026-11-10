@@ -33,6 +33,27 @@ class Role(StrEnum):
     GOVERNOR = "governor"
 
 
+EMPLOYEE_ID_MAX = 40
+DEPARTMENT_MAX = 80
+"""Longest employee ID and department (P36, D225): staff data the admin enters."""
+
+
+def normalise_profile_field(raw: str | None) -> str | None:
+    """A profile field as typed: trimmed, inner runs of spaces made one, blank meaning none."""
+    if raw is None:
+        return None
+    return " ".join(raw.split()) or None
+
+
+def _check_profile_field(what: str, value: str | None, longest: int) -> None:
+    if value is None:
+        return
+    if value != normalise_profile_field(value):
+        raise InvariantError(f"the {what} must not be blank or padded")
+    if len(value) > longest:
+        raise InvariantError(f"the {what} has at most {longest} characters")
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class User:
     """Profile and role only; credentials live in the separate identity store (P4)."""
@@ -46,9 +67,15 @@ class User:
     removed_at: datetime | None = None
     """When the admin removed the SME (P27, D193): the account is off and out of the
     directory; the row stays so history (units, reviews, audit) still names the person."""
+    employee_id: str | None = None
+    """Optional, 1-40 characters, set by the admin (P36, D225). Staff data, not student data."""
+    department: str | None = None
+    """Optional, 1-80 characters, set by the admin (P36, D225)."""
 
     def __post_init__(self) -> None:
         check_text("display name", self.display_name)
+        _check_profile_field("employee ID", self.employee_id, EMPLOYEE_ID_MAX)
+        _check_profile_field("department", self.department, DEPARTMENT_MAX)
         if "@" not in self.email:
             raise InvariantError("email must contain '@'")
         if self.removed_at is not None:

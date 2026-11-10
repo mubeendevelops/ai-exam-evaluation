@@ -83,6 +83,7 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("POST", "/api/v1/booklets/{booklet_id}/replace"): _UPLOAD,
     ("POST", "/api/v1/booklets/{booklet_id}/pages/{number}/use-anyway"): _UPLOAD,
     ("DELETE", "/api/v1/accounts/{user_id}"): _SMES,
+    ("PUT", "/api/v1/accounts/{user_id}"): _SMES,
     ("POST", "/api/v1/accounts/{user_id}/subjects/{subject_id}/revoke"): _SMES,
     # --- moving work between SMEs (P27, D163) -------------------------------------------------
     ("POST", "/api/v1/units/{unit_id}/transfer"): _REDISTRIBUTE,
@@ -103,6 +104,7 @@ ACCESS: Mapping[tuple[str, str], Access] = {
     ("GET", "/api/v1/overview/system"): _OVERVIEW,
     # --- the SME's own figures (P31, D216) ------------------------------------------------------
     ("GET", "/api/v1/me/assignments/summary"): _needs(C.VIEW_OWN_WORK),
+    ("GET", "/api/v1/me/reports"): _needs(C.VIEW_OWN_WORK),
     # --- progress: admin and SME, no marks for the admin (D167) -------------------------------
     ("GET", "/api/v1/booklets"): _PROGRESS,
     ("GET", "/api/v1/booklets/{booklet_id}"): _PROGRESS,
@@ -184,6 +186,9 @@ _ROSTER = "name,usn,class/section\nPersona Student,PERSONA001,X\n"
 _OWN_BODIES: Mapping[tuple[str, str], Callable[[World], dict[str, Any]]] = {
     ("POST", "/api/v1/accounts"): lambda w: {
         "json": {"display_name": "Persona SME", "email": "persona.sme@demo-com.example.test"}
+    },
+    ("PUT", "/api/v1/accounts/{user_id}"): lambda w: {
+        "json": {"display_name": "Persona SME", "employee_id": "P-1", "department": "Persona"}
     },
     ("POST", "/api/v1/subjects"): lambda w: {"json": {"code": "PERSONA", "name": "Persona"}},
     ("POST", "/api/v1/roster/import"): lambda w: {

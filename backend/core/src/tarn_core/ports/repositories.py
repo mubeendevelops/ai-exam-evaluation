@@ -45,6 +45,7 @@ from tarn_core.domain.overview import (
     UnitCounts,
     UnitProgress,
 )
+from tarn_core.domain.reports import Quarter, ReportCounts
 from tarn_core.domain.review import Amendment, BookletLock, RegionEdit, ResultSheet, Review
 from tarn_core.domain.scoring import AnswerScore, SentenceVector
 from tarn_core.domain.student_list import UnitRowQuery, UnitRows
@@ -562,4 +563,18 @@ class OverviewRepository(Protocol):
         and the turnarounds of the submitted and frozen ones (``tarn_core.domain.assignments``:
         from the last transfer to the owner, else creation, to the latest submission). Never
         another SME's units."""
+        ...
+
+    def report_counts(
+        self,
+        college_id: CollegeId,
+        owner_id: UserId,
+        year: AcademicYear,
+        quarters: Sequence[Quarter],
+    ) -> ReportCounts:
+        """My Reports (P36, D226, D239) over the units ``owner_id`` owns now: turnarounds
+        (lifetime, and units due in ``year``), units handed in and on time, per quarter the
+        units submitted (latest submission) and booklets approved (first result sheet), the
+        open units and the booklets pending in them. Never another SME's units, never a
+        mark."""
         ...

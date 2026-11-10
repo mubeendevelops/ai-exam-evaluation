@@ -12,6 +12,7 @@ from tarn_api.schemas import (
     AccountSubjectsOut,
     ErrorOut,
     InviteIn,
+    ProfileIn,
     RevokeIn,
     UserOut,
 )
@@ -63,7 +64,12 @@ def invite_sme(body: InviteIn, who: PrincipalDep, backends: BackendsDep) -> Acco
         current_user(unit, who, MANAGE)
         unit.entitlements.check_grantable(who.college_id, subjects)
         user = unit.accounts.invite_sme(
-            who.college_id, who.user_id, display_name=body.display_name, email=body.email
+            who.college_id,
+            who.user_id,
+            display_name=body.display_name,
+            email=body.email,
+            employee_id=body.employee_id,
+            department=body.department,
         )
         granted: frozenset[SubjectId] = frozenset()
         for subject in subjects:
@@ -76,6 +82,31 @@ def invite_sme(body: InviteIn, who: PrincipalDep, backends: BackendsDep) -> Acco
         subject_ids=sorted(granted, key=str),
         idle=True,  # a new SME owns no unit yet
     )
+
+
+@router.put(
+    "/{user_id}",
+    response_model=UserOut,
+    responses={404: {"model": ErrorOut}, 422: {"model": ErrorOut}},
+    summary="Edit an SME's name, employee ID and department (admin)",
+    description="All three fields are sent; a blank employee ID or department clears it (D225). "
+    "The sign-in email and the identity record are not touched. Audited with the field names "
+    "and their before and after values (staff data).",
+)
+def update_profile(
+    user_id: UUID, body: ProfileIn, who: PrincipalDep, backends: BackendsDep
+) -> UserOut:
+    with unit_of_work(backends, who.college_id) as unit:
+        current_user(unit, who, MANAGE)
+        user = unit.accounts.update_profile(
+            who.college_id,
+            who.user_id,
+            UserId(user_id),
+            display_name=body.display_name,
+            employee_id=body.employee_id,
+            department=body.department,
+        )
+    return UserOut.of(user)
 
 
 def _set_active(who: PrincipalDep, backends: BackendsDep, user_id: UUID, active: bool) -> UserOut:

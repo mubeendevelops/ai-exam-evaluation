@@ -70,6 +70,7 @@ allowed-confusables = ["α", "β", "−", "×", "’"]
 "core/src/tarn_core/testing/queue_contract.py" = ["S101"]
 "core/src/tarn_core/testing/overview_contract.py" = ["S101"]
 "core/src/tarn_core/testing/assignments_contract.py" = ["S101"]
+"core/src/tarn_core/testing/reports_contract.py" = ["S101"]
 "core/src/tarn_core/testing/student_list_contract.py" = ["S101"]
 "core/src/tarn_core/testing/blueprint_list_contract.py" = ["S101"]
 # The P21 journey and tenancy sweep: tests that run on both the in-memory and PostgreSQL stacks.

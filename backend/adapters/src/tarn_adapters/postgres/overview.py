@@ -9,7 +9,18 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import ColumnElement, Connection, Text, and_, cast, exists, func, not_, select
+from sqlalchemy import (
+    ColumnElement,
+    Connection,
+    Date,
+    Text,
+    and_,
+    cast,
+    exists,
+    func,
+    not_,
+    select,
+)
 
 from tarn_adapters.postgres import metadata as m
 from tarn_core.domain.assignments import AcademicYear, AssignmentCounts
@@ -28,6 +39,7 @@ from tarn_core.domain.overview import (
     sme_status,
     statuses_of,
 )
+from tarn_core.domain.reports import Quarter, QuarterCounts, ReportCounts, TurnaroundCounts
 from tarn_core.domain.tenancy import Role
 from tarn_core.domain.unit import UnitState
 from tarn_core.ids import BlueprintId, CollegeId, SubjectId, UnitId, UserId
@@ -327,4 +339,112 @@ class PgOverviewRepository:
             frozen=row.frozen,
             turnaround_units=row.turnaround_units,
             turnaround_seconds=Decimal(row.turnaround_seconds),
+        )
+
+    def report_counts(
+        self,
+        college_id: CollegeId,
+        owner_id: UserId,
+        year: AcademicYear,
+        quarters: Sequence[Quarter],
+    ) -> ReportCounts:
+        n, t, s, b, r = m.units, m.unit_transfers, m.unit_submissions, m.booklets, m.result_sheets
+        last_in = (
+            select(func.max(t.c.at))
+            .where(
+                t.c.college_id == n.c.college_id,
+                t.c.unit_id == n.c.id,
+                t.c.to_owner == n.c.owner_id,
+            )
+            .scalar_subquery()
+        )
+        last_out = (
+            select(func.max(s.c.submitted_at))
+            .where(s.c.college_id == n.c.college_id, s.c.unit_id == n.c.id)
+            .scalar_subquery()
+        )
+        mine = (
+            select(
+                n.c.state,
+                n.c.due_date,
+                func.coalesce(last_in, n.c.created_at).label("received"),
+                last_out.label("submitted_at"),
+            )
+            .where(n.c.college_id == college_id, n.c.owner_id == owner_id)
+            .subquery("mine")
+        )
+        handed = and_(mine.c.state != UnitState.OPEN.value, mine.c.submitted_at.is_not(None))
+        timed = and_(handed, mine.c.submitted_at >= mine.c.received)
+        in_year = and_(mine.c.due_date >= year.start, mine.c.due_date < year.end)
+        span = func.extract("epoch", mine.c.submitted_at - mine.c.received)
+        # A UTC date for the on-time test, so the database's time zone never decides it.
+        on_time = and_(
+            handed, cast(func.timezone("UTC", mine.c.submitted_at), Date) <= mine.c.due_date
+        )
+        columns = [
+            func.count().filter(timed).label("life_units"),
+            func.coalesce(func.sum(span).filter(timed), 0).label("life_seconds"),
+            func.count().filter(and_(timed, in_year)).label("year_units"),
+            func.coalesce(func.sum(span).filter(and_(timed, in_year)), 0).label("year_seconds"),
+            func.count().filter(handed).label("handed_in"),
+            func.count().filter(on_time).label("on_time"),
+            func.count().filter(mine.c.state == UnitState.OPEN.value).label("open_units"),
+        ]
+        for i, q in enumerate(quarters):
+            columns.append(
+                func.count()
+                .filter(
+                    and_(handed, mine.c.submitted_at >= q.start_at, mine.c.submitted_at < q.end_at)
+                )
+                .label(f"submitted_{i}")
+            )
+        units = self._conn.execute(select(*columns)).one()
+
+        # Booklets of those units: approved ones by the quarter of their first result sheet,
+        # the unapproved ones of open units as pending.
+        first_sheet = (
+            select(func.min(r.c.issued_at))
+            .where(r.c.college_id == b.c.college_id, r.c.booklet_id == b.c.id)
+            .scalar_subquery()
+        )
+        owned = (
+            select(b.c.status, n.c.state, first_sheet.label("approved_at"))
+            .select_from(b.join(n, and_(n.c.college_id == b.c.college_id, n.c.id == b.c.unit_id)))
+            .where(b.c.college_id == college_id, n.c.owner_id == owner_id)
+            .subquery("owned")
+        )
+        approved = owned.c.status.in_(sorted(a.value for a in APPROVED_STATUSES))
+        work_columns = [
+            func.count()
+            .filter(and_(owned.c.state == UnitState.OPEN.value, not_(approved)))
+            .label("pending")
+        ]
+        for i, q in enumerate(quarters):
+            work_columns.append(
+                func.count()
+                .filter(
+                    and_(
+                        approved, owned.c.approved_at >= q.start_at, owned.c.approved_at < q.end_at
+                    )
+                )
+                .label(f"approved_{i}")
+            )
+        work = self._conn.execute(select(*work_columns)).one()
+        return ReportCounts(
+            lifetime=TurnaroundCounts(units=units.life_units, seconds=Decimal(units.life_seconds)),
+            current_year=TurnaroundCounts(
+                units=units.year_units, seconds=Decimal(units.year_seconds)
+            ),
+            handed_in=units.handed_in,
+            on_time=units.on_time,
+            quarters=[
+                QuarterCounts(
+                    quarter=q,
+                    units_submitted=getattr(units, f"submitted_{i}"),
+                    booklets_approved=getattr(work, f"approved_{i}"),
+                )
+                for i, q in enumerate(quarters)
+            ],
+            open_units=units.open_units,
+            booklets_pending=work.pending,
         )

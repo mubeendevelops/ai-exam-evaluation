@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Outlet } from 'react-router'
+import { Outlet, useNavigate } from 'react-router'
 import { useMe } from '../../auth/AuthProvider'
 import { can, type Capability } from '../../auth/capabilities'
 import { brand } from '../../content/landing'
@@ -17,10 +17,12 @@ import { UserMenu } from './UserMenu'
 export const appTabs: readonly (TabItem & { capability: Capability })[] = []
 
 /** The signed-in frame of project_idea.html: top bar with the tabs, mobile sub-bar, footer.
- * An SME gets the SME portal frame instead (P31, D215): sidebar and header, no top bar. */
+ * An SME gets the SME portal frame instead (P31, D215): sidebar and header, no top bar; their
+ * account menu's Profile opens the My Profile page (P36) rather than the dialog. */
 export function AppShell() {
   const [dialog, setDialog] = useState<'profile' | 'codes' | null>(null)
   const me = useMe()
+  const navigate = useNavigate()
   const dialogs = (
     <>
       <ProfileModal open={dialog === 'profile'} onClose={() => setDialog(null)} />
@@ -32,7 +34,7 @@ export function AppShell() {
       <ToastProvider>
         <div className="theme-app selection:bg-purple-500 selection:text-white">
           <SmeLayout
-            onProfile={() => setDialog('profile')}
+            onProfile={() => navigate('/sme/profile')}
             onRecoveryCodes={() => setDialog('codes')}
           >
             <Outlet />

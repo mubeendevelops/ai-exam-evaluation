@@ -60,9 +60,19 @@ const CONFIRM: Record<
 
 type Dialog =
   | { kind: 'add' }
+  | { kind: 'details'; account: Account }
   | { kind: 'subjects'; account: Account }
   | { kind: 'confirm'; action: 'suspend' | 'force-reset' | 'remove'; account: Account }
   | null
+
+/** The longest an employee ID and a department may be (D225); the server checks them too. */
+const EMPLOYEE_ID_MAX = 40
+const DEPARTMENT_MAX = 80
+
+/** Blank means "not set": the server turns it into none. */
+function orNull(text: string): string | null {
+  return text.trim() === '' ? null : text.trim()
+}
 
 // ---- add an SME ----------------------------------------------------------------------------
 
@@ -77,6 +87,8 @@ function AddSmeDialog({
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [employeeId, setEmployeeId] = useState('')
+  const [department, setDepartment] = useState('')
   const [chosen, setChosen] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<{ message: string; reasons: string[] } | null>(null)
@@ -92,7 +104,13 @@ function AddSmeDialog({
     setError(null)
     try {
       const { error: err, response } = await api.POST('/api/v1/accounts', {
-        body: { display_name: name.trim(), email: email.trim(), subject_ids: [...chosen] },
+        body: {
+          display_name: name.trim(),
+          email: email.trim(),
+          subject_ids: [...chosen],
+          employee_id: orNull(employeeId),
+          department: orNull(department),
+        },
       })
       if (response.ok) {
         toast.show(`Invitation sent to ${email.trim()}.`)
@@ -140,7 +158,104 @@ function AddSmeDialog({
             placeholder="sme@institution.edu"
           />
         </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <TextField
+            label="Employee ID (optional)"
+            value={employeeId}
+            onChange={(e) => setEmployeeId(e.target.value)}
+            maxLength={EMPLOYEE_ID_MAX}
+            placeholder="TKS-8904"
+          />
+          <TextField
+            label="Department (optional)"
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+            maxLength={DEPARTMENT_MAX}
+            placeholder="Physics"
+          />
+        </div>
         <SubjectChecklist subjects={choices} selected={chosen} onChange={setChosen} />
+        <FormError message={error?.message ?? null} reasons={error?.reasons} />
+      </form>
+    </Modal>
+  )
+}
+
+// ---- edit an SME's name, employee ID and department ---------------------------------------
+
+function EditDetailsDialog({ account, onClose }: { account: Account; onClose: () => void }) {
+  const { user } = account
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const [name, setName] = useState(user.display_name)
+  const [employeeId, setEmployeeId] = useState(user.employee_id ?? '')
+  const [department, setDepartment] = useState(user.department ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<{ message: string; reasons: string[] } | null>(null)
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const { error: err, response } = await api.PUT('/api/v1/accounts/{user_id}', {
+        params: { path: { user_id: user.id } },
+        body: {
+          display_name: name.trim(),
+          employee_id: orNull(employeeId),
+          department: orNull(department),
+        },
+      })
+      if (response.ok) {
+        toast.show(`Details of ${name.trim()} saved.`)
+        await queryClient.invalidateQueries({ queryKey: ['accounts'] })
+        onClose()
+      } else setError(problemOf(err, 'Could not save these details.'))
+    } catch {
+      setError({ message: NETWORK_PROBLEM, reasons: [] })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      eyebrow="Edit details"
+      title={user.display_name}
+      description="The SME sees these on My Profile and cannot change them. The sign-in email stays as it is."
+      footer={
+        <div className="flex justify-end gap-2">
+          <CancelButton onClick={onClose}>Cancel</CancelButton>
+          <SubmitInDialog form="edit-details-form" busy={busy}>
+            Save details
+          </SubmitInDialog>
+        </div>
+      }
+    >
+      <form id="edit-details-form" onSubmit={submit} className="space-y-4">
+        <TextField
+          label="Full Name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          maxLength={200}
+        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <TextField
+            label="Employee ID (optional)"
+            value={employeeId}
+            onChange={(e) => setEmployeeId(e.target.value)}
+            maxLength={EMPLOYEE_ID_MAX}
+          />
+          <TextField
+            label="Department (optional)"
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+            maxLength={DEPARTMENT_MAX}
+          />
+        </div>
         <FormError message={error?.message ?? null} reasons={error?.reasons} />
       </form>
     </Modal>
@@ -409,7 +524,8 @@ function Directory() {
     .filter((a) => {
       if (!needle) return true
       const names = grantsOf(a).map((id) => subjectById.get(id)?.name ?? '')
-      return [a.user.display_name, a.user.email, ...names].some((text) =>
+      const staff = [a.user.employee_id ?? '', a.user.department ?? '']
+      return [a.user.display_name, a.user.email, ...staff, ...names].some((text) =>
         text.toLowerCase().includes(needle),
       )
     })
@@ -434,7 +550,7 @@ function Directory() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             maxLength={100}
-            placeholder="Name, email or subject"
+            placeholder="Name, email, employee ID, department or subject"
           />
         </div>
 
@@ -482,6 +598,11 @@ function Directory() {
                     <tr key={user.id}>
                       <th scope="row" className="py-2.5 pr-4 text-left font-semibold text-white">
                         {user.display_name}
+                        {(user.employee_id || user.department) && (
+                          <span className="block text-[11px] font-normal text-gray-400">
+                            {[user.employee_id, user.department].filter(Boolean).join(' · ')}
+                          </span>
+                        )}
                       </th>
                       <td className="py-2.5 pr-4 text-gray-300">{user.email}</td>
                       <td className="py-2.5 pr-4">
@@ -508,6 +629,9 @@ function Directory() {
                       </td>
                       <td className="py-2.5 text-right">
                         <div className="flex flex-wrap justify-end gap-1.5">
+                          <RowButton onClick={() => setDialog({ kind: 'details', account })}>
+                            Edit details
+                          </RowButton>
                           <RowButton
                             disabled={!subjects.data}
                             onClick={() => setDialog({ kind: 'subjects', account })}
@@ -565,6 +689,9 @@ function Directory() {
 
       {dialog?.kind === 'add' && subjects.data && (
         <AddSmeDialog subjects={subjects.data} onClose={() => setDialog(null)} />
+      )}
+      {dialog?.kind === 'details' && (
+        <EditDetailsDialog account={dialog.account} onClose={() => setDialog(null)} />
       )}
       {dialog?.kind === 'subjects' && subjects.data && (
         <EditSubjectsDialog

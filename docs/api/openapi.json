@@ -854,6 +854,175 @@
         ]
       }
     },
+    "/api/v1/accounts/{user_id}": {
+      "put": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Edit an SME's name, employee ID and department (admin)",
+        "description": "All three fields are sent; a blank employee ID or department clears it (D225). The sign-in email and the identity record are not touched. Audited with the field names and their before and after values (staff data).",
+        "operationId": "update_profile_api_v1_accounts__user_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Remove an SME from the directory (admin)",
+        "description": "Refused (409) while the SME owns an open unit: transfer it first. The account is disabled for good, its sessions end and its subjects go; the audit history stays and the email stays taken. Audited.",
+        "operationId": "remove_sme_api_v1_accounts__user_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{user_id}/disable": {
       "post": {
         "tags": [
@@ -976,88 +1145,6 @@
               }
             },
             "description": "Forbidden"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/accounts/{user_id}": {
-      "delete": {
-        "tags": [
-          "accounts"
-        ],
-        "summary": "Remove an SME from the directory (admin)",
-        "description": "Refused (409) while the SME owns an open unit: transfer it first. The account is disabled for good, its sessions end and its subjects go; the audit history stays and the email stays taken. Audited.",
-        "operationId": "remove_sme_api_v1_accounts__user_id__delete",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "User Id"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
-                }
-              }
-            },
-            "description": "Conflict"
           },
           "422": {
             "description": "Validation Error",
@@ -8192,6 +8279,53 @@
         ]
       }
     },
+    "/api/v1/me/reports": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "My Reports figures (SME)",
+        "description": "Average turnaround (lifetime and the current academic year), on-time rate, units submitted and booklets approved in each of the last four calendar quarters, open units and booklets pending. Over the SME's own current units (credit follows the owner, D163). No accuracy score, speed or marks (D167, D226, D239).",
+        "operationId": "reports_api_v1_me_reports_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyReportOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/booklets/{booklet_id}/lock": {
       "post": {
         "tags": [
@@ -12663,6 +12797,32 @@
               "evaluator@institution.edu"
             ]
           },
+          "employee_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Id",
+            "description": "Optional (D225); blank = none."
+          },
+          "department": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department",
+            "description": "Optional (D225); blank = none."
+          },
           "subject_ids": {
             "items": {
               "type": "string",
@@ -13073,6 +13233,67 @@
           "region"
         ],
         "title": "MoveBoundaryIn"
+      },
+      "MyReportOut": {
+        "properties": {
+          "academic_year": {
+            "$ref": "#/components/schemas/AcademicYearOut"
+          },
+          "turnaround_lifetime": {
+            "$ref": "#/components/schemas/TurnaroundOut"
+          },
+          "turnaround_year": {
+            "$ref": "#/components/schemas/TurnaroundOut",
+            "description": "Over units due in the academic year."
+          },
+          "on_time_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Time Rate",
+            "description": "Units handed in on or before their due date (UTC), as a percent of the units handed in, one decimal; null with none."
+          },
+          "units_handed_in": {
+            "type": "integer",
+            "title": "Units Handed In",
+            "description": "Submitted and frozen units the rate is over."
+          },
+          "quarters": {
+            "items": {
+              "$ref": "#/components/schemas/QuarterOut"
+            },
+            "type": "array",
+            "title": "Quarters",
+            "description": "The last four calendar quarters, oldest first; the current one last."
+          },
+          "open_units": {
+            "type": "integer",
+            "title": "Open Units"
+          },
+          "booklets_pending": {
+            "type": "integer",
+            "title": "Booklets Pending",
+            "description": "Not approved yet, in the SME's open units."
+          }
+        },
+        "type": "object",
+        "required": [
+          "academic_year",
+          "turnaround_lifetime",
+          "turnaround_year",
+          "on_time_rate",
+          "units_handed_in",
+          "quarters",
+          "open_units",
+          "booklets_pending"
+        ],
+        "title": "MyReportOut",
+        "description": "The SME's own reports (P36, D226, D239): their current units only, never a mark."
       },
       "NumericCriterion": {
         "properties": {
@@ -13643,6 +13864,49 @@
         ],
         "title": "PolicyErrorOut"
       },
+      "ProfileIn": {
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "employee_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Id"
+          },
+          "department": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "display_name",
+          "employee_id",
+          "department"
+        ],
+        "title": "ProfileIn",
+        "description": "An SME's name and staff details, as the admin sets them (P36, D225). Every field is\nsent: a blank employee ID or department clears it."
+      },
       "ProgressOut": {
         "properties": {
           "smes": {
@@ -13666,6 +13930,48 @@
           "units"
         ],
         "title": "ProgressOut"
+      },
+      "QuarterOut": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "examples": [
+              "2026 Q4"
+            ]
+          },
+          "start": {
+            "type": "string",
+            "format": "date",
+            "title": "Start",
+            "description": "First day of the calendar quarter, included."
+          },
+          "end": {
+            "type": "string",
+            "format": "date",
+            "title": "End",
+            "description": "First day of the next quarter, excluded."
+          },
+          "units_submitted": {
+            "type": "integer",
+            "title": "Units Submitted",
+            "description": "Units whose latest submission fell in the quarter."
+          },
+          "booklets_approved": {
+            "type": "integer",
+            "title": "Booklets Approved",
+            "description": "Booklets whose first result sheet was issued in the quarter."
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "start",
+          "end",
+          "units_submitted",
+          "booklets_approved"
+        ],
+        "title": "QuarterOut"
       },
       "QuestionCreateIn": {
         "properties": {
@@ -16601,6 +16907,33 @@
         ],
         "title": "TransferOut"
       },
+      "TurnaroundOut": {
+        "properties": {
+          "average_days": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Days",
+            "description": "Days from receiving a unit to its latest submission, one decimal; null with none."
+          },
+          "units": {
+            "type": "integer",
+            "title": "Units",
+            "description": "How many units the average is over."
+          }
+        },
+        "type": "object",
+        "required": [
+          "average_days",
+          "units"
+        ],
+        "title": "TurnaroundOut"
+      },
       "UnitBreakdownOut": {
         "properties": {
           "frozen": {
@@ -17559,6 +17892,30 @@
           "active": {
             "type": "boolean",
             "title": "Active"
+          },
+          "employee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Id",
+            "description": "Set by the admin (D225); staff data. Null when not set."
+          },
+          "department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department",
+            "description": "Set by the admin (D225)."
           }
         },
         "type": "object",

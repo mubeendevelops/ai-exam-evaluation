@@ -277,6 +277,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/accounts/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Edit an SME's name, employee ID and department (admin)
+         * @description All three fields are sent; a blank employee ID or department clears it (D225). The sign-in email and the identity record are not touched. Audited with the field names and their before and after values (staff data).
+         */
+        put: operations["update_profile_api_v1_accounts__user_id__put"];
+        post?: never;
+        /**
+         * Remove an SME from the directory (admin)
+         * @description Refused (409) while the SME owns an open unit: transfer it first. The account is disabled for good, its sessions end and its subjects go; the audit history stays and the email stays taken. Audited.
+         */
+        delete: operations["remove_sme_api_v1_accounts__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/accounts/{user_id}/disable": {
         parameters: {
             query?: never;
@@ -306,26 +330,6 @@ export interface paths {
         /** Enable an SME (admin) */
         post: operations["enable_api_v1_accounts__user_id__enable_post"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/accounts/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Remove an SME from the directory (admin)
-         * @description Refused (409) while the SME owns an open unit: transfer it first. The account is disabled for good, its sessions end and its subjects go; the audit history stays and the email stays taken. Audited.
-         */
-        delete: operations["remove_sme_api_v1_accounts__user_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1610,6 +1614,26 @@ export interface paths {
          * @description Units owned (lifetime and in the current academic year, 1 July start, by due date), completed (submitted or frozen), active (open), completion rate, the state breakdown and the average turnaround (D216).
          */
         get: operations["assignments_summary_api_v1_me_assignments_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Reports figures (SME)
+         * @description Average turnaround (lifetime and the current academic year), on-time rate, units submitted and booklets approved in each of the last four calendar quarters, open units and booklets pending. Over the SME's own current units (credit follows the owner, D163). No accuracy score, speed or marks (D167, D226, D239).
+         */
+        get: operations["reports_api_v1_me_reports_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3054,6 +3078,16 @@ export interface components {
              */
             email: string;
             /**
+             * Employee Id
+             * @description Optional (D225); blank = none.
+             */
+            employee_id?: string | null;
+            /**
+             * Department
+             * @description Optional (D225); blank = none.
+             */
+            department?: string | null;
+            /**
              * Subject Ids
              * @description Subjects granted to the new SME at once (optional for now).
              */
@@ -3235,6 +3269,38 @@ export interface components {
              * @description The first region of `lower` after the move.
              */
             region: string;
+        };
+        /**
+         * MyReportOut
+         * @description The SME's own reports (P36, D226, D239): their current units only, never a mark.
+         */
+        MyReportOut: {
+            academic_year: components["schemas"]["AcademicYearOut"];
+            turnaround_lifetime: components["schemas"]["TurnaroundOut"];
+            /** @description Over units due in the academic year. */
+            turnaround_year: components["schemas"]["TurnaroundOut"];
+            /**
+             * On Time Rate
+             * @description Units handed in on or before their due date (UTC), as a percent of the units handed in, one decimal; null with none.
+             */
+            on_time_rate: number | null;
+            /**
+             * Units Handed In
+             * @description Submitted and frozen units the rate is over.
+             */
+            units_handed_in: number;
+            /**
+             * Quarters
+             * @description The last four calendar quarters, oldest first; the current one last.
+             */
+            quarters: components["schemas"]["QuarterOut"][];
+            /** Open Units */
+            open_units: number;
+            /**
+             * Booklets Pending
+             * @description Not approved yet, in the SME's open units.
+             */
+            booklets_pending: number;
         };
         /** NumericCriterion */
         NumericCriterion: {
@@ -3471,12 +3537,55 @@ export interface components {
             /** Reasons */
             reasons: string[];
         };
+        /**
+         * ProfileIn
+         * @description An SME's name and staff details, as the admin sets them (P36, D225). Every field is
+         *     sent: a blank employee ID or department clears it.
+         */
+        ProfileIn: {
+            /** Display Name */
+            display_name: string;
+            /** Employee Id */
+            employee_id: string | null;
+            /** Department */
+            department: string | null;
+        };
         /** ProgressOut */
         ProgressOut: {
             /** Smes */
             smes: components["schemas"]["SmeProgressOut"][];
             /** Units */
             units: components["schemas"]["UnitProgressOut"][];
+        };
+        /** QuarterOut */
+        QuarterOut: {
+            /**
+             * Label
+             * @example 2026 Q4
+             */
+            label: string;
+            /**
+             * Start
+             * Format: date
+             * @description First day of the calendar quarter, included.
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             * @description First day of the next quarter, excluded.
+             */
+            end: string;
+            /**
+             * Units Submitted
+             * @description Units whose latest submission fell in the quarter.
+             */
+            units_submitted: number;
+            /**
+             * Booklets Approved
+             * @description Booklets whose first result sheet was issued in the quarter.
+             */
+            booklets_approved: number;
         };
         /** QuestionCreateIn */
         QuestionCreateIn: {
@@ -4767,6 +4876,19 @@ export interface components {
              */
             request_id: string | null;
         };
+        /** TurnaroundOut */
+        TurnaroundOut: {
+            /**
+             * Average Days
+             * @description Days from receiving a unit to its latest submission, one decimal; null with none.
+             */
+            average_days: number | null;
+            /**
+             * Units
+             * @description How many units the average is over.
+             */
+            units: number;
+        };
         /** UnitBreakdownOut */
         UnitBreakdownOut: {
             /** Frozen */
@@ -5228,6 +5350,16 @@ export interface components {
             role: "admin" | "sme" | "governor";
             /** Active */
             active: boolean;
+            /**
+             * Employee Id
+             * @description Set by the admin (D225); staff data. Null when not set.
+             */
+            employee_id?: string | null;
+            /**
+             * Department
+             * @description Set by the admin (D225).
+             */
+            department?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -6006,6 +6138,133 @@ export interface operations {
             };
         };
     };
+    update_profile_api_v1_accounts__user_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    remove_sme_api_v1_accounts__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     disable_api_v1_accounts__user_id__disable_post: {
         parameters: {
             query?: never;
@@ -6086,71 +6345,6 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remove_sme_api_v1_accounts__user_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorOut"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorOut"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorOut"];
-                };
-            };
-            /** @description Conflict */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10962,6 +11156,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssignmentSummaryOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    reports_api_v1_me_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyReportOut"];
                 };
             };
             /** @description Unauthorized */

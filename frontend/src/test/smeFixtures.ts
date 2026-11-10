@@ -20,6 +20,52 @@ export function summaryOf(over: Partial<Summary> = {}): Summary {
   }
 }
 
+type Report = components['schemas']['MyReportOut']
+
+/** My Reports on a plausible set: the quarters of 2026 (the current one last). */
+export function reportOf(over: Partial<Report> = {}): Report {
+  return {
+    academic_year: { start: '2026-07-01', end: '2027-07-01', label: '2026-27' },
+    turnaround_lifetime: { average_days: 2.5, units: 6 },
+    turnaround_year: { average_days: 1.8, units: 4 },
+    on_time_rate: 66.7,
+    units_handed_in: 6,
+    quarters: [
+      {
+        label: '2026 Q1',
+        start: '2026-01-01',
+        end: '2026-04-01',
+        units_submitted: 0,
+        booklets_approved: 0,
+      },
+      {
+        label: '2026 Q2',
+        start: '2026-04-01',
+        end: '2026-07-01',
+        units_submitted: 1,
+        booklets_approved: 12,
+      },
+      {
+        label: '2026 Q3',
+        start: '2026-07-01',
+        end: '2026-10-01',
+        units_submitted: 2,
+        booklets_approved: 40,
+      },
+      {
+        label: '2026 Q4',
+        start: '2026-10-01',
+        end: '2027-01-01',
+        units_submitted: 3,
+        booklets_approved: 25,
+      },
+    ],
+    open_units: 2,
+    booklets_pending: 17,
+    ...over,
+  }
+}
+
 /** Three units of the SME's: open and overdue (Physics, 1 of 4), open (Mathematics, 3 of 4),
  * submitted (Physics, 2 of 2). */
 export const myUnits = [
@@ -58,6 +104,7 @@ export function smeSession(
     'GET /api/v1/health': { json: healthy },
     'GET /api/v1/subjects': { json: [physics, maths] },
     'GET /api/v1/me/assignments/summary': { json: summaryOf() },
+    'GET /api/v1/me/reports': { json: reportOf() },
     'GET /api/v1/units': { json: myUnits },
     'GET /api/v1/delegation-requests': { json: [] },
     ...extra,

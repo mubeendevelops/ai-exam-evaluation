@@ -4,6 +4,7 @@ import type { components } from '../../api/schema'
 import type { WorkUnit } from '../admin/data'
 
 export type AssignmentSummary = components['schemas']['AssignmentSummaryOut']
+export type MyReport = components['schemas']['MyReportOut']
 
 /** The SME's own figures (P31, D216): their current units only. */
 export function useAssignmentSummary() {
@@ -12,6 +13,18 @@ export function useAssignmentSummary() {
     queryFn: async () => {
       const { data } = await api.GET('/api/v1/me/assignments/summary')
       if (!data) throw new Error('summary unavailable')
+      return data
+    },
+  })
+}
+
+/** The SME's own reports (P36, D226): their current units only, never a mark. */
+export function useMyReport() {
+  return useQuery({
+    queryKey: ['me', 'reports'],
+    queryFn: async () => {
+      const { data } = await api.GET('/api/v1/me/reports')
+      if (!data) throw new Error('reports unavailable')
       return data
     },
   })

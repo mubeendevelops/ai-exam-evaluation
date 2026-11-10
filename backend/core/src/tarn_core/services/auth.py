@@ -27,7 +27,13 @@ from tarn_core.domain.identity import (
     lockout_source,
 )
 from tarn_core.domain.personas import Capability
-from tarn_core.domain.tenancy import Role, User, canonical_email, check_email
+from tarn_core.domain.tenancy import (
+    Role,
+    User,
+    canonical_email,
+    check_email,
+    normalise_profile_field,
+)
 from tarn_core.domain.unit import UnitState
 from tarn_core.errors import (
     AlreadyExistsError,
@@ -589,10 +595,18 @@ class AccountService(_Base):
         return views
 
     def invite_sme(
-        self, college_id: CollegeId, actor_id: UserId, *, display_name: str, email: str
+        self,
+        college_id: CollegeId,
+        actor_id: UserId,
+        *,
+        display_name: str,
+        email: str,
+        employee_id: str | None = None,
+        department: str | None = None,
     ) -> User:
         """An SME account, pending until the emailed invitation is accepted. The subjects are
-        granted separately (``EntitlementService``), in the same unit of work."""
+        granted separately (``EntitlementService``), in the same unit of work. The employee ID
+        and department are optional (P36, D225); blank means none."""
         self._admin(college_id, actor_id)
         tenant = self._identity.get_tenant(college_id)
         user = self._invite(
@@ -601,6 +615,8 @@ class AccountService(_Base):
             display_name=display_name,
             email=email,
             invited_by=f"An administrator of {tenant.name} created an SME account for you.",
+            employee_id=employee_id,
+            department=department,
         )
         self._rt.record(
             college_id,
@@ -636,7 +652,15 @@ class AccountService(_Base):
         return user
 
     def _invite(
-        self, college_id: CollegeId, role: Role, *, display_name: str, email: str, invited_by: str
+        self,
+        college_id: CollegeId,
+        role: Role,
+        *,
+        display_name: str,
+        email: str,
+        invited_by: str,
+        employee_id: str | None = None,
+        department: str | None = None,
     ) -> User:
         if role is Role.ADMIN:
             # The admin account is the one registration creates; a second is refused (D161).
@@ -651,6 +675,8 @@ class AccountService(_Base):
             display_name=display_name.strip(),
             email=handle,
             role=role,
+            employee_id=normalise_profile_field(employee_id),
+            department=normalise_profile_field(department),
         )
         # The identity first: it refuses a duplicate email before anything else is written.
         self._identity.save_identity(
@@ -679,6 +705,46 @@ class AccountService(_Base):
             f"{_link(self._kit.settings, 'accept-invite', token)}",
         )
         return user
+
+    def update_profile(
+        self,
+        college_id: CollegeId,
+        actor_id: UserId,
+        user_id: UserId,
+        *,
+        display_name: str,
+        employee_id: str | None,
+        department: str | None,
+    ) -> User:
+        """The admin corrects an SME's name and sets their employee ID and department (P36,
+        D225); blank means none. Only the college's user row changes: the identity record (the
+        sign-in handle) is untouched. Audited with the field names and their before and after
+        values: staff data, not student data. Nothing changed, nothing audited."""
+        self._admin(college_id, actor_id)
+        user = self._sme(college_id, user_id)
+        edited = replace(
+            user,
+            display_name=display_name.strip(),
+            employee_id=normalise_profile_field(employee_id),
+            department=normalise_profile_field(department),
+        )
+        before: dict[str, JsonValue] = {}
+        after: dict[str, JsonValue] = {}
+        for field_name in ("display_name", "employee_id", "department"):
+            old, new = getattr(user, field_name), getattr(edited, field_name)
+            if old != new:
+                before[field_name], after[field_name] = old, new
+        if not after:
+            return user
+        self._users.save(college_id, edited)
+        self._rt.record(
+            college_id,
+            actor_id,
+            AuditAction.ACCOUNT_UPDATED,
+            before={"user_id": str(user_id), **before},
+            after={"user_id": str(user_id), **after},
+        )
+        return edited
 
     def set_active(
         self, college_id: CollegeId, actor_id: UserId, user_id: UserId, *, active: bool

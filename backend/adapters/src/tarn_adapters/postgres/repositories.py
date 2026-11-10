@@ -873,6 +873,8 @@ def _user(r: Row[Any]) -> User:
         role=Role(r.role),
         active=r.active,
         removed_at=r.removed_at,
+        employee_id=r.employee_id,
+        department=r.department,
     )
 
 
@@ -906,6 +908,8 @@ class PgUserRepository:
                     "role": user.role.value,
                     "active": user.active,
                     "removed_at": user.removed_at,
+                    "employee_id": user.employee_id,
+                    "department": user.department,
                 },
             )
 

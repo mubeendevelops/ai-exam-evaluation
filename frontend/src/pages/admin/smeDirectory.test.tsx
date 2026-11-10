@@ -16,7 +16,7 @@ import { renderApp } from '../../test/render'
 
 afterEach(() => vi.unstubAllGlobals())
 
-async function rowOf(name: string) {
+async function rowOf(name: string | RegExp) {
   const row = (await screen.findByRole('rowheader', { name })).closest('tr')
   if (!row) throw new Error('no row')
   return within(row)
@@ -120,8 +120,132 @@ describe('SME directory', () => {
       display_name: 'Prof. New Person',
       email: 'new@college.test',
       subject_ids: [maths.id],
+      employee_id: null,
+      department: null,
     })
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('adds an SME with an employee ID and a department (D225), blank meaning none', async () => {
+    const mock = adminSession({ 'POST /api/v1/accounts': { status: 201, json: ashaAccount } })
+    const user = userEvent.setup()
+    renderApp('/admin/smes')
+    await user.click(await screen.findByRole('button', { name: 'Add SME' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Add SME' })
+    await user.type(within(dialog).getByLabelText('Full Name'), 'Prof. New Person')
+    await user.type(within(dialog).getByLabelText('Email'), 'new@college.test')
+    await user.type(within(dialog).getByLabelText('Employee ID (optional)'), '  TKS-8904 ')
+    await user.type(within(dialog).getByLabelText('Department (optional)'), '   ')
+    await user.click(within(dialog).getByLabelText(/Mathematics/))
+    await user.click(within(dialog).getByRole('button', { name: 'Send invitation' }))
+    await screen.findByText('Invitation sent to new@college.test.')
+    expect(mock.callsTo('POST /api/v1/accounts')[0]?.body).toMatchObject({
+      employee_id: 'TKS-8904',
+      department: null,
+    })
+  })
+
+  it('limits the employee ID to 40 and the department to 80 characters', async () => {
+    adminSession()
+    const user = userEvent.setup()
+    renderApp('/admin/smes')
+    await user.click(await screen.findByRole('button', { name: 'Add SME' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Add SME' })
+    expect(within(dialog).getByLabelText('Employee ID (optional)')).toHaveAttribute(
+      'maxlength',
+      '40',
+    )
+    expect(within(dialog).getByLabelText('Department (optional)')).toHaveAttribute(
+      'maxlength',
+      '80',
+    )
+  })
+
+  it('shows the employee ID and department under the name, and finds an SME by them', async () => {
+    adminSession({
+      'GET /api/v1/accounts': {
+        json: [
+          {
+            ...ashaAccount,
+            user: { ...asha, employee_id: 'TKS-8904', department: 'Physics Dept' },
+          },
+          raviAccount,
+        ],
+      },
+    })
+    const user = userEvent.setup()
+    renderApp('/admin/smes')
+    expect((await rowOf(/^Asha Rao/)).getByText('TKS-8904 · Physics Dept')).toBeInTheDocument()
+    const search = screen.getByLabelText('Search SMEs')
+    await user.type(search, '8904')
+    expect(screen.getByRole('rowheader', { name: /Asha Rao/ })).toBeInTheDocument()
+    expect(screen.queryByRole('rowheader', { name: /Ravi Kumar/ })).toBeNull()
+    await user.clear(search)
+    await user.type(search, 'dept')
+    expect(screen.getByRole('rowheader', { name: /Asha Rao/ })).toBeInTheDocument()
+  })
+
+  it('edits the name, employee ID and department of an SME', async () => {
+    const mock = adminSession({
+      'PUT /api/v1/accounts/t-1': {
+        json: { ...asha, display_name: 'Dr. Asha Rao', employee_id: 'TKS-1', department: null },
+      },
+    })
+    const user = userEvent.setup()
+    renderApp('/admin/smes')
+    await user.click((await rowOf('Asha Rao')).getByRole('button', { name: 'Edit details' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Asha Rao' })
+    // The fields start from what is stored.
+    expect(within(dialog).getByLabelText('Full Name')).toHaveValue('Asha Rao')
+    expect(within(dialog).getByLabelText('Employee ID (optional)')).toHaveValue('')
+    await user.clear(within(dialog).getByLabelText('Full Name'))
+    await user.type(within(dialog).getByLabelText('Full Name'), 'Dr. Asha Rao')
+    await user.type(within(dialog).getByLabelText('Employee ID (optional)'), 'TKS-1')
+    await user.click(within(dialog).getByRole('button', { name: 'Save details' }))
+    expect(await screen.findByText('Details of Dr. Asha Rao saved.')).toBeInTheDocument()
+    expect(mock.callsTo('PUT /api/v1/accounts/t-1')[0]?.body).toEqual({
+      display_name: 'Dr. Asha Rao',
+      employee_id: 'TKS-1',
+      department: null,
+    })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('starts the edit from the stored values and clears one with a blank', async () => {
+    const mock = adminSession({
+      'GET /api/v1/accounts': {
+        json: [
+          { ...ashaAccount, user: { ...asha, employee_id: 'TKS-8904', department: 'Physics' } },
+        ],
+      },
+      'PUT /api/v1/accounts/t-1': { json: asha },
+    })
+    const user = userEvent.setup()
+    renderApp('/admin/smes')
+    await user.click((await rowOf(/^Asha Rao/)).getByRole('button', { name: 'Edit details' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Asha Rao' })
+    expect(within(dialog).getByLabelText('Employee ID (optional)')).toHaveValue('TKS-8904')
+    await user.clear(within(dialog).getByLabelText('Department (optional)'))
+    await user.click(within(dialog).getByRole('button', { name: 'Save details' }))
+    await screen.findByText('Details of Asha Rao saved.')
+    expect(mock.callsTo('PUT /api/v1/accounts/t-1')[0]?.body).toEqual({
+      display_name: 'Asha Rao',
+      employee_id: 'TKS-8904',
+      department: null,
+    })
+  })
+
+  it('keeps the edit dialog open and says why when the server refuses', async () => {
+    adminSession({
+      'PUT /api/v1/accounts/t-1': { status: 422, json: { detail: 'The name must not be blank.' } },
+    })
+    const user = userEvent.setup()
+    renderApp('/admin/smes')
+    await user.click((await rowOf('Asha Rao')).getByRole('button', { name: 'Edit details' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Asha Rao' })
+    await user.click(within(dialog).getByRole('button', { name: 'Save details' }))
+    expect(await within(dialog).findByText('The name must not be blank.')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Asha Rao' })).toBeInTheDocument()
   })
 
   it('keeps the dialog open and says why when the email is taken', async () => {

@@ -204,16 +204,17 @@ describe('profile and recovery codes', () => {
     return user
   }
 
-  it('shows the profile and changes the password', async () => {
-    const mock = signedIn('sme', {
+  it("opens the admin's profile in a dialog and changes the password there", async () => {
+    const mock = signedIn('admin', {
       'POST /api/v1/auth/password/change': { status: 204 },
       'GET /api/v1/auth/password-bloom': { body: new ArrayBuffer(0), status: 500 },
+      'GET /api/v1/overview': { status: 500, json: {} },
     })
-    renderApp('/sme/profile')
+    renderApp('/admin')
     const user = await openMenuItem(/Profile/)
     const dialog = screen.getByRole('dialog', { name: 'Profile' })
     expect(within(dialog).getByText('SYNTH_COLLEGE')).toBeInTheDocument()
-    expect(within(dialog).getByText('SME')).toBeInTheDocument()
+    expect(within(dialog).getByText('Admin')).toBeInTheDocument()
     await user.type(within(dialog).getByLabelText('Current Password'), 'old password here')
     await user.type(within(dialog).getByLabelText('New Password'), 'a long uncommon passphrase')
     await user.click(within(dialog).getByRole('button', { name: 'Change password' }))
@@ -225,20 +226,12 @@ describe('profile and recovery codes', () => {
     })
   })
 
-  it('refuses a wrong current password', async () => {
-    signedIn('sme', {
-      'POST /api/v1/auth/password/change': { status: 403, json: { detail: 'no' } },
-      'GET /api/v1/auth/password-bloom': { status: 500, json: {} },
-    })
-    renderApp('/sme/profile')
-    const user = await openMenuItem(/Profile/)
-    const dialog = screen.getByRole('dialog', { name: 'Profile' })
-    await user.type(within(dialog).getByLabelText('Current Password'), 'wrong')
-    await user.type(within(dialog).getByLabelText('New Password'), 'a long uncommon passphrase')
-    await user.click(within(dialog).getByRole('button', { name: 'Change password' }))
-    expect(
-      await within(dialog).findByText('The current password is not correct.'),
-    ).toBeInTheDocument()
+  it("takes the SME's Profile menu item to the My Profile page, not a dialog", async () => {
+    signedIn('sme')
+    renderApp('/sme/reports')
+    await openMenuItem(/Profile/)
+    expect(await screen.findByRole('heading', { name: 'My Profile', level: 1 })).toBeVisible()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('creates recovery codes, shows them once and forgets them when closed', async () => {

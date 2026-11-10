@@ -4,7 +4,7 @@ one scenario against both."""
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -16,7 +16,7 @@ from tarn_core.domain.assignments import (
     turnaround,
 )
 from tarn_core.domain.audit import AuditEvent
-from tarn_core.domain.booklet import BookletStatus
+from tarn_core.domain.booklet import APPROVED_STATUSES, BookletStatus
 from tarn_core.domain.overview import (
     FEED_ACTIONS,
     ActivityItem,
@@ -30,12 +30,20 @@ from tarn_core.domain.overview import (
     is_overdue,
     sme_status,
 )
+from tarn_core.domain.reports import (
+    Quarter,
+    QuarterCounts,
+    ReportCounts,
+    TurnaroundCounts,
+    submitted_on_time,
+)
 from tarn_core.domain.tenancy import Role, User
 from tarn_core.domain.unit import UnitState
 from tarn_core.errors import NotFoundError
 from tarn_core.ids import CollegeId, UnitId, UserId
 from tarn_core.testing.memory_repositories import (
     MemoryBookletRepository,
+    MemoryResultSheetRepository,
     MemoryUnitRepository,
     MemoryUserRepository,
 )
@@ -49,12 +57,14 @@ class MemoryOverviewRepository:
         users: MemoryUserRepository,
         units: MemoryUnitRepository,
         booklets: MemoryBookletRepository,
+        sheets: MemoryResultSheetRepository,
         audit: MemoryAuditSink,
         jobs: MemoryJobQueue,
     ) -> None:
         self._users = users
         self._units = units
         self._booklets = booklets
+        self._sheets = sheets
         self._audit = audit
         self._jobs = jobs
 
@@ -226,4 +236,64 @@ class MemoryOverviewRepository:
                 ),
                 Decimal(0),
             ),
+        )
+
+    def report_counts(
+        self,
+        college_id: CollegeId,
+        owner_id: UserId,
+        year: AcademicYear,
+        quarters: Sequence[Quarter],
+    ) -> ReportCounts:
+        mine = [u for u in self._units.list(college_id) if u.owner_id == owner_id]
+        spans: list[tuple[date, timedelta | None, datetime]] = []
+        for unit in mine:
+            if unit.state is UnitState.OPEN:
+                continue
+            last = latest_submission(self._units.submissions(college_id, unit.id))
+            if last is None:
+                continue
+            received = received_at(
+                unit.created_at, unit.owner_id, self._units.transfers(college_id, unit.id)
+            )
+            spans.append((unit.due_date, turnaround(received, last), last))
+
+        def averaged(rows: list[timedelta]) -> TurnaroundCounts:
+            return TurnaroundCounts(
+                units=len(rows),
+                seconds=sum(
+                    (
+                        Decimal(r.days * 86_400 + r.seconds) + Decimal(r.microseconds) / 1_000_000
+                        for r in rows
+                    ),
+                    Decimal(0),
+                ),
+            )
+
+        timed = [(due, span) for due, span, _ in spans if span is not None]
+        open_ids = {u.id for u in mine if u.state is UnitState.OPEN}
+        by_unit = self._statuses_by_unit(college_id)
+        first_sheet: dict[UnitId, list[datetime]] = defaultdict(list)
+        mine_ids = {u.id for u in mine}
+        for booklet in self._booklets.list(college_id):
+            if booklet.unit_id in mine_ids and booklet.status in APPROVED_STATUSES:
+                sheets = self._sheets.versions(college_id, booklet.id)
+                if sheets:
+                    first_sheet[booklet.unit_id].append(sheets[0].issued_at)
+        approved_at = [at for times in first_sheet.values() for at in times]
+        return ReportCounts(
+            lifetime=averaged([span for _, span in timed]),
+            current_year=averaged([span for due, span in timed if due in year]),
+            handed_in=len(spans),
+            on_time=sum(1 for due, _, last in spans if submitted_on_time(last, due)),
+            quarters=[
+                QuarterCounts(
+                    quarter=q,
+                    units_submitted=sum(1 for _, _, last in spans if q.start_at <= last < q.end_at),
+                    booklets_approved=sum(1 for at in approved_at if q.start_at <= at < q.end_at),
+                )
+                for q in quarters
+            ],
+            open_units=len(open_ids),
+            booklets_pending=sum(StageCounts.of(by_unit.get(u, [])).pending for u in open_ids),
         )

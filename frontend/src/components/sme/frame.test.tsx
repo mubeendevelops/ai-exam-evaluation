@@ -72,23 +72,7 @@ describe('SME portal frame (P31, D215)', () => {
     const sidebar = screen.getByRole('navigation', { name: 'SME sections' })
     await user.click(within(sidebar).getByRole('link', { name: 'My Reports' }))
     expect(await within(banner).findByText('My Reports')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Your reports come later' })).toBeInTheDocument()
-  })
-
-  it('shows a short empty state for each section not built yet', async () => {
-    smeSession()
-    const user = userEvent.setup()
-    renderApp('/sme')
-    const sidebar = await screen.findByRole('navigation', { name: 'SME sections' })
-    const empty: [string, string][] = [
-      ['My Profile', 'Your profile page comes later'],
-      ['My Reports', 'Your reports come later'],
-    ]
-    for (const [link, text] of empty) {
-      await user.click(within(sidebar).getByRole('link', { name: link }))
-      expect(await screen.findByRole('heading', { name: link, level: 1 })).toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: text })).toBeInTheDocument()
-    }
+    expect(screen.getByRole('heading', { name: 'My Reports', level: 1 })).toBeInTheDocument()
   })
 
   it('opens the sidebar from the menu button and gives focus back on Escape', async () => {

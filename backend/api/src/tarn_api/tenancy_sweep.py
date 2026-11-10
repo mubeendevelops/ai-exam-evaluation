@@ -245,6 +245,8 @@ CASES: Mapping[tuple[str, str], Case] = {
     ("GET", "/api/v1/overview/system"): Case("own"),
     # The SME's own figures: their own units in their own college (P31; ``test_api_assignments``).
     ("GET", "/api/v1/me/assignments/summary"): Case("own"),
+    # Likewise My Reports (P36; ``test_api_reports``).
+    ("GET", "/api/v1/me/reports"): Case("own"),
     ("GET", "/api/v1/units/papers"): Case("own"),
     # A's subject: B is offered nobody (an empty list), see ``smes_of_another_colleges_subject``
     ("GET", "/api/v1/units/smes"): Case(
@@ -280,6 +282,12 @@ CASES: Mapping[tuple[str, str], Case] = {
     ),
     ("POST", "/api/v1/delegation-requests/{request_id}/withdraw"): Case("college"),
     ("DELETE", "/api/v1/accounts/{user_id}"): Case("college", as_admin=True),
+    # Another college's SME: not found, and nothing of theirs changes (P36).
+    ("PUT", "/api/v1/accounts/{user_id}"): Case(
+        "college",
+        _json(lambda w: {"display_name": "Sweep", "employee_id": None, "department": None}),
+        as_admin=True,
+    ),
     ("POST", "/api/v1/accounts/{user_id}/subjects/{subject_id}/revoke"): Case(
         "college", _json(lambda w: {"transfers": [], "reason": ""}), as_admin=True
     ),

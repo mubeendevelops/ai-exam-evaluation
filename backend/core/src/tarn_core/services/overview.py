@@ -23,6 +23,7 @@ from tarn_core.domain.overview import (
     UnitProgress,
 )
 from tarn_core.domain.personas import Capability
+from tarn_core.domain.reports import MyReport, last_quarters
 from tarn_core.domain.tenancy import Role
 from tarn_core.ids import CollegeId, UserId
 from tarn_core.ports.repositories import (
@@ -135,6 +136,17 @@ class OverviewService:
         year = academic_year_of(self._today())
         return AssignmentSummary(
             year=year, counts=self._overview.assignment_counts(college_id, actor_id, year)
+        )
+
+    def my_report(self, college_id: CollegeId, actor_id: UserId) -> MyReport:
+        """My Reports (P36, D226, D239): the SME's own current units only; the academic year
+        and the last four calendar quarters are those of the clock's date."""
+        require(self._users.get(college_id, actor_id), Capability.VIEW_OWN_WORK)
+        today = self._today()
+        year = academic_year_of(today)
+        return MyReport(
+            year=year,
+            counts=self._overview.report_counts(college_id, actor_id, year, last_quarters(today)),
         )
 
     def idle_smes(self, college_id: CollegeId, actor_id: UserId) -> frozenset[UserId]:

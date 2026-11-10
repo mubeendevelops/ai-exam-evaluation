@@ -76,6 +76,9 @@ class AuditAction(StrEnum):
     BOOKLET_REPLACED = "booklet.replaced"  # retake: the old and the new booklet's ids
     # Transfers and the delegation inbox (P27)
     UNIT_TRANSFERRED = "unit.transferred"  # old and new owner, the admin's reason, locks freed
+    ACCOUNT_UPDATED = (
+        "account.updated"  # P36: the admin edits an SME's name, employee ID, department
+    )
     ACCOUNT_REMOVED = "account.removed"  # the SME leaves the directory; subjects dropped (ids)
     DELEGATION_REQUESTED = "delegation.requested"  # the SME's reason
     DELEGATION_DECLINED = "delegation.declined"  # the admin's note

@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from tarn_core.domain.tenancy import User
+from tarn_core.domain.tenancy import DEPARTMENT_MAX, EMPLOYEE_ID_MAX, User
 
 Email = Field(min_length=3, max_length=320, examples=["evaluator@institution.edu"])
 Password = Field(min_length=1, max_length=1024)
@@ -53,6 +53,10 @@ class UserOut(BaseModel):
         "(SME) or the Governor."
     )
     active: bool
+    employee_id: str | None = Field(
+        default=None, description="Set by the admin (D225); staff data. Null when not set."
+    )
+    department: str | None = Field(default=None, description="Set by the admin (D225).")
 
     @classmethod
     def of(cls, user: User) -> "UserOut":
@@ -63,6 +67,8 @@ class UserOut(BaseModel):
             email=user.email,
             role=user.role.value,
             active=user.active,
+            employee_id=user.employee_id,
+            department=user.department,
         )
 
 
@@ -207,11 +213,26 @@ class AccountOut(BaseModel):
 class InviteIn(_In):
     display_name: str = Field(min_length=1, max_length=200)
     email: str = Email
+    employee_id: str | None = Field(
+        default=None, max_length=EMPLOYEE_ID_MAX, description="Optional (D225); blank = none."
+    )
+    department: str | None = Field(
+        default=None, max_length=DEPARTMENT_MAX, description="Optional (D225); blank = none."
+    )
     subject_ids: list[UUID] = Field(
         default_factory=list,
         max_length=200,
         description="Subjects granted to the new SME at once (optional for now).",
     )
+
+
+class ProfileIn(_In):
+    """An SME's name and staff details, as the admin sets them (P36, D225). Every field is
+    sent: a blank employee ID or department clears it."""
+
+    display_name: str = Field(min_length=1, max_length=200)
+    employee_id: str | None = Field(max_length=EMPLOYEE_ID_MAX)
+    department: str | None = Field(max_length=DEPARTMENT_MAX)
 
 
 class AccountSubjectsOut(BaseModel):
@@ -1587,6 +1608,42 @@ class AssignmentSummaryOut(BaseModel):
         "its latest submission, over submitted and frozen units, one decimal; null with none."
     )
     turnaround_units: int = Field(description="How many units the average is over.")
+
+
+class TurnaroundOut(BaseModel):
+    average_days: float | None = Field(
+        description="Days from receiving a unit to its latest submission, one decimal; null "
+        "with none."
+    )
+    units: int = Field(description="How many units the average is over.")
+
+
+class QuarterOut(BaseModel):
+    label: str = Field(examples=["2026 Q4"])
+    start: date = Field(description="First day of the calendar quarter, included.")
+    end: date = Field(description="First day of the next quarter, excluded.")
+    units_submitted: int = Field(description="Units whose latest submission fell in the quarter.")
+    booklets_approved: int = Field(
+        description="Booklets whose first result sheet was issued in the quarter."
+    )
+
+
+class MyReportOut(BaseModel):
+    """The SME's own reports (P36, D226, D239): their current units only, never a mark."""
+
+    academic_year: AcademicYearOut
+    turnaround_lifetime: TurnaroundOut
+    turnaround_year: TurnaroundOut = Field(description="Over units due in the academic year.")
+    on_time_rate: float | None = Field(
+        description="Units handed in on or before their due date (UTC), as a percent of the "
+        "units handed in, one decimal; null with none."
+    )
+    units_handed_in: int = Field(description="Submitted and frozen units the rate is over.")
+    quarters: list[QuarterOut] = Field(
+        description="The last four calendar quarters, oldest first; the current one last."
+    )
+    open_units: int
+    booklets_pending: int = Field(description="Not approved yet, in the SME's open units.")
 
 
 class SmeProgressOut(BaseModel):

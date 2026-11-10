@@ -220,6 +220,8 @@ users = Table(
     Column("active", Boolean(), nullable=False),
     _seq(),
     Column("removed_at", DateTime(timezone=True), nullable=True),
+    _text("employee_id", nullable=True),
+    _text("department", nullable=True),
 )
 
 # An SME's subjects (P24, migration 0013, D160).
