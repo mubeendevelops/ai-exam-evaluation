@@ -202,6 +202,14 @@ class ContentRepository(Protocol):
         case (P34); ``subject_ids`` None = every subject."""
         ...
 
+    def hold_blueprint(
+        self, college_id: CollegeId, blueprint_id: BlueprintId, *, exclusive: bool
+    ) -> None:
+        """Hold the blueprint until the transaction ends (F20, D245): a new version holds it
+        exclusively, a booklet pinning a version holds it shared, so a structure change and
+        an upload never pass the lock check at the same time. In memory a no-op."""
+        ...
+
     def save(self, college_id: CollegeId, item: ContentItem) -> None:
         """Raises TenantViolationError if the item belongs to another college, InvariantError
         if this (id, version) exists or skips a version."""

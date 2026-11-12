@@ -793,6 +793,17 @@ class PgContentRepository:
     ) -> Sequence[str]:
         return self._header_values(college_id, kind, "descriptor", subject_ids)
 
+    def hold_blueprint(
+        self, college_id: CollegeId, blueprint_id: BlueprintId, *, exclusive: bool
+    ) -> None:
+        """A transaction-level advisory lock on the blueprint (F20, D245): exclusive for a
+        new version, shared for a booklet pinning one. Released at commit or rollback. The
+        key is a hash of the id, so two blueprints may rarely share it (they then wait for
+        each other; nothing is wrong, only slower)."""
+        key = func.hashtextextended(f"blueprint:{blueprint_id}", 0)
+        lock = func.pg_advisory_xact_lock if exclusive else func.pg_advisory_xact_lock_shared
+        self._conn.execute(select(lock(key)))
+
     def _header_values(
         self,
         college_id: CollegeId,

@@ -119,6 +119,19 @@ def test_after_an_upload_the_structure_is_locked(w: World, change: str) -> None:
     assert w.current().meta.version == 1
 
 
+def test_a_save_and_an_upload_hold_the_paper_before_reading_it(w: World) -> None:
+    """F20 (P38, D245): a new version holds the paper exclusively and an upload holds it
+    shared, each before reading its newest version, so on PostgreSQL the lock check and the
+    pin cannot pass at the same time (the waiting itself: ``test_pg_sme_portal``)."""
+    holds = w.mem.content.holds
+    holds.clear()
+    w.save(w.document(title="Renamed"))
+    assert holds == [(w.a.id, w.paper.id, True)]
+    holds.clear()
+    w.upload()
+    assert holds == [(w.a.id, w.paper.id, False)]
+
+
 def test_after_an_upload_every_metadata_field_may_change(w: World) -> None:
     w.upload()
     edited = w.save(

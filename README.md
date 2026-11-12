@@ -76,12 +76,19 @@ Sign in as the admin (`DEMO_COM`, `admin@demo-com.example.test`, the seed's pass
 
 A unit goes open → submitted (by its SME) → frozen (by the Governor, at `/governor`); the admin may return a submitted unit with a note. Emails go out on assignment, transfer and return (to the API log in development).
 
-The SME's path through the tabs (an SME sees only the subjects the admin granted and the units they own):
+### The SME portal
 
-1. **Q&A DB** – questions, benchmark answers, rubrics, glossaries, reference diagrams and key files.
-2. **AI Evaluation** – step 1 the SME's units and their booklets ("Submit unit", "Request reassignment"); step 2 check the segmentation (the machine reads and splits it; the SME can correct lines, split, merge and reassign); step 3 approve answer by answer (AI suggestion, reference beside the student's text, per-criterion reasons, override in the paper's mark step), then approve the booklet.
-3. **Evaluated** – approved booklets and their result-sheet PDFs (a new version when an approved booklet is amended).
-4. **Schema Designer** – exam blueprints (any N of M, OR pairs, sub-parts, per-step marks, exam code); the JSON is validated by the server.
+Sign in as an SME (`DEMO_COM`, `suresh.naik@demo-com.example.test`, the seed's password) and you land on `/sme`, a sidebar with two groups (an SME sees only the subjects the admin granted and the units they own):
+
+1. **My Assignments** (`/sme`) – how many units you own (lifetime and this academic year, from 1 July), completed and active, the Frozen / Submitted / Open breakdown and your average turnaround; the table of your units with sort and filter, and per unit **Evaluate**, **Delegate** (ask the admin to move it, optionally suggesting a colleague of the subject) and **Submit**. Evaluate opens the unit's **student list** (filter by name, roll number or status), a student opens their **question list**, a question opens the evaluation screen (the reference beside the student's text, the AI suggestion with per-criterion reasons, override, tags, remarks, Approve; "Pages and segments" for the machine's reading and split). A completed booklet shows "View Final" with every result-sheet version.
+2. **Manage Question Papers** (`/sme/papers`) – papers of your subjects with search, date and descriptor filters; create (blank or from a schema), clone, edit (sections, any N of M, OR pairs, sub-parts, the exam code, and each slot linked to a question through a search or "New question"), preview and download the question paper PDF, delete once no unfrozen unit uses it. Once booklets are uploaded against a paper, only its title, descriptor, description, target batch, duration and course code may change: clone it to change the structure. **Questions** opens the question bank's search and the question editor (text, marks, rubric, reference answers, glossary, key files, reference diagrams), which warns before saving a question that papers use.
+3. **Manage Schema** (`/sme/schemas`) – reusable paper templates (sections and marks, no questions linked) with a target batch and a weightage description; add, clone, edit, delete, and **Generate Question Paper**.
+4. **My Profile** (`/sme/profile`) – your name, email, employee ID, department (the admin keeps these) and subjects; change your password, recovery codes.
+5. **My Reports** (`/sme/reports`) – average turnaround, on-time rate, units submitted and booklets approved in the last four quarters, open work. No marks, speed or accuracy score.
+
+The header has a **search** over your units, their students, your subjects' papers, schemas and questions, and a **bell** with your notices: a unit assigned to you or moved away, returned with the admin's note, your reassignment request done or declined, due in 3 days (also emailed) and overdue. The worker writes the due-date notices once a day (`TARN_REMINDER_INTERVAL_HOURS`, 24 by default).
+
+Several of the SME portal's rules are provisional (D215–D228) until the boss confirms them; see `docs/acceptance.md` section 4.
 
 Registering a new college: the public page, then the emailed verification link, then a Tarn operator approves it: `cd backend && uv run tarn tenants list` and `uv run tarn tenants approve <ID> --operator <you>`.
 
@@ -140,16 +147,16 @@ These are stated plainly because they bound what the system can claim today.
 - **Batch scale beyond 5 booklets is deferred (C30).** At most 5 booklets per teacher are queued and the worker processes one at a time. Uploads are held in memory up to a size cap, and Cloud Run takes 32 MiB per request, so large booklets need direct-to-bucket uploads.
 - **Keys are synthetic.** Faculty keys for QP-CI, QP-IPR and the Assignments are missing; every OCR, scoring and flag threshold is a placeholder until teacher-marked booklets exist. Scoring was calibrated on a public typed-answer set, not on teacher marks.
 - **Handwritten diagrams, formulas and computations** have no real samples; the diagram detector was trained on public flowchart sets. Circuits, plots and labelled drawings are not scored.
-- **The Schema Designer does not save blueprints from the page** (the API does); paper auto-generation, bulk question import and a saved-schema library from the prototype are not built.
+- **Papers are filled by hand.** Generating a paper from a schema copies its sections and marks; AI filling, MCQs and bulk question import are not built (D169, D221).
 
-- **The admin portal is built; the SME and Governor portals are not.** SMEs still work in today's tabs with a unit list in step 1, and the Governor has a freeze page only. Reports, AI question generation and storage limits come later.
+- **The admin and SME portals are built; the Governor portal is not.** The Governor has a freeze page only. The SME portal's provisional rules (D215–D228) await the boss's answers. Reports, AI question generation and storage limits come later.
 
 The full list is in `docs/acceptance.md` and, for contributors, `CLAUDE.md`.
 
 ## What comes next
 
-1. **Stage G — SME portal:** a landing page (My Assignments) that drives to the existing screens, Manage Question Papers, Manage Schema, My Profile and My Reports, notifications; it replaces the unit list in step 1.
-2. **Stage H — Governor portal:** analytics, audits, freeze and sign-off (publishing), report requests; it replaces the `/governor` freeze page.
+1. **Stage H — Governor portal:** analytics, audits, freeze and sign-off (publishing), report requests; it replaces the `/governor` freeze page. Its open questions are in `docs/notes/later_stages.md`.
+2. **The boss's answers on the SME portal** (D215–D228): each change becomes a new decision and the screens follow.
 3. **Later, on request:** aggregated reports (signed PDFs, D168), AI question and answer generation (D169), the Provisioner (storage limits, colleges).
 
 What is known about each, and the questions still open, is in `docs/notes/later_stages.md` (kept locally).

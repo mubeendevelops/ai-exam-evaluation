@@ -235,3 +235,50 @@ def test_a_physics_sme_lists_nothing_of_the_other_subjects(
     assert c.get("/api/v1/booklets", headers=physics).json()["total"] == 0
     assert c.get("/api/v1/question-topics", headers=physics).json() == []
     assert [s["code"] for s in c.get("/api/v1/subjects", headers=physics).json()] == ["PHY"]
+
+
+def test_stage_g_lists_show_only_the_callers_college(sweep: tuple[World, MemoryBackends]) -> None:
+    """P38 item 1: B's SME portal lists (schemas, papers and their descriptors, notices, the
+    global search, figures and reports) never name A's content, units, students or notices,
+    even when B searches for A's own words."""
+    world, _ = sweep
+    c, a, b = world.client, world.a, world.b
+    a_ids: set[str] = set()
+    words: set[str] = set()
+    papers = c.get("/api/v1/papers", params={"limit": 50}, headers=a).json()
+    for p in papers["items"]:
+        a_ids.add(p["id"])
+        words.add(p["title"][:40])
+    a_ids |= {s["id"] for s in c.get("/api/v1/schemas", headers=a).json()["items"]}
+    notices = c.get("/api/v1/notifications", headers=a).json()["items"]
+    assert notices
+    a_ids |= {n["id"] for n in notices} | {n["unit_id"] for n in notices}
+    words |= {n["unit_code"] for n in notices}
+    units = c.get("/api/v1/units", headers=a).json()
+    a_ids |= {u["id"] for u in units}
+    unit = next(u for u in units if u["id"] == notices[0]["unit_id"])
+    for row in c.get(f"/api/v1/units/{unit['id']}", headers=a).json()["booklets"]:
+        a_ids.add(row["id"])
+        words |= {row["student"]["name"], row["student"]["usn"]}
+    question = c.get("/api/v1/questions", params={"limit": 1}, headers=a).json()["items"][0]
+    a_ids.add(question["id"])
+    words.add(question["code"])
+    # A's own search finds A's things (so B's empty answers below mean something).
+    found = c.get("/api/v1/search", params={"q": unit["code"]}, headers=a).json()
+    assert unit["id"] in str(found)
+
+    seen = [
+        c.get("/api/v1/papers", params={"limit": 50}, headers=b).text,
+        c.get("/api/v1/schemas", headers=b).text,
+        c.get("/api/v1/notifications", headers=b).text,
+        c.get("/api/v1/me/assignments/summary", headers=b).text,
+        c.get("/api/v1/me/reports", headers=b).text,
+    ]
+    seen += [
+        c.get("/api/v1/search", params={"q": word}, headers=b).text
+        for word in sorted(words)
+        if len(word.strip()) >= 2
+    ]
+    for body in seen:
+        leaked = [x for x in a_ids if x in body]
+        assert leaked == [], (body[:200], leaked)

@@ -1,6 +1,6 @@
-# Acceptance — Tarn AI Evaluation (P22; admin portal: P30)
+# Acceptance — Tarn AI Evaluation (P22; admin portal: P30; SME portal: P38)
 
-Date: 7 Oct 2026 (section 3: 29 Oct 2026). Parts: (1) the running app compared with the prototype `docs/project_idea.html`, screen by screen; (2) the requirement checklist R1–R7 and C8–C30 of requirements v0.7; (3) the admin portal compared with `newrequirements/admin_portal.html` and the status of the new requirements D159–D169 (P30). Measured error rates are in `docs/benchmarks/summary.md`.
+Date: 7 Oct 2026 (section 3: 29 Oct 2026; section 4: 11 Nov 2026). Parts: (1) the running app compared with the prototype `docs/project_idea.html`, screen by screen; (2) the requirement checklist R1–R7 and C8–C30 of requirements v0.7; (3) the admin portal compared with `newrequirements/admin_portal.html` and the status of the new requirements D159–D169 (P30); (4) the SME portal compared with `newrequirements/sme_portal.html` and the SME portal specification, and the status of the provisional decisions D215–D228 (P38). Measured error rates are in `docs/benchmarks/summary.md`.
 
 How the comparison was made: the prototype served from `docs/` and the app (`make up`, `make seed`, signed in as a seeded DEMO_COM teacher) side by side in Chrome, same window width; every screen of the prototype was opened in both, then the DOM and layout of the app screens were checked at laptop and phone width.
 
@@ -134,3 +134,69 @@ The boss's mock `newrequirements/admin_portal.html` (git-ignored) set the admin 
 ### What the admin portal still lacks
 
 The look (a front-end developer restyles, D159); reports (D168); an audit log screen; storage limits and capacity (Provisioner); CSV export; paging of the directory, students and progress lists (O117, O119, O136); the screens were not checked side by side with the mock in a browser against the running stack.
+
+## 4. SME portal (P38)
+
+The boss's mock `newrequirements/sme_portal.html` and `TKS_SME_Portal_Product_Specification.docx` (both git-ignored) set the SME portal's **structure and navigation, not its look** (D159): the screens keep the app's own theme, not the mock's dark glassmorphism; that standing deviation is not repeated per row. Stage G ran while the boss was away, so its open questions were answered provisionally (D215–D228, user 2026-11-09); they are listed below as **awaiting the boss**.
+
+How it was compared: the mock read module by module (its HTML, its seven modals and its script) and the specification section by section, each against the built screen, its Vitest and Playwright tests (fake API: `sme-flow.spec.ts`, `papers.spec.ts`, `qna.spec.ts`, `mobile.spec.ts`, `journey.spec.ts`) and the API through the SME portal's journey (`api/tests/test_e2e_sme_journey.py`, also on PostgreSQL + MinIO). As in Stage F, the screens were not opened side by side with the mock in a browser against the running stack.
+
+### Module by module
+
+| Mock / spec | Built (screen, route) | Matches | Intended deviations (decision) |
+| --- | --- | --- | --- |
+| **Frame** (spec 2.2: sidebar with Workspace and Account & Insights, profile card at the foot; header with tab title, global search, bell, profile; mobile top bar and drawer below 768 px) | `SmeLayout` for every SME screen; `/sme/*` | The five items in the mock's groups, order and words; the SME's name and first subject at the foot; header with the tab title, a live search box and bell, the user menu; below 768 px a Menu button opens the sidebar as a drawer (focus moved in and kept, Escape and backdrop close). The SME has no top bar | **Look** (D159). The header keeps the app's status pill and footer; no brand imagery, sample names or "TKS" (D159, `later_stages.md`). The SME's top-bar pages went one by one as their replacements were built; the temporary "Older screens" group is gone (D215). |
+| **My Assignments** (spec 3.1: Total Assigned with lifetime, current term, Completed, Active; Historical with completion rate, Verified / Evaluated / Pending bar, average turnaround, link to My Reports; the assignments table with sort and Evaluate / Delegate; guidelines banner) | `/sme`; `GET /me/assignments/summary`, `GET /units` | Both cards, the table (paper and code, subject badge, due date, progress bar, actions), the six sort orders, "Full analytics" to My Reports, the guidelines card with its two links | **Verified / Evaluated / Pending → Frozen / Submitted / Open units**; no accuracy figure (D164, D167, D216). "Current term" = the academic year from 1 July, by due date (D216, provisional). Clicking **Active filters the table** instead of opening the evaluation modal (D229). A **Submit** action and a **State** column were added (D164: submit is per unit). Overdue units marked. The banner is a plain card (no imagery). |
+| **Modal 1, student directory** (filter by name or roll number, Active / Completed badges, paged cards; a card opens the questions) | `/sme/units/:unitId` (a page); `GET /units/{id}?q=&status=&offset=&limit=` | Filter by name or roll number, status badges, paging (25), a student opens the question list | **A page, not a modal** (Back and reload keep the place, D230). A table, not cards; six badges (Processing, Needs retake, Failed, Ready, In review, Completed) and a status select (D217, D230). Student names shown, as today (D217, provisional). "View Final" for a completed booklet replaces the old Evaluated tab (D217). Submit and Delegate are also here. |
+| **Modal 2, question list** (candidate and roll number, back link, Evaluated with score / Active review with AI marks) | `/sme/units/:unitId/booklets/:bookletId`; `GET /booklets/{id}/review` | Name and roll number, Back to Student Directory (filter kept), each answer with its state and mark (approved or AI suggested, of max), a question opens the evaluation | Extra: question code, flags (low OCR, off target, blank, answered twice, scorers disagree), "Mark manually", Pages and segments (step 2), Delete booklet (open units). |
+| **Modal 3, evaluation** (question and transcript left, AI criteria and score right, Prev / Next with "Q4 / Q10", remarks, override, "Confirm & Save") | `/evaluate?booklet=…&step=3&answer=…` inside the frame, with a breadcrumb | Today's step 3: Panels A–C, the answer strip as Prev / Next, override, tags, remarks; Approve is "Confirm & Save" (D217) | **Not rebuilt** (the build plan: the landing page drives to the existing screens). Nothing is final until the SME approves (rule 7); amendments and sheet versions as before. No "Verified" (D164). |
+| **Modal 4, delegate** (assignment pre-filled, replacement SME dropdown, required rationale, routes to the admin) | `DelegateDialog` on My Assignments and the student list; `GET /units/{id}/delegates`, `POST /units/{id}/delegation-requests` | Unit pre-filled, a "Suggested replacement" dropdown, required reason, the request goes to the admin's inbox | **The suggestion is optional and the admin decides** (D218, provisional): the admin's transfer dialog is pre-filled with it when that SME can still take the unit. The dropdown lists active SMEs entitled to the unit's subject, by name only (D230). Withdraw added. |
+| **Manage Question Papers** (spec 3.2: search by name/batch, filter by date, filter by descriptor tag, Create, Clone, Delete, Preview, PDF download) | `/sme/papers`, `/sme/papers/:id`; `GET/POST /papers`, `POST /blueprints/{id}/clone` | Cards with the three filters and paging, Create Question Paper, Clone, Delete, Preview, Download | Search by **name or descriptor** (the tag the cards show); the date filter is the creation date in UTC (D232). Descriptors are **free text with suggestions** (D219, provisional). **Edit** added (the paper designer with the slot → question picker and the exam code, D232–D234). Cards show the exam code and "In use by a unit". Delete only when no unfrozen unit uses the paper (D166). A paper's structure is **locked once booklets exist** (D222 provisional, D233). |
+| **Modal 5, PDF preview** (Section A MCQs, Section B analytical; zoom +/− 10 %, reset, percentage) | `PaperPreview` (pdf.js); `GET /blueprints/{id}/versions/{v}/paper.pdf` | The paper rendered as a PDF, zoom −/+ 10 % (50–180 %), Reset, the percentage, Download | The PDF shows **the paper's own sections**: no MCQ section (D221, provisional). College, title, exam and course codes, subject, duration, total, rules, OR pairs, sub-parts, question text and marks; never keys (D224 provisional, D235; F21). Rendered on request (O154). |
+| **Modal 6, create / clone paper** (title, subject, popular descriptor) | `PaperDialog` | Title, subject, descriptor with suggestions; Clone pre-filled "(Copy)" | An optional "Start from schema" on Create (D232). Create saves a starter paper and opens it (O155). |
+| **Manage Schema** (spec 3.3: filter by name and class/batch, Add, Clone, Generate Question Paper) | `/sme/schemas`, `/sme/schemas/:id`; `GET /schemas`, `POST /blueprints/{id}/clone`, `POST /blueprints/{id}/paper` | Cards with the two filters, Add New Schema, Clone, Generate Question Paper (opens the new paper) | **No "Verified / Standard" badges** (D219). Batch is free text with suggestions (D219, provisional). Generate fills nothing by AI: the SME links each slot (D220, provisional; AI later, D169). Edit and Delete added; no paging (O150). A schema is a blueprint of kind `schema` (document 1.2, D231). |
+| **Modal 7, add / clone schema** (name, target class/batch, rubric weightage description) | `SchemaDialog` | The three fields | A **Subject** (content belongs to a subject, D165); the weightage is a description, not checked (D219, provisional). Add saves a starter schema at once (O146). |
+| **Question editor** (not in the mock; spec 3.2's papers need questions; D165: the bank is a search, not a tab) | `/sme/questions`, `/sme/questions/new`, `/sme/questions/:id` | — | The editor as one page with a similar-questions search beside it (keyword search, D238); the used-in warning before saving a question papers link (D223 provisional, D237); reached from the paper slot picker, the papers page and the search. The old Q&A DB tab is gone (D215, D236). |
+| **My Profile** (spec 3.4: employee ID, email, specialisation, department) | `/sme/profile` | Name, email, employee ID, department, specialisation = the SME's subjects; password change and recovery codes | **Read-only for the SME; the admin sets** employee ID and department (D225 provisional, D239). No sample IDs or titles. |
+| **My Reports** (spec 3.4: average evaluation speed vs target, accuracy audit score, quarterly finalised papers) | `/sme/reports`; `GET /me/reports` | Average turnaround (lifetime and academic year), on-time rate, units submitted and booklets approved per calendar quarter (last four), current load | **No accuracy score** (D167); **no speed target**: turnaround in days instead (D226 provisional, D240). Credit follows the unit's current owner (D163; the journey checks it after a transfer). |
+| **Header search and bell** (spec 2.2: "global search with real-time route matching", "notification indicator badge") | `GlobalSearch`, `NotificationBell`; `GET /search`, `/notifications` | A search box with grouped results opening their screens; a bell with an unread badge | The mock has no result or panel design: the app's own (D159). Search covers the SME's units and their students, their subjects' papers, schemas and questions (D228 provisional, D243). Notices: assigned, transferred away, returned, request done or declined, due in 3 days, overdue (D227 provisional, D241, D242); one new email "due in 3 days". |
+| **Spec 5, non-functional** (tab switching under 100 ms, drawer below 768 px, focus rings and WCAG AA, filters without reloads) | — | Drawer below 768 px (tested); visible focus rings (the app's components); filters and sorting change the address without a page reload (`?sort=`, `?q=`, `?page=`) | **Not measured:** render times and contrast ratios were not measured in a browser (the look is restyled later, D159). |
+
+### Provisional decisions awaiting the boss (D215–D228)
+
+Each was Claude's suggestion, accepted by the user for now (2026-11-09); the built form is in the decision named. When the boss answers, a change becomes a new decision (from D247) and the affected screens are adjusted. The questions to send are in `docs/notes/later_stages.md`.
+
+| Decision | Provisional answer | Built as | Question for the boss |
+| --- | --- | --- | --- |
+| D215 | SME portal under `/sme`; old top-bar pages removed as replaced | D229; all replaced by P35 | — (user decision; not a boss question) |
+| D216 | Landing figures; academic year from 1 July; turnaround from receiving the unit | D229 | 1, 2 |
+| D217 | Student list and question list into today's step 3; names shown; no student feedback | D230 | 3 |
+| D218 | The SME may suggest a replacement; the admin decides | D230 | 4 |
+| D219 | Schemas and papers as blueprint kinds; free-text descriptor, batch and weightage note | D231, D232 | 5, 9, 10 |
+| D220 | Generate a paper from a schema by hand | D231 | — |
+| D221 | No MCQs until AI generation | (nothing built) | 7 |
+| D222 | A paper's structure locked once booklets exist | D233, F20 | 8 |
+| D223 | A question edit reaches every paper, with a warning | D237 | (question 6 of the original list) |
+| D224 | Question paper PDF content | D235, F21 | 6 |
+| D225 | Employee ID and department, set by the admin | D239 | 11 |
+| D226 | My Reports figures, calendar quarters | D240 | 12 |
+| D227 | In-app notices, one email 3 days before, no admin bell | D241, D242, D244 | 13 |
+| D228 | Global search scope | D243 | 14 |
+
+### New requirements D159–D169 (after Stage G)
+
+| ID | Status now | Evidence |
+| --- | --- | --- |
+| D159 | **Met** for the admin and the SME; Governor portal is Stage H | Sections 3 and 4; the persona sweep (123 operations classified) |
+| D160 | **Met**: the SME's papers, schemas, questions, search and delegates are filtered on their subjects | `test_api_tenancy_sweep.py::test_a_physics_sme_*`, the SME journey (third SME of another subject sees nothing) |
+| D162 | **Met**: the SME builds the paper with its exam code; the admin picks it for a unit | the SME journey |
+| D163 | **Met**: credit follows the owner in My Assignments and My Reports | the SME journey (reports after the transfer), `core/tests/test_reports.py` |
+| D164 | **Met**: submit from My Assignments and the student list | the SME journey, `sme-flow.spec.ts` |
+| D165 | **Met**: the question bank is the editor's search, not a tab | `pages/sme/questions.test.tsx`, `qna.spec.ts` |
+| D166 | **Met**: the paper deleted after the freeze, the frozen record kept | the SME journey |
+| D167 | **Met**: no accuracy or speed figure on the SME's screens either | `reports.test.tsx`, `myAssignments.test.tsx` |
+| D161, D168, D169 | Unchanged (admin login; reports later; AI generation later) | Section 3 |
+
+### What the SME portal still lacks
+
+The boss's answers to D215–D228; the look (a front-end developer restyles, D159); MCQs and AI filling of papers (D169, D221); a notifications page beyond the latest 20 (O162) and grouping of overdue notices (O161); paging of schema cards (O150); a used-in warning for keys, glossaries and files (O156); a college time zone for quarters and due dates (O160); the screens checked side by side with the mock in a browser against the running stack.

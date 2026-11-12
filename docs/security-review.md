@@ -1,4 +1,4 @@
-# Tarn AI Evaluation — Security review (P21; admin portal: P30 at the end)
+# Tarn AI Evaluation — Security review (P21; admin portal: P30; SME portal: P38 at the end)
 
 7 Oct 2026 · scope: the code at the end of P20, the dev stack (`make up`), the Terraform in
 `deploy/gcp/` (validated only, never applied). References: `docs/design.md` "Data model and tenancy",
@@ -356,3 +356,109 @@ tenancy sweep, `adapters/tests/postgres/test_pg_admin_portal.py`,
 `core/tests/test_security_p30.py`, the F18/F19 tests above. Mutation checks: the ASCII-only
 upper-casing (3 tests failed) and the /64 bucket (1 failed), each reverted. Totals are in the
 Progress log P30.
+
+---
+
+# SME portal review (P38)
+
+11 Nov 2026 · scope: what Stage G added (P31–P37): the SME frame and figures, the student and
+question lists, delegation with a suggested SME, schemas and papers (blueprint document 1.2),
+the structure lock, the question paper PDF, the question editor and its usage check, profile
+fields, My Reports, notifications and the due-date sweep, the global search. References:
+D215–D228 (provisional, awaiting the boss) and D229–D244.
+
+## How it was reviewed
+
+1. Read the routes and services of the new surface: `services/search.py` and
+   `domain/search.py`, `domain/notifications.py` and `services/notifications.py`,
+   `services/reminders.py`, `services/paper_sheet.py` and `domain/paper_sheet.py`,
+   `services/delegation.py` (`candidates`, `available`), `services/blueprint_lock.py` and
+   `BlueprintService.update`, `BookletService.register`, `AccountService.update_profile`, every
+   schema that carries a user (`UserOut`, `DelegateOut`, `SuggestedSmeOut`, `UnitOwnerOut`).
+2. Checked that the persona and cross-college sweeps reach every new operation, added
+   Stage G checks on both stacks, wrote the SME portal's journey (in memory and on PostgreSQL +
+   MinIO) with the scans below, and attacked each finding with a test and a mutation check.
+
+## Findings and fixes
+
+| # | Area | Finding | Sev. | Fix | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| F20 | Integrity | **Structure lock race.** `BlueprintService.update` asked whether a booklet pins the paper, then saved a new version; `BookletService.register` read the newest version and pinned it. Two transactions at once (PostgreSQL READ COMMITTED) could both pass: a booklet pinned v1 while v2 changed the structure, the mixed unit D222 forbids | Low | Port `ContentRepository.hold_blueprint(college, blueprint, exclusive=)`: a transaction-level advisory lock (`pg_advisory_xact_lock` / `_shared` on a hash of the id, parameterised). A save holds it exclusively **before** reading the newest version; an upload holds it shared before reading the paper; uploads do not wait for each other. In memory a recorded no-op. D245 | `core/tests/test_papers.py::test_a_save_and_an_upload_hold_the_paper_before_reading_it`; `adapters/tests/postgres/test_pg_sme_portal.py::test_a_new_paper_version_waits_for_an_upload_in_flight` (shared + shared passes, shared blocks exclusive and the reverse, released at commit); mutation checked (hold removed from `update`: 1 failure) |
+| F21 | Entitlement | **The paper PDF printed another subject's question.** `PaperSheets` read every linked question without a subject check. Since P34 a link must name a question of the paper's subject (D234), but any version can be asked for, and a version saved before P34 may link another subject's question: its text reached an SME entitled only to the paper's subject | Low | Only questions of the paper's subject are printed; any other link reads as not linked. D246 | `core/tests/test_paper_sheet.py::test_a_question_of_another_subject_is_never_printed`; mutation checked (check removed: 1 failure) |
+
+No finding of severity Medium or High.
+
+## What holds
+
+- **Search scope** (D243). Units: those the SME owns now (`Reach.units`); students: only in
+  those units (`find_students` filters by unit id, `LIKE` escaped); papers, schemas and
+  questions: only the SME's subjects (`Reach.subjects`). The journey checks it from three sides:
+  the owner finds the unit, its student and the paper; a colleague of the same subject finds
+  the paper but not the unit or the student; an SME of another subject finds nothing; after the
+  transfer the first SME finds nothing of the unit. The tenancy sweep searches college B for
+  college A's student names, roll numbers, unit code, paper titles and question code: nothing.
+  Mutation: searching every unit's students failed the journey (and, since P37, the PostgreSQL
+  contract). The query is 2–80 characters after NFKC, refused without echoing it, rate-limited
+  (60 a minute per user), never logged (the access log drops query strings) or audited.
+- **Notification payloads** (D241). The domain refuses any key but `unit_code`, `due_date`,
+  `request_id` and `note`, and a note on anything but `returned`. The table's CHECKs, forced RLS
+  and the column grant (the app role may set `read_at` only, never delete) hold as `tarn_app`
+  (`test_pg_notifications`, `test_pg_sme_portal`). The journey reads every notice of three SMEs
+  and finds only those keys and no student name, roll number or answer text. A notice keeps the
+  unit's code after the unit moves away; opening it answers 404 (accepted: the SME knew it).
+- **The paper PDF** (D235). `PaperDocument` has no field for keys, rubrics, reference answers
+  or glossaries; the journey extracts the PDF's text with PyMuPDF and finds the exam code and
+  both questions but none of the four key and rubric texts; another subject's SME gets 404.
+  With F21 only the paper's subject's questions are printed.
+- **Suggested-SME listing** (D230). `GET /units/{id}/delegates` returns `{id, name}` only, for
+  the owner of an open unit, of SMEs who are active and entitled (`may_own`) and not the owner.
+  The journey: exactly the colleague, not the SME of another subject, not the owner; the
+  request's audit event holds the suggested id and the reason's length, not the reason; the
+  admin's inbox shows `{id, name, available}`. The SME's own request list also shows
+  `available` (whether the colleague can still take the unit): accepted, a yes/no about a
+  colleague the SME chose.
+- **Profile fields** (D239). `employee_id` and `department` appear only in `UserOut`, which is
+  returned for the caller's own account (`/auth/me`, sign-in) and to the admin (`/accounts`);
+  every other schema naming a person carries an id and a name. The journey stores an employee ID
+  and department for each of three SMEs and finds no SME response carrying another SME's email
+  or employee ID. Only the admin edits them (`manage_smes`; an SME or the Governor 403, checked
+  by the persona sweep), audited with field names and before/after values (staff data, user
+  decision). As `tarn_app`, college B neither reads nor changes A's values
+  (`test_pg_sme_portal`).
+- **Structure lock** (D233). The rule is a whitelist (`METADATA_FIELDS`): anything not named is
+  compared and refused, so a new header field is locked by default; schemas are never locked.
+  The journey: after the upload, changing the exam code is 409 "…clone it to change the
+  structure", the title is allowed. F20 closes the race between a save and an upload.
+- **Sweeps.** The persona sweep classifies all 123 published operations and calls the 108 that
+  need a capability as admin, SME and Governor, in memory and on PostgreSQL;
+  `test_the_stage_g_operations_are_swept` names the 16 Stage G operations and checks each is
+  swept by both sweeps and open to the right persona only (the SME's own views: SMEs only; the
+  profile edit: the admin only). The tenancy sweep calls the 78 college operations with
+  another college's ids (404) and, new, reads B's schemas, papers, notifications, search,
+  figures and reports for A's ids (`test_stage_g_lists_show_only_the_callers_college`).
+- **RLS on the new table and columns.** `notifications` and the tables holding the new
+  columns (`users.employee_id`, `department`; `exam_blueprints.kind`, `target_batch`,
+  `weightage_note`, `description`, `descriptor`, `from_schema`;
+  `delegation_requests.suggested_to`) are college tables with RLS forced; a notice's
+  references are composite `(college_id, …)` keys (B's notice naming A's SME or unit is refused
+  by the foreign key); B's crafted reads of A's rows find 0 and crafted updates change 0; the
+  app role cannot update blueprint versions at all (`test_pg_sme_portal.py`).
+
+## Accepted risks and open items (P38)
+
+- **Free text** (O139, unchanged): the return note travels in a notice and an email, the
+  delegation reason stays in the app; nothing stops someone typing a student's name there.
+- **Advisory key collisions** (F20): two blueprints whose id hashes collide wait for each other;
+  correct, only slower.
+- **Overdue notices pile up** (O161) and the bell lists 20 (O162): usability, not exposure.
+- **The reminder run on Google Cloud** is validated, never applied (O164).
+
+## Tests and checks run (P38)
+
+New: `api/tests/test_e2e_sme_journey.py` and `test_sme_portal_journey_on_postgres`
+(`tarn_api/sme_journey.py`), `test_the_stage_g_operations_are_swept`,
+`test_stage_g_lists_show_only_the_callers_college`,
+`adapters/tests/postgres/test_pg_sme_portal.py` (4), the F20 and F21 tests. Mutation checks,
+each failed a test before it was reverted: the hold removed from `update` (F20), the subject
+check removed from the PDF (F21), the search's unit filter widened to every unit (journey).
+Totals are in the Progress log P38.

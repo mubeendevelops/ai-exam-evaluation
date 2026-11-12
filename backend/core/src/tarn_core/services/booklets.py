@@ -75,6 +75,8 @@ class BookletService:
         self._users.get(college_id, actor_id)
         self._students.get(college_id, student_id)
         unit = ensure_unit_open(self._units, college_id, unit_id)
+        # Shared with other uploads, exclusive of a new paper version (F20, D222).
+        self._content.hold_blueprint(college_id, unit.paper_id, exclusive=False)
         blueprint = self._content.get(college_id, ExamBlueprint, unit.paper_id)
         unlinked = blueprint.unlinked_leaves()
         if unlinked:

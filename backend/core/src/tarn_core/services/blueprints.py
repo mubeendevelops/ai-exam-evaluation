@@ -363,6 +363,8 @@ class BlueprintService:
     ) -> ExamBlueprint:
         """Save the document as the next version. Earlier versions stay valid for the
         booklets pinned to them."""
+        # Before reading the newest version: an upload pinning it waits, or is seen (F20).
+        self._content.hold_blueprint(college_id, blueprint_id, exclusive=True)
         current = self._content.get(college_id, ExamBlueprint, blueprint_id)
         ensure_author(self._users, self._entitlements, college_id, actor_id, current.subject_id)
         parsed = require_valid(check_document(document))

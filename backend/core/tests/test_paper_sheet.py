@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from tarn_core.domain.blueprint import ExamBlueprint, leaves
+from tarn_core.domain.blueprint import ExamBlueprint, OrGroup, QuestionSlot, leaves
 from tarn_core.domain.content import Question, ReferenceAnswer, RubricCriterion
 from tarn_core.domain.paper_sheet import PaperChoice, PaperDocument, PaperQuestion
 from tarn_core.errors import NotFoundError
@@ -152,3 +152,29 @@ def test_the_newest_question_text_is_printed(world: tuple[InMemory, ExamBlueprin
     doc = sheets(mem).document(cid, paper.id, paper.meta.version, reach=EVERYONE)
     assert "Explain the εr and μr of a medium — newer wording." in strings(doc)
     assert blueprint_to_document(paper)  # the paper itself did not change
+
+
+def test_a_question_of_another_subject_is_never_printed(
+    world: tuple[InMemory, ExamBlueprint],
+) -> None:
+    """F21 (P38): a version saved before D234 may link another subject's question; the PDF
+    treats that slot as unlinked, so an SME of the paper's subject never reads its text."""
+    mem, paper = world
+    cid = paper.meta.college_id
+    foreign = next(q for q in mem.content.latest(cid, Question) if q.subject_id != paper.subject_id)
+    slot = next(s for s in paper.slots() if s.question_id is not None and not s.parts)
+
+    def relink(item: Any) -> Any:
+        if isinstance(item, QuestionSlot):
+            return replace(item, question_id=foreign.id) if item == slot else item
+        if isinstance(item, OrGroup):
+            return replace(item, alternatives=tuple(relink(a) for a in item.alternatives))
+        return item
+
+    sections = tuple(replace(s, items=tuple(relink(i) for i in s.items)) for s in paper.sections)
+    assert sections != paper.sections
+    newest = mem.content.get(cid, ExamBlueprint, paper.id).meta.version
+    hand_saved = replace(paper, meta=replace(paper.meta, version=newest + 1), sections=sections)
+    mem.content.save(cid, hand_saved)
+    doc = sheets(mem).document(cid, paper.id, hand_saved.meta.version, reach=EVERYONE)
+    assert foreign.text not in strings(doc)

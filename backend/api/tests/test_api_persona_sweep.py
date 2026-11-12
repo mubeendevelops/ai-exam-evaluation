@@ -110,3 +110,52 @@ def test_each_persona_is_allowed_or_refused_as_the_table_says(
         else:
             assert response.status_code == 403, (persona, method, path, response.text)
             assert response.json() == {"detail": ROLE_REFUSED}
+
+
+STAGE_G = (
+    # P31, P36: the SME's figures and reports
+    ("GET", "/api/v1/me/assignments/summary"),
+    ("GET", "/api/v1/me/reports"),
+    # P32: delegation suggestion
+    ("GET", "/api/v1/units/{unit_id}/delegates"),
+    # P33: schemas, clone, generate
+    ("GET", "/api/v1/schemas"),
+    ("POST", "/api/v1/blueprints/{blueprint_id}/clone"),
+    ("POST", "/api/v1/blueprints/{blueprint_id}/paper"),
+    # P34: papers and the paper PDF
+    ("GET", "/api/v1/papers"),
+    ("POST", "/api/v1/papers"),
+    ("GET", "/api/v1/blueprints/{blueprint_id}/versions/{version}/paper.pdf"),
+    # P35: the used-in warning
+    ("GET", "/api/v1/questions/{question_id}/usage"),
+    # P36: profile fields
+    ("PUT", "/api/v1/accounts/{user_id}"),
+    # P37: notifications and search
+    ("GET", "/api/v1/notifications"),
+    ("GET", "/api/v1/notifications/unread-count"),
+    ("POST", "/api/v1/notifications/read-all"),
+    ("POST", "/api/v1/notifications/{notification_id}/read"),
+    ("GET", "/api/v1/search"),
+)
+"""Every operation Stage G (P31-P37) published, by name (P38 item 1)."""
+
+
+def test_the_stage_g_operations_are_swept(
+    sweep: tuple[World, dict[str, dict[str, str]]],
+) -> None:
+    """Each is published, needs a capability (none is public or merely signed-in), is called
+    by every persona in ``checked()`` and is classified by the cross-college sweep too. The
+    SME's own views (``view_own_work``) are refused to the admin and the Governor; the
+    content routes to the admin; the profile edit to the SME and the Governor."""
+    from tarn_api.tenancy_sweep import CASES
+
+    world, _ = sweep
+    published = set(persona_sweep.operations(world.client.get("/openapi.json").json()))
+    swept = set(checked())
+    for op in STAGE_G:
+        assert op in published and op in swept and op in CASES, op
+        access = ACCESS[op]
+        assert isinstance(access, frozenset), op
+        allowed = {r for r in Role if access & CAPABILITIES[r]}
+        expected = {Role.ADMIN} if op[0] == "PUT" else {Role.SME}
+        assert allowed == expected, (op, allowed)

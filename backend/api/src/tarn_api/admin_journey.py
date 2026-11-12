@@ -73,7 +73,15 @@ RETURN_NOTE = "Recheck question 2 against the key"
 # a retake is pending is P26's one exception, not met in this journey).
 ADMIN_BANNED = ("mark", "score", "credit", "suggest", "grade", "review", "sheet", "text", "answer")
 ADMIN_ALLOWED = frozenset(
-    {"total_marks", "in_review", "needs_text_pages", "text_read", "needs_text", "unmarked"}
+    {
+        "total_marks",
+        "in_review",
+        "needs_text_pages",
+        "text_read",
+        "needs_text",
+        "unmarked",
+        "suggested",  # a delegation request's suggested SME (P32), not an AI suggestion
+    }
 )
 ADMIN_EMPTY = frozenset({"text_url", "image_url", "original_url", "pdf_url", "answers"})
 
@@ -101,13 +109,15 @@ class AdminJourney:
     log: list[str] = field(default_factory=list)
     admin_reads: list[str] = field(default_factory=list)
     """Every path the admin read (checked for marks)."""
+    institution: str = INSTITUTION
+    """The college every ``login`` signs in to."""
 
     # --- plumbing ---------------------------------------------------------------------------
 
     def login(self, email: str) -> dict[str, str]:
         response = self.client.post(
             f"{BASE}/auth/login",
-            json={"institution_id": INSTITUTION, "email": email, "password": DEV_PASSWORD},
+            json={"institution_id": self.institution, "email": email, "password": DEV_PASSWORD},
         )
         assert response.status_code == 200, response.text
         return {"Authorization": f"Bearer {response.json()['access_token']}"}
@@ -172,6 +182,50 @@ class AdminJourney:
             )
         )
 
+    def open_college(
+        self, institution: str, name: str, admin_email: str, governor_email: str
+    ) -> tuple[CollegeId, dict[str, str], dict[str, str]]:
+        """A new college: registration, email verification, the operator's approval and its
+        Governor (``tarn tenants approve`` / ``governor`` call the same services). Returns the
+        college and the admin's and Governor's sign-ins."""
+        c = self.client
+        registered = c.post(
+            f"{BASE}/registrations",
+            json={
+                "institution_id": institution,
+                "institution_name": name,
+                "admin_name": "Shared Admin",
+                "email": admin_email,
+                "password": DEV_PASSWORD,
+            },
+        )
+        assert registered.status_code == 202, registered.text
+        verified = self.ok(
+            c.post(
+                f"{BASE}/registrations/verify-email",
+                json={"token": self.mail.last_token(admin_email)},
+            )
+        )
+        assert verified["status"] == "PENDING_APPROVAL", verified
+        assert c.post(  # not before the operator approves
+            f"{BASE}/auth/login",
+            json={"institution_id": institution, "email": admin_email, "password": DEV_PASSWORD},
+        ).status_code in (401, 403)
+        with self.backends.identity() as store:
+            tenant = store.find_tenant(institution)
+        assert tenant is not None
+        college = CollegeId(tenant.college_id)
+        with unit_of_work(self.backends, college) as unit:
+            unit.registration.approve(college, operator=OPERATOR)
+        with unit_of_work(self.backends, college) as unit:
+            unit.accounts.invite_governor(
+                college, display_name="Journey Governor", email=governor_email, operator=OPERATOR
+            )
+        self.accept(governor_email)
+        actions = [e.action for e in self.events(college)]
+        assert "tenant.approved" in actions and "account.governor_invited" in actions
+        return college, self.login(admin_email), self.login(governor_email)
+
     # --- the journey ------------------------------------------------------------------------
 
     def run(self) -> dict[str, Any]:
@@ -179,41 +233,9 @@ class AdminJourney:
 
         # 1. The operator: the college registers, verifies its email, is approved; its
         #    Governor is created and accepts the invitation.
-        registered = c.post(
-            f"{BASE}/registrations",
-            json={
-                "institution_id": INSTITUTION,
-                "institution_name": "P30 Journey College",
-                "admin_name": "Shared Admin",
-                "email": ADMIN,
-                "password": DEV_PASSWORD,
-            },
+        college, admin, governor = self.open_college(
+            INSTITUTION, "P30 Journey College", ADMIN, GOVERNOR
         )
-        assert registered.status_code == 202, registered.text
-        verified = self.ok(
-            c.post(
-                f"{BASE}/registrations/verify-email", json={"token": self.mail.last_token(ADMIN)}
-            )
-        )
-        assert verified["status"] == "PENDING_APPROVAL", verified
-        assert c.post(  # not before the operator approves
-            f"{BASE}/auth/login",
-            json={"institution_id": INSTITUTION, "email": ADMIN, "password": DEV_PASSWORD},
-        ).status_code in (401, 403)
-        with self.backends.identity() as store:
-            tenant = store.find_tenant(INSTITUTION)
-        assert tenant is not None
-        college = CollegeId(tenant.college_id)
-        with unit_of_work(self.backends, college) as unit:
-            unit.registration.approve(college, operator=OPERATOR)
-        with unit_of_work(self.backends, college) as unit:
-            unit.accounts.invite_governor(
-                college, display_name="Journey Governor", email=GOVERNOR, operator=OPERATOR
-            )
-        self.accept(GOVERNOR)
-        actions = [e.action for e in self.events(college)]
-        assert "tenant.approved" in actions and "account.governor_invited" in actions
-        admin, governor = self.login(ADMIN), self.login(GOVERNOR)
 
         # 2. The admin: two subjects, two SMEs entitled to the first, the students.
         subject = self.audited(

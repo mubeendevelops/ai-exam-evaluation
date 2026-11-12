@@ -28,6 +28,7 @@ from tarn_api.backends import PostgresBackends, unit_of_work
 from tarn_api.journey import Event, Journey, event_payload
 from tarn_api.persona_sweep import ACCESS, PERSONAS, checked
 from tarn_api.security import ROLE_REFUSED
+from tarn_api.sme_journey import SmeJourney
 from tarn_api.tenancy_sweep import (
     A_INSTITUTION,
     B_INSTITUTION,
@@ -272,6 +273,31 @@ def test_admin_portal_journey_on_postgres(tmp_path_factory: pytest.TempPathFacto
             ).fetchone() == (6,)
         sheets = BlobKey(f"college/{college}/booklet/{result['amended']}/sheets/v2.pdf")
         assert s.backends._blobs.get(sheets).startswith(b"%PDF")
+
+
+def test_sme_portal_journey_on_postgres(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """P38: a new college on empty databases: see ``tarn_api.sme_journey``."""
+    with open_stack(tmp_path_factory.mktemp("keys"), seed=False, lines=JOURNEY_PAGE) as s:
+        journey = SmeJourney(s.client, s.backends, s.process, s.events, s.mail)
+        result = journey.run()
+        college, unit = result["college"], result["unit"]
+        with s.app_db.owner() as conn:
+            assert conn.execute(
+                "SELECT count(*) FROM exam_blueprints WHERE id = %s", (UUID(result["paper"]),)
+            ).fetchone() == (0,)
+            assert conn.execute(
+                "SELECT state, owner_id FROM units WHERE id = %s", (UUID(unit),)
+            ).fetchone() == ("frozen", UUID(result["second"]))
+            assert conn.execute(
+                "SELECT count(*) FROM frozen_booklets WHERE unit_id = %s", (UUID(unit),)
+            ).fetchone() == (5,)
+            kinds = conn.execute(
+                "SELECT kind FROM notifications WHERE college_id = %s ORDER BY kind", (college,)
+            ).fetchall()
+            assert [k for (k,) in kinds] == ["assigned", "assigned", "request_done"]
+        for booklet in result["booklets"]:
+            sheet = BlobKey(f"college/{college}/booklet/{booklet}/sheets/v1.pdf")
+            assert s.backends._blobs.get(sheet).startswith(b"%PDF")
 
 
 # --- the persona sweep on PostgreSQL (P30) -----------------------------------------------------

@@ -76,9 +76,14 @@ class PaperSheets:
                 return None
             if question_id not in texts:
                 try:
-                    texts[question_id] = self._content.get(college_id, Question, question_id).text
+                    found = self._content.get(college_id, Question, question_id)
                 except NotFoundError:
                     texts[question_id] = None
+                else:
+                    # Only the paper's own subject (F21): a version saved before D234 may
+                    # link another subject's question, which this reader may not see.
+                    same = found.subject_id == paper.subject_id
+                    texts[question_id] = found.text if same else None
             return texts[question_id]
 
         def question(slot: QuestionSlot) -> PaperQuestion:

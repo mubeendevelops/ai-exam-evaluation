@@ -139,6 +139,15 @@ class MemoryContentRepository:
         # per college, keyed by (type name, id); each list holds versions 1..n in order
         self._items: dict[CollegeId, dict[tuple[str, UUID], list[ContentItem]]] = {}
         self._log = log if log is not None else TenantLog()
+        self.holds: list[tuple[CollegeId, BlueprintId, bool]] = []
+        """Every ``hold_blueprint`` call (college, blueprint, exclusive), for tests."""
+
+    def hold_blueprint(
+        self, college_id: CollegeId, blueprint_id: BlueprintId, *, exclusive: bool
+    ) -> None:
+        """One process, one writer at a time: nothing to wait for; recorded for tests."""
+        self._log.touch(college_id)
+        self.holds.append((college_id, blueprint_id, exclusive))
 
     def _college(self, college_id: CollegeId) -> dict[tuple[str, UUID], list[ContentItem]]:
         self._log.touch(college_id)
